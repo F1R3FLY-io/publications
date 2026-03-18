@@ -1,0 +1,1553 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsfonts,stmaryrd,mathtools}
+\usepackage{amsthm}
+
+% ---------- theorem-like environments ----------
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}[definition]{Example}
+
+\theoremstyle{plain}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{corollary}[definition]{Corollary}
+
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\theoremstyle{plain}
+
+\usepackage{mathpartir}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{naturalnames}{hyperref}
+
+% Optional but harmless if you later use \img or \scale:
+\usepackage{graphicx}
+\usepackage{tikz}
+
+% If you ever paste a literal Unicode beta, this maps it to \beta:
+\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}
+
+% ---------- mathpartir layout tweaks (reduces overfull boxes in rules) ----------
+\mprset{
+  flushleft=true, % left-align premises/conclusions to reduce horizontal width
+  sep=1.0em,      % add some vertical whitespace for readability
+}
+
+% compact judgment layout to reduce width:
+\newcommand{\judg}[3]{%
+  \begingroup
+    \setlength{\arraycolsep}{0.3ex}%
+    \ensuremath{%
+      \begin{array}[t]{@{}l@{\;}|@{\;}l@{}}%
+        #1 & #2%
+      \end{array}%
+      \;\vdash\; #3%
+    }%
+  \endgroup
+}
+\newcommand{\angles}[3]{\langle #1 \rangle_{#2}\,#3}
+\newcommand{\Slots}{\mathrm{Slots}}
+\newcommand{\Boxsort}{\Box}
+\newcommand{\astsort}{\ast}
+\newcommand{\fv}{\mathrm{FV}}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\renewcommand{\Pr}{{\rm Pr}}
+\newcommand{\Nm}{{\rm Nm}}
+\newcommand{\rsq}{\rightsquigarrow}
+\newcommand{\ra}{\Rightarrow}
+
+\newcommand{\of}{\,{:}\,}
+
+\newcommand{\pr}{\,|\,}
+\newcommand{\ctx}{\,|\,}
+
+\newcommand{\mapsim}{\,\vec{\approx}\,}
+
+\newcommand{\mbb}[1]{\mathbb{#1}}
+\newcommand{\mtt}[1]{\mathtt{#1}}
+\newcommand{\mrm}[1]{\mathrm{#1}}
+
+\newcommand{\tin}{\mtt{in}}
+\newcommand{\tout}{\mtt{out}}
+\newcommand{\tfor}{\mtt{for}}
+\newcommand{\la}{\leftarrow}
+\newcommand{\La}{\Leftarrow}
+\newcommand{\thla}{\twoheadleftarrow}
+
+\newcommand{\brk}[1]{\langle #1\rangle}
+\newcommand{\ora}[1]{\overrightarrow{#1}}
+
+\newcommand{\T}{\mrm{T}}
+
+\newcommand{\infr}[2]{\infer[]{#2}{#1}}
+\newcommand{\infre}[2]{\infer=[]{#2}{#1}}
+
+\newcommand{\scale}[2]{
+  \begin{tikzpicture}[baseline= (a).base]
+    \node[scale=#1] (a) at (0,0){#2};
+  \end{tikzpicture}
+}
+
+\newcommand{\img}[2]{\includegraphics[scale=#1]{images/#2}}
+
+\makeatletter
+\newsavebox{\@brx}
+\newcommand{\llangle}[1][]{\savebox{\@brx}{$\m@th{#1\langle}$}%
+  \mathopen{\copy\@brx\kern-0.5\wd\@brx\usebox{\@brx}}}
+\newcommand{\rrangle}[1][]{\savebox{\@brx}{$\m@th{#1\rangle}$}%
+  \mathclose{\copy\@brx\kern-0.5\wd\@brx\usebox{\@brx}}}
+\makeatother
+
+\newcommand{\dbrk}[1]{\llangle #1\rrangle}
+\newcommand{\map}[1]{[\![#1]\!]}
+
+\makeatletter
+\def\slashedarrowfill@#1#2#3#4#5{%
+  $\m@th\thickmuskip0mu\medmuskip\thickmuskip\thinmuskip\thickmuskip
+  \relax#5#1\mkern-7mu%
+  \cleaders\hbox{$#5\mkern-2mu#2\mkern-2mu$}\hfill
+  \mathclap{#3}\mathclap{#2}%
+  \cleaders\hbox{$#5\mkern-2mu#2\mkern-2mu$}\hfill
+  \mkern-7mu#4$%
+}
+\def\rightslashedarrowfill@{%
+  \slashedarrowfill@\relbar\relbar\mapstochar\rightarrow}
+\newcommand\xslashedrightarrow[2][]{%
+  \ext@arrow 0055{\rightslashedarrowfill@}{#1}{#2}}
+\makeatother
+
+\newcommand{\xr}[1]{\xslashedrightarrow[]{#1}}
+
+\title{Generating Hypercubes of Type Systems}
+\author{Michael Stay\\director.research@f1r3fly.io \and L. Gregory Meredith \\f1r3flyceo@gmail.com \and Christian Wells \\cb@holdea.net}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Barendregt’s Lambda Cube organizes typed calculi by enabling different dependencies between terms and types.  This paper shows how to derive an analogous \emph{hypercube} of type systems for an arbitrary operational theory.
+\end{abstract}
+
+\section{Introduction}
+Since the late 1980s, Barendregt’s Lambda Cube\cite{Barendregt1991} has served as a compact “map” of typed $\lambda$-calculi: by toggling three fundamental dependencies—types on terms, terms on types, and types on types—one obtains eight canonical systems.  The Cube’s lasting value is not only in its ability to classify; it provides a geometric way of thinking about design choices that later became systematized by the framework of Pure Type Systems (PTS), where a single parametric scheme generates many calculi from choices of sorts, axioms, and typing rules.
+
+This paper asks for an analogous organizing principle in settings where the primary presentation is \emph{operational}: a language is given by term formers, equations, and one-step rewrite rules, sometimes far from the $\lambda$-calculus in behavior (e.g. process calculi or hybrids of multiple models of computation like functional reactive programming).  In such cases we would like a principled way to \emph{extract} a family of type systems from the operational rules themselves, rather than imposing a bespoke typing discipline from the outside.
+
+Our starting point is a lambda theory $\T$: a finite-limits category with a chosen cartesian closed structure, a distinguished object $\Pr$ of processes, and an internal one-step reduction relation $\rsq$.  We reason in the internal language using judgments of the form
+\[
+  \Gamma \;\ctx\; \Delta \;\vdash\; \psi,
+\]
+where $\Gamma$ is a variable context, $\Delta$ is a “rely” context of assumed propositions (including reductions and typings), and $\psi$ is the conclusion.  Base rewrites have the schematic form
+\[
+  x_1:X_1,\dots,x_n:X_n \;\ctx\; \top \;\vdash\; L(\vec x)\ \rsq\ R(\vec x),
+\]
+and, crucially, each subterm occurrence on the left-hand side determines a one-hole context $C[-]$ in which that redex position sits.
+
+From this operational data we define a free extension that generates a \emph{modal layer} of type formers\cite{AbelCoquand2005, AltenkirchDanielssonLohOury2010}.  For each base rewrite and each chosen redex position, we introduce a primitive modality
+\[
+  \angles{K}{\vec{x}::\vec{A}}{B},
+\]
+read as a \emph{rely-possibly} specification: under rely assumptions $\vec x::\vec A,$ placing a term into the context $K[-]$ takes one step to a specified right-hand side inhabiting $B$.  Rewrite-generated modalities do \emph{not} support full conversion; instead, they support a weakened conversion principle via an empty-context possibility operator $\Diamond$, with $t::\Diamond B$ expressing that $t$ has a one-step reduct inhabiting $B$.  Equation-generated modalities \emph{do} support full conversion by the usual conversion rule.
+
+Why does this produce a \emph{hypercube}?  Each generated type former carries finitely many $\astsort/\Boxsort$ \emph{sort slots}: one slot for each rely input and one output slot.  Raw slot-fillings form a Boolean cube of choices, but operational and equational laws force coherence: only those global slot assignments that preserve sort-level interpretations of equations and rewrites are admissible.  We package these admissible assignments as an \emph{equational center} $\mathcal{Z}$, and the vertices of the resulting (hyper)cube are the elements of $\mathcal{Z}$.  In a cartesian closed setting, the canonical equation modality induced by evaluation yields a true dependent product $\Pi$; the induced cube recovers Barendregt’s familiar organization.  More generally, the cube’s axes are not postulated: they are determined locally by the free variables of operational contexts and the result types demanded by the rules.
+
+Two orthogonal extensions increase expressivity in a controlled way while preserving the same slot-and-center geometry.  First, we add \emph{structural} (AST-root) type formers: for each term former $f$ we freely add a type former $f^\sharp$ whose inhabitants are exactly those terms whose root former is $f$.  Second, at each carrier and sort we add propositional operations on type formers; crucially, we stratify which operators are available by the categorical strength needed to interpret them (finite limits first, then additional structure for $\bot$, finite joins/distributivity, and finally implication/negation).
+
+\paragraph{Contributions.}
+This paper contributes:
+\begin{itemize}[leftmargin=2em]
+  \item a syntactic construction that generates modal type formers from base rewrites and redex positions (and equation modalities from definitional equalities);
+  \item an empty-context possibility operator $\Diamond$ yielding a rewrite-stable, weakened conversion principle;
+  \item a local-slot / equational-center mechanism that organizes admissible $\astsort/\Boxsort$ choices into a (hyper)cube of calculi stable under equations and rewrites;
+  \item a soundness theorem interpreting generated type formers as comprehension (and image) subobjects in any finite-limits model with a subobject fibration;
+  \item two orthogonal extensions: structural (AST-root) types and stratified propositional operations on type formers;
+  \item a Curry–Howard normalization principle for modalities, matching modal cut elimination with firing a one-step rewrite (and reflecting nondeterminism when present).
+\end{itemize}
+
+\paragraph{Roadmap.}
+Section~\ref{sec:overview} gives a brief overview.
+Section~\ref{sec:lambdatheories} defines lambda theories and their internal-language judgments.
+Section~\ref{modal} develops the modal layer and the modal hypercube (including modal cut elimination in Subsection~\ref{subsec:modal-CH}).
+Sections~\ref{sec:spatial} and~\ref{sec:booltypes} add structural and propositional layers.
+
+\section{Review of the Lambda Cube}
+\label{sec:lambda-cube}
+
+We briefly recall the standard presentation of Barendregt's Lambda Cube as a family of
+generalized type systems parameterized by which \emph{sort pairs} are permitted in
+$\Pi$-formation and $\lambda$-abstraction \cite{Barendregt1991}.
+
+\paragraph{Sorts, variables, and raw terms.}
+Let $S := \{\astsort,\Boxsort\}$, with metavariables $s,s_1,s_2\in S$, and let $V$ be a set
+of variables $x,y,\dots$.
+Raw terms (which serve as both terms and types) are generated by:
+\[
+  A \;::=\; x \;\mid\; s \;\mid\; A\,A \;\mid\; \lambda x \of A.\,A \;\mid\; \Pi x \of A.\,A .
+\]
+
+\paragraph{Environments.}
+Typing environments (contexts) are lists of typed variables:
+\[
+  \Gamma \;::=\; \emptyset \;\mid\; \Gamma,\,x \of A .
+\]
+
+\paragraph{$\beta$-reduction and conversion.}
+The one-step reduction $\rsq_\beta$ is the compatible closure of the $\beta$-redex:
+\begin{mathpar}
+\inferrule*[right={$\beta$}]
+  { }
+  { (\lambda x \of A.\,B)\,C \rsq_\beta B[C/x] }
+
+\inferrule*[right={App$_1$}]
+  { A \rsq_\beta A' }
+  { A\,B \rsq_\beta A'\,B }
+\and
+\inferrule*[right={App$_2$}]
+  { B \rsq_\beta B' }
+  { A\,B \rsq_\beta A\,B' }
+
+\inferrule*[right={Lam$_1$}]
+  { A \rsq_\beta A' }
+  { \lambda x \of A.\,B \rsq_\beta \lambda x \of A'.\,B }
+\and
+\inferrule*[right={Lam$_2$}]
+  { B \rsq_\beta B' }
+  { \lambda x \of A.\,B \rsq_\beta \lambda x \of A.\,B' }
+
+\inferrule*[right={Pi$_1$}]
+  { A \rsq_\beta A' }
+  { \Pi x \of A.\,B \rsq_\beta \Pi x \of A'.\,B }
+\and
+\inferrule*[right={Pi$_2$}]
+  { B \rsq_\beta B' }
+  { \Pi x \of A.\,B \rsq_\beta \Pi x \of A.\,B' }
+\end{mathpar}
+Let $=_\beta$ denote $\beta$-convertibility (the reflexive, transitive, symmetric closure of
+$\rsq_\beta$).
+
+\paragraph{Typing judgment and common rules.}
+The typing judgment is $\Gamma \vdash A \of B$. The following rules are common to every system
+in the cube:
+\begin{mathpar}
+\inferrule*[right={Axiom}]
+  { }
+  { \vdash \astsort \of \Boxsort }
+
+\inferrule*[right={Start}]
+  { \Gamma \vdash A \of s }
+  { \Gamma, x \of A \vdash x \of A }
+\quad (x \notin \Gamma)
+
+\inferrule*[right={Weakening}]
+  { \Gamma \vdash A \of B \\ \Gamma \vdash C \of s }
+  { \Gamma, x \of C \vdash A \of B }
+\quad (x \notin \Gamma)
+
+\inferrule*[right={Application}]
+  { \Gamma \vdash C \of \Pi x \of A.\,B \\ \Gamma \vdash D \of A }
+  { \Gamma \vdash C\,D \of B[D/x] }
+
+\inferrule*[right={Conversion}]
+  { \Gamma \vdash A \of B \\ B =_\beta B' \\ \Gamma \vdash B' \of s }
+  { \Gamma \vdash A \of B' } .
+\end{mathpar}
+
+\paragraph{Product and abstraction (parameterized by sort pairs).}
+Fix a set of allowed sort pairs $R \subseteq S \times S$. The remaining rules are:
+\begin{mathpar}
+\inferrule*[right={Product}]
+  { \Gamma \vdash A \of s_1 \\ \Gamma, x \of A \vdash B \of s_2 \\ (s_1,s_2)\in R }
+  { \Gamma \vdash \Pi x \of A.\,B \of s_2 }
+
+\inferrule*[right={Abstraction}]
+  { \Gamma \vdash A \of s_1 \\ \Gamma, x \of A \vdash B \of s_2 \\ \Gamma, x \of A \vdash C \of B \\ (s_1,s_2)\in R }
+  { \Gamma \vdash \lambda x \of A.\,C \of \Pi x \of A.\,B } .
+\end{mathpar}
+
+\paragraph{The cube (eight choices of $R$).}
+All eight systems include $(\astsort,\astsort)$ (terms depending on terms).  The remaining three
+pairs correspond to the three additional dependency directions:
+\[(\astsort,\Boxsort)\ (\text{types depending on terms}),\]
+\[(\Boxsort,\astsort)\ (\text{terms depending on types}),\]
+\[(\Boxsort,\Boxsort)\ (\text{types depending on types}).\]
+Choosing any subset of these three pairs (together with $(\astsort,\astsort)$) yields one vertex
+of the cube:
+\[
+\begin{array}{l|cccc}
+ & (\astsort,\astsort) & (\astsort,\Boxsort) & (\Boxsort,\astsort) & (\Boxsort,\Boxsort) \\
+\hline
+\lambda_{\to}                & \checkmark &           &           &           \\
+\lambda P                    & \checkmark & \checkmark &          &           \\
+\lambda 2                    & \checkmark &           & \checkmark &          \\
+\lambda \underline{\omega}   & \checkmark &           &           & \checkmark \\
+\lambda P2                   & \checkmark & \checkmark & \checkmark &          \\
+\lambda P\underline{\omega}  & \checkmark & \checkmark &          & \checkmark \\
+\lambda \omega               & \checkmark &           & \checkmark & \checkmark \\
+\lambda C                    & \checkmark & \checkmark & \checkmark & \checkmark
+\end{array}
+\]
+\vspace{1em}
+
+\section{Overview of the Hypercube Construction}
+\label{sec:overview}
+
+This section is purely expository: it summarizes the construction and the role of each major ingredient before the formal definitions.
+
+\subsection{Input: operational data in a lambda theory}
+We begin with a lambda theory $\T$: a category with finite limits and a chosen cartesian closed structure in whose internal language we can state equations, operations, and a one-step reduction relation $\rsq\subseteq \Pr\times\Pr$ on a distinguished object of processes $\Pr$.
+Operational rules appear as \emph{base rewrites} of the form
+\[
+  x_1:X_1,\dots,x_n:X_n \;\ctx\; \emptyset \;\vdash\; L(\vec x)\ \rsq\ R(\vec x).
+\]
+Crucially, we also track \emph{redex positions}: choosing a subterm occurrence $t_j$ of $L$ determines a one-hole context $K_j[-]$ with $K_j[t_j]=L$, and the free variables of $K_j$ determine the rely parameters of the modality generated at that position.
+
+\subsection{Output: three layers of type formers}
+From $\T$ we freely generate a family of type systems organized as a hypercube:
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Modal layer (Section~\ref{modal}).}
+    Each base rewrite and each subterm position on the left-hand side produces a modality
+    $\angles{K_j}{\vec{x}::\vec{A}}{B}$,
+    read as a \emph{rely-possibly} specification: under rely assumptions $\vec x::\vec A,$ placing a term in context $K_j[-]$ steps to a specified reduct of type $B$.
+    Equation-generated modalities are treated similarly (as ``zero-step'' steps), but their eliminations admit full conversion.
+    To express a rewrite-stable, existential one-step possibility, we also generate an empty-context operator $\Diamond$.
+  \item \textbf{Structural layer (Section~\ref{sec:spatial}).}
+    Each term former $f$ produces a structural type former $f^\sharp$ that classifies terms by the root of the parse tree.
+  \item \textbf{Propositional layer (Section~\ref{sec:booltypes}).}
+    Each carrier and sort gets propositional operations on type formers, stratified by the categorical structure available on the base theory (finite limits first, then additional structure for the remaining connectives).
+\end{itemize}
+The modal layer is designed to be a small, Cube-like core; the other layers increase expressivity in a controlled way.
+
+\subsection{Local sort slots and the equational center}
+Each generated type former comes with finitely many \emph{sort slots} (one per rely input and one for the output).
+Filling each slot with $\astsort$ or $\Boxsort$ yields a raw Boolean cube of choices.
+However, equational axioms and rewrite laws force certain slots to agree: only the assignments stable under these laws survive, forming the \emph{equational center} $\mathcal{Z}$.
+Vertices of the final hypercube are the admissible global sort assignments in $\mathcal{Z}$.
+
+[[ TODO: Mention that Barendregt didn't need to do this because there are no built-in equations and the underlying equations of the rewrites don't add any relations between sorts. ]]
+
+\subsection{TODO: Lambda calc example?}
+
+
+\section{Lambda Theories}
+\label{sec:lambdatheories}
+
+We follow the usage of \emph{lambda theory} from the setting of
+equational logics with binding and rewriting \cite{TODO:whoever}: a calculus is presented by
+types and terms (the objects and morphisms of a base category), propositions about them (via the subobject
+fibration), and a distinguished one-step rewrite predicate on programs.
+
+\subsection{Lambda theories and rewriting}
+
+We write $\pi:\mrm{Sub}(\T)\to \T$ for the subobject fibration\cite{Jacobs1999,Johnstone2002,LambekScott1988}: an object over $\Gamma$
+is a mono $\varphi\rightarrowtail \Gamma$ (a predicate in context $\Gamma$), entailment is inclusion,
+and substitution is pullback. In internal-language terms, for each relation symbol $R:X_1\times\cdots\times X_n\to\mrm{prop}$ and terms $\Gamma\vdash t_i:X_i$ we have an atomic proposition $R(t_1,\dots,t_n)$, written $\Gamma\vdash R(t_1,\dots,t_n)\ \mrm{prop}$.
+
+\begin{definition}[Lambda theory]
+\label{def:lambdatheory}
+A \textbf{lambda theory} consists of:
+\begin{itemize}
+  \item a category $\T$ with finite limits and a chosen cartesian closed structure\cite{BarrWells,AdamekRosickyVitale};
+  \item its subobject fibration $\pi:\mrm{Sub}(\T)\to \T$ (the ambient logic);
+  \item a distinguished object $\Pr\in \T$ of programs/processes;
+  \item a distinguished subobject (proposition)
+    \[
+      (\rsq)\ \rightarrowtail\ \Pr\times \Pr,
+    \]
+    written in the internal language as $p:\Pr,\,q:\Pr \vdash (p\rsq q)\,\mrm{prop}$;
+  \item a specified family of entailments generating and closing rewriting, consisting of:
+  \begin{itemize}
+    \item \textbf{base rewrites} $\rsq_B$ of the form
+      \[
+        \Gamma \;\ctx\; \emptyset \;\vdash\; L(\vec x)\rsq R(\vec x)
+        \qquad\text{with}\qquad
+        \Gamma \vdash L(\vec x):\Pr,\ \Gamma \vdash R(\vec x):\Pr.
+      \]
+    \item \textbf{rewrite operations} $\rsq_O$, expressing closure under the
+      designated term formers, of the schematic form
+      \[
+        \Gamma\;\ctx\;\Bigl(\bigwedge_{i\in I} (p_i\rsq q_i)\Bigr)\;\vdash\;
+        f(\vec p)\rsq f(\vec q),
+      \]
+      where $f$ ranges over the operations in the presentation, $I$ ranges over a designated subset of argument positions, and the remaining arguments are required (by equations or additional hypotheses) to be equal.
+  \end{itemize}
+\end{itemize}
+\end{definition}
+
+\subsection{Example: The Lambda Theory of the \texorpdfstring{$\rho$}{rho}-Calculus}
+\label{subsec:rho-lambda-theory}
+
+We briefly present the lambda theory underlying the $\rho$-calculus\cite{MeredithRadestock, Lybech2022}.  The $\rho$-calculus is a reflective higher-order (RHO)
+polyadic asynchronous pi calculus\cite{Milner1993} with two primary types:
+\begin{itemize}
+  \item a type of processes $\Pr$,
+  \item a type of names $\Nm$,
+\end{itemize}
+and a distinguished rewrite relation $(\rsq)\subseteq \Pr\times\Pr$ capturing one-step
+computational steps.
+
+In the $\rho-$calculus, names are not created afresh with the $\nu$ operator; instead, each name is the serialization of a process.  There are two operators for serialization and deserialization, $@$ and $\ast$, respectively.  The $\rho-$calculus also has no replication, since it can be simulated using these operators.  When sending a process $Q,$ it is serialized before allowing any rewrites of $Q$ to occur. The receiving process gets the serialization $@Q.$
+
+\paragraph{Base types and operations.}
+The base types are
+\[
+  \T_{\mathrm{type}} = \{\Pr,\Nm\}.
+\]
+The process and name formers are:
+\begin{align*}
+  &\vdash 0 : \Pr\\
+  p_1,\ p_2:\Pr \;&\vdash\; p_1 \mid p_2 : \Pr\\
+  p:\Pr \;&\vdash\; @p : \Nm \\
+  n:\Nm \;&\vdash\; \ast n : \Pr \\
+  \forall k \in \mathbb{N}. n:\Nm,\ \vec p:\Pr^k \;&\vdash\; \mathsf{out}_k(n,\vec p) : \Pr \\
+  \forall k \in \mathbb{N}.n:\Nm,\ \lambda\vec x.\,q : [\Nm^k\to\Pr] \;&\vdash\; \mathsf{in}_k(n,\lambda\vec x.q) : \Pr,
+\end{align*}
+where $[\Nm^k\to\Pr]$ is the exponential type of $k$-ary name-indexed process continuations.
+
+\paragraph{Equations.}
+Processes form a commutative monoid under juxtaposition $-|-$ with unit $0$:
+\begin{align*}
+  p:\Pr \;&\vdash\; p \mid 0 = p\\
+  p_1,p_2:\Pr \;&\vdash\; p_1 \mid p_2 = p_2 \mid p_1\\
+  p_1,p_2,p_3:\Pr \;&\vdash\; (p_1 \mid p_2)\mid p_3 = p_1 \mid(p_2 \mid p_3).
+\end{align*}
+Reflection between names and processes satisfies:
+\[
+  n:\Nm \;\vdash\; @(\ast n) = n.
+\]
+
+\paragraph{Rewrite proposition and base rewrites.}
+We take the distinguished rewrite proposition as
+\[
+  p_1:\Pr,\ p_2:\Pr \;\vdash\; (p_1 \rsq p_2)\ \mrm{prop}.
+\]
+The base rewrites $\rsq_B$ are:
+\begin{itemize}
+  \item \emph{Communication.}  For each arity $k$,
+  \[
+    n:\Nm,\ \vec p:\Pr^k,\ \lambda\vec x.\,q : [\Nm^k\to\Pr]
+    \;\vdash\;
+    \mathsf{out}_k(n,\vec p) \mid \mathsf{in}_k(n,\lambda\vec x.q)
+      \;\rsq\;
+    q[@\vec p/\vec x].
+  \]
+  \item \emph{Reflection round-trip.}
+  \[
+    p:\Pr \;\vdash\; \ast(@p) \rsq p.
+  \]
+\end{itemize}
+Here $q[@\vec p/\vec x]$ denotes the simultaneous substitution of the quoted processes
+$@p_i$ for the bound name variables $x_i$.
+
+\paragraph{Rewrite operations (congruence for parallel).}
+Rewrite operations $\rsq_O$ close the base rewrites under juxtaposition. In the $\rho$-calculus we allow rewriting in either or both arguments to juxtaposition:
+\begin{align*}
+  p_1,p_2,q:\Pr
+  \;\ctx\; (p_1 \rsq p_2)
+  \;&\vdash\;
+  p_1 \mid q \;\rsq\; p_2 \mid q,\\[0.5ex]
+  p_1,p_2,q_1,q_2:\Pr
+  \;\ctx\; (p_1 \rsq p_2),\ (q_1 \rsq q_2)
+  \;&\vdash\;
+  p_1 \mid q_1 \;\rsq\; p_2 \mid q_2.
+\end{align*}
+Thus the rewrite relation is compatible with the commutative monoid structure on $\Pr$.
+
+\paragraph{Lambda-theory summary.}
+Collecting the clauses above, we obtain a presentation $P(\T_\rho)$ of a lambda theory
+$\T_\rho$ with:
+\begin{itemize}
+  \item base types $\Pr,\Nm$,
+  \item operations $0$, $\mid$, $@$, $\ast$, $\mathsf{out}_k$, $\mathsf{in}_k$,
+  \item equations making $(\Pr,\mid,0)$ a commutative monoid and giving the round-trip law
+        $n:\Nm\vdash @(\ast n)=n$,
+  \item a rewrite proposition $(\rsq)\hookrightarrow \Pr\times\Pr$ with base rewrites for
+        communication and reflection and rewrite operations closing these under juxtaposition.
+\end{itemize}
+
+\subsection{Comparison of Lambda theories to other formalizations of operational semantics}
+TODO
+
+\section{Modal Types and the Minimal Hypercube}
+\label{modal}
+
+In this section we define the modal layer: per-object sort structure, modal types derived from base rewrites (and from equations), the local sort slots attached to each modality, and the \emph{equational center} that constrains sort assignments from the outset.  Equations and base rewrites of the underlying lambda theory are always present; they induce algebraic constraints on sort assignments through the equational center, so that sorts are well behaved on the quotient of the syntax by both equations and operational laws.  Throughout, we single out the modal layer as a minimal, Cube-like core; richer structural and propositional structure on type formers is added later in Sections~\ref{sec:spatial} and \ref{sec:booltypes}.
+
+\subsection{Per-Object Enrichment}
+\label{subsec:per-object}
+
+For each object $X$ of $\T$, freely add distinguished \emph{sort constants}
+\[
+  \vdash *^X : X, \qquad \vdash \Box^X : X,
+\]
+and a typing/kinding relation symbol
+\[
+  x:X,\ y:X \;\vdash\; \bigl(x ::^X y\bigr)\ {\rm prop},
+\]
+together with the \emph{sort axiom}
+\[
+  \vdash *^X ::^X \Box^X.
+\]
+
+\medskip
+
+\noindent\textit{Convention.} We write $x ::^X y$ to denote the typing relation at carrier $X$; when $X$ is clear from context, we suppress the superscript and write $x :: y$.
+
+The distinguished elements $*^{X}$ and $\Box^{X}$ play the role of \emph{sort symbols} at carrier $X$.  We think of $A::*^{X}$ as saying that $A$ is a \emph{type former} at $X$, and of $A::\Box^{X}$ as saying that $A$ is a \emph{kind former} at $X$.
+
+\medskip
+
+\noindent\textit{Remark.} We do \emph{not} fix any concrete meaning for the constants $*^X$ and $\Box^X$ beyond their role as sort markers. Soundness interprets $A::*^X$ and $A::\Box^X$ as predicates in a model (Section~\ref{subsec:modal-soundness}).
+
+\subsection{Common typing rules}
+\label{subsec:common-typing}
+
+We work with judgments in two contexts:
+\[
+  \judg{\Gamma}{\Delta}{\psi}.
+\]
+Intuitively, $\Gamma$ declares variables and their carriers (objects of $\T$), while $\Delta$ lists assumed propositions (including typing assumptions $t::A$ and reduction assumptions $p\rsq q$).
+
+\paragraph{Sort axiom.}
+\[
+\inferrule*[right={Sort-Ax}]
+  { }
+  { \judg{\emptyset}{\emptyset}{*^X ::^X \Box^X} }
+\]
+
+\paragraph{Start.}
+\[
+\inferrule*[right={Start}]
+  { \judg{\Gamma}{\Delta}{A ::^X s^X} }
+  { \judg{\Gamma,\ x:X}{\Delta,\ x::^X A}{x ::^X A} }
+\]
+
+\paragraph{Weakening.}
+\[
+\inferrule*[right={Weak}]
+  { \judg{\Gamma}{\Delta}{t::^Y B}
+    \\
+    \judg{\Gamma}{\Delta}{A::^X s^X}
+  }
+  { \judg{\Gamma,\ x:X}{\Delta,\ x::^X A}{t::^Y B} }
+\]
+
+\paragraph{Conversion (definitional equality).}
+Let $=_{\beta\eta}$ denote definitional equality at each carrier, generated by the chosen CCC $\beta\eta$-laws and the equations of $\T$.
+\[
+\inferrule*[right={Conv}]
+  { \judg{\Gamma}{\Delta}{t::^X A}
+    \\
+    \Gamma \vdash A =_{\beta\eta} A' : X
+    \\
+    \judg{\Gamma}{\Delta}{A'::^X s^X}
+  }
+  { \judg{\Gamma}{\Delta}{t::^X A'} }
+\]
+
+
+\subsection{Dependent product}
+\label{subsec:pi}
+
+A key point is that in a cartesian closed setting, \emph{equations} (definitional equalities) can be treated as ``zero-step'' operational data for generating modalities. In particular, the CCC $\beta$-law for evaluation yields a genuine dependent product, and all modalities from equations can be represented as a dependent product.
+
+Fix objects $X,Y$ in $\T$ and write $X\to Y$ for the exponential. Let ${\rm eval}:(X\to Y)\times X\to Y$ be evaluation. Consider the one-holed evaluation context
+\[
+  E([-]) \;:=\; {\rm eval}([-],x),
+\]
+where $x:X$ is a (bound) rely variable. Define the dependent product type former by
+\[
+  \Pi_{x::A}B \;:=\; \angles{{\rm eval}([\,],x)}{x::A}{B},
+\]
+a type former at carrier $X\to Y$.
+
+\subsubsection{Formation}
+\[
+\inferrule*[right={$\Pi$-Form}]
+  { \judg{\Gamma}{\Delta}{A :: s_1^X}
+    \\
+    \judg{\Gamma,\ x:X}{\Delta,\ x::A}{B :: s_2^Y}
+  }
+  { \judg{\Gamma}{\Delta}{\Pi_{x::A}B :: s_2^{X\to Y}} }
+\]
+
+\subsubsection{Introduction}
+\[
+\inferrule*[right={$\Pi$-Intro}]
+  { \judg{\Gamma}{\Delta}{A :: s_1^X}
+    \\
+    \judg{\Gamma,\ x:X}{\Delta,\ x::A}{B :: s_2^Y}
+    \\
+    \judg{\Gamma,\ x:X}{\Delta,\ x::A}{C :: B}
+  }
+  { \judg{\Gamma}{\Delta}{(\lambda x.\,C) :: \Pi_{x::A}B} }
+\]
+
+\subsubsection{Elimination (application)}
+\[
+\inferrule*[right={$\Pi$-Elim}]
+  {
+    \judg{\Gamma}{\Delta}{f :: \Pi_{x::A}B}
+    \\
+    \judg{\Gamma}{\Delta}{u :: A}
+  }
+  { \judg{\Gamma}{\Delta}{{\rm eval}(f,u) :: B[u/x]} }
+\]
+
+\medskip
+
+\noindent Unlike rewrite-generated modalities (below), equation-generated modalities support full conversion: ${\rm eval}(f,u)$ is directly typed at $B[u/x]$ (not merely at $\Diamond(B[u/x])$).
+
+\subsection{Modalities from Base Rewrites}
+\label{subsec:modal-from-rewrites}
+
+Fix a base rewrite
+\[
+  x_1:X_1,\dots,x_n:X_n \;\ctx\; \emptyset \;\vdash\; L(\vec x) \;\rsq\; R(\vec x)
+\]
+at carrier $\Pr$.  Choose any subterm occurrence $t_j\subseteq L$ with carrier $Y_j$ and one-holed context $K_j[-]$ (so that $K_j[t_j]=L$). Write $V_j = \fv(K_j)-\fv(t_j)\subseteq\{x_1,\dots,x_n\}$ for the set of variables free in $K_j$ that are not free in $t_j$ and $W_j = \fv(t_j)-\fv(K_j).$
+
+For concision, write $\vec x:\vec X$ for the list of variables in $V_j$ and their carriers, and write $\vec x::\vec A$ for the corresponding list of rely typings, and similarly write $\vec y:\vec Y$ for the list of variables in $W_j$ and their carriers.
+
+\subsubsection{Formation}
+The modality $\angles{K_j}{\vec{x}::\vec{A}}{B}$ is a type former at carrier $Y_j$. It carries one sort slot per rely input $A_k$ and one output sort slot (shared between $B$ and the modality itself).
+
+\[
+\inferrule*[right={M-Form}]
+  {
+    \bigl(\,\judg{\Gamma}{\Delta}{A_k :: s_k^{X_k}}\,\bigr)_{x_k\in V_j}
+    \\
+    \judg{\Gamma,\ \vec{x}:\vec{X}}{\Delta,\ \vec{x}::\vec{A}}{B :: s_{\rm out}^{\Pr}}
+  }
+  { \judg{\Gamma}{\Delta}{\angles{K_j}{\vec{x}::\vec{A}}{B} :: s_{\rm out}^{Y_j}} }
+\]
+
+\subsubsection{Introduction}
+Introduction types the chosen redex component $t_j$ by demanding that the \emph{specified} right-hand side has the desired type under the relies (and the rewrite preconditions).
+\[
+\inferrule*[right={M-Intro}]
+  {
+    \bigl(\,\judg{\Gamma}{\Delta}{A_k :: s_k^{X_k}}\,\bigr)_{x_k\in V_j}
+    \\
+    \judg{\Gamma,\ \vec{w}:\vec{W},\ \vec{x}:\vec{X}}
+         {\Delta,\ \vec{x}::\vec{A}}
+         {B :: s_{\rm out}^{\Pr}}
+    \\
+    \judg{\Gamma,\ \vec{w}:\vec{W},\ \vec{x}:\vec{X}}
+         {\Delta,\ \vec{x}::\vec{A}}
+         {R(\vec{x},\vec{w}) :: B}
+  }
+  { \judg{\Gamma,\ \vec{w}:\vec{W}}{\Delta}{t_j(\vec{w}) :: \angles{K_j}{\vec{x}::\vec{A}}{B}} }
+\]
+
+\subsubsection{Elimination: rewrite vs equation}
+Since $\angles{K_j}{\vec{x}::\vec{A}}{B}$ is generated from a \emph{rewrite}, elimination does \emph{not} provide full conversion. Instead, it provides:
+\begin{enumerate}[leftmargin=2em]
+  \item the operational step to the specified right-hand side, and
+  \item the typing of that right-hand side.
+\end{enumerate}
+
+To state these rules, assume we have concrete rely inhabitants $\vec u$:
+\[
+  \bigl(\,\judg{\Gamma}{\Delta}{u_k :: A_k}\,\bigr)_{x_k\in V_j}.
+\]
+
+\paragraph{Step to the specified RHS.}
+\[
+\inferrule*[right={M-Step}]
+  {
+    \judg{\Gamma}{\Delta}{t :: \angles{K_j}{\vec{x}::\vec{A}}{B}}
+    \\
+    \bigl(\,\judg{\Gamma}{\Delta}{u_k :: A_k}\,\bigr)_{x_k\in V_j}
+  }
+  { \judg{\Gamma}{\Delta}{K_j[t][\vec u/\vec x]\ \rsq\ R(\vec u)} }
+\]
+
+\paragraph{Typing of the specified RHS.}
+\[
+\inferrule*[right={M-Elim$_{\rsq}$}]
+  {
+    \judg{\Gamma}{\Delta}{t :: \angles{K_j}{\vec{x}::\vec{A}}{B}}
+    \\
+    \bigl(\,\judg{\Gamma}{\Delta}{u_k :: A_k}\,\bigr)_{x_k\in V_j}
+  }
+  { \judg{\Gamma}{\Delta}{R(\vec u) :: B[\vec u/\vec x]} }
+\]
+
+\paragraph{Weakened conversion via $\Diamond$.}
+From the step and the typing of the RHS we obtain a weakened typing of the redex-in-context:
+\[
+  \judg{\Gamma}{\Delta}{K_j[t][\vec u/\vec x] :: \Diamond\bigl(B[\vec u/\vec x]\bigr)}.
+\]
+This is stated formally in Subsection~\ref{subsec:diamond}.
+
+\subsubsection{Rely-Possibly Reading}
+\label{rely-possibly}
+Fix a context $K_j$ and rely types $A_k$. Semantically (see \ref{subsec:modal-soundness}), the type former $\angles{K_j}{\vec{x}::\vec{A}}{B}$ is interpreted as the comprehension of those $t:Y_j$ that satisfy the internal formula
+\[
+  \forall (x_k:X_k)_{x_k\in V_j}.\;
+  \Bigl(
+    \Bigl(\bigwedge_{x_k\in V_j} x_k :: \sem{A_k}\Bigr)
+    \ \Rightarrow\
+    \bigl(\sem{K_j}(t)\rsq \sem{R(\vec x)}\bigr)\ \wedge\ \bigl(\sem{R(\vec x)} :: \sem{B}\bigr)
+  \Bigr).
+\]
+This semantics matches the proof rules above: membership in the modality provides (i) a step to the specified right-hand side and (ii) typing information about that right-hand side.
+
+\subsection{Empty-context possibility \texorpdfstring{$\Diamond$}{Diamond}}
+\label{subsec:diamond}
+
+To recover a conversion-like principle stable under rewriting, we freely add an \emph{empty-context possibility} operator at carrier $\Pr$:
+\[
+  \Diamond(-) : \Pr \to \Pr,
+\]
+intended so that $p::\Diamond B$ asserts that $p$ can take \emph{one} step to some reduct of type $B$.
+
+\subsubsection{Formation}
+\[
+\inferrule*[right={$\Diamond$-Form}]
+  { \judg{\Gamma}{\Delta}{B :: s^{\Pr}} }
+  { \judg{\Gamma}{\Delta}{\Diamond B :: s^{\Pr}} }
+\]
+
+\subsubsection{Introduction}
+\[
+\inferrule*[right={$\Diamond$-Intro}]
+  { \judg{\Gamma}{\Delta}{p\rsq q}
+    \\
+    \judg{\Gamma}{\Delta}{q :: B}
+  }
+  { \judg{\Gamma}{\Delta}{p :: \Diamond B} }
+\]
+
+\subsubsection{Elimination}
+\[
+\inferrule*[right={$\Diamond$-Elim}]
+  {
+    \judg{\Gamma}{\Delta}{p :: \Diamond B}
+    \\
+    \judg{\Gamma,\ q:\Pr}{\Delta,\ (p\rsq q),\ (q::B)}{\varphi}
+  }
+  { \judg{\Gamma}{\Delta}{\varphi} }
+\quad (q \notin \fv(\varphi))
+\]
+
+\subsubsection{Derived lax conversion for rewrite modalities}
+Combining the rewrite-modality step and reduct-typing rules with $\Diamond$-Intro yields:
+\[
+\inferrule*[right={M-Elim$_{\rsq,\Diamond}$}]
+  {
+    \judg{\Gamma}{\Delta}{t :: \angles{K_j}{\vec{x}::\vec{A}}{B}}
+    \\
+    \bigl(\,\judg{\Gamma}{\Delta}{u_k :: A_k}\,\bigr)_{x_k\in V_j}
+  }
+  { \judg{\Gamma}{\Delta}{K_j[t][\vec u/\vec x] :: \Diamond\bigl(B[\vec u/\vec x]\bigr)} }
+\]
+
+This is the promised weakened conversion principle: the redex-in-context is typed at $\Diamond(B[\vec u/\vec x])$, reflecting that it can take one step to a term of type $B[\vec u/\vec x]$.
+
+\subsection{Modality-Local Sort Assignments}
+
+The product and abstraction rules in the lambda cube depend on a choice of two sorts $s_1$ and $s_2,$ one for the input sort and one for the output sort.  Similarly, the modality formation and introduction rules have sorts $s_k$ for the rely inputs and a single output sort $s_{\rm out}$ shared between the reduct specification $B$ (at carrier $\Pr$) and the modality itself (at carrier $Y_j$).  Thus, for a context with $m:=|V_j|$ rely parameters, a modality contributes $m+1$ local sort slots.
+
+\subsubsection{Example: weak monoids}
+[[ TODO: more interesting example? ]]
+
+Here's the lambda theory of a ``weak'' commutative monoid, where we have replaced the equations for associativity and the unit laws with rewrites that lead to a left-parenthesized, unit-free normal form.
+\begin{itemize}
+    \item term formation axioms
+    \begin{itemize}
+        \item $\vdash e: \Pr$
+        \item $p, q: \Pr \vdash (pq): \Pr$
+    \end{itemize}
+    \item a commutativity axiom $p, q: \Pr \vdash (pq) = (qp)$
+    \item rewrite axioms
+    \begin{itemize}
+        \item base rewrites
+            \begin{itemize}
+                \item {\bf associate:} $p, q, r: \Pr \vdash (p(qr)) \rsq ((pq)r)$
+                \item {\bf unit:} $p: \Pr \vdash (pe) \rsq p$
+            \end{itemize}
+        \item context rewrite
+        \begin{itemize}
+            \item $p_1, p_2, q: \Pr \;|\; p_1 \rsq p_2 \vdash (p_1q) \rsq (p_2q)$
+        \end{itemize}
+    \end{itemize}
+\end{itemize}
+
+We get four modalities for the four proper subterms $p,$ $q,$ $r,$ and $(qr)$ of the left-hand side of the associate rewrite and two modalities for the two proper subterms $p$ and $e$ of the left-hand side of the unit rewrite.  Suppose we choose the associate rewrite and $p$ as our subterm, with the context $([](qr)).$ The context has free variables $q$ and $r,$ with associated types/kinds $A_q$ and $A_r$.  The formation rule for the corresponding modality says
+
+\[
+\inferrule
+  { \judg{\Gamma}{\Delta}{A_q :: s_q^\Pr}\\
+    \judg{\Gamma}{\Delta}{A_r :: s_r^\Pr}\\
+    \judg{\Gamma,\ q:\Pr,\ r:\Pr}{\Delta,\ q::A_q,\ r::A_r}{B :: s_{\rm out}^{\Pr}}}
+  { \judg{\Gamma}{\Delta}{\angles{([](qr))}{q::A_q,\ r::A_r}{B} :: s_{\rm out}^\Pr} }
+\]
+
+Naively, we have a choice of whether to allow $\Boxsort$ or not for each of $s_q^\Pr, s_r^\Pr,$ and $s_{\rm out}^\Pr,$ which would lead to a $2^3-1=7$-dimensional local cube of nontrivial choices for this modality.
+
+But the fact that $(qr) = (rq)$ means that $s_q^\Pr$ has to equal $s_r^\Pr$, and the fact that the reduct type former $B$ is used in an output position means $s_{\rm out}^\Pr$ has to equal $s_q^\Pr,$ too.  In this example, the equational center collapses the naive cube: we have only one degree of freedom instead of three. The hypercube of calculi is a mere line segment with two endpoints corresponding to the simply-typed calculus and the calculus in which one can also multiply types.
+
+\subsubsection{General case}
+
+Let a base rewrite be
+\[
+  x_1:X_1,\dots,x_n:X_n \;\vdash\; L(\vec x) \;\rsq\; R(\vec x).
+\]
+For each subterm $t_j \subseteq L$ with carrier $Y_j$, let $K_j$ be the one-hole context with $K_j[t_j]=L$.
+Write $V_j\subseteq\{x_1,\dots,x_n\}$ for the set of variables free in $K_j$.
+
+Each modality $\angles{K_j}{\vec{x}::\vec{A}}{B}$ carries its own slot family
+\[
+  \Slots(K_j,B)\ :=\ \{\,s_k^{X_k}\,\}_{k\in V_j}\ \cup\ \{\,s_{\rm out}\,\},
+\]
+where $s_{\rm out}$ is a single output coordinate used both as $s_{\rm out}^{\Pr}$ for $B$ and as $s_{\rm out}^{Y_j}$ for the modality's own carrier.
+
+For a fixed modality instance, a \emph{raw} local sort assignment is a function
+\[
+  \sigma_{K_j,B}:\ \Slots(K_j,B) \;\longrightarrow\; \{\astsort,\Boxsort\}.
+\]
+Different subterms of the same rewrite may yield different local cube dimensions.
+
+We collect all slots across all generated type formers into a finite set $\mathsf{Slot}$, so that a \emph{raw} global sort assignment is a function
+\[
+  \Sigma : \mathsf{Slot} \longrightarrow \{\astsort,\Boxsort\}.
+\]
+Equations and rewrites constrain $\Sigma$ by requiring that sort-level interpretations of equal terms (or rewrite-related terms) agree. The set of admissible assignments forms the \emph{equational center} $\mathcal{Z}\subseteq \{\astsort,\Boxsort\}^{\mathsf{Slot}}$.
+
+\begin{definition}[Equationally admissible sort assignments and equational center]
+  A raw sort assignment $\Sigma : \mathsf{Slot}\to\{\astsort,\Boxsort\}$ is \textbf{equationally admissible} if it preserves sort-level interpretations of all equational axioms and base rewrite laws (and hence their context closures).  The \textbf{equational center} $\mathcal{Z}$ is the set of all such admissible assignments.
+\end{definition}
+
+A point $\Sigma\in\mathcal{Z}$ determines, for each modality $\angles{K_j}{\vec{x}::\vec{A}}{B}$, an admissible local sort assignment by restriction.  Taking the product over all base rewrites and all subterm positions yields the \emph{modal hypercube} of calculi.
+
+\paragraph{Computing $\mathcal{Z}$.}
+Since $\mathsf{Slot}$ is finite in any finite presentation, $\mathcal{Z}$ is effectively computable by brute-force enumeration and filtering.
+
+\subsection{Soundness for the Modal Layer}
+\label{subsec:modal-soundness}
+
+We briefly sketch the semantics of the modal layer in a model of $\T$, postponing the details of propositional and structural type formers to Sections~\ref{sec:spatial} and~\ref{sec:booltypes}.
+
+Fix a model $M$ of $\T$ in a finite-limits category.  We interpret:
+
+\begin{itemize}[leftmargin=2em]
+  \item The carrier objects of $\T$ as objects of $M$, writing $X$ both for an object of $\T$ and its image in $M$. [[ TODO: replace by explicit notation for the model. ]]
+
+  \item The typing/kinding relation $::$ as a subobject of $X\times X$, and the reduction relation $\rsq$ as a subobject of $\Pr\times \Pr$.  The distinguished elements $*^{X},\Box^{X}:1\to X$ then determine predicates on $X$ expressing ``is a type former at $X$'' and ``is a kind former at $X$''.
+
+  \item For each carrier $X$ and each sort symbol $s^{X}\in\{*^{X},\Box^{X}\}$, the \emph{universe of term formers of sort $s^{X}$} as the subobject
+  \[
+    U_{s^{X}} \hookrightarrow X
+  \]
+  (when the ambient logic supports it) by comprehending the internal formula
+  \[
+    A:: s^{X}.
+  \]
+  (Equivalently: $U_{s^{X}}$ is the subobject cut out by the predicate $(-)::s^X$.)
+
+  \item Each type former $A$ at carrier $X$ and sort $s^{X}$ (i.e.\ $A::s^{X}$) as a subobject
+  \[
+    \sem{A} \hookrightarrow X
+  \]
+  given by comprehension of the predicate $t::A$ on $X$.
+
+  \item Each rewrite modality former $\angles{K_j}{\vec{x}::\vec{A}}{B}:Y_j$ as the comprehension subobject of $Y_j$ whose elements $t:Y_j$ satisfy the rely-possibly formula in Section~\ref{rely-possibly}.
+
+  \item The empty-context possibility $\Diamond B$ as the comprehension subobject of $\Pr$ defined (when the ambient logic supports $\exists$) by:
+  \[
+    p::\Diamond B \quad\equiv\quad \exists q:\Pr.\ (p\rsq q)\wedge(q::B).
+  \]
+\end{itemize}
+
+Under this interpretation, the formation, introduction, and elimination rules for modal types and $\Diamond$ are validated by the usual introduction and elimination principles for comprehension subobjects in the internal logic of $M$.  Every rule instance of the modal fragment is valid in every such model; the modal layer is sound.
+
+\subsection{Dependent Product and Barendregt's Lambda Cube}
+
+The raw modal hypercube construction is already visible in the familiar case of dependent products: the equation modality induced by evaluation yields $\Pi$ and the allowed sort pairs recover Barendregt's organization.
+
+In contrast, if one presents $\beta$ as a rewrite (rather than definitional equality), then the corresponding rewrite-generated modality yields a lax application principle via $\Diamond$. This highlights the role of $\Diamond$ as a rewrite-stable weakening of conversion.
+
+\subsection{Modal Cut Elimination and One-Step Rewrites}
+\label{subsec:modal-CH}
+
+In the standard Curry--Howard correspondence, cut elimination for implications and dependent products matches $\beta$-reduction of $\lambda$-terms: a derivation that first introduces a function type and then immediately eliminates it contains a \emph{detour}, and normalizing that detour is exactly the underlying computational step.
+
+In the present setting, the same pattern appears at the modal layer.  Each rewrite modality
+\[
+  \angles{K_j}{\vec{x}::\vec{A}}{B} : Y_j
+\]
+is generated from a base rewrite and a choice of subterm position on its left-hand side.  Its introduction and elimination rules are designed so that:
+\begin{itemize}
+  \item introduction packages typing of the specified one-step reduct $R(\vec x)::B$ under relies and preconditions;
+  \item elimination unpacks this into (i) a concrete step to $R(\vec u)$ and (ii) typing of $R(\vec u)$; and via $\Diamond$, (iii) a weakened typing of the redex-in-context.
+\end{itemize}
+Normalizing an introduction-followed-by-elimination detour corresponds precisely to firing the underlying rewrite at the chosen redex position.
+
+We use $\mathcal{D}$ and $\mathcal{E}$ as metavariables for \emph{derivation trees}.  A \emph{modal cut redex} is a composite derivation in which a modality is introduced and then immediately used to derive a $\Diamond$-fact about a redex-in-context, which is then eliminated:
+\[
+\inferrule*[right={$\Diamond$-elim}]
+  {
+    \inferrule*[right={M-elim$_{\rsq,\Diamond}$}]
+      {
+        \inferrule*[right={M-intro}]
+          { \mathcal{D} }
+          { \judg{\Gamma}{\Delta}{t :: \angles{K_j}{\vec{x}::\vec{A}}{B}} }
+        \\
+        \text{(rely inhabitants and preconditions)}
+      }
+      { \judg{\Gamma}{\Delta}{K_j[t] :: \Diamond B} }
+    \quad
+    \mathcal{E}
+  }
+  { \judg{\Gamma}{\Delta}{\psi} }.
+\]
+A single \emph{modal} cut-elimination step inlines the concrete reduct forced by the underlying rewrite into the open derivation $\mathcal{E}$.
+Operationally, this corresponds to firing the one-step rewrite at the chosen redex position.
+
+Unlike $\lambda$-calculus $\beta$-reduction, $\rho$-calculus reduction is inherently nondeterministic:
+a process may have several distinct one-step reducts, and parallel composition introduces genuine
+races.  Proof-theoretically, this means that modal cut elimination need not be confluent.
+
+For example, consider a single output racing between two matching inputs:
+\[
+  P \;:=\;
+  \mathsf{out}_1(n,p)\mid \mathsf{in}_1(n,\lambda x.\,q)\mid \mathsf{in}_1(n,\lambda y.\,r).
+\]
+There are two distinct one-step reductions, depending on which input synchronizes:
+\[
+  P \rsq P_1 := q[@p/x]\mid \mathsf{in}_1(n,\lambda y.\,r),
+  \qquad
+  P \rsq P_2 := r[@p/y]\mid \mathsf{in}_1(n,\lambda x.\,q).
+\]
+In the modal system, judgments about $\Diamond$ can be proved by exhibiting a concrete one-step reduct in $\Diamond$-Intro.
+Thus the operational nondeterminism is reflected as the existence of multiple distinct introduction
+derivations of the same $\Diamond$-conclusion. Composing either with a fixed $\Diamond$-elimination derivation yields different normal forms, mirroring the operational race.
+
+\subsection{Action on Morphisms of Theories}
+
+For a morphism $F:\T\to \T'$,
+\[
+  *^X\mapsto *^{F(X)},\quad
+  \Box^X\mapsto \Box^{F(X)},\quad
+  (::)\mapsto (::^{F(X)}),
+\]
+and
+\[
+  \angles{K_j}{\vec{x}::\vec{A}}{B}\mapsto
+  \angles{F(K_j)}{\vec{x}::F(\vec{A})}{F\!\cdot\!B},
+  \qquad
+  \Diamond B \mapsto \Diamond(F\!\cdot\!B).
+\]
+Thus the modal layer defines, on objects, an endofunctor on the category of lambda theories, and the assignment is natural in morphisms.
+
+Let $\mathbf{L}$ denote the category of lambda theories (with morphisms preserving
+$\Pr$, $(\rsq)$, and the internal-language structure), and let $\mathbf{L}_\Sigma$ denote the
+category of lambda theories equipped with the additional $\Sigma$-structure provided by the
+modal/structural/propositional layer (modalities $\angles{K_j}{\vec{x}::\vec{A}}{B}$, $\Diamond$, structural
+formers $f^\sharp$, and the chosen propositional operations on type formers).
+
+There is a forgetful functor
+\[
+  U : \mathbf{L}_\Sigma \longrightarrow \mathbf{L}
+\]
+that sends a $\Sigma$-structured lambda theory to its underlying lambda theory, and a left adjoint
+\[
+  F : \mathbf{L} \longrightarrow \mathbf{L}_\Sigma
+\]
+that freely adjoins the $\Sigma$-structure to a given lambda theory.  Under standard smallness and
+algebraicity assumptions on presentations, $F$ is left adjoint to $U$, and the endofunctor
+\[
+  \mathcal{H}_\Sigma \;=\; U \circ F : \mathbf{L} \longrightarrow \mathbf{L}
+\]
+is the induced monad on $\mathbf{L}$: for each lambda theory $\T$, $\mathcal{H}_\Sigma(\T)$ is the
+underlying lambda theory of its free $\Sigma$-extension.
+
+\subsection{Modal types may not type all terms}
+The modal fragment is intentionally \emph{behavioral}: a judgment
+$ \judg{\Gamma}{\Delta}{t :: \angles{K}{\vec{x}::\vec{A}}{B}} $
+is proved by establishing the typing of the specified reduct for a chosen operational rule and redex position.  Consequently, terms with no available one-step behavior
+in any of the generating redex positions need not have \emph{any} modal type in the purely modal fragment.
+
+For this reason we add \emph{structural} type formers in
+Section~\ref{sec:spatial}.  These classify terms by their syntactic formers (AST roots),
+providing a baseline typing for programs,
+which can then be combined with the modal layer to express both \emph{shape} and \emph{one-step
+behavior} in the same internal language.
+
+\subsection{Example: a $\rho-$calculus modality}
+\label{subsec:rho-comm-seven-axes}
+
+\paragraph{The base rewrite and the chosen splitting.}
+Fix arity \(k=1\). The communication rewrite is
+\[
+  n:\Nm,\ p:\Pr,\ \lambda x.\,q : [\Nm \to \Pr]
+  \;\ctx\; \emptyset
+  \;\vdash\;
+  \mathsf{out}_1(n,p) \mid \mathsf{in}_1(n,\lambda x.\,q)
+  \;\rsq\;
+  q[@p/x].
+\]
+We choose the continuation redex position
+\[
+  t_j \;:=\; \lambda x.\,q,
+  \qquad
+  K_j([-]) \;:=\; \mathsf{out}_1(n,p) \mid \mathsf{in}_1(n,[-]),
+\]
+so that \(K_j[t_j]\) is equal to the left-hand side.
+The free variables of \(K_j\) are \(V_j=\{n,p\}\), hence the induced modality is
+\[
+  \angles{K_j}{n::A_n,\ p::A_p}{B}
+\]
+at carrier \([\Nm\to\Pr]\).
+
+\paragraph{The three local sort slots.}
+This modality contributes three local sort slots
+\[
+  \Slots(K_j,B) \;=\; \{\,s_n^{\Nm},\ s_p^{\Pr},\ s_{\rm out}\,\},
+\]
+where \(s_n^{\Nm}\) sorts the rely former \(A_n\) at \(\Nm\), \(s_p^{\Pr}\) sorts the rely former
+\(A_p\) at \(\Pr\), and \(s_{\rm out}\) is shared between the postcondition \(B::s_{\rm out}^{\Pr}\) and the
+modality itself \(\angles{K_j}{n::A_n,\ p::A_p}{B}::s_{\rm out}^{[\Nm\to\Pr]}\).
+Relative to the origin assignment \((\astsort,\astsort,\astsort)\), every nonempty subset of these three
+slots can be lifted to \(\Boxsort\), yielding \(2^3-1=7\) local axes.
+
+\medskip
+
+\noindent\textbf{The lambda-cube-like part \((s_p,s_{\rm out})\).}
+For this particular redex position, there is no essential interaction between the
+communicating \((\text{message},\text{continuation})\) pair and the specific channel \(n\): operationally,
+\(n\) serves only to ensure that the input and output are co-addressed, while the reduct \(q[@p/x]\) is
+determined by substituting the payload \(p\) into the continuation \(q\) and does not otherwise depend on
+\(n\).  This makes it natural to first treat the two-slot subgeometry governed by \((s_p,s_{\rm out})\),
+keeping \(s_n=\astsort\) fixed.
+
+With \(s_n=\astsort\), the local choices for \((s_p,s_{\rm out})\) form the familiar ``square'' whose three
+nontrivial directions correspond exactly to the three extra edges of Barendregt's Cube beyond
+\((\astsort,\astsort)\):
+\[
+\begin{array}{c|cc}
+\text{Cube-like vertex (at }s_n=\astsort\text{)} & s_p^{\Pr} & s_{\rm out} \\
+\hline
+\text{simply-typed corner} & \astsort & \astsort \\
+\text{polymorphism direction} & \Boxsort & \astsort \\
+\text{dependent-types direction} & \astsort & \Boxsort \\
+\text{type-constructors direction} & \Boxsort & \Boxsort
+\end{array}
+\]
+
+Equivalently, the three \emph{Cube-like axes} inside the face \(s_n=\astsort\) are:
+
+\begin{description}[leftmargin=2.7em,style=nextline]
+\item[Axis \(p\): polymorphism \((\Boxsort,\astsort)\) on \((s_p,s_{\rm out})\).]
+Here
+\[
+  A_n :: *^{\Nm},\qquad A_p :: \Box^{\Pr},\qquad B :: *^{\Pr}.
+\]
+This is the local analogue of the Cube's polymorphism edge: the \(\astsort\)-level behavioral
+postcondition is allowed to be indexed by a \(\Boxsort\)-level payload classifier.
+
+\item[Axis \(B\): dependent types \((\astsort,\Boxsort)\) on \((s_p,s_{\rm out})\).]
+Here
+\[
+  A_n :: *^{\Nm},\qquad A_p :: *^{\Pr},\qquad B :: \Box^{\Pr},
+\]
+and therefore the modality itself is \(\Boxsort\)-sorted at \([\Nm\to\Pr]\).
+This matches the Cube's dependent-types edge: a term-level (i.e.\ \(\astsort\)-level) input classifier
+supports a kind-level (\(\Boxsort\)-level) postcondition/specification.
+
+\item[Axis \(pB\): type constructors \((\Boxsort,\Boxsort)\) on \((s_p,s_{\rm out})\).]
+Here
+\[
+  A_n :: *^{\Nm},\qquad A_p :: \Box^{\Pr},\qquad B :: \Box^{\Pr},
+\]
+and again the modality is \(\Boxsort\)-sorted.
+This is the local analogue of the Cube's type-constructor edge: both the payload classifier and the
+postcondition live at \(\Boxsort\).
+\end{description}
+
+These three axes account for \(3\) of the \(7\) total: they are exactly what you would see if the modality
+had only one rely parameter (the payload) and one output slot, i.e.\ the same two-sort shape as \(\Pi\) in
+the Lambda Cube.
+
+\medskip
+
+\noindent\textbf{The name sort \(s_n=\Boxsort\).}
+Turning on the third coordinate \(s_n\) adds a new set of orthogonal axes: it upgrades the \emph{channel-side}
+rely classifier \(A_n\) to be kind-level at carrier \(\Nm\).
+
+This matters because the carrier \(\Nm\) contains not only the original
+``runtime'' names (quotes \( @p \)) but also newly adjoined \(\Nm\)-elements such as \( *^{\Nm}\) and
+\(\Box^{\Nm}\) (and any further \(\Nm\)-formers generated by the additional layers).  Hence allowing
+\(A_n::\Box^{\Nm}\) permits channel terms \(n\) that are classified using this higher-order \(\Nm\)-structure.
+In particular, choosing \(A_n := *^{\Nm}\) makes the rely assumption \(n::*^{\Nm}\) assert that the channel
+term \(n\) is itself a \emph{name-type former}.
+
+From the origin \((s_n,s_p,s_{\rm out})=(\astsort,\astsort,\astsort)\), the four axes involving the new
+coordinate \(s_n\) are precisely:
+\[
+\begin{array}{c|ccc}
+\text{axis} & s_n^{\Nm} & s_p^{\Pr} & s_{\rm out} \\
+\hline
+n   & \Boxsort & \astsort & \astsort \\
+np  & \Boxsort & \Boxsort & \astsort \\
+nB  & \Boxsort & \astsort & \Boxsort \\
+npB & \Boxsort & \Boxsort & \Boxsort
+\end{array}
+\]
+and they can be read uniformly as ``the channel-kinding axis \(n\), optionally combined with one of the
+three Cube-like directions on \((s_p,s_{\rm out})\)'':
+
+\section{Structural Types from Term Formers}
+\label{sec:spatial}
+
+The modal layer classifies one-step behaviors in reduction contexts.  Orthogonally, we can add \emph{spatial} (or \emph{structural}) types that classify terms by the shape of their AST at the root.
+
+\subsection{Structural Type Formers}
+
+Let
+\[
+  x_1:X_1,\dots,x_n:X_n \;\vdash\; f(x_1,\dots,x_n) \of Y
+\]
+be an $n$-ary operation in $\T_{\mrm{oper}}$.  We introduce a new type former
+\[
+  f^{\sharp}(-_1,\dots,-_n)
+\]
+at carrier $Y$.  Intuitively, $f^{\sharp}(A_1,\dots,A_n)$ is the type of those $y:Y$ that are \emph{literally} built as $f(t_1,\dots,t_n)$ with $t_i::A_i$.
+
+Each instance $f^{\sharp}(A_1,\dots,A_n)$ carries a slot family
+\[
+  \Slots_f(A_1,\dots,A_n)
+  \;:=\;
+  \{\,s_i^{X_i}\,\}_{i=1}^n \cup \{s_{f,\mrm{out}}\},
+\]
+consisting of one sort slot for each argument carrier $X_i$ and a single output slot $s_{f,\mrm{out}}$ (used at carrier $Y$).
+
+\subsection{Typing Rules for Structural Types}
+
+We present the rules in the internal language using the compact judgment form $\judg{\Gamma}{\Delta}{-}$.
+
+\paragraph{Formation.}
+\[
+\inferrule*[right={S-Form}]
+  {
+    \bigl(\,\judg{\Gamma}{\Delta}{A_i :: s_i^{X_i}}\,\bigr)_{i=1}^n
+  }
+  {
+    \judg{\Gamma}{\Delta}{f^{\sharp}(A_1,\dots,A_n) :: s_{f,\mrm{out}}^{Y}}
+  }
+\]
+
+\paragraph{Introduction.}
+\[
+\inferrule*[right={S-Intro}]
+  {
+    \bigl(\,\judg{\Gamma}{\Delta}{A_i :: s_i^{X_i}}\,\bigr)_{i=1}^n
+    \\
+    \bigl(\,\judg{\Gamma}{\Delta}{t_i :: A_i}\,\bigr)_{i=1}^n
+  }
+  {
+    \judg{\Gamma}{\Delta}{f(t_1,\dots,t_n) :: f^{\sharp}(A_1,\dots,A_n)}
+  }
+\]
+
+\paragraph{Elimination.}
+\[
+\inferrule*[right={S-Elim}]
+  {
+    \judg{\Gamma,\ (x_i:X_i)_{i=1}^n}{\Delta,\ (x_i::A_i)_{i=1}^n}{\psi\bigl(f(x_1,\dots,x_n)\bigr)}
+  }
+  {
+    \judg{\Gamma,\ y:Y}{\Delta,\ y::f^{\sharp}(A_1,\dots,A_n)}{\psi(y)}
+  }
+\]
+
+\subsection{Slot Families and Equational Center for Structural Types}
+
+The general machinery of Subsection~\ref{subsec:modal-from-rewrites} applies equally to the structural type formers.
+
+\subsection{Semantics and Soundness for Structural Types}
+
+In a model $M$ of $\T$ as in Subsection~\ref{subsec:modal-soundness}, each operation symbol
+\[
+  f : X_1\times\cdots\times X_n \to Y
+\]
+is interpreted as an arrow $f_M : X_1\times\cdots\times X_n\to Y$, and each type former $A_i::s_i^{X_i}$ as a subobject $\sem{A_i}\hookrightarrow X_i$.
+
+We interpret the structural type
+\[
+  f^{\sharp}(A_1,\dots,A_n)
+\]
+as the image subobject of the composite
+\[
+  \sem{A_1}\times\cdots\times\sem{A_n}
+    \xrightarrow{\,m_1\times\cdots\times m_n\,}
+  X_1\times\cdots\times X_n
+    \xrightarrow{\,f_M\,}
+  Y.
+\]
+
+\section{Logical/Propositional Operators on Types}
+\label{sec:booltypes}
+
+The modal and structural layers generate type formers that classify operational behavior and AST shape.
+In this section we add propositional operations on type formers at each carrier $X$ and each sort symbol
+$s^{X}\in\{*^{X},\Box^{X}\}$, but we do so \emph{stratified by categorical strength}.
+The reason is semantic: for a general finite-limits theory, each fiber ${\rm Sub}(X)$ is always a
+\emph{meet-semilattice with top} (hence supports $\wedge$ and $\top$), but it need not have a
+bottom element, finite joins, distributivity, or Heyting implication. We therefore split the section
+into:
+\begin{itemize}[leftmargin=2em]
+  \item a core fragment valid in every finite-limits theory (top and meet), and
+  \item an extension fragment that adds further constants and connectives when the theory supports them.
+\end{itemize}
+
+\subsection{Finite-limits fragment: $\top$ and $\wedge$}
+\label{subsec:bool-finlim}
+
+Fix an object $X$ of $\T$ and a sort symbol $s^{X}\in\{*^{X},\Box^{X}\}$.
+For any type formers $A,B:X$ at carrier $X$ of sort $s^{X}$ (i.e.\ $A::s^{X}$ and $B::s^{X}$),
+we freely add in this fragment a meet former
+\[
+  A \wedge B : X,
+\]
+and a nullary top former
+\[
+  \vdash \top^{s^{X}} : X.
+\]
+
+\paragraph{Formation (sort preservation).}
+\[
+\inferrule*[right={$\wedge$\text{-form}}]
+  { \judg{\Gamma}{\Delta}{A:: s^{X}} \quad \judg{\Gamma}{\Delta}{B:: s^{X}} }
+  { \judg{\Gamma}{\Delta}{A\wedge B :: s^{X}} }
+\qquad
+\inferrule*[right={$\top$\text{-form}}]
+  { }
+  { \judg{\Gamma}{\Delta}{\top^{s^{X}}::s^{X}} }.
+\]
+
+\paragraph{Membership rules.}
+\[
+\inferrule*[right={$\wedge$\text{-I}}]
+  { \judg{\Gamma}{\Delta}{t::A} \quad \judg{\Gamma}{\Delta}{t::B} }
+  { \judg{\Gamma}{\Delta}{t::A\wedge B} }.
+\]
+\[
+\inferrule*[right={$\,\wedge$-E$_1$}]
+  { \judg{\Gamma}{\Delta}{t::A\wedge B} }
+  { \judg{\Gamma}{\Delta}{t::A} }
+\qquad
+\inferrule*[right={$\,\wedge$-E$_2$}]
+  { \judg{\Gamma}{\Delta}{t::A\wedge B} }
+  { \judg{\Gamma}{\Delta}{t::B} }.
+\]
+Top classifies all terms of the fixed sort $s^{X}$; since we do not carry a separate judgment
+$t\in U_{s^{X}}$, we introduce $t::\top^{s^{X}}$ from the fact that $t$ has \emph{some}
+type former of that sort:
+\[
+\inferrule*[right={$\top$\text{-I}}]
+  { \judg{\Gamma}{\Delta}{A::s^{X}} \quad \judg{\Gamma}{\Delta}{t::A} }
+  { \judg{\Gamma}{\Delta}{t::\top^{s^{X}}} }.
+\]
+
+\subsubsection*{Soundness (finite limits)}
+\label{subsec:bool-soundness-finlim}
+
+Continue with the semantic setup of Subsection~\ref{subsec:modal-soundness}. Fix a carrier $X$ and sort
+$s^{X}\in\{*^{X},\Box^{X}\}$.
+In any finite-limits model, each fiber ${\rm Sub}(X)$ has:
+\begin{itemize}[leftmargin=2em]
+  \item a top element $X\hookrightarrow X$, and
+  \item binary meets given by pullback (intersection of subobjects).
+\end{itemize}
+We interpret
+\[
+  \sem{\top^{s^{X}}}=X,\qquad
+  \sem{A\wedge B}=\sem{A}\wedge \sem{B}.
+\]
+With these interpretations, the rules above are sound.
+
+\begin{lemma}[Meet-semilattice laws]
+For each carrier $X$ of $\T$ and sort symbol $s^{X}\in\{*^{X},\Box^{X}\}$,
+the collection of type formers $A::s^{X}$, modulo mutual entailment
+\[
+  A \simeq B \quad\text{iff}\quad
+  \vdash \forall t:X.\, (t::A \Leftrightarrow t::B),
+\]
+is a meet-semilattice with top under $\wedge$ and $\top^{s^{X}}$. In particular, up to $\simeq$,
+$\wedge$ is associative, commutative, and idempotent, and $A\wedge \top^{s^{X}}\simeq A$.
+\end{lemma}
+
+\begin{proof}[Sketch]
+In any finite-limits model, subobjects of $X$ form a meet-semilattice with top; the
+claims are the standard lattice laws for pullback-intersection and the identity mono.
+\end{proof}
+
+\subsection{Additional structure: $\bot$, $\vee$, and $\Rightarrow$}
+\label{subsec:bool-extra}
+
+We now describe additional constants and connectives that can be added on type formers when the underlying
+theory has enough structure to interpret the corresponding operations on subobjects.
+
+\subsubsection{Adding $\bot$: empty types and modal negation}
+\label{subsec:bool-bottom}
+
+\paragraph{Extra structure needed.}
+To interpret a bottom element in each fiber ${\rm Sub}(X)$, it suffices (and is common) to assume
+that $\T$ has a \emph{strict} initial object $0$ and that pullback preserves the initial object. Then the unique arrow $0\to X$ is monic and gives
+the least subobject of $X$.
+
+\paragraph{Syntax and rules.}
+When this structure is available, for each $X$ and $s^{X}$ we freely add a nullary type former
+\[
+  \vdash \bot^{s^{X}} : X
+  \qquad\text{with}\qquad
+  \vdash \bot^{s^{X}} :: s^{X}.
+\]
+There is no introduction rule. Bottom eliminates into any proposition $\psi$ of the ambient internal logic:
+\[
+\inferrule*[right={$\bot$\text{-E}}]
+  { \judg{\Gamma}{\Delta}{t::\bot^{s^{X}}} }
+  { \judg{\Gamma}{\Delta}{\psi} }.
+\]
+
+\paragraph{Modal negation (rely-inconsistency).}
+Once $\bot^{s^{\Pr}}$ exists at carrier $\Pr$, we can form the modality
+\[
+  \angles{K_j}{\vec{x}::\vec{A}}{\bot^{s^{\Pr}}}.
+\]
+Unfolding the rely-possibly reading in Section~\ref{rely-possibly}, membership $t::\angles{K_j}{\vec{x}::\vec{A}}{\bot^{s^{\Pr}}}$
+means that under any parameter assignment satisfying the rely assumptions (and preconditions), the specified right-hand side inhabits $\bot^{s^{\Pr}}$, which forces inconsistency. This is a modal way to express ``no successful behavior under the relies''.
+
+\subsubsection{Adding $\vee$: finite joins and distributivity}
+\label{subsec:bool-joins}
+
+\paragraph{Extra structure needed.}
+To interpret disjunction/union, one needs that each ${\rm Sub}(X)$ has finite joins and that these joins
+are stable under pullback (so substitution respects disjunction). A standard categorical package ensuring this is
+\emph{coherence} (finite limits plus pullback-stable finite unions/images), but for our purposes it is enough to
+assume pullback-stable finite joins in the relevant fibers.
+
+\paragraph{Syntax and rules.}
+Under this additional hypothesis, for $A,B::s^{X}$ we add
+\[
+  A\vee B : X,
+\]
+with sort preservation:
+\[
+\inferrule*[right={$\vee$\text{-form}}]
+  { \judg{\Gamma}{\Delta}{A:: s^{X}} \quad \judg{\Gamma}{\Delta}{B:: s^{X}} }
+  { \judg{\Gamma}{\Delta}{A\vee B :: s^{X}} }.
+\]
+Membership rules are the usual natural-deduction rules:
+\[
+\inferrule*[right={$\,\vee$-I$_1$}]
+  { \judg{\Gamma}{\Delta}{t::A} }
+  { \judg{\Gamma}{\Delta}{t::(A \vee  B)} }
+\qquad
+\inferrule*[right={$\,\vee$-I$_2$}]
+  { \judg{\Gamma}{\Delta}{t::B} }
+  { \judg{\Gamma}{\Delta}{t::(A \vee  B)} }.
+\]
+For any proposition $\psi(x)$ which may depend on $x:X$,
+\[
+\inferrule*[right={$\vee$\text{-E}}]
+  {
+    \judg{\Gamma}{\Delta}{t::A\vee B}
+    \\
+    \judg{\Gamma,x:X}{\Delta,\,x::A}{\psi(x)}
+    \\
+    \judg{\Gamma,x:X}{\Delta,\,x::B}{\psi(x)}
+  }
+  { \judg{\Gamma}{\Delta}{\psi(t)} }.
+\]
+
+\paragraph{Soundness (joins and distributivity).}
+We interpret $\sem{A\vee B}=\sem{A}\vee\sem{B}$ as the join in ${\rm Sub}(X)$.
+When the fiber is a distributive lattice (as it is in coherent/Heyting settings), distributivity holds propositionally (up to $\simeq$).
+
+\subsubsection{Adding $\Rightarrow$: Heyting and Boolean negation}
+\label{subsec:bool-imp}
+
+\paragraph{Extra structure needed.}
+To interpret implication, each fiber ${\rm Sub}(X)$ must be a Heyting algebra; equivalently,
+for each subobject $A\hookrightarrow X$, the meet-with-$A$ operation has a right adjoint.
+Categorically, this is the usual ``Heyting'' strengthening of the subobject fibration (e.g.\ satisfied in a topos)\cite{Johnstone2002,Jacobs1999}.
+
+\paragraph{Syntax and rules.}
+Under this hypothesis, for $A,B::s^{X}$ we add
+\[
+  A \Rightarrow B : X
+\]
+with sort preservation:
+\[
+\inferrule*[right={$\Rightarrow$\text{-form}}]
+  { \judg{\Gamma}{\Delta}{A:: s^{X}} \quad \judg{\Gamma}{\Delta}{B:: s^{X}} }
+  { \judg{\Gamma}{\Delta}{A\Rightarrow B :: s^{X}} }.
+\]
+Crucially, this $\Rightarrow$ is \emph{not} a function type: it is Heyting implication on predicates at carrier $X$.
+Its intended reading is pointwise:
+\[
+  t::(A\Rightarrow B)\quad\text{means}\quad (t::A)\Rightarrow(t::B)
+\]
+in the ambient internal logic.
+
+\[
+\inferrule*[right={$\Rightarrow$\text{-I}}]
+  { \judg{\Gamma}{\Delta,\,t::A}{t::B} }
+  { \judg{\Gamma}{\Delta}{t::A\Rightarrow B} }
+\qquad
+\inferrule*[right={$\Rightarrow$\text{-E}}]
+  { \judg{\Gamma}{\Delta}{t::A\Rightarrow B} \quad \judg{\Gamma}{\Delta}{t::A} }
+  { \judg{\Gamma}{\Delta}{t::B} }.
+\]
+
+\paragraph{Negation.}
+Once $\Rightarrow$ and $\bot$ exist, we define (Heyting) negation as an abbreviation:
+\[
+  \neg^{X}A \;:=\; A \Rightarrow  \bot^{s^{X}}.
+\]
+This is \emph{pseudocomplementation}. In general $\neg^{X}\neg^{X}A \simeq A$ need not hold: that law is
+characteristic of boolean (classical) subobject lattices.
+
+\paragraph{Boolean negation (optional).}
+If, furthermore, each ${\rm Sub}(X)$ is a \emph{Boolean} algebra (equivalently: every subobject has a complement),
+then $\neg^{X}$ is complement and we obtain excluded middle and double negation elimination up to $\simeq$.
+
+\subsubsection*{Soundness for the extra structure fragment}
+\label{subsec:bool-soundness}
+
+Continue with the semantic setup of Subsection~\ref{subsec:modal-soundness}. Fix $X$ and $s^{X}$.
+Under the additional hypotheses described above, the fiber ${\rm Sub}(X)$ supports the corresponding
+operations, and we interpret:
+\[
+  \sem{\bot^{s^{X}}}=0,\qquad
+  \sem{A\vee B}=\sem{A}\vee\sem{B},\qquad
+  \sem{A\Rightarrow B}=\sem{A}\Rightarrow\sem{B},\qquad
+  \sem{\neg^{X}A}=\sem{A}\Rightarrow 0.
+\]
+With these interpretations, the rules in Subsections~\ref{subsec:bool-bottom}--\ref{subsec:bool-imp} are sound.
+
+\begin{lemma}[Heyting laws for logical type formers (conditional)]
+Assume that for each carrier $X$ and sort $s^{X}$ the fiber ${\rm Sub}(X)$ is a Heyting algebra.
+Then the collection of type formers $A::s^{X}$ modulo $\simeq$ forms a Heyting algebra under
+\[
+  (\vee,\ \wedge,\ \Rightarrow,\ \top^{s^{X}},\ \bot^{s^{X}}),
+\]
+and for all $A,B,C::s^{X}$ the usual Heyting identities hold up to provable equivalence.
+\end{lemma}
+
+\begin{proof}[Sketch]
+These are exactly the laws of the Heyting algebra ${\rm Sub}(X)$ in the model; soundness
+follows from interpreting each former as the corresponding Heyting operation.
+\end{proof}
+
+\section{Conclusion}
+
+We have described an endofunctor $\mathcal{H}_\Sigma$ on lambda theories that, starting from purely operational data (base rewrites and their contextual closure), systematically generates a hypercube of typed calculi. The modal layer associates to each base rewrite and each redex position a primitive modality $\angles{K}{\vec x::\vec A}{B}$, with a rely-possibly reading that internalizes one-step behavior in a given context. Because rewrite steps do not support definitional conversion, we freely adjoin an empty-context possibility operator $\Diamond$ whose rules provide a weakened, rewrite-stable form of conversion: redex-in-context terms are typed at $\Diamond B$ when they can step to a term of type $B$. Equation-generated modalities, by contrast, admit full conversion, and in any cartesian closed setting the canonical evaluation equation yields a true dependent product $\Pi$.
+
+Beyond the modal core, we have shown how to enrich the construction with structural and propositional layers without disturbing the underlying slot-and-center geometry. Structural type formers $f^\sharp$ classify terms by AST root and are interpreted as image subobjects of the corresponding formers, making it possible to speak cleanly about the spatial shape of processes inside the same internal language that speaks about their behavior. The propositional layer is stratified by the categorical strength of the base theory: in any finite-limits setting we obtain meet and top on type formers; with additional structure we can add bottom and use modal negation to express rely-inconsistency; with finite joins we recover distributivity; and with Heyting implication (and, optionally, Boolean structure) we recover full fiberwise negation and the familiar wealth of logical laws. Together, these layers carve out a spectrum that ranges from a small, Cube-like modal hypercube with a simple normalization theory, through increasingly rich fragments that approximate the full internal logic of a lambda theory, to the fully fledged Heyting (or Boolean) semantics available in stronger categorical settings\cite{WilliamsStay2022}. This suggests a modular route to designing typed operational calculi: choose a lambda-theoretic presentation of the dynamics, choose how much propositional structure you are willing to support, and let $\mathcal{H}_\Sigma$ fill in the corresponding vertex of the hypercube.
+
+\begin{thebibliography}{99}
+
+\bibitem{AbelCoquand2005}
+A.~Abel and T.~Coquand.
+\newblock Untyped algorithmic equality for {M}artin--L\"of's logical framework with surjective pairs.
+\newblock In \emph{Typed Lambda Calculi and Applications}, 2005.
+\newblock \url{https://www2.tcs.ifi.lmu.de/~abel/lfsigma.pdf}.
+
+\bibitem{AdamekRosickyVitale}
+J.~Ad\'amek, J.~Ro\v{s}ick\'y, and E.~M.~Vitale.
+\newblock \emph{Algebraic Theories: A Categorical Introduction to General Algebra}.
+\newblock Cambridge Tracts in Mathematics. Cambridge University Press, 2010.
+\newblock \url{https://perso.uclouvain.be/enrico.vitale/gab_CUP2.pdf}.
+
+\bibitem{AltenkirchDanielssonLohOury2010}
+T.~Altenkirch, N.~A.~Danielsson, A.~L\"oh, and N.~Oury.
+\newblock $\Pi\Sigma$: Dependent types without the sugar.
+\newblock In \emph{Functional and Logic Programming (FLOPS 2010)}, 2010.
+\newblock \url{https://www.cse.chalmers.se/~nad/publications/altenkirch-et-al-flops2010.html}.
+
+\bibitem{Barendregt1991}
+H.~Barendregt.
+\newblock Introduction to generalized type systems.
+\newblock \emph{Journal of Functional Programming}, 1(2):125--154, 1991.
+
+\bibitem{BarrWells}
+M.~Barr and C.~Wells.
+\newblock \emph{Toposes, Triples and Theories}.
+\newblock Grundlehren der mathematischen Wissenschaften. Springer, 2013.
+\newblock \url{https://cjhb.site/Files.php/Books/%28Uncategorized%29/Before%202022/Toposes,%20Triples%20and%20Theories%20-%20M.%20Barr,%20W.%20Wells.pdf}.
+
+\bibitem{Boudol1997}
+G.~Boudol.
+\newblock The pi-calculus in direct style.
+\newblock In \emph{Proceedings of the 24th ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages (POPL '97)},
+pp.~228--242, 1997.
+\newblock \url{https://doi.org/10.1145/263699.263726}.
+
+\bibitem{DiGianantonioHonsellLenisa2009}
+P.~Di~Gianantonio, F.~Honsell, and M.~Lenisa.
+\newblock RPO, second-order contexts, and lambda-calculus.
+\newblock \emph{Logical Methods in Computer Science}, 5(3), 2009.
+\newblock \url{https://arxiv.org/abs/0906.2727}.
+
+\bibitem{Jacobs1999}
+B.~Jacobs.
+\newblock \emph{Categorical Logic and Type Theory}.
+\newblock Studies in Logic and the Foundations of Mathematics 141. North Holland, 1999.
+\newblock \url{https://annas-archive.org/search?q=jacobs+categorical+logic}.
+
+\bibitem{Johnstone2002}
+P.~T.~Johnstone.
+\newblock \emph{Sketches of an Elephant: A Topos Theory Compendium}.
+\newblock Oxford Logic Guides. Oxford University Press, 2002.
+\newblock \url{https://cds.cern.ch/record/592033}.
+
+\bibitem{LambekScott1988}
+J.~Lambek and P.~J.~Scott.
+\newblock \emph{Introduction to Higher-Order Categorical Logic}.
+\newblock Cambridge Studies in Advanced Mathematics. Cambridge University Press, 1988.
+\newblock \url{https://books.google.com/books?id=6PY_emBeGjUC}.
+
+\bibitem{LeiferMilner2000}
+J.~J.~Leifer and R.~Milner.
+\newblock Deriving bisimulation congruences for reactive systems.
+\newblock In C.~Palamidessi (ed.), \emph{CONCUR 2000 --- Concurrency Theory},
+Lecture Notes in Computer Science, pp.~243--258. Springer, 2000.
+\newblock \url{https://www.pure.ed.ac.uk/ws/portalfiles/portal/17894421/Leifer_and_Milner_2000_Deriving_Bisimulation_Congruences.pdf}.
+
+\bibitem{Lybech2022}
+S.~Lybech.
+\newblock Encodability and separation for a reflective higher-order calculus.
+\newblock \emph{Electronic Proceedings in Theoretical Computer Science}, 368:95--112, 2022.
+\newblock \url{http://dx.doi.org/10.4204/EPTCS.368.6}.
+
+\bibitem{MeredithRadestock}
+L.~G.~Meredith and M.~Radestock.
+\newblock A reflective higher-order calculus.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}, 141(5):49--67, 2005.
+\newblock \url{https://www.sciencedirect.com/science/article/pii/S1571066105051893}.
+
+\bibitem{Milner1993}
+R.~Milner.
+\newblock The polyadic pi-calculus: a tutorial.
+\newblock 1993.
+\newblock \url{https://api.semanticscholar.org/CorpusID:11201988}.
+
+\bibitem{WilliamsStay2022}
+C.~Williams and M.~Stay.
+\newblock Native type theory.
+\newblock \emph{Electronic Proceedings in Theoretical Computer Science}, 372:116--132, 2022.
+\newblock \url{http://dx.doi.org/10.4204/EPTCS.372.9}.
+
+\end{thebibliography}
+\end{document}
