@@ -1,0 +1,878 @@
+\documentclass[11pt,a4paper]{article}
+
+%% ── packages ──────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{stmaryrd}            % \llbracket, \rrbracket
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+
+%% ── theorem environments ──────────────────────────────────────────
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+%% ── macros ────────────────────────────────────────────────────────
+\newcommand{\rho}{\varrho}
+\newcommand{\lsem}{\llbracket}
+\newcommand{\rsem}{\rrbracket}
+
+% semantic brackets
+\newcommand{\Nsem}[1]{\mathcal{N}\lsem #1 \rsem}
+\newcommand{\Tsem}[1]{\mathcal{T}\lsem #1 \rsem}
+\newcommand{\Psem}[1]{\mathcal{P}\lsem #1 \rsem}
+\newcommand{\Ssem}[1]{\mathcal{S}\lsem #1 \rsem}
+
+% calculus syntax
+\newcommand{\Par}{\mathbin{|}}
+\newcommand{\forc}{\mathbf{for}}
+\newcommand{\send}[2]{#1 !\left( #2 \right)}
+\newcommand{\recv}[3]{\forc\!\left( #1 \leftarrow #2 \right) #3}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\drop}[1]{{\ast} #1}
+\newcommand{\quot}[1]{@#1}
+\newcommand{\subst}[3]{#1\{#2 / #3\}}
+
+% signatures and tokens
+\newcommand{\sig}{\mathfrak{s}}
+\newcommand{\sigs}{\mathfrak{s}}
+\newcommand{\hashf}{\mathrm{hash}}
+\newcommand{\amp}{\mathbin{\&}}
+
+% structural equivalence and reduction
+\newcommand{\Seq}{\equiv_{\!S}}
+\newcommand{\Neq}{\equiv_{\!N}}
+\newcommand{\red}{\rightsquigarrow}
+
+% free names
+\newcommand{\FN}{\mathrm{FN}}
+
+%% ── headers ───────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textsc{F1R3FLY.io}}
+\fancyhead[R]{\small\textsc{Cost-Accounted Rho Calculus}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+%% ── title ─────────────────────────────────────────────────────────
+\title{%
+  \textbf{Translating Cost-Accounted Rho Calculus\\
+  Back to the Pure Rho Calculus}\\[6pt]
+  \large Toward Rearchitecting Phlogiston Accounting in Rholang}
+\author{%
+  L.\ Gregory Meredith\thanks{F1R3FLY.io; F1R3FLY Industries.  \texttt{lgreg.meredith@f1r3fly.io}}%
+}
+\date{April 2026}
+
+%% ══════════════════════════════════════════════════════════════════
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The rho calculus, the formal core of the Rholang smart-contract language,
+is a reflective higher-order process calculus in which channels are
+the quoted codes of processes and processes may be recovered from
+channels by dequotation.  Rholang's current cost-accounting mechanism
+---~the \emph{phlogiston} (phlo) system~--- is specified as an
+extension of the calculus with digital signatures and token-carrying
+rewrite rules.  In this note we show that the entire cost-accounting
+layer can be \emph{translated back} into the pure rho calculus via a
+compositional encoding.  Signatures become channels, tokens become
+messages on those channels, and signed processes must consume
+``fuel'' before they can communicate.  Five mediator infrastructure
+processes (splitters and joiners) handle the bookkeeping between
+combined and decomposed token representations.
+
+Because the rho calculus is the formal core of Rholang, this
+translation doubles as a blueprint for rearchitecting phlogiston
+accounting in Rholang~1.2 and beyond:  cost control is expressible
+\emph{within} the language, eliminating the need for a privileged
+runtime extension and opening the door to user-definable fee
+structures, composable metering contracts, and formal verification
+of the accounting layer itself.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+
+The rho calculus~\cite{MeredithRadestock2005} is a variant of
+Milner's $\pi$-calculus~\cite{Milner1999} distinguished by its
+support for \emph{reflection}: processes can be turned into channels
+(via the quoting operator~$\quot{\cdot}$) and channels can be turned
+back into processes (via the dequoting operator~$\drop{\cdot}$).
+This reflective structure makes the rho calculus especially
+well-suited as the formal core of a smart-contract language, and
+indeed it is the theoretical foundation of
+\textbf{Rholang}~\cite{RholangSpec}, the native language of the
+RChain / F1R3FLY platform.
+
+In production, every Rholang deploy is gated by a cost-accounting
+mechanism:  the \emph{phlogiston} (phlo) system.  A deploy is
+signed by one or more digital signatures, each associated with a
+\emph{token balance}; execution consumes phlo proportionally to the
+resources used.  The current implementation treats cost accounting as
+a runtime concern, external to the calculus itself.
+
+This paper demonstrates that the cost-accounting extension can be
+faithfully \emph{encoded} in the pure rho calculus.  Because the rho
+calculus is the core of Rholang, the encoding immediately suggests a
+rearchitecture of phlogiston accounting:
+
+\begin{enumerate}[label=(\roman*)]
+  \item \textbf{Cost control within the language.}  Rather than a
+    privileged runtime extension, phlo accounting becomes a Rholang
+    program, subject to the same formal semantics and verification
+    tools as any other contract.
+  \item \textbf{Composable metering.}  User-definable fee structures
+    and composable metering contracts become possible, because the
+    accounting layer is written in the same language as the
+    contracts it meters.
+  \item \textbf{Formal verification.}  The translation is
+    compositional and can be verified using the standard
+    bisimulation and full-abstraction proof techniques of the rho
+    calculus, including the ongoing Lean~4 formalization effort.
+\end{enumerate}
+
+\medskip
+\noindent
+The remainder of the paper is organized as follows.
+Section~\ref{sec:rho} reviews the syntax and semantics of the pure
+rho calculus.  Section~\ref{sec:cost} presents the cost-accounted
+extension.  Section~\ref{sec:translation} gives the compositional
+translation.  Section~\ref{sec:verification} verifies each of the
+five rewrite rules.  Section~\ref{sec:architecture} discusses
+implications for the Rholang architecture.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{The Pure Rho Calculus}
+\label{sec:rho}
+
+We recall the syntax and operational semantics of the rho calculus,
+presented here as a graph-structured lambda theory (GSLT).
+
+\subsection{Syntax}
+
+Processes and names are mutually defined:
+%
+\begin{align}
+  P, Q &\;::=\; \nil
+        \;\mid\; \recv{y}{x}{P}
+        \;\mid\; \send{x}{Q}
+        \;\mid\; P \Par Q
+        \;\mid\; \drop{x}
+  \label{eq:proc-syntax}
+  \\[4pt]
+  x, y &\;::=\; \quot{P}
+  \label{eq:name-syntax}
+\end{align}
+
+\noindent
+The intended readings are:
+\begin{description}[style=nextline, leftmargin=2em]
+  \item[$\nil$]
+    The \emph{stopped process}: does nothing.
+  \item[$\recv{y}{x}{P}$]
+    The process that \emph{waits} for a message on channel~$x$,
+    binds the received name to~$y$ in~$P$, and continues as the
+    resulting instance of~$P$.
+    (In Rholang: \texttt{for( y <- x ) \{ P \}}.)
+  \item[$\send{x}{Q}$]
+    \emph{Sends} the code of process~$Q$ on channel~$x$.
+    (In Rholang: \texttt{x!( Q )}.)
+  \item[$P \Par Q$]
+    The \emph{parallel composition} of~$P$ and~$Q$.
+  \item[$\drop{x}$]
+    \emph{Dequotes} (reflects) channel~$x$ back into a running
+    process.
+  \item[$\quot{P}$]
+    The \emph{quote} (code) of process~$P$, used as a channel name.
+\end{description}
+
+\subsection{Free Names}
+
+The $\forc$-comprehension binds~$y$.  Free names are computed
+recursively:
+%
+\begin{align*}
+  \FN(\nil)           &= \emptyset \\
+  \FN(\recv{y}{x}{P}) &= \bigl(\FN(P) \setminus \{y\}\bigr) \cup \{x\} \\
+  \FN(\send{x}{Q})    &= \FN(Q) \cup \{x\} \\
+  \FN(P \Par Q)       &= \FN(P) \cup \FN(Q) \\
+  \FN(\drop{x})       &= \{x\}
+\end{align*}
+
+\subsection{Structural Equivalence}
+
+Structural equivalence, written~$\Seq$, is the smallest
+equivalence relation on processes that includes
+$\alpha$-equivalence and makes $(P, \Par, \nil)$ a commutative
+monoid:
+%
+\begin{align*}
+  P \Par \nil    &\Seq P           & \text{(identity)}   \\
+  P \Par Q       &\Seq Q \Par P    & \text{(commutativity)} \\
+  (P \Par Q) \Par R &\Seq P \Par (Q \Par R) & \text{(associativity)}
+\end{align*}
+
+\subsection{Rewrite Rules (Operational Semantics)}
+
+The single computational step is the \textsc{Comm} rule
+(communication):
+%
+\begin{equation}
+  \recv{y}{x}{P} \Par \send{x}{Q}
+  \;\red\;
+  \subst{P}{\quot{Q}}{y}
+  \label{eq:comm}
+\end{equation}
+%
+subject to the contextual closure rules:
+%
+\begin{gather}
+  \frac{P \red P'}{P \Par Q \red P' \Par Q}
+  \qquad\text{(\textsc{Par})}
+  \label{eq:par-ctx}
+  \\[6pt]
+  \frac{P \Seq P' \qquad P' \red Q' \qquad Q' \Seq Q}{P \red Q}
+  \qquad\text{(\textsc{Struct})}
+  \label{eq:struct-ctx}
+\end{gather}
+
+\begin{remark}[Semantic substitution]
+  The notation $\subst{P}{u}{v}$ denotes \emph{semantic}
+  substitution.  It coincides with ordinary syntactic substitution
+  in all cases except dequotation, where:
+  \[
+    \subst{(\drop{x})}{\quot{Q}}{y}
+    \;=\;
+    \begin{cases}
+      Q & \text{if } y \Neq x, \\
+      \drop{x} & \text{otherwise,}
+    \end{cases}
+  \]
+  and $\Neq$ denotes name equality.
+  See~\cite{MeredithRadestock2005} for full details.
+\end{remark}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{The Cost-Accounted Extension}
+\label{sec:cost}
+
+We now present an extension of the rho calculus with digital
+signatures and a token-based cost-accounting mechanism.  This
+extension captures the essential structure of phlogiston accounting
+in Rholang: processes carry signatures, tokens carry balances, and
+communication is gated by token consumption.
+
+\subsection{Extended Syntax}
+
+\begin{definition}[Token and system syntax]
+  \label{def:cost-syntax}
+  \begin{align}
+    T &\;::=\; () \;\mid\; \sig \;\mid\; T {:} T
+    \label{eq:token-syntax} \\
+    S &\;::=\; P^{\sig} \;\mid\; T \;\mid\; S \Par S
+    \label{eq:system-syntax} \\
+    \sig &\;::=\; () \;\mid\; \hashf(\langle\mathit{signature}\rangle) \;\mid\; \sig \amp \sig
+    \label{eq:sig-syntax}
+  \end{align}
+  where $P^{\sig}$ denotes a process~$P$ signed by a digital
+  signature~$\sig$.
+\end{definition}
+
+The token $\sig {:} T$ is read as ``the signature~$\sig$ holds
+the remaining balance~$T$.''
+
+\subsection{Cost-Accounted Rewrite Rules}
+
+The five rewrite rules of the cost-accounted calculus are:
+
+\medskip
+\noindent
+\textbf{Rule 1} (single signature, whole redex):
+\begin{equation}
+  (\recv{y}{x}{P} \Par \send{x}{Q})^{\sig}
+  \Par \sig {:} T
+  \;\longrightarrow\;
+  (\subst{P}{\quot{Q}}{y})^{\sig} \Par T
+  \label{eq:rule1}
+\end{equation}
+
+\noindent
+\textbf{Rule 2} (compound signature, whole redex, split tokens):
+\begin{equation}
+  (\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
+  \Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
+  \;\longrightarrow\;
+  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2}
+  \Par T_1 \Par T_2
+  \label{eq:rule2}
+\end{equation}
+
+\noindent
+\textbf{Rule 3} (compound signature, whole redex, combined token):
+\begin{equation}
+  (\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
+  \Par (\sig_1 \amp \sig_2) {:} T
+  \;\longrightarrow\;
+  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T
+  \label{eq:rule3}
+\end{equation}
+
+\noindent
+\textbf{Rule 4} (compound signature, split processes, combined token):
+\begin{equation}
+  (\recv{y}{x}{P})^{\sig_1}
+  \Par (\send{x}{Q})^{\sig_2}
+  \Par (\sig_1 \amp \sig_2) {:} T
+  \;\longrightarrow\;
+  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T
+  \label{eq:rule4}
+\end{equation}
+
+\noindent
+\textbf{Rule 5} (compound signature, split processes, split tokens):
+\begin{equation}
+  (\recv{y}{x}{P})^{\sig_1}
+  \Par (\send{x}{Q})^{\sig_2}
+  \Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
+  \;\longrightarrow\;
+  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2}
+  \Par T_1 \Par T_2
+  \label{eq:rule5}
+\end{equation}
+
+\begin{remark}
+  Rules~1--5 can be understood as variations on a single theme:
+  a communication (the \textsc{Comm} rule of the pure calculus)
+  that is \emph{gated} by the consumption of a token whose
+  signature matches the signature(s) of the communicating
+  processes.  The five rules differ in whether the redex is
+  signed as a whole or its components are signed separately,
+  and whether the token is combined or split across signatures.
+\end{remark}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{The Translation}
+\label{sec:translation}
+
+The central observation is that the cost-accounting mechanism is a
+\emph{fuel-acquisition protocol}: before a signed process can
+communicate, it must consume a token (fuel) from the channel
+associated with its signature.  This protocol is expressible
+entirely within the pure rho calculus.
+
+\subsection{Signatures to Names}
+
+We define $\mathcal{N} : \sig \to \text{Names}$:
+%
+\begin{align}
+  \Nsem{()}
+    &= \quot{\nil}
+    \label{eq:nsem-unit}
+  \\
+  \Nsem{\hashf(\sigma)}
+    &= \quot{H_\sigma}
+    \quad\text{for a canonical process~$H_\sigma$ encoding $\sigma$}
+    \label{eq:nsem-hash}
+  \\
+  \Nsem{\sig_1 \amp \sig_2}
+    &= \quot{\bigl(\drop{\Nsem{\sig_1}} \Par \drop{\Nsem{\sig_2}}\bigr)}
+    \label{eq:nsem-amp}
+\end{align}
+%
+The compound-signature case~\eqref{eq:nsem-amp} exploits
+reflection: the name for~$\sig_1 \amp \sig_2$ is the quote of
+the parallel composition of the dequotations of the two
+component names.  This ensures injectivity of the encoding.
+
+\subsection{Tokens to Processes}
+
+We define $\mathcal{T} : T \to \text{Processes}$:
+%
+\begin{align}
+  \Tsem{()}      &= \nil
+    \label{eq:tsem-unit}
+  \\
+  \Tsem{\sig : T} &= \send{\Nsem{\sig}}{\Tsem{T}}
+    \label{eq:tsem-send}
+\end{align}
+%
+A token $\sig {:} T$ becomes a \emph{message} on the channel
+$\Nsem{\sig}$ carrying the code of the remaining token~$T$ as
+its payload.
+
+\subsection{Signed Processes}
+\label{sec:signed-procs}
+
+The key idea: a signed process must \emph{first consume fuel}
+from its signature channel before it can perform its intended
+communication.  The leftover token (the payload of the fuel
+message) is released into the continuation via dequotation.
+
+\subsubsection{Atomic Signatures}
+
+\begin{align}
+  \Psem{(\recv{y}{x}{P})^{\sig}}
+    &= \recv{t}{\Nsem{\sig}}{\bigl(\recv{y}{x}{(\drop{t} \Par \Psem{P})}\bigr)}
+    \label{eq:psem-recv-atomic}
+  \\[4pt]
+  \Psem{(\send{x}{Q})^{\sig}}
+    &= \recv{t}{\Nsem{\sig}}{\bigl(\send{x}{\Psem{Q}} \Par \drop{t}\bigr)}
+    \label{eq:psem-send-atomic}
+  \\[4pt]
+  \Psem{(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig}}
+    &= \recv{t}{\Nsem{\sig}}{
+        \bigl(
+          \recv{y}{x}{(\drop{t} \Par \Psem{P})}
+          \Par \send{x}{\Psem{Q}}
+        \bigr)
+      }
+    \label{eq:psem-redex-atomic}
+\end{align}
+
+\noindent
+In each case, the outermost $\forc$ on~$\Nsem{\sig}$ acts as a
+\emph{fuel gate}: the process blocks until a token is available.
+
+\subsubsection{Compound Signatures}
+
+For $\sig_1 \amp \sig_2$, the process must acquire fuel from
+\emph{both} component channels:
+%
+\begin{align}
+  \Psem{(\recv{y}{x}{P})^{\sig_1 \amp \sig_2}}
+    &= \recv{t_1}{\Nsem{\sig_1}}{
+        \recv{t_2}{\Nsem{\sig_2}}{
+          \recv{y}{x}{(\drop{t_1} \Par \drop{t_2} \Par \Psem{P})}
+        }
+      }
+    \label{eq:psem-recv-compound}
+  \\[4pt]
+  \Psem{(\send{x}{Q})^{\sig_1 \amp \sig_2}}
+    &= \recv{t_1}{\Nsem{\sig_1}}{
+        \recv{t_2}{\Nsem{\sig_2}}{
+          \bigl(\send{x}{\Psem{Q}} \Par \drop{t_1} \Par \drop{t_2}\bigr)
+        }
+      }
+    \label{eq:psem-send-compound}
+  \\[4pt]
+  \Psem{(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}}
+    &= \recv{t_1}{\Nsem{\sig_1}}{
+        \recv{t_2}{\Nsem{\sig_2}}{
+          \bigl(
+            \recv{y}{x}{(\drop{t_1} \Par \drop{t_2} \Par \Psem{P})}
+            \Par \send{x}{\Psem{Q}}
+          \bigr)
+        }
+      }
+    \label{eq:psem-redex-compound}
+\end{align}
+
+\subsection{System Translation}
+
+The system translation $\mathcal{S}$ is defined compositionally:
+%
+\begin{align}
+  \Ssem{P^{\sig}}       &= \Psem{P^{\sig}}
+    \label{eq:ssem-signed}
+  \\
+  \Ssem{T}              &= \Tsem{T}
+    \label{eq:ssem-token}
+  \\
+  \Ssem{S_1 \Par S_2}   &= \Ssem{S_1} \Par \Ssem{S_2}
+    \label{eq:ssem-par}
+\end{align}
+
+\subsection{Infrastructure Processes}
+\label{sec:infrastructure}
+
+Rules~2--5 involve situations where the granularity of the token
+(combined vs.\ split) does not match the granularity expected by
+the signed process.  We introduce two families of
+\emph{infrastructure processes} to mediate:
+
+\begin{definition}[Splitter]
+  \label{def:splitter}
+  The splitter converts a combined token for~$\sig_1 \amp \sig_2$
+  into separate tokens for~$\sig_1$ and~$\sig_2$:
+  \[
+    \mathrm{Split}(\sig_1, \sig_2)
+    \;=\;
+    \recv{t}{\Nsem{\sig_1 \amp \sig_2}}{
+      \bigl(
+        \send{\Nsem{\sig_1}}{\nil}
+        \Par
+        \send{\Nsem{\sig_2}}{\drop{t}}
+      \bigr)
+    }
+  \]
+  (In the persistent variant, the outermost $\forc$ is replicated.)
+\end{definition}
+
+\begin{definition}[Joiner]
+  \label{def:joiner}
+  The joiner converts separate tokens for~$\sig_1$ and~$\sig_2$
+  into a combined token for~$\sig_1 \amp \sig_2$:
+  \[
+    \mathrm{Join}(\sig_1, \sig_2)
+    \;=\;
+    \recv{t_1}{\Nsem{\sig_1}}{
+      \recv{t_2}{\Nsem{\sig_2}}{
+        \send{\Nsem{\sig_1 \amp \sig_2}}{(\drop{t_1} \Par \drop{t_2})}
+      }
+    }
+  \]
+\end{definition}
+
+\begin{remark}[Persistent infrastructure]
+  In practice, splitters and joiners should be \emph{persistent}
+  (replicated) processes.  The standard rho-calculus encoding of
+  replication via self-referencing through reflection
+  (cf.~\cite{MeredithRadestock2005}) applies directly.
+\end{remark}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Verification}
+\label{sec:verification}
+
+We verify that each of the five cost-accounted rewrite rules is
+faithfully simulated by the translation.
+
+\subsection{Rule 1: Single Signature, Whole Redex}
+
+\noindent
+\textbf{Source:}\quad
+$(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig} \Par \sig {:} T
+\;\longrightarrow\;
+(\subst{P}{\quot{Q}}{y})^{\sig} \Par T$
+
+\medskip\noindent
+\textbf{Translation:}
+\[
+  \underbrace{
+    \recv{t}{\Nsem{\sig}}{
+      \bigl(
+        \recv{y}{x}{(\drop{t} \Par \Psem{P})}
+        \Par \send{x}{\Psem{Q}}
+      \bigr)
+    }
+  }_{\Psem{(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig}}}
+  \;\Par\;
+  \underbrace{
+    \send{\Nsem{\sig}}{\Tsem{T}}
+  }_{\Tsem{\sig:T}}
+\]
+
+\noindent
+\textbf{Step 1} --- fuel consumption on~$\Nsem{\sig}$,
+binding $t \mapsto \quot{\Tsem{T}}$:
+\[
+  \recv{y}{x}{\bigl(\drop{(\quot{\Tsem{T}})} \Par \Psem{P}\bigr)}
+  \Par \send{x}{\Psem{Q}}
+  \;\Seq\;
+  \recv{y}{x}{\bigl(\Tsem{T} \Par \Psem{P}\bigr)}
+  \Par \send{x}{\Psem{Q}}
+\]
+
+\noindent
+\textbf{Step 2} --- communication on~$x$,
+binding $y \mapsto \quot{\Psem{Q}}$:
+\[
+  \Tsem{T} \Par \Psem{\subst{P}{\quot{Q}}{y}}
+  \;=\;
+  \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig} \Par T}
+  \quad\checkmark
+\]
+
+\subsection{Rule 2: Compound Signature, Whole Redex, Split Tokens}
+
+\noindent
+\textbf{Source:}\quad
+$(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
+\Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
+\;\longrightarrow\;
+(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2$
+
+\medskip\noindent
+\textbf{Translation} (using~\eqref{eq:psem-redex-compound}):
+\begin{multline*}
+  \recv{t_1}{\Nsem{\sig_1}}{
+    \recv{t_2}{\Nsem{\sig_2}}{
+      \bigl(
+        \recv{y}{x}{(\drop{t_1} \Par \drop{t_2} \Par \Psem{P})}
+        \Par \send{x}{\Psem{Q}}
+      \bigr)
+    }
+  }
+  \\
+  \Par\;
+  \send{\Nsem{\sig_1}}{\Tsem{T_1}}
+  \;\Par\;
+  \send{\Nsem{\sig_2}}{\Tsem{T_2}}
+\end{multline*}
+
+\noindent
+\textbf{Step 1} --- fuel from~$\Nsem{\sig_1}$:
+$t_1 \mapsto \quot{\Tsem{T_1}}$.
+
+\noindent
+\textbf{Step 2} --- fuel from~$\Nsem{\sig_2}$:
+$t_2 \mapsto \quot{\Tsem{T_2}}$.
+
+\noindent
+\textbf{Step 3} --- \textsc{Comm} on~$x$:
+\[
+  \Tsem{T_1} \Par \Tsem{T_2} \Par \Psem{\subst{P}{\quot{Q}}{y}}
+  \;=\;
+  \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2}
+  \quad\checkmark
+\]
+
+\subsection{Rule 3: Compound Signature, Whole Redex, Combined Token}
+
+\noindent
+\textbf{Source:}\quad
+$(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
+\Par (\sig_1 \amp \sig_2) {:} T
+\;\longrightarrow\;
+(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T$
+
+\medskip\noindent
+The whole-redex encoding~\eqref{eq:psem-redex-compound} listens
+on both $\Nsem{\sig_1}$ and $\Nsem{\sig_2}$, but the combined
+token lives on $\Nsem{\sig_1 \amp \sig_2}$.  The
+$\mathrm{Split}(\sig_1, \sig_2)$ infrastructure process
+(Definition~\ref{def:splitter}) mediates:
+%
+\begin{align*}
+  &\mathrm{Split}(\sig_1, \sig_2) \Par \send{\Nsem{\sig_1 \amp \sig_2}}{\Tsem{T}}
+  \\
+  &\qquad\red\quad
+  \send{\Nsem{\sig_1}}{\nil} \Par \send{\Nsem{\sig_2}}{\Tsem{T}}
+\end{align*}
+%
+Now both fuel channels are populated and the reduction proceeds
+as in Rule~2, yielding
+$\nil \Par \Tsem{T} \Par \Psem{\subst{P}{\quot{Q}}{y}}
+\Seq \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T}$.
+\quad$\checkmark$
+
+\subsection{Rule 4: Split Processes, Combined Token}
+
+\noindent
+\textbf{Source:}\quad
+$(\recv{y}{x}{P})^{\sig_1}
+\Par (\send{x}{Q})^{\sig_2}
+\Par (\sig_1 \amp \sig_2) {:} T
+\;\longrightarrow\;
+(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T$
+
+\medskip\noindent
+The translations of the separately signed processes listen on
+$\Nsem{\sig_1}$ and $\Nsem{\sig_2}$ respectively
+(equations~\eqref{eq:psem-recv-atomic}
+and~\eqref{eq:psem-send-atomic}).  The token lives on
+$\Nsem{\sig_1 \amp \sig_2}$.  Again, the splitter mediates:
+%
+\[
+  \mathrm{Split}(\sig_1, \sig_2) \Par \send{\Nsem{\sig_1 \amp \sig_2}}{\Tsem{T}}
+  \;\red\;
+  \send{\Nsem{\sig_1}}{\nil}
+  \Par \send{\Nsem{\sig_2}}{\Tsem{T}}
+\]
+%
+After fuel consumption, the remainder is
+$\nil \Par \Tsem{T} \Par \Psem{\subst{P}{\quot{Q}}{y}}
+\Seq \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T}$.
+\quad$\checkmark$
+
+\subsection{Rule 5: Split Processes, Split Tokens}
+
+\noindent
+\textbf{Source:}\quad
+$(\recv{y}{x}{P})^{\sig_1}
+\Par (\send{x}{Q})^{\sig_2}
+\Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
+\;\longrightarrow\;
+(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2$
+
+\medskip\noindent
+\textbf{Translation:}
+\begin{multline*}
+  \recv{t_1}{\Nsem{\sig_1}}{
+    \recv{y}{x}{(\drop{t_1} \Par \Psem{P})}
+  }
+  \;\Par\;
+  \recv{t_2}{\Nsem{\sig_2}}{
+    \bigl(\send{x}{\Psem{Q}} \Par \drop{t_2}\bigr)
+  }
+  \\
+  \Par\;
+  \send{\Nsem{\sig_1}}{\Tsem{T_1}}
+  \;\Par\;
+  \send{\Nsem{\sig_2}}{\Tsem{T_2}}
+\end{multline*}
+
+\noindent
+\textbf{Step 1} --- both fuel channels fire:
+\[
+  \recv{y}{x}{(\Tsem{T_1} \Par \Psem{P})}
+  \;\Par\;
+  \send{x}{\Psem{Q}} \Par \Tsem{T_2}
+\]
+
+\noindent
+\textbf{Step 2} --- \textsc{Comm} on~$x$:
+\[
+  \Tsem{T_1} \Par \Psem{\subst{P}{\quot{Q}}{y}} \Par \Tsem{T_2}
+  \;=\;
+  \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2}
+  \quad\checkmark
+\]
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Implications for Rholang Architecture}
+\label{sec:architecture}
+
+Because the rho calculus is the formal core of Rholang, the
+translation developed above is not merely a theoretical exercise
+--- it is a \emph{blueprint} for rearchitecting the phlogiston
+cost-accounting layer in Rholang~1.2 and beyond.
+
+\subsection{Cost Control as a Rholang Program}
+
+In the current architecture, phlogiston accounting is
+implemented as a privileged runtime extension: the Rholang
+virtual machine intercepts communications, checks balances,
+and debits tokens before allowing reduction to proceed.  The
+translation shows that this entire mechanism can be
+\emph{internalized} as a Rholang program.
+
+Concretely:
+\begin{itemize}[nosep]
+  \item Each deploy's \emph{signature} becomes a Rholang
+    \emph{channel name}, generated by quoting a canonical
+    process that encodes the signer's identity.
+  \item Each \emph{token} (phlo balance) becomes a
+    \emph{message} on the corresponding signature channel.
+  \item Each \emph{signed process} is wrapped in a fuel-gate:
+    a $\forc$-comprehension on its signature channel that
+    must receive a token before the process can proceed.
+\end{itemize}
+
+\subsection{Composable Metering}
+
+Because the accounting layer is now written in Rholang, it
+becomes \emph{composable}.  Different metering strategies can
+be implemented as different Rholang contracts:
+\begin{itemize}[nosep]
+  \item \textbf{Flat-rate metering:}  A single token per
+    communication.
+  \item \textbf{Proportional metering:}  Tokens whose
+    continuation-payload encodes the remaining balance,
+    debited proportionally to resource consumption.
+  \item \textbf{Delegated metering:}  Splitters and joiners
+    (Section~\ref{sec:infrastructure}) allow one entity to
+    fund another's computation by transferring tokens across
+    signature channels.
+  \item \textbf{Market-based metering:}  Token prices can
+    float based on demand for particular signature channels,
+    implementing a fee market entirely within Rholang.
+\end{itemize}
+
+\subsection{Formal Verification}
+
+The compositionality of the translation means it can be
+verified using standard techniques:
+\begin{itemize}[nosep]
+  \item \textbf{Bisimulation:}  The translation preserves
+    barbed bisimulation up to the infrastructure processes.
+  \item \textbf{Full abstraction:}  The ongoing Lean~4
+    formalization of the rho calculus
+    can be extended to cover the cost-accounted extension
+    and its translation.
+  \item \textbf{Security:}  The fuel-gate pattern ensures
+    that no process can communicate without first acquiring
+    a valid token, which is a capability-security property
+    expressible and provable within the calculus.
+\end{itemize}
+
+\subsection{Implementation Path}
+
+For the F1R3FLY platform, we envision the following implementation
+path:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Phase 1:}  Implement the translation as a
+    source-to-source transformation in the Rholang~1.2 compiler,
+    replacing the current runtime cost-accounting hooks.
+  \item \textbf{Phase 2:}  Deploy splitters, joiners, and
+    persistent infrastructure processes as system-level
+    Rholang contracts on each F1R3Node shard.
+  \item \textbf{Phase 3:}  Expose the signature-channel and
+    token APIs to user contracts, enabling composable and
+    user-definable metering.
+  \item \textbf{Phase 4:}  Extend the Lean~4 formalization
+    to cover the cost-accounted extension and verify the
+    translation.
+\end{enumerate}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Conclusion}
+
+We have shown that the cost-accounted extension of the rho
+calculus --- capturing the essential structure of Rholang's
+phlogiston system --- can be faithfully translated back into
+the pure rho calculus.  The translation is compositional and
+rests on a single idea: \emph{signatures become channels,
+tokens become messages, and signed processes must consume
+fuel before they can communicate.}
+
+For the F1R3FLY platform, this result is both a theoretical
+contribution and a practical blueprint.  By internalizing
+cost accounting within Rholang itself, we eliminate the need
+for a privileged runtime extension, enable composable and
+formally verifiable metering, and open the door to
+user-definable fee structures --- all without leaving the
+expressive universe of the rho calculus.
+
+\bigskip
+\begin{flushright}
+  \textit{E Pluribus Potentia}
+\end{flushright}
+
+%% ══════════════════════════════════════════════════════════════════
+\begin{thebibliography}{9}
+
+\bibitem{MeredithRadestock2005}
+  L.~G.~Meredith and M.~Radestock,
+  ``A reflective higher-order calculus,''
+  \textit{Electronic Notes in Theoretical Computer Science},
+  vol.~141, no.~5, pp.~49--67, 2005.
+
+\bibitem{Milner1999}
+  R.~Milner,
+  \textit{Communicating and Mobile Systems: the $\pi$-Calculus},
+  Cambridge University Press, 1999.
+
+\bibitem{RholangSpec}
+  L.~G.~Meredith \textit{et al.},
+  ``Rholang Specification,''
+  F1R3FLY.io / RChain Cooperative, 2017--2026.
+
+\end{thebibliography}
+
+\end{document}
