@@ -1,0 +1,1681 @@
+\documentclass{article}
+\usepackage{bihol}
+
+\title{Behavior in higher-order languages}
+\author{C.B.\,Wells, Michael Stay\\~\\ \url{f1r3fly.io}}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    We derive well-behaved contextual transition systems for programming languages specified by ``lambda theories'' (equational logics with binding and rewriting), using Milner's framework of relative pushouts, which ensures that bisimilarity is a congruence. We determine conditions for these pushouts to exist, and provide a method to enumerate the transitions. Then we begin exploration of encodings, and determine conditions for the preservation of behavior.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+
+\href{https://github.com/F1R3FLY-io}{F1R3FLY} is a concurrent computing platform, based on the reflective higher-order $\pi$-calculus \cite{rho}. They are partnering with \href{https://singularitynet.io/}{SingularityNet} on a framework for agents to build structured knowledge, for cognitive AI: \href{https://metta-lang.dev/}{MeTTa}. 
+
+The intent is to express many kinds of domain-specific languages as ``$\lambda$-theories'', categories of types and functions \cite{ntt}, and then compile these into the $\rho$-calculus for optimal execution. To ensure that programs share a sufficient notion of behavioral equivalence, our paper defines a general framework of bisimulation for $\lambda$-theories.
+
+\newpage
+
+\textbf{Current goals.}
+
+\begin{itemize}
+    \item (Mike?) Draft intro -- what are the real, concrete goals?
+    \item Determine LTS of Rholang.
+    \item Conditions for weak bisimilarity congruence \cite{lambda-lts}.
+    \item Computing bisimilarity: determine \textit{finite} strategy for general theories.
+    \item (Mike?) Verify encoding of $\lambda$ into $\pi$.
+    \item Verify that our theories have all redex RPOs.
+    \item Handle theories parameterized by a (countably infinite) set of ground terms.
+    \item (Mike?) Begin incorporating the implementation of lambda theories in BNFC and Scala.
+    % \item Consider the importance of modelling not only the language, but the whole virtual machine.\\
+    % \url{https://github.com/s-arash/ascent/blob/master/ascent_tests/src/analysis_exp.rs}
+\end{itemize}
+
+\vspace{5em}
+
+Smaller/extra goals.
+
+\begin{itemize}
+    \item Add $\rho$ syntax abbreviations -- $n?(x.p)$ and $n!(q)$.
+    \item Add string diagrams for inference rules.
+\end{itemize}
+
+\newpage
+
+\section{Lambda theories}
+
+Algebraic structures, such as rings or automata, are defined by operations that satisfy equations. Such an operation has many inputs and one output, and thus can be described as a morphism $f\of \prod A_i\to B$ from a product of types to a type. Hence \textit{cartesian categories} have become the general setting for ``universal algebra'' \cite{algthy}. We denote such an operation as follows.
+\[a_1\of A_1, ..., a_n\of A_n\vdash f\of B\]
+
+Yet to model programming languages, a more expressive framework is needed, as a program may be an input to another program: a higher-order operation, whose inputs can be other operations. This is a morphism in a \textit{closed} cartesian category, with both product types and \textit{function types}, whose terms are formed by ``lambda abstraction'' and used in ``beta reduction'' \cite{ccc}.
+\begin{center}
+    \begin{tabular}{c@{\qquad\qquad}c}
+         \infr{\Gamma, x:X\vdash c:A}{\Gamma \vdash \lambda x.c:[X\to A]} &
+         \infr{\Gamma\vdash t\of X & \Gamma\vdash f\of [X\to A]}{\Gamma\vdash f(t)\of A}
+    \end{tabular}
+\end{center}
+To save space, we may write $[X\to Y]$ as $[X\lam Y]$ and $X\times Y$ as $X,Y$.
+
+For example in the $\pi$ calculus \cite{pi}, an input process hosts a function from names to processes, which can evaluate when in parallel with an output process on the same channel.
+\begin{center}
+    \begin{tabular}{c@{\qquad\qquad}c}
+         $n\of Nm, \lambda x.c\of [Nm\lam Pr] \vdash \mtt{in}(n,\lambda x.c)\of Pr$ &
+         $\Gamma\vdash \mtt{out}(n,a)\pr \mtt{in}(n,\lambda x.c)\rsq c(a)$
+    \end{tabular}
+\end{center}
+The symbol $\rsq$ denotes a \textit{rewrite} from one program to another, as in a basic step of computation. This is a binary relation on programs, which is found in virtually every language specification. Reasoning about programs involves a combination of types, operations, equations, and rewrites; yet most literature does not explicate their universe of discourse as one cohesive logical structure.
+\[p\of Pr, q\of Pr\vdash (p\rsq q)\; \mrm{prop}\]
+
+Categorical logic provides a canonical setting: the structure of \textit{a logic over a type system} \cite{fibcat}. Rewriting is a \textit{proposition} on pairs of programs, and dynamics is expressed by \textit{entailments} thereof. As each predicate depends on a context of types, the category (poset) of predicates and entailments depends on the category of types and terms: together they form a \textbf{fibered category}.
+\[\begin{tikzcd}
+	{\mrm{SubT}} && \varphi & \vdash & \psi \\
+	{\mrm{T}} && S && T
+	\arrow[from=1-1, to=2-1]
+	\arrow["f"{description}, from=2-3, to=2-5]
+\end{tikzcd}\]
+The morphism above expresses that for any $s\of S$, $\varphi[s]$ entails $\psi[f(s)]$, written $s\of S\ctx \varphi \vdash \psi[f]$.\footnote{This is known as a ``Hoare triple'' in program verification, with $\varphi$ the precondition and $\psi$ the postcondition.} 
+
+% Note that the \textit{substitution} of $f\of S\to T$ into $\psi$ over $T$ forms a predicate $\psi[f]$ over $S$.
+
+A \textbf{monomorphism} $i\of U\rightarrowtail A$ is the categorical generalization of an injective function: a morphism such that for all $u,v\of X\to U$, if $iu=iv$ then $u=v$. A \textbf{subobject} is an equivalence class of monomorphisms when quotiented by mutual inclusion; these are the propositions.
+
+Every category with finite limits $\T$ determines a fibered category of subobjects $\mrm{Sub}\T\to \T$, in which an object over $\Gamma$ is a subobject $\varphi \rightarrowtail \Gamma$, entailment is inclusion, and substitution is pullback. The \textbf{internal language} of this structure is \textit{equational logic}, which is presented as follows.
+
+A type system (base category) has three judgements: $A$ is a type, $a$ is of type $A$, and a pair of terms of a type is equal. A logic (total category) does as well; but for propositions equality is free, so there are two judgements: $\varphi$ is a proposition in context $\Gamma$, and one proposition entails another.
+
+\begin{center}
+    \begin{tabular}{r@{\qquad}lll}
+         \textbf{types} & $A\; \mrm{type}$ & $\Gamma\vdash a\of A$ & $\Gamma\vdash a_1= a_2\of A$\\~\\
+         \textbf{logic} & $\Gamma\vdash \varphi\;\mrm{prop}$ & $\Gamma\ctx \varphi\vdash \psi$
+    \end{tabular}
+\end{center}
+
+The (contravariant) action of morphisms of the base category on objects of the total category is the \textit{substitution} of terms into propositions, which is functorial with respect to entailment.
+\begin{center}
+    \begin{tabular}{c@{\qquad}c}
+         \infr{
+            \Gamma\vdash a\of A &
+            \Gamma,x\of A\vdash \varphi\;\mrm{prop}
+         }{
+            \Delta\vdash \varphi[a/x]\; \mrm{prop}
+         } & 
+         \infr{
+            \Gamma\vdash a\of A & 
+            \Gamma,x\of A\ctx \theta\vdash \varphi}{\Gamma\ctx \theta[a/x]\vdash \varphi[a/x]}
+    \end{tabular}
+\end{center}
+The other structural rules are summarized by the fact that each level forms a category. (Note: using substitution notation for term composition allows for ``built-in'' unitality and associativity.)
+\begin{center}
+    \begin{tabular}{ccc}
+        \infr{}{x\of A\vdash x\of A} &
+        \infr{
+            \Gamma\vdash a\of A & 
+            x\of A\vdash b\of B}{
+            \Gamma\vdash b(a)\of B
+        } &
+        \infr{\Gamma\vdash a_1= a_2\of A & x\of A\vdash b\of B}{\Gamma\vdash b(a_1)= b(a_2)\of B}
+        \\~\\
+        \infr{}{\Gamma\ctx \varphi\vdash \varphi} &
+         \infr{\Gamma\ctx \varphi\vdash \theta & \Gamma\ctx \theta\vdash \psi}{\Gamma\ctx \varphi\vdash \psi}
+    \end{tabular}
+\end{center}
+
+% While presented using arbitrary symbols, the inference rules are ultimately a minimal syntactification of the exact general form of some kind of fibered category. 
+
+Each structure on $\mrm{SubT}\to \T$, such as products, is given by inference rules which specify the formation of types and propositions, and the introduction and elimination of terms and entailments. The full presentation of these rules is given at the end of this subsection.
+
+We will define rewriting in terms of a distinguished type $Pr$ and a proposition $(\rsq)\rightarrowtail Pr\times Pr$. To define operations on rewrites, we introduce the following concepts.
+
+\begin{definition}
+    Consider the category of endofunctors $\mbb{C}\mrm{at}(\T,\T)$. Define $\mrm{C}[\T]$ to be the subcategory generated by $-\times X$ and $[X\to -]$ over all $X:\T$. We call such a composite a \textbf{meta-context}, and denote one by $\brk{-}:\T\to \T$, or $\brk{-}_i$ when there are multiple. These extend to fibered endofunctors $-\land \top_X$ and $\top_X\ra -$, the composites of which form $\brk{-}\of \mrm{SubT}\to \mrm{SubT}$ for propositions.
+\end{definition}
+
+Since $A\cong 1\times A$, the identity $-:\T\to \T$ is a meta-context.
+
+Note that meta-contexts are equipped with the following isomorphisms.
+\begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{lcl}
+        $A\times (B\times -)$ & $\cong$ & $(A\times B)\times -$\\
+        $A\to (B\to -)$ & $\cong$ & $(A\times B)\to -$\\
+        $A\to (B\times -)$ & $\cong$ & $(A\to B)\times (A\to -)$
+    \end{tabular}
+\end{center}
+So in general, $\brk{-}= A\times [B\to -]$ for some $A,B:\T$. To define equations with binding operations, we need the ``monoidal strength'' $st_B^A$ of each $[B\to -]$ with respect to products of $\T$:
+\[\begin{tikzcd}
+	& {[B\to A]\times [B\to -]} \\
+	{A\times [B\to -]} && {[B\to (A\times -)]}
+	\arrow["\cong"{description}, from=1-2, to=2-3]
+	\arrow["{\eta_B^A}"{description}, from=2-1, to=1-2]
+	\arrow["{st_B^A}"{description}, from=2-1, to=2-3]
+\end{tikzcd}\]
+where $\eta_B^A:A\to [B\to A]$ is the currying of the projection $\pi_A:A\times B\to A$. This can be understood as converting a term $a$ ``with $b$ not occurring free in $a$'' into a term $\lambda b.a$ which is constant at $a$.
+
+We can now define our setting for programming language specifications.
+
+\begin{definition}
+    An \textbf{equational logic with binding and rewriting} is a category with finite limits such that $\pi\of \mrm{SubT\to T}$ is cartesian closed, with a type $Pr$ and a proposition $(\rsq)\rightarrowtail Pr\times Pr$ with entailments: base rewrites $\rsq_B = \{\Gamma\ctx \top\vdash p\rsq q\}$, and rewrite operations $\rsq_O$ of the form below.\footnote{A language specification may involve more complex entailments for rewriting; but this form covers many cases.}
+    \[\prod \brk{\Gamma_i}_i\ctx \bigwedge \brk{p_i\rsq q_i}_i\vdash f(\vec{p})\rsq f(\vec{q})\]
+    We shorten to the name \textbf{lambda theory}, as in the classic example of the $\lambda$-calculus.
+    % finitely presentable
+\end{definition}
+
+\newpage
+
+\begin{definition}
+    A \textbf{presentation} of a lambda theory $\T$ consists of:
+    \begin{itemize}
+        \item a set of \textbf{base types} $\T_\mrm{type} = \{ A \}$, including $Pr$
+        \item a set of \textbf{operations} $\T_\mrm{oper} = \{\Gamma\vdash t\of A \}$, with $A\in \T_\mrm{type}$
+        \item a set of \textbf{propositions} $\T_\mrm{prop} = \{ \varphi \}$, including $(p\of Pr, q\of Pr\vdash p\rsq q)$
+        \item a set of \textbf{entailments} $\T_\mrm{ent} = \{\Gamma\ctx \Theta\vdash \varphi\}$, including $\rsq_B$ and $\rsq_O$ above.
+    \end{itemize}
+\end{definition}
+
+The source $l$ of a rewrite $l\rsq r$ is called a \textbf{redex}.
+
+Rewrite operations are composed as follows, forming the set of \textbf{rewrite constructors} $\rsq_C$.
+\begin{center}
+    \begin{minipage}{0.4\textwidth}
+        \infr{f\of (\rsq_O)(\prod\brk{Pr}_i)}{f\of (\rsq_C)(\prod\brk{Pr}_i)}
+    \end{minipage} \qquad
+    \begin{minipage}{0.4\textwidth}
+        \infr{\{c_i\of (\rsq_C)(\Gamma_i)\} & f\of (\rsq_O)(\prod \brk{Pr}_i)}{f(\prod \brk{c_i}_i)\of (\rsq_C)(\prod \brk{\Gamma_i}_i)}
+    \end{minipage}
+\end{center}
+% To visualize these operations in string diagrams, we can use ``functorial boxes'' \cite{funbox}: wrapping a diagram in a dotted box is applying a functor $\brk{-}:\T\to \T$.
+% \begin{center}
+%     \begin{tabular}{c@{\qquad\qquad\qquad}c}
+%         \img{0.3}{op-1} & \img{0.3}{op-2}
+%     \end{tabular}
+% \end{center}
+For the domains formed this way, we use $\dbrk{-} = \prod\brk{... \prod\brk{-}_i ...}_z$ for the functor $\T^{\Sigma...\Sigma n_{i...z}}\to \T$. We may also ``overload'' the term meta-context to refer to these functors.
+
+A \textbf{generic rewrite} is a substitution of base rewrites into a rewrite constructor, written as $d(\vec{l})$. A \textbf{specific rewrite} is a substitution of ground terms into a generic rewrite, $d(\vv{l(x)})$.
+
+Rewrite constructors are the ``reactive contexts'' for Milner's framework of relative pushouts: the substitution of base rewrites into a rewrite constructor is a morphism in the slice category $\T/Pr$, and the pushouts of these are the transitions which characterize behavior.
+
+% \vspace{1em}
+
+% Before moving to our main examples of graph-structured lambda theories, we note how the above view of operations can simplify the definition of signatures and equations.
+
+% \begin{definition}
+%     Let $\T$ be a lambda theory. For each object $A:\T$, the \textbf{local theory} at $A$ is a single-sorted finite product theory $\hat{\T}_A$: the operations are $\hat{\T}_A(n,1)=\T(\dbrk{\vv{A}}, A)$ for which $\Sigma...\Sigma n_{i...z} = n$, and composition is given as above.
+% \end{definition}
+
+\vspace{1em}
+
+\textbf{Note 1.} The combination of cartesian $(\times)$ and closed $(\to)$ structure on $\mrm{SubT\to T}$ does not appear in the ``standard hierarchy'' of logical structures. \cite{elephant}
+
+\begin{center}
+    \begin{tabular}{c@{\qquad}c@{\qquad}c@{\qquad}c@{\qquad}c}
+         cartesian & regular & coherent & heyting & topos\\
+         $(\top,\land,=)$ & $(...,\exists)$ & $(...,\bot,\lor)$ & $(...,\Rightarrow,\forall)$ & $(...,\to,\Omega)$
+    \end{tabular}
+\end{center}
+Yet it is useful and natural. Arguably the simplest one could mean by \textit{higher-order} reasoning is that in the same way we can form types of functions, we can also form \textit{propositions about proofs}. Just like currying a function $f\of A\times B\to C$ to $A\to [B\to C]$, the same is useful for entailments.
+For example, the basic rewrite in the $\pi$ calculus \cite{pi} is the entailment
+\[\begin{tikzcd}
+	{\top_{Nm},\top_{Nm},\top_{[Nm\lam Pr]}} & \vdash & {(\rsq)} \\
+	{Nm,Nm,[Nm{\setminus}Pr]} && {Pr,Pr}
+	\arrow[tail, from=1-1, to=2-1]
+	\arrow[tail, from=1-3, to=2-3]
+	\arrow["{\mtt{o}(a,n)|\mtt{i}(a,\lambda x.c),\; c[n]}", from=2-1, to=2-3]
+\end{tikzcd}\]
+which can be curried to form a rewrite of \textit{open} processes, continuations with a bound name.
+\[\begin{tikzcd}
+	{\top_{Nm},\top_{[Nm\lam Pr]}} & \vdash & {\top_{Nm}\ra (\rsq)} \\
+	{Nm,[Nm{\setminus}Pr]} && {[Nm\lam Pr,Pr]}
+	\arrow[tail, from=1-1, to=2-1]
+	\arrow[tail, from=1-3, to=2-3]
+	\arrow["{\lambda a.(...)}"', from=2-1, to=2-3]
+\end{tikzcd}\]
+This is how we can reason about rewrites ``under a lambda'' and within binding constructors.
+
+\vspace{1em}
+
+\textbf{Note 2.} In a logic $\T$, a subobject $U\rightarrowtail A$ is a \textit{proposition} about a type; but the domain $U$ is also an object of $\T$, and hence a \textit{type}. This is known as \textbf{comprehension}, or \textbf{subset types}.
+\[\infr{x\of A\vdash \varphi\;\mrm{prop}}{\{x\of A\ctx \varphi\}\;\mrm{type}}\]
+While simple in principle, it significantly enhances the expressive power of the logic: we can define \textit{partial operations}, and from those also \textit{refined-binding operations}.
+\begin{center}
+    \begin{tabular}{c@{\qquad\qquad}c}
+         $p_{op}\of \{\varphi\}\to C$ & 
+         $r_{op}\of [\{\varphi\}\to C]\to D$
+    \end{tabular}
+\end{center}
+We explore the former capability in this paper, but not the latter.
+
+\vspace{1em}
+
+We now conclude with the internal language, before presenting our example theories. There is a characterization theorem for subobject fibrations, which enables us to use their internal language as the syntax for categories with finite limits.
+
+\begin{theorem}[Jacobs \cite{fibcat} 4.9.4]
+    Let $\pi\of \mrm{P\to T}$ be a fibered preorder with finite products and equality. Then $\pi$ is equivalent to a subobject fibration $\mrm{SubT\to T}$ if and only if it has:
+    
+    extensionality
+    
+    \[\Gamma\ctx (f=_B g) \vdash f=g\of B\]
+    
+    full subset types
+    
+    \[
+        \infre{\Gamma,x\of \sigma\ctx \Theta,\varphi \vdash \psi}{\Gamma, y\of\{x\of \sigma\pr \varphi\}\ctx \Theta[\mrm{o}(y)/x] \vdash \psi [\mrm{o}(y)/x]}
+    \]
+        
+    and unique choice.
+    \[\infr{
+            i\of I, j_1,j_2\of J\ctx R(i,j_1), R(i,j_2)\vdash j_1=j_2
+        }{
+            i\of I, j\of J \vdash (\exists j.R\; \mrm{prop}), (\exists j.R \sim R)}\]
+\end{theorem}
+The inference rules for the equational logic are presented on the page after next, plus those for the closed structure of functions and implication.
+
+\vspace{1em}
+
+\textbf{Note}. We may require more expressive logic to reason about programs, like quantification, particularly for \textit{bisimilarity} which we discuss in the next section. When needed, an equational logic can be made more expressive, simply by adding inference rules.
+
+To define this categorically, we determine ``free-forgetful'' adjunctions from less expressive logics to more expressive logics, by characterizing each logic as a certain ``algebraic'' structure.
+
+Every finite limit category is a model of the ``meta-theory'' finite limit category $\mbb{T}_\land$ in $\mrm{Set}$.
+
+\begin{definition}
+    The \textbf{metatheory of finite limits} $\mbb{T}_\land$ is a finite limit category presented as follows.
+
+    \tbl{
+        & $\vdash$ & $\T_0\; \mrm{type}$\\
+        & $\vdash$ & $\T_1\; \mrm{type}$\\
+        $f\of \T_1$ & $\vdash$ & $\mrm{s}(f)\of \T_0$\\
+        $f\of \T_1$ & $\vdash$ & $\mrm{t}(f)\of \T_0$
+    }
+    We use $f\of \T(A,B)$ as shorthand for $A,B\of \T_0, f\of T_1, \mrm{s}(f)=A, \mrm{t}(f) = B$.
+    \tbl{
+        $A\of \T_0$ & $\vdash$ & $\mrm{id}_A\of \T(A,A)$\\
+        $f\of \T(A,B), g\of \T(B,C)$ & $\vdash$ & $g\circ f\of \T(\mrm{s}(f),\mrm{t}(g))$\\
+        $f\of \T(A,B)$ & $\vdash$ & $\mrm{id}_A\circ f=f$,\\
+        && $f\circ \mrm{id}_B = f$\\
+        $f\of \T(A,B), g\of \T(B,C), h\of \T(C,D)$ & $\vdash$ & $(h\circ g)\circ f = h\circ (g\circ f)$
+    }
+    This defines a category $\T$; we now give it the structure of a terminal object and pullbacks.
+    \tbl{
+        & $\vdash$ & $1\of \T_0$\\
+        $A\of \T_0$ & $\vdash$ & $A_!\of \T(A,1)$\\
+        $f\of \T(A,1)$ & $\vdash$ & $f = A_!$
+    }
+    \tbl{
+        $p\of \T(A,C), q\of \T(B,C)$ & $\vdash$ & $p\times_C q\of \T_0$,\\
+        && $\pi_1\of \T(p\times_C q, A)$,\\
+        && $\pi_2\of \T(p\times_C q, B)$,\\
+        && $p\circ \pi_1 = q\circ \pi_2$\\
+        $x\of \T(Z,A), y\of \T(Z,B)\ctx p\circ x = q\circ y$ & $\vdash$ & $\brk{x,y}\of \T(Z,p\times_C q)$,\\
+        && $\pi_1\circ \brk{x,y} = x$,\\
+        && $\pi_2\circ \brk{x,y} = y$\\
+        $..., h\of \T(Z,p\times_C q)\ctx \pi_1\circ h = x, \pi_2\circ h = y$ & $\vdash$ & $h = \brk{x,y}$
+    }
+\end{definition}
+
+\begin{proposition}
+    Every category with finite limits is equivalent to a model of $\mbb{T}_\land$ in $\mrm{Set}$, and every functor preserving finite limits is equivalent to a morphism of models.
+    \[\mrm{FinLim}\simeq \mbb{C}\mrm{at}(\mbb{T}_\land, \mrm{Set})\]
+\end{proposition}
+
+We now add closed structure, for a meta-theory of lambda theories.
+
+\begin{definition}
+    The meta-theory of closed cartesian categories $\T_{\land}^\to$ is given by the presentation of $\T_\land$ plus the following terms and equations.
+    \tbl{
+        $A,B\of \T_0$ & $\vdash$ & $[A\to B]\of \T_0$,\\
+        && $\varepsilon^A_B\of \T([A\to B]\times A, B)$\\
+        $f\of \T(\Gamma\times A, B)$ & $\vdash$ & $\lambda a.f\of \T(\Gamma,[A\to B])$\\
+        $..., t\of A$ & $\vdash$ & $\varepsilon^A_B(\lambda a.f, t) = f(t)$
+    }
+\end{definition}
+
+There are analogous metatheories for each fragment of higher-order predicate logic, and they are connected by simple inclusions. A great insight of categorical algebra is that the \textit{free model} with respect to such an inclusion is precisely the \textit{left Kan extension} along it \cite[Section 4.4]{ttt}.
+
+\[\begin{tikzcd}
+	{\mbb{T}_\land} && {\mrm{Set}} \\
+	\\
+	{\mbb{T}_{\land\exists}} && {\mrm{Set}}
+	\arrow[""{name=0, anchor=center, inner sep=0}, "{\T}", from=1-1, to=1-3]
+	\arrow["{i_\exists}"', from=1-1, to=3-1]
+	\arrow[equals, from=1-3, to=3-3]
+	\arrow[""{name=1, anchor=center, inner sep=0}, "{i_\exists !(\T)}"', from=3-1, to=3-3]
+	\arrow["\eta"{description}, Rightarrow, from=0, to=1, shorten=3mm]
+\end{tikzcd}\]
+
+\begin{proposition}
+Given an equational theory $\mrm{T}\of \mbb{T}_\land\to \mrm{Set}$, the free regular theory $i_\exists !(\mrm{T})\of \mbb{T}_{\land\exists}\to \mrm{Set}$ is given by the following coend formula.
+\[i_\exists !(\T)(T) = \vec{\Sigma} S\of \mbb{T}_\land.\; \T(S)\times \mbb{T}_{\land\exists}(i_\exists(S),T)\]
+The same holds for every inclusion of meta-theories, for the list below, and their closed variants.
+\begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{cccccc}
+        $\mrm{cartesian}$ & $\mrm{regular}$ & $\mrm{coherent}$ & $\mrm{heyting}$ & $\mrm{geometric}$ & $\mrm{infinitary}$\\
+         $\mbb{T}_\land$ & $\mbb{T}_{\land\exists}$ & $\mbb{T}_{\land\exists\lor}$ & $\mbb{T}_{\land\exists\lor\forall}$ & $\mbb{T}_{\land\exists\lor\forall\bigvee}$ & $\mbb{T}_{\land\exists\lor\forall\bigvee\bigwedge}$
+    \end{tabular}
+\end{center}
+\end{proposition}
+
+Each meta-theory has the same base types, $\T_0$ and $\T_1$, and each term is an inference rule -- e.g. the pairing operation in $\mbb{T}_\land$. The formula above can be read as: a term of $T$ in the free theory is a pair of a term $s\of S$ in the original theory, and an inference rule $\gamma\of \mbb{T}_{\land\exists}(i(S),T)$ from $S$ to $T$ in the free theory, quotiented by $\brk{f(s),\gamma} \equiv \brk{s,\gamma(f)}$ for every $f\of \T(S_0,S_1)$.
+
+These adjunctions induce monads on the category of lambda theories, denoted $(-)_\exists$, etc. In the next section, we will state how each theory $\T$ determines a transition system $p\xr{c} q$, and then define bisimilarity in the free infinitary theory $\T_{\land\exists\lor\forall\bigvee\bigwedge}$.
+
+\newpage
+
+\begin{center}
+    lambda theory inference rules\\
+    (beyond those of a fibered category, given above)
+\end{center}
+
+\begin{mdframed}
+\begin{center}
+
+    \textbf{units}\\~\\
+    \begin{tabular}{ccc}
+         \infr{}{1\; \mrm{type}} &
+         \infr{}{\Gamma\vdash \ast\of1} &
+         \infr{\Gamma\vdash x\of1}{\Gamma\vdash x=\ast\of 1}
+    \end{tabular}
+    
+    \vspace{2em}
+    
+    \begin{tabular}{cc}
+         \infr{}{\Gamma\vdash \top\; \mrm{prop}} &
+         \infr{}{\Gamma\ctx \varphi\vdash \top}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \textbf{products}\\~\\
+    
+    \begin{tabular}{cccc}
+         \infr{A\; \mrm{type}\;\; B\; \mrm{type}}{A\times B\; \mrm{type}} & 
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash b\of B}{\Gamma\vdash \brk{a,b}\of A\times B}
+         &
+         \infr{\Gamma\vdash p\of A\times B}{\Gamma\vdash \pi_1(p)\of A} &
+         \infr{\Gamma\vdash p\of A\times B}{\Gamma\vdash \pi_2(p)\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cc}
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash b\of B}{\Gamma\vdash \pi_1\brk{a,b}= a\of A} &
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash b\of B}{\Gamma\vdash \pi_2\brk{a,b}= b\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cccc}
+        \infr{\Gamma\vdash \varphi\; \mrm{prop} \quad \Gamma\vdash \psi\; \mrm{prop}}{\Gamma\vdash \varphi \land \psi\; \mrm{prop}} & 
+        \infr{\Gamma \ctx \theta \vdash \varphi\quad \Gamma \ctx \theta \vdash \psi}{\Gamma\ctx \theta \vdash \varphi\land \psi} &
+        \infr{\Gamma\ctx \theta\vdash \varphi\land \psi}{\Gamma\ctx\theta\vdash \varphi} &
+        \infr{\Gamma\ctx \theta\vdash \varphi\land\psi}{\Gamma\ctx\theta \vdash \psi}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \textbf{functions}\\~\\
+
+    \begin{tabular}{ccc}
+         \infr{A\;\mrm{type}\quad B\;\mrm{type}}{A\to B\; \mrm{type}} &
+         \infr{\Gamma,x\of A\vdash f\of B}{\Gamma\vdash \lambda x.f\of A\to B} &
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash f\of A\to B}{\Gamma\vdash f\, a\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cc}
+         \infr{\Gamma,x\of A\vdash f\of B\quad \Gamma\vdash a\of A}{\Gamma\vdash (\lambda x.f)\, a = f[a/x]:B} &
+         \infr{\Gamma\vdash f\of A\to B}{\Gamma \vdash \lambda x.(f\, x) = f\of A\to B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cc}
+         \infr{b\of B\vdash \psi\; \mrm{prop} & c\of C\vdash \theta\; \mrm{prop}}{\lambda b.c\of [B\lam C]\vdash \psi\ra \theta\; \mrm{prop}} &
+         \infr{a\of A,b\of B\vdash f\of C & a\of A,b\of B\ctx \varphi,\psi\vdash \theta[f]}{a\of A\ctx \varphi\vdash (\psi\ra\theta)[\lambda b.f]}
+    \end{tabular}
+
+        \vspace{2em}
+
+    \textbf{equality}\\~\\
+
+    \begin{tabular}{ccc}
+        \infr{\Gamma\vdash a_1\of A & \Gamma\vdash a_2\of A}{\Gamma\vdash (a_1=_A a_2)\;\mrm{prop}} &
+        \infre{\Gamma,x\of A\ctx \theta\vdash f[x/y] =_B g[x/y]}{\Gamma, x\of A, y\of A\ctx \theta, (x=_A y)\vdash f =_B g} & 
+        \infr{}{\Gamma\ctx (f =_B g)\vdash f = g\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \textbf{subsets}\\~\\
+
+    \begin{tabular}{ccc}
+         \infr{x\of A\vdash \varphi\;\mrm{prop}}{\{x\of A\ctx \varphi\}\;\mrm{type}} &
+         \infr{\Gamma\vdash a\of A\quad \Gamma\ctx \top \vdash \varphi[a/x]}{\Gamma\vdash i(a)\of \{x\of A\ctx \varphi\}} &
+         \infr{\Gamma\vdash a\of \{x\of A\ctx \varphi\}}{\Gamma\vdash o(a)\of A}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{c}
+         \infre{\Gamma,x\of A\ctx \theta,\varphi\vdash \psi}{\Gamma, y\of \{x\of A\ctx \varphi\}\ctx \theta[o(y)/x]\vdash \psi[o(y)/x]}
+    \end{tabular}
+    
+\end{center}
+\end{mdframed}
+
+\newpage
+
+\subsection{Our theories}
+
+Our main theory is the $\rho$-\textbf{calculus}, the $\pi$-calculus with reflection between code and data, i.e.\ processes and names. Its basic rule is \textit{communication}: an output process synchronizes with an input process along a name, and transfers a list of processes which are converted into names and substituted into the input context.
+
+\begin{mdframed}
+\begin{center}
+    \textbf{$\rho$ calculus}\\~\\
+    \renewcommand{\arraystretch}{1.2}
+
+    \begin{tabular}{rcl}
+        & $\vdash$ & $0\of Pr$\\
+        $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2\of Pr$\\
+        $p\of Pr$ & $\vdash$ & $@(p)\of Nm$\\
+        $n\of Nm$ & $\vdash$ & $\ast(n)\of Pr$\\
+        $n\of Nm,\vec{p}\of Pr^k$ & $\vdash$ & $\mtt{out}_k(n,\vec{p})\of Pr$\\
+        $n\of Nm, \lambda \vec{x}.q\of [Nm^k\lam Pr]$ & $\vdash$ & $\mtt{in}_k(n,\lambda x.q)\of Pr$
+    \end{tabular}
+
+    \vspace{1em}
+    
+    \begin{tabular}{rcl}
+         $p\of Pr$ & $\vdash$ & $p\pr 0 = p$\\
+        $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2 = p_2\pr p_1$\\
+        $p_1\of Pr,p_2\of Pr,p_3\of Pr$ & $\vdash$ & $(p_1\pr p_2)\pr p_3 = p_1\pr (p_2\pr p_3)$\\
+        $n\of Nm$ & $\vdash$ & $@(\ast(n)) = n$
+    \end{tabular}
+
+    \vspace{1em}
+    
+    \begin{tabular}{rcl}
+         $p_1\of Pr,p_2\of Pr$ & $\vdash$ & $(p_1\rsq p_2)\; \mrm{prop}$\\
+         $n\of Nm,\vec{p}\of Pr^k, \lambda \vec{x}.q\of [Nm^k.Pr]\ctx \top$ & $\vdash$ & $\mtt{out}_k(n,\vec{p})\pr \mtt{in}_k(n,\lambda \vec{x}.q)\rsq  q[@\vec{p}/\vec{x}]$\\
+         $p\of Pr \ctx \top$ & $\vdash$ & $\ast(@(p))\rsq p$\\
+         $p_1,p_2,q\of Pr\ctx (p_1\rsq p_2)$ & $\vdash$ & $ p_1\pr q\rsq  p_2\pr q$\\
+         $p_1,p_2,q_1,q_2\of Pr\ctx (p_1\rsq p_2), (q_1\rsq q_2)$ & $\vdash$ & $p_1\pr q_1\rsq p_2\pr q_2$
+    \end{tabular}
+\end{center}
+\end{mdframed}
+
+To see these rewrites visualized in string diagrams, see Appendix \ref{appendix}.
+
+\vspace{5em}
+
+\begin{mdframed}
+\begin{center}
+    \textbf{$\rho$ + replicated input}\\~\\
+    \begin{tabular}{cl}
+         & $(p,n,c)\of \{p\of Pr, n\of Nm, c\of [Nm\lam Pr]\pr p=\mtt{in}(n,c)\}$\\ 
+         $\vdash$ & $!(p)\of Pr,$\\
+         & $!(p)\rsq p\pr !(p)$
+    \end{tabular}
+\end{center}
+\end{mdframed}
+
+\newpage
+
+\begin{mdframed}
+\begin{center}
+    \textbf{space calculus}\\~\\
+    \renewcommand{\arraystretch}{1.2}
+
+    \begin{tabular}{rcl}
+        & $\vdash$ & $0\of Pr$\\
+        $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2\of Pr$\\
+        $n\of Nm$ & $\vdash$ & $\ast(n)\of Pr$\\
+        $n\of Nm,\vec{p}\of Pr^k$ & $\vdash$ & $\mtt{out}_k(n,\vec{p})\of Pr$\\
+        $n\of Nm, \lambda \vec{x}.q\of [Nm^k\lam Pr]$ & $\vdash$ & $\mtt{in}_k(n,\lambda x.q)\of Pr$\\~\\
+        $n\of Nm$ & $\vdash$ & $\mtt{u}(n)\of Pr$\\
+        $k\of [Pr\lam Pr]$ & $\vdash$ & $\mtt{comm}(k)\of Pr$\\
+        $k\of [Pr\lam Pr], p\of Pr$ & $\vdash$ & $@(k,p)\of Nm$\\
+    \end{tabular}
+
+    \vspace{1em}
+    
+    \begin{tabular}{rcl}
+         $p\of Pr$ & $\vdash$ & $p\pr 0 = p$\\
+        $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2 = p_2\pr p_1$\\
+        $p_1\of Pr,p_2\of Pr,p_3\of Pr$ & $\vdash$ & $(p_1\pr p_2)\pr p_3 = p_1\pr (p_2\pr p_3)$\\
+        % $n\of Nm$ & $\vdash$ & $@(\ast(n)) = n$
+    \end{tabular}
+
+    \vspace{1em}
+    
+    \begin{tabular}{rcl}
+         $p_1\of Pr,p_2\of Pr$ & $\vdash$ & $(p_1\rsq p_2)\; \mrm{prop}$\\
+         $n\of Nm, k\of [Pr\lam Pr], p\of Pr$ & $\vdash$ & $\mtt{u}(n)\pr {\ast(@(k,p))}\rsq \mtt{comm}(k)\pr \mtt{out}(n,p)$\\
+         $n\of Nm, q\of Pr, \lambda x.p\of [Nm\lam Pr], k\of [Pr\lam Pr]$ & $\vdash$ & $\mtt{comm}(k)\pr \mtt{out}(n,q)\pr \mtt{in}(n,\lambda x.p)\rsq  p[k(q){/}{\ast(x)}]$\\
+         $p_1,p_2,q\of Pr\ctx (p_1\rsq p_2)$ & $\vdash$ & $ p_1\pr q\rsq  p_2\pr q$
+    \end{tabular}
+\end{center}
+\end{mdframed}
+
+\newpage
+
+\begin{mdframed}
+    \begin{center}
+    \textbf{$\pi$ calculus}\\
+    (with replicated input)
+    \\~\\
+    \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rcl}
+             & $\vdash$ & $0\of Pr$\\
+             $n\in \mrm{Names}$ & $\vdash$ & $n\of Nm$\\
+             $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2\of Pr$\\
+             $n\of Nm, k\of Pr$ & $\vdash$ & $\mtt{out}(n,k)\of Pr$\\
+             $n\of Nm, \lambda x.q\of [Nm\lam Pr]$ & $\vdash$ & $\mtt{in}(n,\lambda x.q)\of Pr$\\
+             $\lambda x.q\of [Nm\lam Pr]$ & $\vdash$ & $\nu(\lambda x.q)\of Pr$\\
+             $p\of Pr, n\of Nm, c\of [Nm\lam Pr]\pr p=\mtt{in}(n,c)$ & $\vdash$ & $!(p)\of Pr$
+        \end{tabular}
+
+        \vspace{1em}
+
+        \begin{tabular}{rcl}
+            $p\of Pr$ & $\vdash$ & $p\pr 0 = p$\\
+            $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2 = p_2\pr p_1$\\
+            $p_1\of Pr,p_2\of Pr,p_3\of Pr$ & $\vdash$ & $(p_1\pr p_2)\pr p_3 = p_1\pr (p_2\pr p_3)$\\
+            & $\vdash$ & $\nu(\lambda x.0) = 0$\\
+            $p\of Pr, \lambda x.q\of [Nm\lam Pr]$ & $\vdash$ & $p\pr \nu(\lambda x.q) = \nu(\lambda x.(p\pr q))$\\
+            $\lambda xy.p\of [Nm,Nm\lam Pr]$ & $\vdash$ & $\nu(\lambda x.\nu(\lambda y.p)) = \nu(\lambda y.\nu(\lambda x.p))$
+        \end{tabular}
+
+        \vspace{1em}
+
+        \begin{tabular}{rcl}
+             $p_1\of Pr,p_2\of Pr$ & $\vdash$ & $(p_1\rsq p_2)\; \mrm{prop}$\\
+             $n\of Nm, k\of Nm, \lambda x.q\of [Nm\lam Pr]\ctx \top$ & $\vdash$ & $\mtt{out}(n,k)\pr \mtt{in}(n,\lambda x.q)\rsq  q[k/x]$\\
+             $p_1,p_2,q\of Pr\ctx (p_1\rsq p_2)$ & $\vdash$ & $ p_1\pr q\rsq  p_2\pr q$\\
+             $\lambda x.s, \lambda x.t\of [Nm\lam Pr] \ctx (\lambda x.s \;(\top_{Nm}\ra \rsq)\; \lambda x.t)$ & $\vdash$ & $\nu(\lambda x.s)\rsq \nu(\lambda x.t)$\\
+            $p\of Pr$ & $\vdash$ & $!(p) \rsq p\pr !(p)$
+        \end{tabular}
+    \end{center}
+\end{mdframed}
+
+\newpage
+
+The ``name-passing'' $\lambda$-calculus, as distinct from ordinary $\lambda$ as ``program-passing'', uses a $\mtt{def}$ operation to store terms at variables; this simplifies translation into $\pi$-calculus \cite{boudol}.
+\begin{mdframed}
+    \begin{center}
+        \textbf{name-passing $\lambda$ calculus}(V) :=\\~\\
+    
+        \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rcl}
+            % $v\in \mrm{VarSet}$ & $\vdash$ & $v\of V$\\
+             $v\of V$ & $\vdash$ & $\mtt{var}(v)\of Pr$\\
+             $f\of [V\lam Pr]$ & $\vdash$ & $\mtt{lam}(f)\of Pr$\\
+             $t\of Pr, v\of V$ & $\vdash$ & $\mtt{app}(t,v)\of Pr$\\
+             $s\of Pr, f\of [V\lam Pr]$ & $\vdash$ & $\mtt{def}(s,f)\of Pr$
+        \end{tabular}
+
+        \vspace{1em}
+
+        \begin{tabular}{rcl}
+             $s\of Pr, f\of [V\lam Pr], v\of V$ & $\vdash$ & $\mtt{def}(s, \lambda x.\mtt{app}(f(x),v)) = $\\
+             && $\mtt{app}(\mtt{def}(s,f), v)$\\
+             $s\of Pr, f\of [V\lam Pr]$ & $\vdash$ & $\mtt{def}(s,\lambda x.\mtt{app}(f(x),x)) = $\\
+             && $\mtt{def}(s,\lambda x.\mtt{app}(\mtt{def}(s,f),x))$\\
+             $s\of Pr, f\of [V,V\lam Pr]$ & $\vdash$ & $\mtt{def}(s,\lambda x.\mtt{lam}(\lambda y.f(x,y))) = $\\
+             && $\mtt{lam}(\lambda y. \mtt{def}(s,\lambda x.f(x,y)))$\\
+             $s,t\of Pr, f\of [V,V\lam Pr]$ & $\vdash$ & $\mtt{def}(s,\lambda x.\mtt{def}(t,\lambda y.f(x,y)) = $\\
+             && $\mtt{def}(t,\lambda y.\mtt{def}(s,\lambda x.f(x,y))$\\
+             $s\of Pr, f\of [V\lam Pr], g\of [V,V\lam Pr]$ & $\vdash$ & $\mtt{def}(s,\lambda x.\mtt{def}(f(x), \lambda y.g(x,y))) = $\\
+             && $\mtt{def}(s,\lambda x.\mtt{def}(f(x),\lambda y.\mtt{def}(s, \lambda z.g(z,y))))$
+        \end{tabular}
+
+        \vspace{1em}
+
+        \begin{tabular}{rcl}
+             $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\rsq p_2\; \mrm{prop}$\\
+             $f\of [V\lam Pr], v\of V$ & $\vdash$ & $\mtt{app}(\mtt{lam}(f), v)\rsq f(v)$\\
+             $t\of Pr$ & $\vdash$ & $\mtt{def}(t, \lambda x.\mtt{var}(x))\rsq t$ 
+             \\
+             $f, g\of [V\lam Pr]\ctx f\rsq g$ & $\vdash$ & $\mtt{lam}(f)\rsq \mtt{lam}(g)$\\
+             $s,t\of Pr, v\of V\ctx s\rsq t$ & $\vdash$ & $\mtt{app}(s,v)\rsq \mtt{app}(t,v)$\\
+             $p\of Pr, f,g\of [V\lam Pr]\ctx f\rsq g$ & $\vdash$ & $\mtt{def}(p,f)\rsq \mtt{def}(p,g)$
+        \end{tabular}
+    \end{center}
+\end{mdframed}
+
+encoding np$\lambda$ into $\pi$
+
+\tbl{
+    $\map{V}$ & $=$ & $Nm$\\
+    $\map{Pr}$ & $=$ & $[Nm\lam Pr]$\\
+    $\map{\mtt{var}(v)}(u)$ & $=$ & $\mtt{out}(\map{v},u)$\\
+    $\map{\mtt{lam}(f)}(u)$ & $=$ & $\mtt{in}(u, \lambda xv. \map{f}(x,v))$\\
+    $\map{\mtt{app}(t,x)}(u)$ & $=$ & $\nu(\lambda v. \map{t}(v)\pr \mtt{out}(v,(\map{x},u)))$\\
+    $\map{\mtt{def}(t,b)}(u)$ & $=$ & $\nu(\lambda x. \map{b}(x,u)\pr !\mtt{in}(x,\lambda v. \map{t}(v)))$
+}
+
+% $\map{\mtt{def}(t, \lambda x.\mtt{app}(b(x),v))}(u) = \nu(\lambda x. \nu(\lambda v. \map{b}(v)\pr \mtt{out}(v,(\map{x},u)))\pr !\mtt{in}(x,\map{t}))$
+
+% $\map{\mtt{app}(\mtt{def}(t,b), v)}(u) = \nu(\lambda v. \nu(\lambda x. \map{b}(x,u)\pr !\mtt{in}(x,\map{t}))\pr \mtt{out}(v,(\map{x},u)))$
+
+\newpage
+
+The ambient calculus is another concurrent language, which explicitly models the \textit{host} of a process at a location, and allows a process to change host via its basic rewrite rules.
+\begin{mdframed}
+    \begin{center}
+        \textbf{ambient calculus}
+    \end{center}
+    \tbl{
+        & $\vdash$ & $(Pr,-\pr -, 0)\; \mrm{c.mon.}$\\
+        $n\of Nm, p\of Pr$ & $\vdash$ & $\mtt{in}(n,p)\of Pr$\\
+        $n\of Nm, p\of Pr$ & $\vdash$ & $\mtt{out}(n,p)\of Pr$\\
+        $n\of Nm, p\of Pr$ & $\vdash$ & $\mtt{open}(n,p)\of Pr$\\
+        $n\of Nm, p\of Pr$ & $\vdash$ & $n[p]\of Pr$\\
+        $\lambda n.c\of [Nm\lam Pr]$ & $\vdash$ & $\nu(\lambda n.c)\of Pr$
+    }
+
+    \tbl{
+        $p\of Pr, \lambda x.c\of [Nm\lam Pr]$ & $\vdash$ & $p\pr \nu(\lambda x.c) = \nu(\lambda x.p\pr c)$\\
+        $n\of Nm, \lambda x.c\of [Nm\lam Pr]$ & $\vdash$ & $\mtt{in}(n,\nu(\lambda x.c)) = \nu(\lambda x.\mtt{in}(n,c))$\\
+        $n\of Nm, \lambda x.c\of [Nm\lam Pr]$ & $\vdash$ & $n[\nu(\lambda x.c)]=\nu(\lambda x.n[c])$\\
+        $\lambda xy.c\of [Nm,Nm\lam Pr]$ & $\vdash$ & $\nu(\lambda x.\nu(\lambda y.c)) = \nu(\lambda y.\nu(\lambda x.c))$
+    }
+    
+    \tbl{
+        $m,n\of Nm, p,q,r\of Pr$ & $\vdash$ & $n[\mtt{in}(m,p)\pr q]\pr m[r]\rsq m[n[p\pr q]\pr r]$\\
+        $m,n\of Nm, p,q,r\of Pr$ & $\vdash$ & $m[n[\mtt{out}(m,p)\pr q]\pr r]\rsq n[p\pr q]\pr m[r]$\\
+        $n\of Nm, p,q\of Pr$ & $\vdash$ & $\mtt{open}(n,p)\pr n[q]\rsq p\pr q$
+    }
+
+    \tbl{
+        $p_1,p_2,q\of Pr\ctx p_1\rsq p_2$ & $\vdash$ & $p_1\pr q\rsq p_2\pr q$\\
+        $n\of Nm, p_1,p_2\of Pr\ctx p_1\rsq p_2$ & $\vdash$ & $n[p_1]\rsq n[p_2]$\\
+        $\lambda x.c_1, \lambda x.c_2\of [Nm\lam Pr]\ctx \lambda x.c_1\rsq \lambda x.c_2$ & $\vdash$ & $\nu(\lambda x.c_1)\rsq \nu(\lambda x.c_2)$
+    }
+\end{mdframed}
+
+\vspace{1em}
+
+The equations of the binding operation $\nu$ involve the strength of $[Nm\to -]$, as follows. ($\Gamma=Nm$ for $op=-[=],in,out,open$; and $\Gamma=Pr$ for $op=-\pr -$).
+\[\begin{tikzcd}
+	{\Gamma,[Nm\lam Pr]} && {\Gamma,Pr} \\
+	{[Nm\lam \Gamma,Pr]} \\
+	{[Nm\lam Pr]} && Pr
+	\arrow["{\Gamma,\nu}", from=1-1, to=1-3]
+	\arrow["st"', from=1-1, to=2-1]
+	\arrow["op", from=1-3, to=3-3]
+	\arrow["{[Nm\lam op]}"', from=2-1, to=3-1]
+	\arrow["\nu"', from=3-1, to=3-3]
+\end{tikzcd}\]
+This expresses $op(x,\nu (\lambda n.p)) = \nu (\lambda n.op(x,p))$; for instance, $p\pr \nu n.q = \nu n. p\pr q$.
+
+The commutation of $\nu$ with itself involves the monoidal symmetry $\sigma:A\times B\cong B\times A$.
+\[\begin{tikzcd}
+	{[Nm\lam [Nm\lam Pr]]} && {[Nm\lam Pr]} \\
+	{[Nm\lam [Nm\lam Pr]]} \\
+	{[Nm\lam Pr]} && Pr
+	\arrow["{[Nm\lam \nu]}", from=1-1, to=1-3]
+	\arrow["\sigma^\ast"', from=1-1, to=2-1]
+	\arrow["\nu", from=1-3, to=3-3]
+	\arrow["{[Nm\lam \nu]}"', from=2-1, to=3-1]
+	\arrow["\nu"', from=3-1, to=3-3]
+\end{tikzcd}\]
+
+\newpage
+
+\begin{mdframed}
+    \begin{center}
+        \textbf{lambda calculus (lazy)}
+    \end{center}
+    \tbl{
+        $\lambda x.p\of [Pr\lam Pr]$ & $\vdash$ & $\mtt{l}(\lambda x.p)\of Pr$\\
+        $p\of Pr, q\of Pr$ & $\vdash$ & $p\cdot q\of Pr$
+    }
+    \tbl{
+        $\lambda x.p\of [Pr\lam Pr], q\of Pr$ & $\vdash$ & $\mtt{l}(\lambda x.p)\cdot q \rsq p(q)$\\
+        $p_1,p_2,q\of Pr\ctx p_1\rsq p_2$ & $\vdash$ & $p_1\cdot q\rsq p_2\cdot q$
+    }
+\end{mdframed}
+
+\begin{mdframed}
+    \begin{center}
+        \textbf{combinator calculus (lazy)}
+    \end{center}
+    \tbl{
+        & $\vdash$ & $k\of Pr$\\
+        & $\vdash$ & $s\of Pr$\\
+        $p\of Pr, q\of Pr$ & $\vdash$ & $p\cdot q\of Pr$\\
+        $p\of Pr$ & $\vdash$ & $k'(p)\of Pr$\\
+        $p\of Pr$ & $\vdash$ & $s'(p)\of Pr$\\
+        $p\of Pr,q\of Pr$ & $\vdash$ & $s''(p,q)\of Pr$
+    }
+    \tbl{
+        $p\of Pr$ & $\vdash$ & $k\cdot p\rsq k'(p)$\\
+        $p\of Pr,q\of Pr$ & $\vdash$ & $k'(p)\cdot q\rsq p$\\
+        $p\of Pr$ & $\vdash$ & $s\cdot p\rsq s'(p)$\\
+        $p\of Pr, q\of Pr$ & $\vdash$ & $s'(p)\cdot q\rsq s''(p,q)$\\
+        $p\of Pr, q\of Pr, r\of Pr$ & $\vdash$ & $s''(p,q)\cdot r \rsq (p\cdot r)\cdot (q\cdot r)$\\
+        $p_1,p_2,q\of Pr\ctx p_1\rsq p_2$ & $\vdash$ & $p_1\cdot q\rsq p_2\cdot q$
+    }
+\end{mdframed}
+
+encoding of lambda terms into combinators
+\tbl{
+    $\map{p\cdot q}$ & $=$ & $\map{p}\cdot \map{q}$\\
+    $\map{\mtt{l}(\lambda x.(p\cdot q))}$ & $=$ & $(s\cdot \map{\mtt{l}(\lambda x.p)})\cdot \map{\mtt{l}(\lambda x.q)}$\\
+    $\map{\mtt{l}(\lambda x.\mtt{l}(\lambda y. p))}$ & $=$ & $\map{\mtt{l}(\lambda x. \map{\mtt{l}(\lambda y.p))}}$\\
+    $\map{\mtt{l}(\lambda x.x)}$ & $=$ & $(s\cdot k)\cdot k$\\
+    $\map{\mtt{l}(\lambda x.y)}$ & $=$ & $k\cdot y$\\
+}
+
+\begin{proposition}[\cite{lambda-lts} Theorem 5.7]
+    $\map{-}\of \T_\lambda\to \T_{sk}$ preserves weak bisimilarity.
+    \[p,q\of Pr_\lambda\ctx p\approx q\vdash \map{p}\approx \map{q}\of Pr_{sk}\]
+\end{proposition}
+
+\newpage
+
+\begin{mdframed}
+\begin{center} 
+    \textbf{Turing machine}\\~\\
+
+    \tbl{
+        & $\vdash$ & $\mtt{nil}\of \mrm{Tape}$\\
+        $b\of \mrm{Bool}, t\of \mrm{Tape}$ & $\vdash$ & $\mtt{cons}(b,t)\of \mrm{Tape}$\\
+        & $\vdash$ & $\mtt{left,right,none}\of \mrm{Dir}$\\
+        & $\vdash$ & $\mtt{s_1,\dots, s_n}\of \mrm{State}$\\
+        $s\of \mrm{State}, b\of \mrm{Bool}$ & $\vdash$ & $\mtt{read}(s,b)\of \mrm{State\times Bool\times Dir}$\\
+        $s\of \mrm{State}, tl\of \mrm{Tape}, b\of \mrm{Bool}, tr\of \mrm{Tape}$ & $\vdash$ & $\brk{s,tl,b,tr}\of \mrm{Prog}$
+    }
+
+    \tbl{
+        $\Gamma\ctx \mtt{read}(s,h) = (s',h',\mtt{left})$ & $\vdash$ & $\brk{s, \mtt{cons}(hl,tl), h, tr}\rsq \brk{s',tl,hl, \mtt{cons}(h',tr)}$\\
+        $\Gamma\ctx \mtt{read}(s,h) = (s',h',\mtt{left})$ & $\vdash$ & $\brk{s,\mtt{nil},h,tr}\rsq \brk{s',\mtt{nil}, 0, \mtt{cons}(h',tr)}$\\
+        $\Gamma\ctx \mtt{read}(s,h) = (s',h',\mtt{right})$ & $\vdash$ & $\brk{s,tl,h,\mtt{cons}(hr,tr)}\rsq \brk{s',\mtt{cons}(h',tl),hr,tr}$\\
+        $\Gamma\ctx \mtt{read}(s,h) = (s',h',\mtt{right})$ & $\vdash$ & $\brk{s,tl,h,\mtt{nil}}\rsq \brk{s',\mtt{cons}(h',tl),0,\mtt{nil}}$\\
+        $\Gamma\ctx \mtt{read}(s,h) = (s',h',\mtt{none})$ & $\vdash$ & $\brk{s,tl,h,tr}\rsq \brk{s',tl,h',tr}$
+    }
+\end{center}
+\end{mdframed}
+
+\newpage
+
+% \begin{mdframed}
+    
+% \begin{center}
+%     \textbf{Rholang}\\~\\
+
+% \renewcommand{\arraystretch}{1.2}
+% \begin{tabular}{lrcl}
+%     nil & & $\vdash$ & $0\of Pr$\\
+%     par & $p\of Pr, q\of Pr$ & $\vdash$ & $p\pr q\of Pr$\\
+%     quote & $p\of Pr$ & $\vdash$ & $@p\of Nm$\\
+%     deref & $n\of Nm$ & $\vdash$ & $\ast n\of Pr$\\
+%     (equations)\\~\\
+%     new & $\lambda x.p\of [Nm\lam Pr]$ & $\vdash$ & $\mtt{new}\; x\; \mtt{in}\; \{ p \}\of Pr$\\
+%     (equations)\\
+%     (URI registry)
+%     \\~\\
+%     patterns & $(\Gamma\vdash t\of Pr)$ & $\vdash$ & $(p\of Pr,\Gamma\vdash \mrm{s.prop}\; (p=t))$\\
+%      & $(\Gamma,x\of T\vdash \mrm{s.prop}\; \varphi)$ & $\vdash$ & $(\Gamma\vdash \mrm{s.prop}\; \exists x. \varphi)$
+%      \\
+%     & $\mrm{s.prop}\; \varphi, \mrm{s.prop}\; \psi$ & $\vdash$ & $\mrm{s.prop}\; \varphi\lor \psi$\\
+%     & $\mrm{s.prop}\; \varphi, \mrm{s.prop}\; \psi$ & $\vdash$ & $\mrm{s.prop}\; \varphi\land \psi$\\
+%     & $\mrm{s.prop}\; \varphi$ & $\vdash$ & $\mrm{s.prop}\; \neg \varphi$
+%     \\~\\
+%     send & $n\of Nm, \vec{p}\of Pr^k$ & $\vdash$ & $n!(p_1, \dots, p_k)\of Pr$\\
+%     repl. send & $n\of Nm, \vec{p}\of Pr^k$ & $\vdash$ & $n!!(p_1,\dots, p_k)\of Pr$\\
+%     receive & $\Gamma$ & $\vdash$ & $\tfor(\vec{\varphi}\la \vec{n}) \{ c \}\of Pr$\\
+%     repl. recv. & $\Gamma$ & $\vdash$ & $\tfor(\vec{\varphi}\La \vec{n}) \{ c\}\of Pr$\\
+%     peek recv. & $\Gamma$ & $\vdash$ & $\tfor(\vec{\varphi}\thla \vec{n})\{ c\} \of Pr$
+%     % communication
+% \end{tabular}
+
+% \vspace{1em}
+
+% where $\Gamma = \vec{n}\of Nm^k, \lambda \vec{\vec{y}}. c\of [\prod Nm^{l_i}\lam Pr], \{\varphi_i\of [Pr^{l_i}\lam \mbb{B}]\}$
+
+% \vspace{1em}
+
+% \begin{tabular}{lrcl}
+%      flags & $n\of Nm$ & $\vdash$ & $\mtt{bun}_+\{ n\}, \mtt{bun}_-\{ n\}, \mtt{bun}\{ n\}, \mtt{bun}_0\{ n\}\of Nm$\\
+%      &&& (write, read, both, none)\\
+%      communication
+% \end{tabular}
+
+% \renewcommand{\arraystretch}{1.5}
+% \begin{tabular}{rcl}
+%      && $\vec{n}\of Nm[], \vec{\vec{p}}\of \prod Pr^{l_i}, \lambda \vec{\vec{y}}. c\of [\prod Nm^{l_i}\lam Pr], \{\varphi_i\of [Pr^{l_i}\lam \mbb{B}]\}$\\
+%      & $\ctx$ & $\varphi_1(\vec{p_1}), \dots, \varphi_k(\vec{p_k})$\\
+%     & $\vdash$ & $\tfor(\vec{\vec{\varphi}}\la \vec{n})\{ c \}\pr n_1!(\vec{p_1})\pr \cdots\pr n_k!(\vec{p_k})$\\
+%     & $\rsq$ & $c[@\vec{p_1}/\vec{y_1}, \dots, @\vec{p_k}/\vec{y_k}]$
+% \end{tabular}
+
+% \tbl{
+%      $n_1!!(\vec{p_1})\pr \cdots \pr n_k!(\vec{p_k})\pr \tfor(\vec{\varphi}\la \vec{n})\{ c \}$ & $\rsq$ & $n_1!!(\vec{p_1})\pr c[@\vec{p_1}/\vec{y_1}, \dots, @\vec{p_k}/\vec{y_k}]$\\
+%      $n_1!(\vec{p_1})\pr \cdots \pr n_k!(\vec{p_k})\pr \tfor(\vec{\varphi}\La \vec{n})\{ c\}$ & $\rsq$ & $c[@\vec{p_1}/\vec{y_1}, \dots, @\vec{p_k}/\vec{y_k}]\pr \tfor(\vec{\vec{y}}\La \vec{n})\{ c\}$\\
+%      $n_1!(\vec{p_1})\pr \cdots \pr n_k!(\vec{p_k})\pr \tfor(\vec{\varphi}\thla \vec{n})\{ c\}$ & $\rsq$ & $n_1!(\vec{p_1})\pr \cdots \pr n_k!(\vec{p_k})\pr c[@\vec{p_1}/\vec{y_1}, \dots, @\vec{p_k}/\vec{y_k}]$\\
+%      $n_1!!(\vec{p_1})\pr \cdots \pr n_k!(\vec{p_k})\pr \tfor(\vec{\varphi}\thla \vec{n})\{ c\}$ & $\rsq$ & $n_1!(\vec{p_1})\pr \cdots \pr n_k!(\vec{p_k})\pr n_1!!( c[@\vec{p_1}/\vec{y_1}, \dots, @\vec{p_k}/\vec{y_k}]$\\
+%      (comm for bundles...)
+% }
+
+% \begin{tabular}{lrcl}
+%      matching & $p\of Pr, \vv{(\varphi_i,p_i)}\of ([Pr\lam \mbb{B}]\times Pr)[]$ & $\vdash$ & $\mtt{match}\; p\; \{ \varphi_1 \ra p_1,\dots, \varphi_k\ra p_k\}\of Pr$\\
+%      & $\dots \ctx \neg \varphi_{<i}(p), \varphi_i(p)$ & $\vdash$ & $\mtt{match}\; p\; \{\cdots\}\rsq p_i$\\
+%      & $\dots\ctx \forall i. \neg \varphi_i(p)$ & $\vdash$ & $\mtt{match}\; p\; \{\cdots \} \rsq 0$
+% \end{tabular}
+
+% \tbl{
+%     $p,s,t\of Pr\ctx s\rsq t$ & $\vdash$ & $p\pr s\rsq p\pr t$\\
+%     $\lambda x.s\rsq \lambda x.t$ & $\vdash$ & $\mtt{new}\; x\; \mtt{in}\; s\rsq \mtt{new}\; x\; \mtt{in}\; t$
+% }
+
+% \tbl{
+%     $\mbb{B}$ & $=$ & $(\top,\bot,\land,\lor,\neg, \mrm{eq}_\mbb{B}, \mtt{str})$\\
+%     $\mbb{Z}$ & $=$ & $(0,1,+,-,\cdot,/,\%,\mrm{eq}_\mbb{Z}, \mtt{str}, =, <, >)$\\
+%     $\mbb{S}$ & $=$ & $(\mrm{Char},++,\{\mrm{assoc}\}, \%\%)$\\
+%     $\mrm{Uri}$ & $\cong$ & $\mbb{S}$\\
+%     $\mrm{Byte}$ & $\cong$ & $\mbb{Z}[]$
+%     \\~\\
+%     $\mrm{type}\; T$ & $\vdash$ & $\mrm{type}\; [T]$\\
+%     && $\mrm{cons}\; \mtt{cct,nth,len,slc},...$\\
+%     $\mrm{type}\; T$ & $\vdash$ & $\mrm{type}\; \{T\}$\\
+%     && $\mrm{cons}\; \mtt{in,add,del,unn,dif},...$\\
+%     $\mrm{type}\; S, \mrm{type}\; T$ & $\vdash$ & $ \mrm{type}\; \brk{S,T}$\\
+%     && $\mrm{cons}\; \mtt{get,set,del,keys},...$
+% }
+
+% $\mrm{Expr} = \mbb{B}+\mbb{Z}+\mbb{S}+ [-]+ \{-\} + \brk{-,-}+ \dots$\\~\\
+
+% $e\of \mrm{Expr}\vdash \iota(e)\of Pr$
+
+% \vspace{2em}
+
+% [...PATHMAP...]
+
+% \end{center}
+% \end{mdframed}
+
+% \newpage
+
+% \begin{mdframed}
+%     \begin{center}
+%         \textbf{MeTTaIL}\\~\\
+
+%         \tbl{
+%             $f\of \mrm{Func}$ & $\vdash$ & $\mtt{s}(f)\of \mrm{Type}, \mtt{t}(f)\of \mrm{Type}$\\
+            
+%             ...\\
+%             $t\of \lambda\mrm{Theory}, fs\of \mrm{Func}\{\}$ & $\vdash$ & $\mtt{AddTerms}(t,fs)\of \lambda\mrm{Theory}$\\
+            
+%             $f\of \mrm{Func}(A,B), g\of \mrm{Func}(B,C)$ & $\vdash$ & $g\circ f\of \mrm{AST}$\\
+%             $h\of \mrm{Func}(C,D), a\of \mrm{AST}(B,C)$ & $\vdash$ & $h\circ a\of \mrm{AST}$\\
+%             $a\of \mrm{AST}, b\of \mrm{AST}$ & $\vdash$ & $\mtt{Eq}(a,b)\; \mrm{prop}$\\~\\
+%             $t\of \lambda\mrm{Theory}, \lambda i.u\of [\mrm{Ident}\lam \lambda\mrm{Theory}]$ & $\vdash $ & $\mtt{let}(t,\lambda i.u)\of \lambda\mrm{Theory}$
+%         }
+
+%         % \tbl{
+%         %     $n\of \mrm{Name}, \vec{p}\of \mrm{Prog}[], \vec{i}\of \mrm{Import}[]$ & $\vdash$ & $\mtt{ModImpl}(\vec{i},n,\vec{p})\of \mrm{Module}$\\
+%         %     $s\of \mrm{String}, id\of \mrm{Ident}$ & $\vdash$ & $\mtt{ImportAs}(s,id)\of \mrm{Import}$\\
+%         %     $id\of \mrm{Ident}, s\of \mrm{String}$ & $\vdash$ & $\mtt{ImportFrom}(id,s)\of \mrm{Import}$\\~\\
+%         %     $sd\of \mrm{SpaceDecl}$ & $\vdash$ & $\mtt{ProgSpaceDecl}(sd)\of \mrm{Prog}$\\
+%         %     $td\of \mrm{TheoryDecl}$ & $\vdash$ & $\mtt{ProgTheoryDecl}(td)\of \mrm{Prog}$\\
+%         %     $si\of \mrm{SpaceInst}$ & $\vdash$ & $\mtt{ProgSpaceInst}(si)\of \mrm{Prog}$\\
+%         %     $ti\of \mrm{TheoryInst}$ & $\vdash$ & $\mtt{ProgTheoryInst}(ti)\of \mrm{Prog}$\\
+%         %     $p\of \mrm{Proc}$ & $\vdash$ & $\mtt{ProgProc}(p)\of \mrm{Prog}$\\
+%         %     $fc\of \mrm{FactComprehension} $ & $\vdash$ & $\mtt{ProgRecv}(fc)\of \mrm{Prog}$
+%         %     \\~\\
+%         %     & $\vdash$ & $\mtt{NilSpace}\of \mrm{SpaceInst}7$\\
+%         %     $d\of \mrm{DottedPath}, \vec{si}\of \mrm{SpaceInst}[]$ & $\vdash$ & $\mtt{SpaceInstCtor}(d,\vec{si})\of \mrm{SpaceInst}7$\\
+%         %     $si\of \mrm{SpaceInst}7, \vec{p}\of \mrm{Prog}[]$ & $\vdash$ & $\mtt{SpaceInstK}(si,\vec{p})\of \mrm{SpaceInst}7$\\
+%         %     ...\\~\\
+%         %     & $\vdash$ & $\mtt{NilTheory}\of \mrm{TheoryInst}6$\\
+%         %     $ti\of \mrm{TheoryInst}5, \vec{ex}\of \mrm{Export}[]$ & $\vdash$ & $\mtt{TIAddExports}(ti,\vec{ex})\of \mrm{TheoryInst}5$\\
+%         %     $ti\of \mrm{TheoryInst}5, \vec{r}\of \mrm{Replacement}[]$ & $\vdash$ & $\mtt{TIAddReplace}(ti,\vec{r})\of \mrm{TheoryInst}5$\\
+%         %     $ti\of \mrm{TheoryInst}5, g\of \mrm{Grammar}$ & $\vdash$ & $\mtt{TIAddTerms}(ti,g)\of \mrm{TheoryInst}5$\\
+%         %     $ti\of \mrm{TheoryInst}5, \vec{eq}\of \mrm{EquationDecl}[]$ & $\vdash$ & $\mtt{TIAddEquations}(ti,\vec{eq})\of \mrm{TheoryInst}5$\\
+%         %     $d\of \mrm{DottedPath}, \vec{ti}\of \mrm{TheoryInst}[]$ & $\vdash$ & $\mtt{TICtor}(d,\vec{ti})\of \mrm{TheoryInst}5$\\
+%         %     $id\of \mrm{Ident}$ & $\vdash$ & $\mtt{TIRef}(id)\of \mrm{TheoryInst}5$\\
+%         %     $id\of \mrm{Ident}, ti_0\of \mrm{TheoryInst}5, ti_1\of \mrm{TheoryInst}5$ & $\vdash$ & $\mtt{TILet}(id,ti_0,ti_1)\of \mrm{TheoryInst}5$\\
+            
+%         % }
+%     \end{center}
+% \end{mdframed}
+
+% \vspace{2em}
+
+% \[\begin{tikzcd}
+% 	{\mathrm{Func}} && {\mathrm{Label}\times \mathrm{Type}\times \mathrm{Item}[]} \\
+% 	\\
+% 	{\mathrm{String}} && {\mathrm{Label}\times \mathrm{String}\times \mathrm{String}[]}
+% 	\arrow["{l,t,s}", from=1-1, to=1-3]
+% 	\arrow["{\mathtt{syn}_{\mathrm{Func}}}"', from=1-1, to=3-1]
+% 	\arrow["{id\times \mathtt{syn}_{\mathrm{Type}}\times \mathtt{syn}_{\mathrm{Item}}[]}"{description}, from=1-3, to=3-3]
+% 	\arrow["{l\; ``."\; s_0\; ``{::=}"\; \vec{s}}"', from=3-3, to=3-1]
+% \end{tikzcd}\]
+
+% \newpage
+
+\section{Deriving transition systems}
+
+Beginning with the calculus of communicating systems \cite{ccs}, process behavior has been specified by a \textbf{labelled transition system}: a relation $\xr\;\; \subset T\times A\times T$ for which $t\xr{a} u$ means that when $t$ makes the ``action'' $a$ (such as inputting or outputting), it becomes $u$. This converts internal term structure into external graph structure, to reveal how a program can act in different environments.
+
+\[\mtt{out}(n,p) \xr{-\pr \mtt{in}(n,\lambda x.c)} c(@p)\]
+
+However, these transition systems had to be made by hand, relying on the researcher to know which labels would give the correct view of process behavior. Yet because the labels were always so closely tied to the structure of terms and rewrites, people expected there to be a general method. In 2000, Leifer and Milner determined such a framework \cite{lm}: labels should be the \textit{minimal contexts} which enable a rewrite, where minimality is determined by a universal property.
+
+% \[p_0\xr{C} p_1 \qquad \equiv \qquad C[p_0] \rsq p_1\]
+
+\begin{definition}
+    Let $\mrm{C}$ be a category, and $T$ be an object. In the \textbf{slice category} $\mrm{C}/T$: an object is a morphism $t: X\to T$ (a term of type $T$), and a morphism $f:t\to u$ is a commuting triangle $t= u\circ f$ (a substitution into the second term which equals the first).
+    \[\begin{tikzcd}
+    	X && Y \\
+    	& T
+    	\arrow["f", from=1-1, to=1-3]
+    	\arrow["t"', from=1-1, to=2-2]
+    	\arrow["u", from=1-3, to=2-2]
+    \end{tikzcd}\]
+    A \textbf{relative pushout} or ``RPO'' in $\mrm{C}$ is a pushout in some $\mrm{C}/T$: given $x:z\to t$ and $y:z\to u$, then $p$ with $i:t\to p$ and $j:u\to p$ is a relative pushout if for every other candidate $(q,i',j')$ there is a unique $h:p\to q$ such that $i'=hi$ and $j'=hj$. 
+    \[\begin{tikzcd}
+    	\Gamma && A & A \\
+    	& T \\
+    	B && C \\
+    	B &&& D
+    	\arrow["x", from=1-1, to=1-3]
+    	\arrow["z"{description, pos=0.4}, from=1-1, to=2-2]
+    	\arrow["y"', from=1-1, to=3-1]
+    	\arrow[equals, from=1-3, to=1-4]
+    	\arrow["t"{description}, from=1-3, to=2-2]
+    	\arrow["i", from=1-3, to=3-3]
+    	\arrow["{i'}", from=1-4, to=4-4]
+    	\arrow["u"{description, pos=0.4}, from=3-1, to=2-2]
+    	\arrow["j"', from=3-1, to=3-3]
+    	\arrow[equals, from=3-1, to=4-1]
+    	\arrow["p"{description}, from=3-3, to=2-2]
+    	\arrow["{\exists!h}"{description}, dashed, from=3-3, to=4-4]
+    	\arrow["{j'}"', from=4-1, to=4-4]
+    	\arrow["q"{description}, curve={height=18pt}, from=4-4, to=2-2]
+    \end{tikzcd}\]
+    % \tbl{
+    %     $\Gamma$ & $\vdash$ & $\mrm{gcf}(t[x],u[y];\; p,(i,j))\;\mrm{prop}$\\
+    %     & $:=$ & $(t=pi)\land (u=pj)\land (ix=jy)$\\
+    %     & $\land$ & $\forall (q,i',j')... \exists! h. (hi=i')\land (hj=j')\land (qh=p)$
+    % }
+    
+    An RPO is \textbf{idempotent} or an ``IPO'' if $p$ is an identity.
+    % \tbl{
+    %     $\Gamma$ & $\vdash$ & $\mrm{relprime}(t[x],u[y])$\\
+    %     & $:=$ & $\mrm{gcf}(t[x],u[y];\; \mrm{id}, (t,u))$
+    % }
+\end{definition}
+
+% We define a transition to be a \textbf{redex IPO}: 
+% \tbl{
+%     $\Gamma\ctx l\rsq r$ & $\vdash$ & $t\xr{c} dr$\\
+%     & $:=$ & $\mrm{relprime}(d[l],c[t])$
+% }
+
+A relative pushout is visualized in string diagrams as follows.
+\begin{center}
+    \img{0.35}{rpo-def}\\
+    The relative pushout of $t[f]=u[g]$ is $(p,(i,j))$, which factors uniquely through every $q$.
+\end{center}
+
+\textbf{Idea.} Because morphisms of a slice category are factorizations, a relative pushout is the \textit{greatest common factor} of an equal pair of substitutions $t[f]=u[g]$. To define behavior, we assert $t\xr{c} d[r]$ if $l\rsq r$ and $d[l]=c[t]$ is an idempotent RPO; this can be seen as being \textit{relatively prime}.
+\[\mrm{gcf}(d[l],c[t])=\mrm{id}\]
+The complexity of computing the $c[t]$ depends on the system of equations which hold in the category. 
+% If a theory has no equations except those for rewrites (e.g.\ from Knuth-Bendix []), then the greatest common factor is computed simply by intersecting the syntax trees of $u$ and $t$. 
+Since many languages are defined by relatively few equations, this is a tractable question of algebra.
+
+\begin{definition}
+    Let $\T$ be a lambda theory. Then $\T$ \textbf{has all redex-RPOs} if for every redex $dl$, seen as a morphism $l\of dl\to d$ in $\T/Pr$, the relative pushout along $l$ exists for all $t\of dl\to c$.
+\end{definition}
+
+The transition system derived from RPOs has a well-behaved notion of behavioral equivalence. A \textit{strong bisimulation} is a relation $\sim\, \subset Pr\times Pr$ such that $p_0 \sim q_0$ means
+\[\begin{tabular}{c}
+    if $p_0\xr{c} p_1$ then there is a $q_1$ such that $q_0\xr{c} q_1$ and $p_1\sim q_1$\\
+    if $q_0\xr{c} q_1$ then there is a $p_1$ such that $p_0\xr{c} p_1$ and $p_1\sim q_1$
+\end{tabular}\]
+and two processes are \textit{strongly bisimilar} if there exists a strong bisimulation which relates them.
+
+% \begin{definition}
+%     Let $\T$ be a lambda theory. 
+%     The proposition of strong bisimilarity can be constructed in the free infinitary theory $(\T)_{\exists\lor\forall\bigvee\bigwedge}$ as follows.
+%     \tbl{
+%         $(p\sim_0 q)$ & $ :=$ & $ \top$\\
+%         $(p\sim_{n+1} q) $ & $ := $ & $ \forall p'. \forall c. (p\xr{c} p')\ra \exists q'. (q\xr{c} q') \land (p'\sim_{n} q')\;  \land$\\
+%         && $\forall q'. \forall c. (q\xr{c} q') \ra \exists p'. (p\xr{c} p') \land (p'\sim_{n} q')$\\
+%         $(p\sim q)$ & $ := $ & $ \bigwedge_{i\of \mbb{N}} p\sim_i q$
+%     }
+% \end{definition}
+
+Yet many ideas of interactive languages like the $\rho$-calculus depend on reasoning ``up to'' internal computation; so the natural concept of program equivalence is \textit{weak} bisimilarity.
+
+\begin{definition}
+    Let $\T$ be a lambda theory, and $\xr{}_\T$ the derived transition system. 
+    
+    The \textbf{weakening} $\xr{}_\ast$ is defined as follows, with $\rsq^\ast$ the reflexive-transitive closure of $\rsq$.
+    \tbl{
+        $p\xr{c}_\ast q$ & $:=$ & $\exists \hat{p},\hat{q}.\; (p\rsq^\ast \hat{p})\land (\hat{p}\xr{c} \hat{q})\land (\hat{q}\rsq^\ast q)$
+    }
+\end{definition}
+
+\begin{definition}
+    The relation of \textbf{weak bisimilarity} $(\approx)$ can be defined as follows.
+    \tbl{
+        $(p\approx_0 q)$ & $ :=$ & $ \top$\\
+        $(p\approx_{n+1} q) $ & $ := $ & $ \forall p'. \forall c. (p\xr{c} p')\ra \exists q'. (q\xr{c}_\ast q') \land (p'\approx_{n} q')\;  \land$\\
+        && $\forall q'. \forall c. (q\xr{c} q') \ra \exists p'. (p\xr{c}_\ast p') \land (p'\approx_{n} q')$\\
+        $(p\approx q)$ & $ := $ & $ \bigwedge_{i\of \mbb{N}} p\approx_i q$
+    }
+\end{definition}
+
+% \vspace{2em}
+
+% \label{weak-cong}
+
+% [EDIT: weak bisimilarity is not always a congruence for all contexts \cite[Section 3]{lambda-lts}. If we defined $x\xr{}_\ast y = x\xr{} \hat{y}\rsq^\ast y$ instead of $x\rsq^\ast \hat{x}\xr{} \hat{y}\rsq^\ast y$, it would be a congruence; but that does not give the right notion of weak equivalence. From what I understand so far, this is not any issue with the RPO framework, but rather a ``fact of life''. It is a congruence with respect to reactive contexts \cite{lm} (``rewrite constructors'').]
+
+% \vspace{1em}
+
+% \textbf{Note.} A rewrite constructor is a ``reactive context'', in that rewrites can occur in that context. But some operations disallow rewriting in the operands, for good reasons. This distinction is key in the question of congruence of bisimilarity. And now I'm noticing... a basic coherence of the rho calculus is that for every non-reactive context there is a unique other context which ``peels it off'':
+% \tbl{
+%     & $\mtt{out}(n,p) \xr{-\pr \mtt{in}(n,c)} c(@p)$\\
+%     & $\mtt{in}(n,c)\xr{-\pr \mtt{out}(n,p)} c(@p)$\\
+%     & $\ast (@ (p)) \xr{-} p$
+% }
+
+% \vspace{1em}
+
+% Maybe this is sufficient...
+% similar to conditions on $\lambda$ calculus in \cite{lambda-lts} used to prove congruence.
+
+\newpage
+
+\begin{definition}
+    A lambda theory is \textbf{transparent} if for every context $c$ that is not reactive, there is a unique context $\overline{c}$ such that
+    \[c(t) \xr{\overline{c}} d(t)\]
+    where $d$ is constructed from the variables of $\overline{c}$, and does not involve the application of $c$ to $t$.
+\end{definition}
+
+The rho calculus is transparent, and this is key to its coherence; below we give a direct proof of congruent bisimilarity, without reference to the broader framework being developed.
+
+There's just one caveat -- reflection, the ability to convert code into data and back:
+\[@\of Pr\rightleftharpoons Nm\of \ast\]
+introduces contexts which cannot preserve bisimilarity:
+\[\tout(@(-),z) \qquad \tin(@(-),z)\]
+because communication depends on name equality, not bisimilarity; so if $p\approx q$ for $p\neq q$ then $\tout(@(p),z)$ cannot match the actions of $\tout(@(q),z)$. 
+% (While it may be interesting to consider ``weakening'' communication, it is likely too computationally intensive to be practical.) 
+So, we just have to restrict to contexts which do not have a hole of the form above.
+
+\begin{theorem}
+    In the rho calculus, bisimilarity is a congruence under the operations generated by:
+    \begin{center}
+        \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rr}
+             $\tout(n,-)$ & $Pr\to Pr$\\
+            $\tin(n,-)$ & $[Nm\lam Pr]\to Pr$\\
+            $-\pr -$ & $Pr,Pr\to Pr$\\
+            $\ast(@(-))$ & $Pr\to Pr$
+        \end{tabular}
+    \end{center}
+    when observations are restricted to the same class of operations.
+\end{theorem}
+\begin{proof}
+    Let $p\approx q$, and consider a transition out of $\tout(n,p)$. Because $p$ cannot rewrite within $\tout$, the only transition is
+    \[\tout(n,p) \xr{-\pr \tin(n,c)} c(@p)\]
+    and this is matched by $q$:
+    \[\tout(n,q)\xr{-\pr \tin(n,c)} c(@q)\]
+    and so, the result will follow by structural induction.
+
+    Let $\lambda x.c\approx \lambda x.d\of [Nm\lam Pr]$, and consider a transition out of $\tin(n,\lambda x.c)$. Because $\lambda x.c$ cannot rewrite within $\tin$, the only transition is
+    \[\tin(n,\lambda x.c)\xr{-\pr \tout(n,v)} c(@v)\]
+    and this is matched by $\lambda x.d$:
+    \[\tin(n,\lambda x.d) \xr{-\pr \tout(n,v)} d(@v)\]
+    which are bisimilar because $\lambda x.c\approx \lambda x.d$.
+
+    Let $p_1\approx q_1$ and $p_2\approx q_2$, and consider a transition $p_1\pr p_2\xr{f} t$. If $f = (-)$, then there is some $p_1= \mtt{op}(n,-)\pr \hat{p}_1$ and $p_2 = \overline{\mtt{op}}(n,-)\pr \hat{p}_2$; so
+    \tbl{
+        $p_1\xr{-\pr \overline{\mtt{op}}(n,-)} \hat{p}_1$ & and & $p_2\xr{-\pr \mtt{op}(n,-)} \hat{p}_2$
+    }
+    and these are matched by weak transitions
+    \tbl{
+        $q_1\rsq^\ast u \xr{\mtt{op}(n,-)} \hat{u}\rsq^\ast \hat{q}_1$ & and & $q_2\rsq^\ast v \xr{\overline{\mtt{op}}(n,-)} \hat{v}\rsq^\ast \hat{q}_2$
+    }
+    and thus
+    \[q_1\pr q_2\rsq^\ast u\pr v\xr{-} \hat{u}\pr \hat{v}\rsq^\ast \hat{q}_1\pr \hat{q}_2.\]
+    If $f\neq (-)$, then it is either $-\pr \tout(n,v)$ or $-\pr \tin(n,c)$ for communication with either $p_1$ or $p_2$. Then that is matched by $\rsq^\ast \xr{-\pr \mtt{op}}\rsq^\ast$ for either $q_1$ or $q_2$. 
+    So, $q_1\pr q_2$ can match every $\rsq$ with $\rsq^\ast$ and every $\xr{c}$ with $\rsq^
+    \ast \xr{c}\rsq^\ast$. Thus $p_1\pr p_2\approx q_1\pr q_2$.
+\end{proof}
+
+\newpage
+
+If the category has all RPOs, then for the LTS defined in this way, strong bisimilarity is a congruence: if $p\sim q$ then $c(p)\sim c(q)$ for any context $c: Pr\to Pr$. This ensures that replacing any part of a program with an equivalent part forms an equivalent program.
+
+Yet the proof of \cite{lm} holds in much greater generality than that in which it was stated: their ``reactive systems'' have a distinguished object $0$ which is the domain of the IPOs, effectively restricting to ground terms --- but their proofs do not depend on this object! So, we adopt an ``open'' version of their LTS, and demonstrate that it shares the same good properties.
+
+To state the definition, we have to distinguish which contexts are valid...
+
+\begin{definition}
+    Let $\dbrk{-}_1$ and $\dbrk{-}_2$ be meta-contexts. We consider a context $c\of \dbrk{\vv{Pr}}_1\to \dbrk{\vv{Pr}}_2$ to be an \textbf{observation} if... 
+\end{definition}
+
+Recall that rewrite operations are of the form $op\of \prod \brk{Pr}_i\to Pr$, and so their composites are of the form $d\of \dbrk{\vv{Pr}} = \prod \brk{\cdots \prod \brk{Pr}_i\cdots }_z\to Pr$. We assume these to be closed under decomposition, so that every factorization of $d$ is of the form $f\dbrk{\vec{e}}$ with $f\of \dbrk{\vv{Pr}}\to Pr$ a rewrite constructor and $\vec{e}$ a tree of rewrite constructors. Hence any first factor is of the form $\dbrk{\vec{d}}$; this characterization is needed for the proof of congruence.
+
+\begin{definition}
+    Let $\T$ be a lambda theory with all redex-RPOs. The \textbf{derived transition system} $\T[\xr{}]$ is defined as follows. For each meta-context $\dbrk{-}$, each tree of rewrite constructors $\vec{d}$ of type $\dbrk{\vv{Pr}}$, and each substitution of base rewrites (a tree of trees of the form $[[\Gamma_i\vdash l_i\rsq r_i]_j\cdots ]_z$), then for each IPO of the form below, with $\dbrk{-}_0$ another meta-context and $c$ an observation, assert $\Gamma\vdash \vec{t}\xr{c} \dbrk{\vv{d\dbrk{\vec{r}}}}$.
+    \[\begin{tikzcd}
+    	{\dbrk{\vv{\dbrk{\vv{\Gamma}}}}} && {\dbrk{\vv{Pr}}_0} \\
+    	\\
+    	{\dbrk{\vv{\dbrk{\vv{Pr}}}}} && \dbrk{\vv{Pr}}
+    	\arrow["{\vec{t}}", from=1-1, to=1-3]
+    	\arrow["{\dbrk{\vv{\dbrk{\vec{l}}}}}"{description}, from=1-1, to=3-1]
+    	\arrow["c", from=1-3, to=3-3]
+    	\arrow["\dbrk{\vec{d}}"', from=3-1, to=3-3]
+    \end{tikzcd}\]
+    Additionally, for each substitution $x:1\to \dbrk{\vv{\dbrk{\vv{\Gamma}}}}$ into the above diagram, assert $\cdot\vdash \vec{t}x\xr{c} \dbrk{\vv{d\dbrk{\vec{r}}}}x$.
+    
+\end{definition}
+
+First, to ensure that we can instantiate generic transitions and maintain behavioral reasoning, we combine two simplifications: that all rewrites of ground terms are substitutions of generic rewrites, and similarly for equations.
+
+\begin{definition}
+    Define $\T$ to be \textbf{rw-normal} if every ground rewrite is of the form $e\circ x:1\to \Gamma\to Rw$ for some generic rewrite $e$; and \textbf{eq-normal} if every ground equation is of the form $lx=rx$ for some equation $(l,r)$ derived from $E$ in the presentation of $\T$.
+
+    If $\T$ satisfies both conditions, then $\T$ is \textbf{normal}.
+\end{definition}
+
+Henceforth we assume all theories to be normal.
+
+With this assumption, we can show bisimilarity is closed under substitution of ground terms.
+\begin{proposition}
+    Suppose $\Gamma\vdash \vec{t}\approx \vec{u}$. Then for any $x: 1\to \Gamma$, we have $\cdot \vdash \vec{t}x\approx \vec{u}x$.
+\end{proposition}
+\begin{proof}
+    Let $\cdot\vdash \vec{t}x\xr{c} z$ be a transition. Then by eq-normality $c\vec{t}x=\dbrk{\vv{d\dbrk{\vec{l}}}}x$, and so by rw-normality $z=\dbrk{\vv{d\dbrk{\vec{r}}}}x$ and the transition is determined by a diagram as follows.
+    \[\begin{tikzcd}
+    	1 && {\dbrk{\vv{\dbrk{\vv{\Gamma}}}}} && {\dbrk{\vv{Pr}}_0} \\ \\
+    	&& {\dbrk{\vv{\dbrk{\vv{Pr}}}}} && {\dbrk{\vv{Pr}}}
+    	\arrow["x", from=1-1, to=1-3]
+    	\arrow["{\vec{t}}", from=1-3, to=1-5]
+    	\arrow["{\dbrk{\vv{\dbrk{\vec{l}}}}}"', from=1-3, to=3-3]
+    	\arrow["c", from=1-5, to=3-5]
+    	\arrow["{\dbrk{\vv{d}}}"', from=3-3, to=3-5]
+    \end{tikzcd}\]
+    Because $\vec{t}\approx \vec{u}$, we have $\vec{u}\rsq^\ast u'\xr{c} v'\rsq^\ast z'$ with $z'\approx z$. So there is an IPO for $u'$ equivalent to the one above; and by substitution into $(\rsq)$, we have 
+    \[\vec{u}x\rsq^\ast u'x\xr{c} v'x \rsq^\ast z'x.\]
+    So $\{(fx,gx)\;|\; f\sim g\}$ is a bisimulation, and hence $\approx$ is closed under substitution of ground terms.
+\end{proof}
+
+Now in this more general context, the Leifer-Milner congruence theorem works the same way -- for \textit{strong} bisimilarity; but for weak bisimilarity, the situation is more complex.
+
+\begin{theorem}[\cite{lm}, Theorem 1]
+    If $\T$ has all relative pushouts for squares of the form $\dbrk{\vv{d\dbrk{\vec{l}}}} = c\vec{t}$ as above, then strong bisimilarity is a congruence: if $\Gamma\vdash t\sim u$, then $\Gamma\vdash kt\sim ku$ for all $k:Pr\to Pr$.
+\end{theorem}
+% \begin{proof}
+%     Let $\Gamma\vdash kt \xr{c} d\dbrk{\vec{r}}$ be a transition; then the rectangle below is an IPO. The relative pushout of $(t,\Delta)$ and $\dbrk{\vec{l}}$ determines the left square, which is an IPO, and hence a transition $t\xr{c'} d'\dbrk{\vec{r}}$.
+%     \[\begin{tikzcd}
+%     	{\dbrk{\vv{\Gamma}}} & {Pr,\Delta} && {Pr,\Delta} \\
+%     	& \Theta' \\
+%     	{\dbrk{\vv{Pr}}} &&& \Theta
+%     	\arrow["{t,\Delta}", from=1-1, to=1-2]
+%     	\arrow["{\dbrk{\vec{l}}}"', from=1-1, to=3-1]
+%     	\arrow["{k,\Delta}", from=1-2, to=1-4]
+%     	\arrow["{c'}", from=1-2, to=2-2]
+%     	\arrow["c", from=1-4, to=3-4]
+%     	\arrow["{\mrm{rpo}}"{description}, from=2-2, to=3-4]
+%     	\arrow["{d'}"', from=3-1, to=2-2]
+%     	\arrow["d"', from=3-1, to=3-4]
+%     \end{tikzcd}\]
+%     By proposition 2 of \cite{lm}, this implies that the right square is an IPO as well. Because $t\sim u$, there exists a transition $u\xr{c'} e'\dbrk{\vec{r'}}$ with $e'\dbrk{\vec{r'}}\sim d'\dbrk{\vec{r}}$. This determines another left IPO square with the same right-hand side $c'$. Then pasting with the right square forms the transition $ku\xr{c} ie'\dbrk{\vec{r'}}$, where $i$ is the RPO. Since $kt\xr{c} d\dbrk{\vec{r}} = id'\dbrk{\vec{r}}$ and $d'\dbrk{\vec{r}}\sim e'\dbrk{\vec{r'}}$, we have that $kt\sim ku$.
+% \end{proof}
+
+\vspace{1em}
+
+The following are from \cite[Section 3]{lambda-lts}.
+
+\begin{definition}
+    A context $g\of \prod I_i\to I$ is \textbf{IPO uniform} if for any $f\of I\to J$ appearing as label in the IPO LTS, there is a list of contexts $g_j\of \prod I_{i_j}\to J$ and functions $l_j\of n_j\to n$ such that $g(t_0,\dots, t_n)\xr{f} z$ iff $z=g_j(t_{l_j(0)},\dots, t_{l_j(n_j)})$ for some $j$.
+\end{definition}
+
+\begin{theorem}
+    Let $\T$ be a lambda theory with all redex RPOs. If every context is either reactive or IPO uniform, then weak bisimilarity is a congruence.
+\end{theorem}
+
+\tbl{
+    $\tout(n,t_0) \xr{-\pr \tin(n,c)} \mtt{eval}(c,t_0)$
+}
+
+\tbl{
+    $\tout(@(t_0),p) \not\sim \tout(@(t_1),p)$
+}
+
+\newpage
+
+So, it remains to determine methods to know whether a theory has redex-RPOs, and how to compute them. First, we focus on the case of pi, rho, and ambient.
+
+\begin{definition}
+    Let $(\T,Pr,\rsq)$ be a lambda theory. For each rewrite $\Gamma\vdash l\rsq r$, we say that $l$ is a \textbf{process redex} if there is a nontrivial factorization $l = t(p,\Delta)$ for $p\of Pr$ and $\Delta\subset \Gamma$.
+    % e.g. this excludes *@p ~> p.
+\end{definition}
+
+\begin{theorem}
+    Let $(\T,Pr,\rsq)$ is a rewrite theory in which $(Pr,-\pr -,0)$ forms a commutative monoid. Suppose that every basic process redex is of the form $t\pr u$, and that every unary rewrite constructor commutes with $-\pr -$ as follows, and the only non-unary rewrite constructor is $-\pr -$.
+    \[\begin{tikzcd}
+    	{Pr, \brk{Pr}} && {Pr,Pr} \\
+    	{\brk{Pr,Pr}} \\
+    	{\brk{Pr}} && Pr
+    	\arrow["{Pr,op}", from=1-1, to=1-3]
+    	\arrow["st"', from=1-1, to=2-1]
+    	\arrow["{-\pr -}", from=1-3, to=3-3]
+    	\arrow["{\brk{-\pr -}}"', from=2-1, to=3-1]
+    	\arrow["op"', from=3-1, to=3-3]
+    \end{tikzcd}\]
+    Then $\T$ has all redex IPOs, which are given as follows. 
+
+    First, the basic factorizations. For each $l\rsq r$ and $l=ct$ with $t\neq \mrm{id}_{Pr}$ we have $\Gamma\vdash t\xr{c} r$.
+    \[\begin{tikzcd}
+    	\Gamma && {Pr,\Delta} \\
+    	\\
+    	Pr && Pr
+    	\arrow["{t,\Delta}", from=1-1, to=1-3]
+    	\arrow["l"', from=1-1, to=3-1]
+    	\arrow["c", from=1-3, to=3-3]
+    	\arrow[equals, from=3-1, to=3-3]
+    \end{tikzcd}\]
+    Next, the basic constructors. For each $op\of \brk{Pr}\to Pr$ with $l\rsq r\vdash op\brk{l}\rsq op\brk{r}$, we know that $l=t\pr u$ and $op$ commutes with $-\pr -$ as shown above. Because this square is an IPO, it converts transitions into new transitions. Applying $\brk{-}$ and pasting that square determines an inference rule.
+    \[\infr{\Gamma\vdash x\xr{t'\pr u'} r}{\brk{\Gamma} \vdash op(x)\xr{t'\pr u'} op(r)}\]
+    
+    \[\begin{tikzcd}
+    	{\brk{\Gamma}} && {\brk{Pr,\Delta}} && {Pr,Pr} \\ \\
+    	{\brk{Pr}} && {\brk{Pr}} && Pr
+        \arrow["\brk{t'\pr u'}", from=1-3, to=3-3]
+    	\arrow["{\brk{x,\Delta}}", from=1-1, to=1-3]
+    	\arrow["{\brk{l}}"', from=1-1, to=3-1]
+    	\arrow["{op,Pr}", from=1-3, to=1-5]
+    	\arrow["{t'\pr u'}", from=1-5, to=3-5]
+    	\arrow[equals, from=3-1, to=3-3]
+    	\arrow["op"', from=3-3, to=3-5]
+    \end{tikzcd}\]
+
+    This forms all redex IPOs.
+\end{theorem}
+
+\subsection{Applications}
+
+We apply the framework to the rho calculus, lambda calculus, and ambient calculus.
+
+\subsubsection*{rho calculus}
+
+% For the rho calculus, the following is an IPO.
+% \[\begin{tikzcd}[ampersand replacement=\&,cramped]
+% 	{Nm,Pr,Nm.Pr} \&\& {Pr,Nm,Nm.Pr} \\
+% 	\\
+% 	Pr \&\& Pr \\
+% 	{\langle out(n,p),n,\lambda x.q\rangle} \&\& {q[@p/x]}
+% 	\arrow["{out,Nm,Nm.Pr}", from=1-1, to=1-3]
+% 	\arrow["{out\pr in}"', from=1-1, to=3-1]
+% 	\arrow["{Pr\pr in}", from=1-3, to=3-3]
+% 	\arrow[equals, from=3-1, to=3-3]
+% 	\arrow["{-\pr in(n,\lambda x.q)}", from=4-1, to=4-3]
+% \end{tikzcd}\]
+% Because $t$ may often involve extra variables to define the context $c$, we may leave these variables implicit in the transition source; i.e.\ we can write the above as follows.
+% \[out(n,p) \xr{-\pr in(n,\lambda x.q)} q[@p/x]\]
+
+% More generally, the same transition applies to output in parallel with any process.
+% \[\begin{tikzcd}[ampersand replacement=\&,cramped]
+% 	{\Gamma,Pr} \&\& {Pr,Nm,Nm.Pr} \&\& {\Gamma,Pr} \\
+% 	\\
+% 	{\mathsf{Pr,Pr}} \&\& {Pr} \&\& {Rw} \&\& {Pr}
+% 	\arrow[""{name=0, anchor=center, inner sep=0}, "{out\pr Pr,Nm,Nm.Pr}", from=1-1, to=1-3]
+% 	\arrow["{out\pr in,Pr}"', from=1-1, to=3-1]
+% 	\arrow["{Pr\pr in}", from=1-3, to=3-3]
+% 	\arrow["{par_l(comm,t)}"{description}, from=1-5, to=3-5]
+% 	\arrow["{out\pr in\pr t}", from=1-5, to=3-7]
+% 	\arrow[""{name=1, anchor=center, inner sep=0}, "{-\pr -}"', from=3-1, to=3-3]
+% 	\arrow["{\mathsf{s}}"{description}, from=3-5, to=3-7]
+% 	\arrow["{\mrm{[ipo]}}"{description}, draw=none, from=0, to=1]
+% \end{tikzcd}\]
+% \[out(n,p)\pr t \xr{-\pr in(n,\lambda x.q)} q[@p/x]\pr t\]
+
+% The other rewrite constructor is $par_2$, which allows for concurrent rewriting.
+% \[\begin{tikzcd}[ampersand replacement=\&,cramped]
+% 	{\Gamma,\Gamma} \&\& {Pr,Nm^2,(Nm.Pr)^2} \&\& {\Gamma,\Gamma} \\
+% 	\\
+% 	{Pr,Pr} \&\& {Pr} \&\& {Rw} \&\& {Pr}
+% 	\arrow[""{name=0, anchor=center, inner sep=0}, "{(out\pr out),...}", from=1-1, to=1-3]
+% 	\arrow["{out\pr in,out\pr in}"{description}, from=1-1, to=3-1]
+% 	\arrow["{-\pr in\pr in}", from=1-3, to=3-3]
+% 	\arrow["{par_2(comm,comm)}"{description}, from=1-5, to=3-5]
+% 	\arrow["{out\pr in\pr out\pr in}", from=1-5, to=3-7]
+% 	\arrow[""{name=1, anchor=center, inner sep=0}, "{-\pr -}"', from=3-1, to=3-3]
+% 	\arrow["{\mathsf{s}}"{description}, from=3-5, to=3-7]
+% 	\arrow["{\mrm{[ipo]}}"{description}, draw=none, from=0, to=1]
+% \end{tikzcd}\]
+% \[out(n_1,p_1)\pr out(n_2,p_2) \xr{-\pr in(n_1,q_1)\pr in(n_2,q_2)} q_1[@p_1]\pr q_2[@p_2]\]
+
+% For example, let's work out the transitions out of (more complex term).
+
+% Show this coincides with the usual bisimilarity.
+
+\subsubsection*{lambda calculus}
+
+% \cite{lambda-lts}
+
+\subsubsection*{ambient calculus}
+
+% The basic transitions are the factorizations of the base rewrites, which are all IPOs because there are no factorizations of the identity. The following gives $n[in(m,p_1)\pr p_2]\xr{-\pr m[q]} m[n[p_1\pr p_2]\pr q]$.
+
+% \[\begin{tikzcd}
+% 	\Gamma && {Pr,Nm,Nm,Pr} \\
+% 	\\
+% 	Pr && Pr
+% 	\arrow["{n[in(m,p_1)|p_2]}", from=1-1, to=1-3]
+% 	\arrow["l"', from=1-1, to=3-1]
+% 	\arrow["{-|m[q]}", from=1-3, to=3-3]
+% 	\arrow[equals, from=3-1, to=3-3]
+% \end{tikzcd}\]
+
+% \begin{center}
+%     \img{0.3}{amb-in-id}
+% \end{center}
+
+% Because $-|p$ commutes with $-|m[q]$, we derive an IPO for $n[in...]\pr p\xr{-\pr m[q]} m[n[...]]\pr p$.
+% \[\begin{tikzcd}
+% 	{\Gamma,Pr} && {Pr,\Delta,Pr} && {Pr,\Delta} \\
+% 	\\
+% 	{Pr,Pr} && {Pr,Pr} && Pr
+% 	\arrow["{n[in(m,p_1)|p_2],\Delta,Pr}", from=1-1, to=1-3]
+% 	\arrow["{l,Pr}"', from=1-1, to=3-1]
+% 	\arrow["{-|p,\Delta}", from=1-3, to=1-5]
+% 	\arrow["{-|m[q],Pr}"{description}, from=1-3, to=3-3]
+% 	\arrow["{-|m[q]}", from=1-5, to=3-5]
+% 	\arrow[equals, from=3-1, to=3-3]
+% 	\arrow["{-|p}"', from=3-3, to=3-5]
+% \end{tikzcd}\]
+% \begin{center}
+%     \img{0.3}{amb-in-par}
+% \end{center}
+
+% Pasting with the right square determines the inference rule.
+% \[\infr{t\xr{-\pr m[q]} r}{t\pr p\xr{-\pr m[q]} r\pr p}\]
+
+% \newpage
+
+% Similarly for $\nu$.
+
+% \[\begin{tikzcd}
+% 	{[\vv{Nm}.(\Gamma,Pr)]} &&&& {Pr,\Delta} \\
+% 	\\
+% 	{[\vv{Nm}.(Pr,Pr)]} && {[\vv{Nm}.Pr]} && Pr
+% 	\arrow[""{name=0, anchor=center, inner sep=0}, "{\nu \vec{n}.n[in(m,p_1)|p_2]|p_3}", from=1-1, to=1-5]
+% 	\arrow["{[\vv{Nm}.(in,Pr)]}"{description}, from=1-1, to=3-1]
+% 	\arrow["{-|m[p_4]}", from=1-5, to=3-5]
+% 	\arrow["{[\vv{Nm}.(-|-)]}"', from=3-1, to=3-3]
+% 	\arrow["\nu"', from=3-3, to=3-5]
+% 	\arrow["{\mrm{ipo}}"{description}, draw=none, from=0, to=3-3]
+% \end{tikzcd}\]
+
+\newpage
+
+\section{Encodings}
+
+intro...
+
+\vspace{2em}
+
+It is also key to ensure that a source program $p$ ``behaves the same'' as its mapped program $\map{p}$, when restricted to source observations.
+
+\begin{definition}
+    Let $\map{-}\of \mrm{S}\to \T$ be a functor of lambda theories, which maps $Pr_\mrm{S}$ to $\brk{Pr_\T}$ for some meta-context $\brk{-}\of \T\to \T$. We define \textbf{map-bisimilarity} $\vec{\approx}\subset Pr_\mrm{S}\times \brk{Pr_\T}$ as follows.
+
+    \tbl{
+        $p_1\mapsim p_2$ & $:=$ & $\forall \hat{p}_1. \forall c.\; (p_1\xr{c} \hat{p}_1)\ra \exists \hat{p}_2.\; (p_2\xr{\map{c}}_\ast \hat{p}_2)\land (\hat{p}_1\mapsim \hat{p}_2)$\\
+        & $\land$ & $\forall \hat{p}_2.\forall c.\; (p_2 \xr{\map{c}} \hat{p}_2) \ra \exists \hat{p}_1. (p_1\xr{c}_\ast \hat{p}_1)\land (\hat{p}_1\mapsim \hat{p}_2)$
+    }
+\end{definition}
+
+up to bisimilarity...
+
+\begin{definition}
+    Let $\xr{}\; \subset P\times C\times P$ be a transition system, and let $\approx$ be its bisimilarity. 
+    
+    The \textbf{quotient transition system} on $P/(\approx)$ is defined:
+    \tbl{$[p]\xr{c} [q]$ & $:=$ & $\forall \hat{p}\of [p].\; \exists \hat{q}\of [q].\; \hat{p}\xr{c} \hat{q}$}
+    and note this is equivalent to $\exists \hat{p}, \hat{q}.\; \hat{p}\xr{c}\hat{q}$, as bisimilarity means that if $\hat{p}\approx p$ then $p\xr{c} q\approx \hat{q}$.
+\end{definition}
+
+We can now define our concept of translation between program languages.
+
+\begin{definition}
+    Let $\mrm{S},\T$ be lambda theories. 
+    
+    An \textbf{encoding} $\map{-}\of \mrm{S}\to \T$ is a functor which: 
+    \begin{itemize}
+        \item preserves conjunction and substitution (products and pullbacks) \[A,B\; \mrm{type}\vdash \map{a\of A, b\of B}\cong \map{a\of A}, \map{b\of B}\]
+        \[f\of A\to B,\varphi(b)\; \mrm{prop} \vdash \map{\varphi[f]} = \map{\varphi}[\map{f}]\]
+        \item preserves abstraction (function types)
+        \[A,B\; \mrm{type}\vdash \map{\lambda {x{:}A}.{y{:}B}}\cong \lambda x{:}\map{A}.y{:}\map{B} \]
+        \item maps programs $Pr_\mrm{S}$ to $\brk{Pr_\mrm{T}}$, for some meta-context $\brk{-}\of \T\to \T$
+        \item maps rewriting to a silent path in the quotient $\xr{}_\ast/\approx$
+        \[p\rsq q\vdash [\map{p}]\xr{}_\ast^\ast [\map{q}]\]
+        which is equivalent to $\map{p} (\rsq^\ast \approx)^\ast \map{q}$
+
+        (yet often more is preserved; the encoding is ``strong'' if $\map{p}\rsq^\ast\sim \map{q}$)
+        \item preserves weak bisimilarity
+        \[p\approx q\vdash \map{p}\approx \map{q}\]
+        \item and preserves behavior.
+        \[p\;\vec{\approx}\; \map{p}\]
+    \end{itemize}
+    We denote the category of lambda theories and encodings by $\lambda\mbb{T}$.
+\end{definition}
+
+% \vspace{2em}
+
+% \begin{proposition}
+%     Let $\T$ be a lambda theory. Suppose that $\T^\ast$ contains $\T$, plus one more term $f\of \prod\brk{Pr}_i\to Pr$ and a rewrite $f\vec{\brk{p}}\rsq t$; with a map $\map{-}\of \T^\ast\to \T$ which is the identity on $\T$. Then $\map{-}$ preserves weak bisimilarity if and only if $\vec{p}\approx \vec{q}$ implies $\map{f\vec{\brk{p}}}\approx \map{f\vec{\brk{q}}}$.
+% \end{proposition}
+% \begin{proof}
+%     Assume that $\vec{p}\approx \vec{q}$ implies $\map{f\vec{\brk{p}}}\approx \map{f\vec{\brk{q}}}$, and suppose $u,v\of Pr$ in $\T^\ast$ are weakly bisimilar. If both programs are in $\T$, then preservation holds trivially. If $u=yfx$ and $v$ is in $\T$, then $\map{u} = y\map{f}x$ and $\map{v}=v$; and $\map{u}\xr{c} a$ means $cy\map{f}x \rsq a$...
+
+%     Seems like there's a missing piece.
+% \end{proof}
+
+\newpage
+
+\begin{proposition}[\cite{pi-rho}]
+    There is an encoding of the rho calculus with replicated input into the rho calculus, given as follows.
+
+    \begin{center}
+        \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rcl}
+            $m,n\of Nm$ & $\vdash$ & $m\cdot n := @(\mtt{o}(m,0)\pr \mtt{i}(n,\lambda x.0))\of Nm$\\
+            $x\of Nm$ & $\vdash$ & $D(x) := \mtt{i}(x,\lambda y.\, \ast y \pr \mtt{o}(x,\ast y))\of Pr$
+        \end{tabular}
+    \end{center}
+
+    \[\map{!\mtt{in}(a,\lambda x.p)} = \lambda n. D(n)\pr \mtt{out}(n, \mtt{in}(a, \lambda x. \map{p}(n\cdot n)\pr D(n)))\]
+\end{proposition}
+
+The rewrite $!(p)\rsq p\pr !(p)$ maps to rewrites from $\map{p}$ to a process bisimilar to $\map{p\pr !(p)}$.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{rcl}
+         $\map{!\mtt{in}(a,\lambda x.p)}(n)$ & $=$ & $D(n)\pr \mtt{out}(n, \mtt{in}(a, \lambda x. \map{p}(n\cdot n)\pr D(n)))$\\
+         & $=$ & $\mtt{i}(n,\lambda y. \ast y\pr \mtt{o}(n,\ast y))\pr \mtt{o}(n,\mtt{i}(a, \lambda x.\map{p}\pr D(n)))$\\
+         & $\rsq$ & $\ast(@(\mtt{i}(a,\lambda x.\map{p}\pr D(n))))\pr \mtt{o}(n,\ast(@(\mtt{i}(a,\lambda x. \map{p}\pr D(n))))$\\
+         (1) & $\rsq$ & $\mtt{i}(a,\lambda x.\map{p}\pr D(n))\pr \mtt{o}(n,\ast(@(\mtt{i}(a,\lambda x. \map{p}\pr D(n))))$\\
+         (2) & $\approx$ & $\map{\mtt{in}(a,\lambda x.p)}\pr \map{!\mtt{in}(a,\lambda x.p)}$
+    \end{tabular}
+\end{center}
+
+The idea of the bisimilarity: there is a copy of $\map{\lambda x.p}$ stored at $a$, and the same is being output; and for any receive on $a$,  $\map{p}[@q]$ runs and another duplicator opens, forming the original redex.
+
+\begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{rcl}
+         (1) & $\xr{\mtt{out}(a,r)\pr -}$ & $(\map{p}[@r]\pr D(n))\pr \mtt{out}(n,\mtt{in}(a,\lambda x.\map{p}\pr D(n))$\\
+         & $=$ & $\map{p}[@r]\pr \map{!\mtt{in}(a,\lambda x.p)}$\\
+         (2) & $\xr{\mtt{out}(a,r)\pr -}$ & $\map{p}[@r]\pr \map{!\mtt{in}(a,\lambda x.p)}$
+    \end{tabular}
+\end{center}
+
+\begin{proposition}[\cite{pi-rho} Prop 4]
+    If $p\rsq^\ast q$ then $\map{p}\rsq^\ast \sim \map{q}$
+\end{proposition}
+
+\begin{theorem}
+    If $p\approx q$ in $\T_\rho^!$, then $\map{p}\approx \map{q}$ in $\T_\rho$.
+\end{theorem}
+\begin{proof}
+    As the only difference of $\T_\rho^!$ is the term $!\of \{\mtt{in}(n,c)\}\to Pr$ and the rewrite $!(p)\rsq p\pr !(p)$, without any equations between $!$ and other terms, it has only one redex IPO which is not in $\T_\rho$.
+    Thus it suffices to consider $\lambda x.p\approx \lambda x.q$ and apply $\map{!\mtt{in}(n,-)}$. Because the result is an abstraction, the first transition must be an evaluation at a particular $n$.
+    
+    Suppose $\map{!\mtt{in}(a,\lambda x.p)}(n)\xr{c} t$. Then $c$ is either $(-)$, or $(-\pr \mtt{out}(n,q))$, or $(-\pr \mtt{in}(n,c))$.  If it is $(-\pr \mtt{out}(n,q))$ or $(-\pr \mtt{in}(n,c))$, then the rewrites of the duplicator are mirrored in the two processes.
+    If $(-)$, then the process evolves to $(1)$ shown above; and the same transitions apply to $\map{!\mtt{in}(n,\lambda x. q)}$. Because $\lambda x.p\approx \lambda x.q$, they are bisimilar for every substitution $p[@r]\approx q[@r]$. 
+    
+    So, we have that $\map{!\mtt{in}(a,\lambda x.p)}\approx \map{!\mtt{in}(a,\lambda x.q)}$, and the map preserves weak bisimilarity.
+\end{proof}
+
+\newpage
+
+% We can define a weaker notion of translation which only requires preservation of bisimilarity from $\xr{}_\mrm{S}$ to $\map{\xr{}_\mrm{S}}$. For new into rho, this effectively makes new names unobservable. If there are sufficient control structures in place so the restriction of observation does not affect user capability, as the ``intended use'' of the encoded feature is encapsulated in the source language, then this can be justified, though should be fully defined; yet in general, many natural translations will preserve full bisimilarity. I think the distinction will inevitably have practical significance.
+
+\begin{definition}
+    Let $\mrm{S}$ be a lambda theory. Define the \textbf{weakening} of $\mrm{S}$ to be the lambda theory $\widetilde{\mrm{S}}$ with an internal equivalence relation (a proposition with reflexivity, symmetry, and transitivity)
+    \[p,q\of Pr\vdash Eq(p,q)\; \mrm{prop}\]
+    with each equation axiom of $Pr_\mrm{S}$ replaced by
+    \[\Gamma\vdash Eq(t,u)\]
+    and the additional rules that this relation is a congruence with respect to all program operations.
+    \[\prod_i \brk{\Gamma_i}_i\ctx \bigwedge_i \brk{Eq(p_i,q_i)}_i\vdash Eq(op(\vec{p}),op(\vec{q}))\]
+\end{definition}
+
+Yet this gives $\widetilde{S}$ a trivial system of relative pushouts; and we have to define an equivalent framework for ``$Eq$-relative pushouts''. It is unclear whether this is tractable or too overcomplicated.
+
+The equivalent of the slice category is to define $f\of \widetilde{S}_{Eq}(t,u) \equiv Eq(t,uf)$. 
+
+...
+
+\begin{definition}
+    Let $\mrm{S}, \T$ be lambda theories and $\map{-}\of \mrm{S}\to \T$ be a functor. 
+    
+    We define the \textbf{map-restricted subsystem} $\map{\xr{}_\mrm{S}} \subset\; \xr{}_\T$ to consist of transitions of the form $\map{p}\xr{\map{c}} \map{q}$ such that $p\xr{c} q$ in $\mrm{S}$. We denote the \textbf{map-restricted bisimilarity} by $\map{\approx}$.
+    
+    A \textbf{map-restricted encoding} from $\mrm{S}$ to $\T$ is a functor $\widetilde{\mrm{S}}\to \T$ satisfying these conditions:
+    \begin{itemize}
+        \item products and pullbacks are preserved
+        \item function types are preserved
+        \item if $Eq(p,q)$ then $\map{p} \map{\approx} \map{q}$
+        \item if $p\approx q$ then $\map{p}\map{\approx} \map{q}$
+        \item if $s\rsq t$ then $\map{s}(\rsq^\ast\approx)^\ast \map{t}$
+        % might be map(approx) there
+        % and what about "map bisim" from main def?
+    \end{itemize}
+\end{definition}
+
+\begin{theorem}
+    There is a map-restricted encoding of the $\pi$ calculus (with input replication) into the $\rho$ calculus, defined as follows.
+
+    \begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{rcl}
+        $n\of Nm$ & $\vdash$ & $+n := @(\mtt{o}(n,0))\of Nm$\\
+        $n\of Nm$ & $\vdash$ & $n+ := @(\mtt{i}(n,\lambda x.0))\of Nm$\\
+        $m,n\of Nm$ & $\vdash$ & $m\cdot n := @(\mtt{o}(m,0)\pr \mtt{i}(n,\lambda x.0))\of Nm$\\
+        $x\of Nm$ & $\vdash$ & $D(x) := \mtt{i}(x,\lambda y.\, \ast y \pr \mtt{o}(x,\ast y))\of Pr$\\
+        $x,w,v,s\of Nm$ & $\vdash$ & $!N(x,w,v,s) :=$\\
+        && $D(x)\pr \mtt{o}(x,\mtt{i}(w,\lambda a. \mtt{i}(v, \lambda r. D(x)\pr \mtt{o}(r,\ast a)\pr \mtt{o}(w, \mtt{o}(a,0)))))\pr \mtt{o}(w,\ast s)$
+    \end{tabular}
+\end{center}
+
+\begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{rcl}
+         $\map{p}$ & $=$ & $\lambda xzvns. \map{p}(n,v)\pr !N(x,z,v,s)$\\
+         $\map{0}(n,v)$ & $=$ & $0$\\
+         $\map{p\pr q}(n,v)$ & $=$ & $\map{p}(+n,v)\pr \map{q}(n+, v)$\\
+         $\map{\mtt{out}(a,k)}(n,v)$ & $=$ & $\mtt{out}(a,\ast(k))$\\
+         $\map{\mtt{in}(a,\lambda x.p)}(n,v)$ & $=$ & $\mtt{in}(a,\lambda x.\map{p}(n,v))$\\
+         $\map{\nu(\lambda x.p)}(n,v)$ & $=$ & $\mtt{out}(v,\ast(n))\pr \mtt{in}(n,\lambda x.\map{p}(n\cdot n,v))$\\
+         $\map{!\mtt{in}(a,\lambda x.p)}(n,v)$ & $=$ & $D(n)\pr \mtt{out}(n, \mtt{in}(a, \lambda x. D(n)\pr \map{p}(n\cdot n, v)))$
+    \end{tabular}
+\end{center}
+\end{theorem}
+% \begin{proof}
+%     ...
+% \end{proof}
+
+\newpage
+
+\printbibliography
+
+\newpage
+
+
+\section{Appendix}
+\label{appendix}
+
+\begin{center}
+    \textbf{$\rho$ calculus}\\~\\
+
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{c}
+         \img{0.75}{rho-comm}\\
+         $out_k(n,\vec{q})|in_k(n,\lambda \vec{x}.p) \rsq p[@\vec{q}/\vec{x}]$\\~\\
+         \img{0.75}{rho-exec}\\
+         $\ast@p\rsq p$\\~\\
+         \img{0.75}{rho-par}\\
+         $l\rsq r \;\ra\; p|l\rsq p|r$\\~\\
+     % (par-2)
+    \end{tabular}    
+\end{center}
+
+\newpage
+
+\begin{center}
+    \textbf{ambient calculus}\\~\\
+
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{c}
+         \img{0.35}{amb-in}\\
+         $n[in(m,p)|q]|m[r]\rsq m[n[p|q]|r]$\\~\\
+         \img{0.35}{amb-out}\\
+         $m[n[out(m,p)|q]|r] \rsq n[p|q]|m[r]$\\~\\
+         \img{0.35}{amb-opn}\\
+         $open(n,p)|n[q] \rsq p|q$
+    \end{tabular}    
+\end{center}
+
+\newpage
+
+\begin{center}
+    \textbf{context transitions}\\~\\
+    \begin{tabular}{c@{\qquad\qquad}c}
+         \img{0.5}{trans-def} & \img{0.5}{transition}
+    \end{tabular}
+\end{center}
+
+\vspace{5em}
+
+\begin{center}
+    \textbf{bisimulation}\\~\\
+    \img{0.5}{bisim}\\~\\
+    $p_0\sim q_0$\\
+    $\forall C,p_1.\; (p_0\xr{C} p_1)\ra \exists q_1.\; q_0\xr{C} q_1 \land p_1\sim q_1$\\
+    $\forall C,q_1.\; (q_0\xr{C} q_1)\ra \exists p_1.\; p_0\xr{C} p_1\land p_1\sim q_1$
+\end{center}
+
+To read each ``grey bottle-opener'' shape: $\forall x. P(x)\ra Q(x)$ is equivalent to $\neg[\exists x. P(x) \land \neg[Q(x)]]$ -- the outer negation is grey, and the inner negation flips back to white.
+
+\end{document}
