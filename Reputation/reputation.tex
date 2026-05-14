@@ -1,0 +1,450 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{stmaryrd}
+\usepackage{bussproofs}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\definecolor{rhocolor}{HTML}{1A1A2E}
+\definecolor{rhoaccent}{HTML}{3FA9F5}
+
+\lstdefinelanguage{rholang}{
+  morekeywords={new, in, for, contract, match, if, else, true, false, Nil, send, receive},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]"
+}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{rhocolor}\bfseries,
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{rhoaccent},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  frame=single,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible
+}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}[definition]{Example}
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{theorem}[definition]{Theorem}
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+
+\newcommand{\Sig}{\mathsf{Sig}}
+\newcommand{\Alice}{\mathsf{Alice}}
+\newcommand{\Bob}{\mathsf{Bob}}
+\newcommand{\Dave}{\mathsf{Dave}}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\Att}{\mathrel{\Vdash}}
+\newcommand{\AttD}{\Att_{\!\mathsf{D}}}
+\newcommand{\AttW}{\Att_{\!\mathsf{W}}}
+\newcommand{\AttH}{\Att_{\!\mathsf{H}}}
+\newcommand{\modD}[1]{\langle #1 \rangle^{\mathsf{D}}}
+\newcommand{\modW}[1]{\langle #1 \rangle^{\mathsf{W}}}
+\newcommand{\modH}[1]{\langle #1 \rangle^{\mathsf{H}}}
+\newcommand{\Reps}{\mathcal{R}}
+\newcommand{\Traces}{\mathcal{T}}
+\newcommand{\Proofs}{\mathcal{P}}
+\newcommand{\Names}{\mathcal{N}}
+
+\title{Identity-Indexed Typing Judgments\\
+and the Adjudication of Capability\\[0.5em]
+\large A Proof-Theoretic / Observational Framework\\for Less Game-able Reputation}
+\author{L.G.~Meredith \\ \small F1R3FLY Industries \\[0.25em] \small in dialogue with Claude (Anthropic)}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We describe a reputation framework in which the term position of a typing judgment is occupied not by inspectable code but by an opaque cryptographic identity. Conformance of an identity to a spatial-behavioral type is adjudicated by the community through two simultaneously running processes: a distributed proof system over signed judgments, and a labelled transition system assembled from attested communication events. Reputation is the lattice position of an identity between proof-theoretic certification and observational refutation, refusing scalarization until a community-specific decision compels projection. The attestation discipline is stratified into direct, witnessed, and hearsay tiers in a way that aligns precisely with the name-as-capability principle of the rho calculus, inducing an evidence-indexed family of Hennessy--Milner modalities through the OSLF construction. We sketch a hosted implementation in MeTTaIL (rholang~1.4) and draw structural parallels with zero-knowledge proof systems, where the witness is likewise hidden from the verifier.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{The inversion}
+
+In conventional type theory, a judgment
+\[
+\Gamma \vdash M : T
+\]
+exhibits the term $M$ syntactically. The typing relation is defined by induction over the structure of $M$; type checking presupposes access to the code. The identity of any agent producing or owning $M$ is irrelevant to the judgment. The whole edifice presumes a transparent term-bearer.
+
+In the framework we describe, the term position is occupied instead by a cryptographic identity:
+\[
+\Gamma \vdash \Sig(\Alice) : T.
+\]
+The identity is \emph{opaque} --- we have no access to Alice's internal code, no way to perform induction over her behaviour --- but \emph{rigidly locatable}: under standard cryptographic assumptions, signatures verifiably tie messages to identities, and impersonation is bounded by hardness.
+
+This inversion is the load-bearing conceptual maneuver. We are no longer asking whether a given program inhabits a given type. We are asking: given that an identity \emph{claims} to inhabit a type, by what process can the community adjudicate the claim?
+
+\subsection{What spatial-behavioral types contribute}
+
+A spatial-behavioral type, in the sense relevant to the rho calculus and its successors, describes both \emph{what} an agent communicates (the behavioral dimension, in the tradition of session types and process calculi) and \emph{where} the communication is structurally located (the spatial dimension, capturing nominal scope, locality, and the topology of channel sharing). The graph-structured lambda theories (GSLTs) generalise this further: a type is a configuration in a grammar quotiented by equations and oriented by rewrites, and the OSLF functor associates to each such theory a Hennessy--Milner-style logic whose characteristic formulae enjoy an adequacy theorem with respect to bisimulation.
+
+This is what makes spatial-behavioral types suitable as the right-hand side of the identity judgment. They are rich enough to describe \emph{services} --- patterns of interaction the community might wish to reason about --- while admitting a model-theoretic semantics that interacts cleanly with observation. A trace of communication events either falsifies a type by satisfying a refuting formula, or fails to falsify it.
+
+\subsection{Plan}
+
+Section~\ref{sec:framework} develops the dual structure of distributed proof and communal trace, and defines reputation as a lattice position between them. Section~\ref{sec:attest} introduces the three-tier attestation discipline and shows how it aligns with rho's name-as-capability principle. Section~\ref{sec:diff} contrasts the framework with the family of typeless-scalar reputation systems prevalent in practice. Section~\ref{sec:mettail} sketches a hosted implementation in MeTTaIL. Section~\ref{sec:zk} examines the structural parallels with zero-knowledge proof systems and identifies several places where ZK techniques compose naturally with the framework.
+
+\section{The framework}\label{sec:framework}
+
+\subsection{Identity-indexed judgments}
+
+Fix a population $\mathcal{A}$ of agents, each associated with a verification key for a digital signature scheme. We write $\Sig(A)$ for the identity of $A \in \mathcal{A}$ in the term position of a judgment, understood as a commitment to a verification key together with the right to author signed messages.
+
+\begin{definition}[Capability judgment]
+A \emph{capability judgment} has the form
+\[
+\Gamma \vdash \Sig(A) : T
+\]
+where $T$ is a spatial-behavioral type and $\Gamma$ is a finite multiset of capability judgments $\Sig(B_i) : T_i$ representing the environmental dependencies on which $A$'s claim relies.
+\end{definition}
+
+The role of $\Gamma$ deserves emphasis. Where in conventional type theory $\Gamma$ records variable bindings local to a derivation, here $\Gamma$ records inter-agent dependencies. If Alice's ability to provide a database service depends on Bob's ability to provide reliable storage and Carol's ability to provide authentication, then Alice's judgment
+\[
+\Sig(\Bob):T_{\text{store}},\ \Sig(\mathsf{Carol}):T_{\text{auth}} \vdash \Sig(\Alice) : T_{\text{db}}
+\]
+becomes provable only by chaining in Bob's and Carol's own published judgments. Proof composition is the act of discharging environmental dependencies against the standing claims of other agents.
+
+\subsection{The distributed proof system}\label{ssec:proofsys}
+
+We assume a fixed sequent calculus over spatial-behavioral types --- determined by the OSLF construction applied to the underlying GSLT --- with the usual structural rules together with type-specific introduction and elimination rules. We augment this with two identity-specific rules.
+
+\begin{prooftree}
+\AxiomC{$\Sig(A)$ verifies on $\langle \text{``} \Gamma \vdash \Sig(A) : T \text{''} \rangle$}
+\RightLabel{\textsc{Claim}}
+\UnaryInfC{$\Gamma \vdash \Sig(A) : T$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Gamma_1 \vdash \Sig(A) : T_1$}
+\AxiomC{$\Gamma_2, \Sig(A) : T_1 \vdash \Sig(B) : T_2$}
+\RightLabel{\textsc{Cut}$_{\text{id}}$}
+\BinaryInfC{$\Gamma_1, \Gamma_2 \vdash \Sig(B) : T_2$}
+\end{prooftree}
+
+\textsc{Claim} embeds an agent's signed assertion as a leaf of the proof tree. The signature is what \emph{licenses} treating the assertion as a hypothesis available to the network. \textsc{Cut}$_{\text{id}}$ is the standard cut rule restricted to identity-indexed judgments; it discharges Alice's claim against the appearance of $\Sig(A) : T_1$ in another agent's environmental context. Composition of such cuts across the population is what assembles distributed proofs.
+
+\begin{definition}[Provability]
+The judgment $\vdash \Sig(A) : T$ is \emph{community-provable} if there exists a finite derivation in the augmented sequent calculus whose every leaf is a verified \textsc{Claim}. The set of such proofs is denoted $\Proofs(A,T)$.
+\end{definition}
+
+\subsection{The trace semantics}\label{ssec:traces}
+
+In parallel with the proof system, the community maintains a labelled transition system assembled from \emph{attestations} of communication events. An attestation is a signed statement of the form ``agent $B$ witnessed (or participated in) the event $e$ at time $t$'', where $e$ is a communication event in the rho-calculus sense: a synchronisation on a named channel carrying a payload. The attestation language and its discipline are developed in Section~\ref{sec:attest}.
+
+Let $\mathcal{E}$ be the set of attested events, ordered by attestation timestamp into traces. We write $\sigma : A$ for a trace involving identity $A$ as participant.
+
+\begin{definition}[Communal LTS]
+The \emph{communal LTS} $\sem{\mathcal{E}}$ has agent identities as states and transitions $A \xrightarrow{e} A'$ wherever $A$ participates in $e$. The LTS is \emph{partial} (only attested edges appear), \emph{monotone} under attestation (new attestations only add edges), and \emph{multi-source} (edges may carry differing evidential strengths).
+\end{definition}
+
+OSLF-adequacy applied to the underlying GSLT yields, for each type $T$, a characteristic Hennessy--Milner formula $\phi_T$ such that a state inhabits $T$ (up to bisimulation) iff it satisfies $\phi_T$.
+
+\begin{definition}[Refutation]
+A trace $\sigma : A$ \emph{refutes} the claim $\Sig(A) : T$ if $\sigma$ witnesses a sub-state of $A$ satisfying $\neg \phi_T$, in the evidence-indexed HM logic of Section~\ref{ssec:modalities}.
+\end{definition}
+
+\subsection{Reputation as lattice position}\label{ssec:lattice}
+
+The two processes --- distributed proof construction and communal trace assembly --- pull in opposite directions. Proof construction tries to certify; trace assembly tries to refute. Reputation is the joint state.
+
+\begin{definition}[Reputation]
+The \emph{reputation} of identity $A$ with respect to type $T$ is the pair
+\[
+\Reps(A,T) = \langle \Proofs(A,T),\ \Traces^{\bot}(A,T) \rangle
+\]
+where $\Traces^{\bot}(A,T)$ is the multiset of attested traces refuting the claim, each tagged with its modal-strength profile (Section~\ref{ssec:modalities}).
+\end{definition}
+
+The graded ordering is then immediate:
+
+\begin{enumerate}[label=(\roman*)]
+\item \emph{Proven}: $\Proofs(A,T) \neq \emptyset$ and $\Traces^{\bot}(A,T) = \emptyset$. The community has constructed a derivation; no attested trace refutes it.
+\item \emph{Consistent}: $\Proofs(A,T) = \emptyset$ but $\Traces^{\bot}(A,T) = \emptyset$. No proof, but no refutation either. This is the strongest model-theoretic statement available short of provability.
+\item \emph{Refuted to degree $\delta$}: $\Traces^{\bot}(A,T) \neq \emptyset$, with $\delta$ a measure built from the multiset and its modal-strength profile.
+\item \emph{Provably false}: a derivation exists for $\vdash \Sig(A) : \neg T$, or for an incompatible $T'$.
+\end{enumerate}
+
+\begin{remark}[Anti-scalarization]
+We emphasise --- following the principle that \emph{typeless scalars offer no objective adjudication process, because the process the scalar witnesses is unrecoverable from the scalar itself} --- that $\Reps(A,T)$ is a \emph{structured} object. Different communities, with different decision problems, project this structure to scalars (or richer decision-relevant objects) by different aggregation functions. The aggregation is exposed as a community-specific commitment, adjudicable in its own right, not buried inside an opaque score.
+\end{remark}
+
+\begin{remark}[Coverage-indexing]
+The grading is necessarily indexed by community observational coverage. An agent in a sparsely observed corner of the network earns ``consistency'' cheaply. We discuss attestation economics --- the phlogiston-metered ``valuable friction'' that makes coverage non-trivial --- in Section~\ref{ssec:friction}.
+\end{remark}
+
+\section{Attestations and the rho capability discipline}\label{sec:attest}
+
+\subsection{Three tiers}
+
+Attestations stratify into three tiers, each defined by the attestor's epistemic relationship to the event:
+
+\begin{definition}[Attestation tiers]
+For an event $e$ on channel $c$ carrying payload $p$ between principals $A$ and $A'$:
+\begin{itemize}[leftmargin=*]
+\item $B \AttD e$ (\emph{direct}): $B \in \{A, A'\}$; $B$ executed the send or receive on $c$.
+\item $B \AttW e$ (\emph{witnessed}): $B \notin \{A,A'\}$ but $B$ holds the name $c$ and observed the synchronisation.
+\item $B \AttH^{\chi} e$ (\emph{hearsay}): $B$ does not hold $c$ but was told of $e$ by some other attestor, with $\chi$ recording the full provenance chain of intermediaries.
+\end{itemize}
+\end{definition}
+
+The hearsay tier requires the full provenance chain rather than a flat \emph{hearsay} tag. A bare hearsay flag is forgeable through cycles: $E$ tells $B$, $B$ tells $D$, $D$ tells $E$, and there now appear to be three independent hearsay attestations of a fact with a single origin. Explicit chains make the dependency structure visible and let the reputation calculus discount accordingly.
+
+\subsection{Capability alignment}
+
+The tier discipline is not external constraint imposed on the rho calculus. It \emph{is} the rho calculus's name-as-capability discipline applied at the meta-level.
+
+\begin{proposition}[Capability alignment]
+In a rho-calculus setting, the right to attest at tier $\AttD$ for an event on channel $c$ is precisely the right to send or receive on $c$. The right to attest at tier $\AttW$ for an event on $c$ is precisely possession of $c$ as a name. The right to attest at $\AttH$ requires no nominal access, only a verified hearsay chain.
+\end{proposition}
+
+Consequently the \emph{witnessing radius} of any event is exactly the distribution of its channel name. The social topology of who-can-attest-to-whom is the nominal topology of who-shares-names-with-whom. Reputation observability and capability locality are the same structure under two interpretations.
+
+\subsection{Evidence-indexed modalities}\label{ssec:modalities}
+
+The OSLF functor, applied to the underlying GSLT, generates a Hennessy--Milner-style logic with diamond modalities $\langle a \rangle \phi$. Stratifying attestation refines these into an \emph{evidence-indexed} family:
+
+\begin{align*}
+\modD{a}^{B}\phi &\quad\text{``some attestor $B$ directly attests an $a$-transition into a state satisfying $\phi$''} \\
+\modW{a}^{B}\phi &\quad\text{``some attestor $B$ witnessed an $a$-transition into a state satisfying $\phi$''} \\
+\modH{a}^{\chi}\phi &\quad\text{``the hearsay chain $\chi$ supports an $a$-transition into a state satisfying $\phi$''}
+\end{align*}
+
+Modal strength is partially ordered:
+\[
+\modD{a} \;\succeq\; \modW{a} \;\succeq\; \modH{a}^{\chi}
+\]
+with the hearsay tier further refined by chain length and signing density along $\chi$.
+
+\begin{definition}[Refutation strength]
+The strength of a refuting trace $\sigma$ for the claim $\Sig(A):T$ is the meet, in the modal-strength order, of the modalities appearing in the satisfying assignment of $\neg \phi_T$ at $\sigma$. A refutation is only as strong as its weakest evidential link.
+\end{definition}
+
+This gives a principled, type-driven grading of refutations, and is exactly the structure that resists collapse into a scalar. The full refutation profile of an identity is a partial-order-valued object; projection to a scalar is a community-specific choice with its own adjudication.
+
+\subsection{Signing-on-send as valuable friction}\label{ssec:friction}
+
+A unilateral attestation $B \AttD e$ where $A$ is the counterparty raises the obvious adversarial question: what stops $B$ from lying about $A$? The framework's answer is structural rather than juridical.
+
+\begin{proposition}[Non-repudiation by signed payload]
+If the payload $p$ of event $e$ carries $A$'s signature, then $B$'s attestation $B \AttD e$ extends to a non-repudiable record: $B$ produces $A$-signed evidence that $A$ engaged in the event.
+\end{proposition}
+
+Where $A$ has not signed, $B$'s direct attestation degrades to a one-sided claim, which $A$ may contradict with her own attestation of the period in question, and the reputation calculus grades both as conflicting evidence rather than treating either as decisive.
+
+The implication is that signing-on-send constitutes \emph{valuable friction at the attestation layer}: cheap unsigned communications generate cheap, weak evidence; expensive signed communications generate strong, non-repudiable evidence. Agents self-select their evidential exposure by choosing how much to sign --- which is the same currency in which they self-select their economic exposure on the rho calculus's phlogiston metering of computation.
+
+\section{Difference from ordinary reputation systems}\label{sec:diff}
+
+We highlight the structural differences from the typeless-scalar reputation systems prevalent on existing platforms.
+
+\paragraph{Adjudicability.} A scalar rating ($4.3 \pm 0.2$ stars; karma; ELO) is the output of an aggregation process not exhibited at the rating site. Disputes over the rating cannot be adjudicated because the process the scalar witnesses is unrecoverable from the scalar. In the present framework, every reputation claim decomposes into structurally inspectable components: a set of signed proofs, a set of attested traces with full provenance, and a community-specific projection. Each is adjudicable in its own right.
+
+\paragraph{Type-conformance vs.\ aggregated behavior.} Scalar systems aggregate heterogeneous behavior into a single dimension. The present framework asks a more specific question: does $\Sig(A)$ inhabit type $T$? This is meaningful only with respect to a type that describes the relevant service. Reputation thereby tracks \emph{capability}, not popularity or compliance.
+
+\paragraph{Sybil resistance.} The use of cryptographic identity at the type-judgment level means a Sybil army of fresh identities has no reputation, not merely a low one. Reputation accrues only through accumulation of signed evidence over time, and the cost of generating that evidence is bounded below by the cost of the corresponding signed communications.
+
+\paragraph{Manipulation surface.} The manipulation surface of a scalar system is the aggregation function plus its input channel: stuff the ballot, brigade the reviews, game the algorithm. The manipulation surface of the present framework is forging signatures (cryptographically bounded), constructing fraudulent proofs (rejected by the type system), or generating fraudulent traces (countered by the capability alignment of attestation rights). None of these admits cheap mass attack.
+
+\paragraph{Compositionality.} Scalar ratings compose poorly: there is no principled way to combine ``$A$ is rated $4.3$ on platform $X$'' with ``$A$ is rated $\beta$ on platform $Y$''. The judgment $\Gamma \vdash \Sig(A) : T$ composes by cut. Cross-community reputation transfer is a matter of importing signed judgments and re-verifying their dependencies, which is structurally clean.
+
+\paragraph{Privacy.} Scalar systems typically reveal the rating but conceal the basis. The present framework conceals the agent's internal code (it was never exposed) while exposing the basis. Section~\ref{sec:zk} discusses how zero-knowledge techniques recover privacy of the basis where this is desired.
+
+\section{MeTTaIL implementation sketch}\label{sec:mettail}
+
+MeTTaIL (rholang~1.4) is engineered precisely for this kind of construction: it provides the means to define a language as a triple of grammar (syntactic categories), equations on types, and rewrites on types, and supports sending and receiving terms of the defined language across the network. We sketch the reputation system as such a defined language.
+
+\subsection{Grammar}
+
+The reputation language's grammar is given in BNFC-like syntax:
+
+\begin{lstlisting}[language=rholang,caption={Reputation language grammar (BNFC-style)}]
+-- Identities and signatures
+Identity. Id ::= "Sig" "(" AgentName ")" ;
+
+-- Spatial-behavioral types (parametric on the underlying GSLT)
+TypeAtom. Type ::= TypeAtom ;
+TypeConj. Type ::= Type "&" Type ;
+TypePref. Type ::= Action "." Type ;
+TypeStar. Type ::= "!" Type ;
+-- ... (full GSLT type grammar elided)
+
+-- Capability judgments
+EmptyCtx. Ctx ::= ;
+ConsCtx.  Ctx ::= Ctx "," Id ":" Type ;
+Judgment. Jud ::= Ctx "|-" Id ":" Type ;
+
+-- Signed claims (Section 2.2)
+Claim. SignedClaim ::= "claim" "(" Id "," Jud "," Sig ")" ;
+
+-- Attestations (Section 3.1)
+EvtSend. Event ::= "send" "(" ChanName "," Payload ")" ;
+EvtRecv. Event ::= "recv" "(" ChanName "," Payload ")" ;
+EvtSync. Event ::= Id "<->" Id "@" ChanName "(" Payload ")" ;
+
+AttD. Attestation ::= "attD" "(" Id "," Event "," Time "," Sig ")" ;
+AttW. Attestation ::= "attW" "(" Id "," Event "," Time "," Sig ")" ;
+AttH. Attestation ::= "attH" "(" Id "," Event "," Chain "," Time "," Sig ")" ;
+
+-- Hearsay provenance chains
+ChainNil.  Chain ::= "[]" ;
+ChainCons. Chain ::= Attestation "::" Chain ;
+
+-- Refutation profiles and reputation objects
+ModD. Strength ::= "D" "(" Id ")" ;
+ModW. Strength ::= "W" "(" Id ")" ;
+ModH. Strength ::= "H" "(" Chain ")" ;
+
+Trace.   Trace      ::= "[" [Attestation] "]" ;
+RepObj.  Reputation ::= "rep" "(" Id "," Type "," [SignedClaim] "," [Trace] ")" ;
+\end{lstlisting}
+
+\subsection{Equations}
+
+Equations identify terms that should be regarded as denoting the same object under the type-theoretic and cryptographic disciplines:
+
+\begin{lstlisting}[language=rholang,caption={Equations on the grammar}]
+-- Signature extensionality: signatures verify-equal iff they verify the same payload.
+sig_ext :  Sig(A, m1) == Sig(A, m2)   when   payload(m1) == payload(m2) ;
+
+-- Context permutation: contexts are multisets.
+ctx_perm:  (Gamma1, j1, j2)  ==  (Gamma1, j2, j1) ;
+
+-- Hearsay chain de-duplication: collapse cycles.
+chain_dedup:  c1 ++ [a] ++ c2 ++ [a] ++ c3  ==  c1 ++ [a] ++ c2 ++ c3 ;
+
+-- Direct dominates witnessed for the same event.
+att_dominate: attW(B,e,t,s)  ==  attD(B,e,t,s)   when   B in participants(e) ;
+\end{lstlisting}
+
+\subsection{Rewrites}
+
+Rewrites give the operational behaviour of the proof system and trace assembly:
+
+\begin{lstlisting}[language=rholang,caption={Proof-construction and trace-extension rewrites}]
+-- Claim: a verified signed claim becomes a leaf.
+claim_intro:
+    claim(Sig(A), (Gamma |- Sig(A) : T), s)
+    -->
+    Gamma |- Sig(A) : T
+    when verify(s, A, "Gamma |- Sig(A) : T") ;
+
+-- Cut_id: discharge an environmental dependency.
+cut_id:
+    (Gamma1 |- Sig(A) : T1),  (Gamma2, Sig(A) : T1 |- Sig(B) : T2)
+    -->
+    (Gamma1, Gamma2 |- Sig(B) : T2) ;
+
+-- Trace extension: a new attestation extends the communal LTS.
+trace_ext:
+    Trace([as]),  Attestation(a)
+    -->
+    Trace([as, a])
+    when consistent_time(a, as) ;
+
+-- Refutation detection (delegated to HM-model-checker).
+refute:
+    rep(A, T, Cs, Ts),  Trace(sigma)
+    -->
+    rep(A, T, Cs, Ts ++ [sigma])
+    when sigma  |=  neg(charformula(T))  in  modal_logic(T) ;
+\end{lstlisting}
+
+\subsection{Hosting in rholang processes}
+
+The defined language is then operationalised by ordinary rholang processes which carry typed terms on well-known channels. A schematic outline:
+
+\begin{lstlisting}[language=rholang,caption={Rholang processes hosting the reputation language}]
+new claimsCh, attestCh, repQueryCh, repAnswerCh in {
+  // Claim ingress: receives signed claims, validates, deposits in claim store.
+  contract claimsCh(@msg) = {
+    match msg with
+      claim(sig, jud, s) =>
+        if verify(s, agentOf(sig), jud) then storeClaim(claim(sig, jud, s))
+        else Nil
+  } |
+
+  // Attestation ingress: similar discipline for attestations.
+  contract attestCh(@msg) = {
+    match msg with
+      attD(B, e, t, s) | attW(B, e, t, s) | attH(B, e, chi, t, s) =>
+        if verify(s, B, payloadOf(msg)) then storeAttestation(msg)
+        else Nil
+  } |
+
+  // Reputation queries: a community member asks for rep(A, T).
+  contract repQueryCh(@A, @T, @replyCh) = {
+    new proofs, traces in {
+      gatherClaims(A, T, proofs) |
+      gatherTraces(A, T, traces) |
+      for(@p <- proofs; @ts <- traces) {
+        replyCh!(rep(A, T, p, ts))
+      }
+    }
+  }
+}
+\end{lstlisting}
+
+The HM model-checker invoked by the \texttt{refute} rewrite is itself a rholang contract, automatically generated by the OSLF functor from the GSLT defining the spatial-behavioral types. This is the structural point of using MeTTaIL: the language definition, the model-checker, the proof system, and the attestation infrastructure are all uniformly rho processes operating on uniformly defined terms.
+
+\subsection{Phlogiston economics}
+
+Each attestation, claim, and proof step incurs phlogiston cost, paid by the publishing agent. This is the framework's coverage-resistance mechanism. Sparse coverage of an agent's behaviour is structurally cheap to remedy --- anyone holding the relevant channel names can attest --- but \emph{costly} in phlogiston. Communities concerned about an agent in their corner of the network can subsidise observation; the cost is paid in the same metering used for ordinary computation.
+
+\section{Connection to zero-knowledge proofs}\label{sec:zk}
+
+The framework's central conceit --- adjudicating capability without inspecting the agent's code --- has a strong structural parallel with zero-knowledge proof systems, where a verifier becomes convinced that a prover knows a witness $w$ satisfying a relation $R(x,w)$ without learning $w$. The parallel is not metaphorical: ZK techniques compose with the framework at several levels.
+
+\subsection{Identity-as-witness as analogue of statement-witness}
+
+In a ZK proof system, $(x,w) \in R$ is the relation, $x$ is public, $w$ is hidden. In the reputation framework, $(\Sig(A), C_A) \models T$ is the relation (Alice's internal code $C_A$ inhabits the type $T$), $\Sig(A)$ and $T$ are public, and $C_A$ is hidden. The community plays the role of verifier and is convinced by accumulating signed evidence and the absence of refuting traces.
+
+The disanalogy is interesting: ZK gives \emph{certainty} of witness existence by proof-theoretic means; the reputation framework gives \emph{graded confidence} of type conformance by a hybrid proof-theoretic and observational means. ZK is sharper but narrower. The framework's grading is exactly the price of admitting observational evidence into the adjudication.
+
+\subsection{Attestations as ZK statements}
+
+The framework's attestations need not reveal everything they currently reveal. Several layers of ZK refinement are natural:
+
+\paragraph{Channel-name-hiding witnessing.} A witnessing attestation $B \AttW e$ currently reveals the channel $c$ on which $e$ occurred. But channel names are capabilities; revealing them is leaking authority. A more disciplined attestation publishes a ZK proof that ``$B$ holds some channel $c$ such that $e$ occurred on $c$'', without revealing $c$. This preserves the witnessing semantics --- $B$ has demonstrated capability-justified observation --- while maintaining nominal locality.
+
+\paragraph{Payload-content-hiding attestation.} An attestation of an event with sensitive payload can publish ZK evidence that the payload satisfies some predicate (e.g., that it is well-formed under the relevant type) without revealing the payload itself. This is the right discipline for, e.g., medical-record-bearing attestations in the VA CRADA context, where capability conformance is to be adjudicated without exposing patient data.
+
+\paragraph{Selective-disclosure provenance.} Hearsay chains $\chi$ currently expose the full chain of intermediaries. A ZK refinement publishes a proof that ``a valid chain of length $\leq n$ exists between origin and current attestor'', without exposing the intermediate identities. This is appropriate where intermediaries' identities are themselves sensitive.
+
+\subsection{Type-conformance proofs as ZK certificates}
+
+A community-provable judgment $\vdash \Sig(A) : T$ has a witnessing proof tree composed from signed claims of multiple agents. The proof tree may itself be sensitive --- it exposes Alice's environmental dependency graph, which is competitive intelligence. A ZK refinement publishes a proof that ``a valid proof tree exists in the augmented sequent calculus'', without exposing the tree.
+
+The compositional analogue is incrementally verifiable computation (IVC) and recursive SNARK constructions: as new claims are published and the proof tree grows, the ZK certificate is incrementally updated rather than recomputed. Reputation snapshots become succinct, verifiable, and privacy-preserving certificates of capability over time.
+
+\subsection{Curry--Howard angle}
+
+Under the Curry--Howard correspondence, proofs are programs; under the ZK refinement, the programs' constructive content is concealed but their type is verified. This is precisely the discipline already at work in the framework's identity judgments: $\Sig(A)$ is a term whose constructive content (the code) is concealed, but the type is being verified by the network. The ZK refinement of proof certificates simply extends this discipline from the leaf level (where $\Sig(A)$ already conceals $C_A$) to the entire proof structure.
+
+\subsection{What ZK does not provide}
+
+It is worth noting clearly what ZK does \emph{not} replace. ZK proofs adjudicate witness existence under a fixed relation. They do not adjudicate \emph{contested observation}, which is what the trace-refutation side of the framework handles. If Bob attests in ZK that $e$ occurred and Alice attests in ZK that her behaviour at $t$ was incompatible with $e$, the community still requires a non-ZK adjudication of the conflict, which the lattice-structured reputation object supports. ZK refines the privacy of evidence; it does not subsume the adjudicative function of communal observation.
+
+\section{Conclusion and further directions}
+
+The framework rests on a single move: putting an opaque cryptographic identity in the term position of a typing judgment, and using the GSLT/OSLF apparatus to adjudicate the resulting claim via two coupled processes. The yield is a reputation object that is structurally adjudicable, type-driven rather than scalar, naturally Sybil-resistant, compositional under cut, and which composes cleanly with zero-knowledge refinements.
+
+Several directions invite continuation. The aggregation question --- how a specific community projects the structured reputation object onto a decision --- connects directly to the Coalition Logic and consensus-synthesis line of work on semitopologies, with proof terms corresponding to join patterns. The phlogiston economics of attestation invites detailed treatment as an extension of the existing rholang metering. The VA CRADA application provides a concrete setting in which the ZK refinements of Section~\ref{sec:zk} are not optional but required by the regulatory context. And the broader question --- whether observer-generated logics over GSLTs furnish a foundation for reputation across the full F1R3FLY property portfolio (F1R3Sky, F1R3Eats, F1R3Tunes, F1R3Games) --- becomes tractable once reputation is type-indexed and community-projected rather than platform-scalar.
+
+\bigskip
+
+\noindent\textit{Acknowledgments.} This document was developed in dialogue. The substantive framework, including the inversion of the term position, the proof-system/trace duality, the three-tier attestation hierarchy, the anti-scalarization principle, and the MeTTaIL hosting target, is Meredith's. Claude contributed structural articulation, the evidence-indexed modal refinement, and the elaboration of the ZK parallels.
+
+\end{document}
