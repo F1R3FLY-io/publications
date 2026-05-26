@@ -1,0 +1,938 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{mathpartir}
+\usepackage{stmaryrd}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage[expansion=false]{microtype}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black
+}
+
+% ---------- Theorem environments ----------
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{construction}[theorem]{Construction}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% ---------- Rho calculus notation ----------
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{\ast}#1}
+\newcommand{\snd}[2]{#1!(#2)}
+\newcommand{\rcv}[3]{\mathsf{for}(#1 \Leftarrow #2)\{#3\}}
+\newcommand{\contract}[3]{\mathsf{contract}\;#1(#2) = \{#3\}}
+\newcommand{\sembrack}[1]{\llbracket #1 \rrbracket}
+\newcommand{\reduces}{\longrightarrow}
+\newcommand{\sequiv}{\equiv}
+\newcommand{\sn}{\mathbin{\mid}}    % parallel
+\newcommand{\bigsn}{\mathop{\textstyle\bigm|}}
+\newcommand{\bang}{!}
+\newcommand{\TM}{\mathcal{M}}
+\newcommand{\Tape}{\mathcal{T}}
+\newcommand{\Run}{\mathsf{run}}
+\newcommand{\Step}{\mathsf{step}}
+\newcommand{\Cell}{\mathsf{cell}}
+\newcommand{\Head}{\mathsf{head}}
+\newcommand{\St}{\mathsf{state}}
+\newcommand{\Done}{\mathsf{done}}
+\newcommand{\Halt}{\mathsf{halt}}
+\newcommand{\Move}{\mathsf{move}}
+\newcommand{\Symb}{\Sigma}
+\newcommand{\Tap}{\Gamma}
+\newcommand{\Blank}{\sqcup}
+\newcommand{\NF}{\mathbf{NF}}
+\newcommand{\nat}{\mathbb{N}}
+\newcommand{\Names}{\mathcal{N}}
+\newcommand{\Procs}{\mathcal{P}}
+\newcommand{\HM}{\mathsf{HML}}
+
+\title{From Turing's Machine to the Rho Calculus:\\
+       An Introduction by Translation}
+\author{L.~G.~Meredith\\\small F1R3FLY Industries}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We give an introductory account of the rho calculus by way of an explicit
+translation of Turing machines. A tape cell becomes a channel; reading is a
+for-comprehension and writing is an output. Under this translation, Turing's
+notions of complexity --- cells used, steps taken --- transport directly to
+rho processes. The translation extends without modification to multi-tape
+machines, where each tape inhabits its own namespace, and to multi-head and
+multi-automaton machines, which are recovered as parallel compositions of
+the same constructs. The lesson is structural: what is \emph{ad hoc} in the
+Turing model is \emph{algebraic} in the rho calculus. We argue, further, that
+this algebraic presentation maps cleanly onto a distributed implementation
+with strong fault-tolerance properties, and we close with a sketch of how
+spatial-behavioral types let us reason about the correctness of rho programs
+in a way that respects both their concurrent structure and their resource
+usage.
+\end{abstract}
+
+% =============================================================
+\section{Introduction}\label{sec:intro}
+% =============================================================
+
+The Turing machine is the canonical model of sequential computation. Its
+strength is concreteness: a finite control, a tape, a head, and a transition
+table suffice to define what we mean by ``algorithm.'' Its weakness is the
+mirror image of that strength: the model is concrete in ways that resist
+generalisation. The tape is a single, infinite, totally-ordered structure;
+the head is a single, named, physical object; concurrent variants are
+described by stipulation rather than by combination of primitives.
+
+The rho calculus~\cite{MeredithRadestock} is, at its core, a calculus of
+concurrent processes that communicate by passing names along channels, in
+the tradition of the $\pi$-calculus~\cite{Milner92,Milner99}. What
+distinguishes it is \emph{reflection}: names \emph{are} quoted processes, and
+processes can be obtained from names by dereferencing. There is no separate
+mechanism for fresh-name generation, no sort of names distinct from the sort
+of processes; the universe of names and the universe of processes are bound
+together by a pair of mutually inverse operations.
+
+This paper has a single, narrow purpose. We will show that the Turing
+machine admits a clean, faithful encoding into the rho calculus, in which:
+
+\begin{enumerate}[label=(\roman*)]
+\item each tape cell is a single channel,
+\item each read of a cell is a single for-comprehension,
+\item each write is a single output, and
+\item each transition of the machine is one reduction step.
+\end{enumerate}
+
+\noindent From this anchor point, three observations follow with very little
+extra work.
+
+First, Turing's own complexity measures --- the number of distinct tape
+cells used and the number of steps taken --- become, by direct translation,
+the number of distinct channels engaged and the number of communications
+performed. The standard hierarchy theorems and asymptotic vocabulary
+transport unchanged, but they now apply to a substrate that does not insist
+on sequentiality.
+
+Second, the generalisations that Turing handles by stipulation --- multiple
+tapes, multiple heads, nondeterminism, oracles --- become applications of
+the calculus's existing structure. Multiple tapes are multiple namespaces.
+Multiple heads are parallel compositions of for-comprehensions. Multiple
+automata are parallel compositions of contracts. Oracles are channels owned
+by an environment process. \emph{What Turing introduces as new machinery, the
+rho calculus already provides as constructors.}
+
+Third, the encoding is not merely a translation on paper. The rho calculus
+underlies a deployed system, the F1R3FLY platform, in which channels live in
+a content-addressable tuple space, communications are committed by a
+Byzantine fault-tolerant consensus protocol, and namespaces are partitioned
+across shards. The same syntactic construct that reads a tape cell in our
+expository encoding reads from a replicated, persistent storage cell in
+production. The path from textbook automaton to fault-tolerant distributed
+program is not a re-architecture; it is an inhabitation.
+
+We close by saying enough about spatial-behavioral types to indicate how
+one specifies and verifies properties of rho-encoded computations. Spatial
+connectives let us say where data lives; behavioral modalities let us say
+how it evolves. Together they support reasoning that does not collapse the
+parallel structure of a program to a sequentialisation of it.
+
+The exposition presumes familiarity with the formal definition of a Turing
+machine and basic acquaintance with structural operational semantics. No
+prior knowledge of the rho calculus or the $\pi$-calculus is assumed. We
+develop only as much of the calculus as the encoding requires.
+
+% =============================================================
+\section{Turing machines, briefly}\label{sec:tm}
+% =============================================================
+
+We fix notation. A \emph{deterministic Turing machine} is a tuple
+$$\TM = (Q, \Symb, \Tap, \delta, q_0, F),$$
+where $Q$ is a finite set of \emph{control states}, $\Symb \subseteq \Tap$
+the \emph{input alphabet}, $\Tap$ the \emph{tape alphabet} with a
+distinguished blank $\Blank \in \Tap \setminus \Symb$, $q_0 \in Q$ the
+\emph{initial state}, $F \subseteq Q$ the set of \emph{halting states}, and
+$$ \delta : (Q \setminus F) \times \Tap \to Q \times \Tap \times \{L,R,N\} $$
+the (partial) transition function, with $L,R,N$ standing for ``move
+left,'' ``move right,'' and ``do not move.''
+
+A \emph{configuration} is a triple $(q, t, i) \in Q \times (\Tap^\mathbb{Z}) \times \mathbb{Z}$
+consisting of a state, a tape (a function from positions to symbols, almost
+everywhere blank), and a head position. The \emph{step relation} is
+
+$$
+(q, t, i) \;\vdash_\TM\; (q', t', i')
+\qquad
+\text{where} \qquad
+\delta(q, t(i)) = (q', s', d),
+\quad
+t' = t[i \mapsto s'],
+\quad
+i' = i + \Delta(d),
+$$
+
+with $\Delta(L)=-1$, $\Delta(R)=+1$, $\Delta(N)=0$.
+
+A configuration is \emph{halting} when $q \in F$. A \emph{run} on input
+$w$ is the maximal sequence of configurations
+$c_0 \vdash c_1 \vdash c_2 \vdash \cdots$ starting from the initial
+configuration determined by $w$. The \emph{time complexity} of $\TM$ on $w$
+is the length of the run (when finite); the \emph{space complexity} is the
+number of distinct positions $i$ with $t_k(i) \neq \Blank$ for some $k$.
+
+This is all the structure of the Turing machine we will need.
+
+% =============================================================
+\section{The rho calculus, essentials}\label{sec:rho}
+% =============================================================
+
+We present the calculus in its monadic, asynchronous, polyadic-via-tupling
+form, which is enough for the encoding.
+
+\subsection{Syntax}
+
+There are two mutually-recursive syntactic categories: \emph{processes} $P$
+and \emph{names} $x$.
+
+$$
+\begin{array}{rcll}
+P, Q & ::= & \nil                         & \text{nil}\\
+     &  |  & \snd{x}{Q}                   & \text{output: send the name $\quo{Q}$ on $x$}\\
+     &  |  & \rcv{y}{x}{P}                & \text{input: bind $y$ to a name received on $x$, run $P$}\\
+     &  |  & P \sn Q                      & \text{parallel composition}\\
+     &  |  & \drp{x}                      & \text{dereference: the process named by $x$}\\[6pt]
+x, y & ::= & \quo{P}                      & \text{name: the quotation of process $P$}
+\end{array}
+$$
+
+The constructors $\quo{(-)}$ and $\drp{(-)}$ are intended to be mutually
+inverse: ``quote a process to get its name''; ``dereference a name to get
+its process.'' Bound variables are introduced only by the input
+construct $\rcv{y}{x}{P}$, which binds $y$ in $P$.
+
+\subsection{Structural congruence and reduction}
+
+Structural congruence $\sequiv$ is the smallest congruence on processes
+satisfying
+
+$$
+P \sn \nil \sequiv P,
+\qquad
+P \sn Q \sequiv Q \sn P,
+\qquad
+(P \sn Q) \sn R \sequiv P \sn (Q \sn R),
+\qquad
+\drp{\quo{P}} \sequiv P.
+$$
+
+\noindent The first three rules make $(\Procs/\sequiv, \sn, \nil)$ a
+commutative monoid. The fourth, called \emph{dereference--quote
+collapse}, makes the calculus reflective: every name has a unique process
+content, and that content can be ``run'' by dereferencing.
+
+There is a single reduction rule, \textsc{Comm}:
+
+\begin{mathpar}
+\inferrule*[Right=\textsc{Comm}]
+{\quo{Q_1} \sequiv \quo{Q_2}}
+{\snd{\quo{Q_1}}{R} \sn \rcv{y}{\quo{Q_2}}{P} \;\reduces\; P\{\quo{R}/y\}}
+\end{mathpar}
+
+\noindent together with the usual congruence and structural rules:
+
+\begin{mathpar}
+\inferrule{P \reduces P'}{P \sn Q \reduces P' \sn Q}
+\and
+\inferrule{P \sequiv P' \quad P' \reduces Q' \quad Q' \sequiv Q}{P \reduces Q}
+\end{mathpar}
+
+The substitution $P\{\quo{R}/y\}$ replaces every free occurrence of $y$ in
+$P$ by the name $\quo{R}$.
+
+\subsection{Examples and idioms}
+
+\paragraph{A cell.}
+The process
+$\snd{x}{v}$ ``contains'' the value $v$ at $x$: any reader
+$\rcv{y}{x}{P}$ will pick it up and proceed as $P\{\quo{v}/y\}$.
+
+\paragraph{An updateable cell.}
+The pattern
+$$
+\snd{x}{v} \sn \rcv{y}{x}{ \cdots \snd{x}{v'} \cdots }
+$$
+\noindent treats $x$ as a mutable location: read its current value as $y$
+(which removes $\snd{x}{v}$ from the soup), do some work, and replace it by
+$v'$. Between the read and the new write, the cell is \emph{empty}; any
+other reader at $x$ will block. This is exactly the behaviour we want for
+tape cells.
+
+\paragraph{Persistent contracts.}
+We will write
+$
+\contract{c}{y}{P}
+$
+as syntactic sugar for a replicated input on $c$. Its operational meaning
+is: ``whenever a message arrives on $c$, spawn an instance of $P$ with $y$
+bound to that message.'' A standard encoding is available in the calculus
+via the replication idiom; for our purposes the abbreviation suffices.
+
+\paragraph{Reflection in action.}
+Because names are quoted processes, we can construct names from arbitrary
+\emph{data} without a separate name-generation primitive. If $n$ is a
+natural-number-valued process (Church-encoded, or via any other faithful
+encoding), then $\quo{n}$ is a name; distinct $n$ give distinct names. We
+exploit this immediately.
+
+\begin{remark}
+The rho calculus is not the $\pi$-calculus with a coat of paint. In the
+$\pi$-calculus, names are primitive and fresh names are produced by a
+$\nu$-binder. In the rho calculus, names are derived (as quotations of
+processes) and freshness arises structurally. This is what permits the
+clean indexed-cell construction in \S\ref{sec:translation} without the
+machinery of name restriction. For a careful comparison see~\cite{MeredithRadestock}.
+\end{remark}
+
+% =============================================================
+\section{Encoding Turing machines in the rho calculus}\label{sec:translation}
+% =============================================================
+
+We now give the translation. The goal is to define a map
+$\sembrack{-}$ from Turing-machine configurations to rho processes in such
+a way that one Turing step corresponds to one (or a constant number of)
+rho reduction steps. The configuration $(q, t, i)$ will be encoded by a
+parallel composition of three kinds of message:
+
+\begin{itemize}
+\item a single state-cell $\snd{\St}{q}$,
+\item a single head-cell $\snd{\Head}{i}$,
+\item for each position $j$, a tape-cell $\snd{\Cell(j)}{t(j)}$.
+\end{itemize}
+
+\noindent together with a single transition-driver contract that animates
+them.
+
+\subsection{Naming the tape}
+
+We need countably many distinct names $\Cell(0), \Cell(1), \Cell(-1), \ldots$,
+one per tape position. Reflection delivers them.
+
+\begin{definition}\label{def:cellname}
+Fix any injective encoding $\mathsf{int} : \mathbb{Z} \to \Procs$ of the
+integers as processes. Define
+$$\Cell(j) \;\triangleq\; \quo{\mathsf{int}(j)}.$$
+Because $\mathsf{int}$ is injective and $\quo{-}$ is a bijection between
+processes and names (modulo structural congruence), the $\Cell(j)$ are
+pairwise distinct.
+\end{definition}
+
+\noindent No additional axiom or primitive is required. The tape's
+addressing structure is supplied by the same reflective mechanism that
+gives the calculus its names.
+
+\subsection{The transition driver}
+
+Let $\delta$ be the transition function of $\TM$. The driver is a single
+replicated input that, at each firing, performs one step of $\TM$. We
+write $\bang P$ for the replication of $P$, an unbounded supply of
+parallel copies of $P$, made available on demand:
+
+\begin{align*}
+\Step &\;\triangleq\; \bang\,\rcv{y_q}{\St}{\rcv{y_i}{\Head}{\rcv{y_s}{\Cell(\drp{y_i})}{B(y_q, y_i, y_s)}}}.
+\end{align*}
+
+\noindent The body $B(y_q, y_i, y_s)$, given that
+$(q', s', d) = \delta(\drp{y_q}, \drp{y_s})$, is
+
+\begin{align*}
+B(y_q, y_i, y_s) &\;\triangleq\;
+\snd{\St}{q'} \,\sn\, \snd{\Cell(\drp{y_i})}{s'} \,\sn\, \snd{\Head}{\drp{y_i}+\Delta(d)}.
+\end{align*}
+
+\noindent The dereferences $\drp{y_q}$, $\drp{y_i}$, $\drp{y_s}$ recover the
+process content of the received names so that $\delta$ can act on states
+and symbols, rather than on their quotations.
+
+When $\delta(\drp{y_q}, \drp{y_s})$ is undefined --- that is, when
+$\drp{y_q} \in F$ --- the body emits a single halt signal
+$\snd{\Halt}{\drp{y_q}}$ and does not re-arm itself. Because $\Step$ is a
+replicated input, no additional trigger is required: each completion
+leaves a fresh copy of the input pattern available, and the next round
+proceeds when the new $\St$, $\Head$, and $\Cell$ messages have all been
+sent.
+
+\subsection{Initial configurations and runs}
+
+\begin{definition}\label{def:enc}
+For a configuration $c = (q, t, i)$ of $\TM$, with $t$ blank outside a
+finite range $[a, b]$, the \emph{rho encoding of $c$} is the process
+$$
+\sembrack{c} \;\triangleq\;
+\snd{\St}{q} \,\sn\, \snd{\Head}{i} \,\sn\, \bigsn_{j \in [a,b]} \snd{\Cell(j)}{t(j)}
+\,\sn\, \Step.
+$$
+\end{definition}
+
+\noindent Because $\Step$ is replicated, it stays available throughout the
+run; each step consumes the current $\St$, $\Head$, and $\Cell(\drp{y_i})$
+messages and emits their successors.
+
+\begin{theorem}[Step simulation]\label{thm:sim}
+For every non-halting configuration $c$ of $\TM$ with $c \vdash_\TM c'$,
+$$
+\sembrack{c} \;\reduces^*\; \sembrack{c'}
+$$
+in a number of reduction steps bounded by a constant (depending only on
+$\TM$, not on $c$).
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+The driver fires, performs three \textsc{Comm} reductions (state read,
+head read, cell read), evaluates $\delta$ inside the host process algebra,
+and emits three new messages. The replicated input is, by definition,
+unchanged; what remains, up to structural congruence, is $\sembrack{c'}$
+in parallel with the same driver. Each step of $\TM$ thus costs three rho
+reductions.
+\end{proof}
+
+\begin{corollary}\label{cor:full-run}
+Let $r = c_0 \vdash c_1 \vdash \cdots \vdash c_n$ be a run of $\TM$.
+Then $\sembrack{c_0} \reduces^* \sembrack{c_n}$ in $O(n)$ reduction steps.
+The encoded process reaches a normal form (modulo the persistent driver)
+if and only if $\TM$ halts on the input.
+\end{corollary}
+
+This is the encoding. It is, deliberately, the most literal one possible:
+each piece of state is a single message, each transition is the obvious
+sequence of communications. There is no clever co-routining, no shared
+buffer, no scheduler. We do not need any.
+
+% =============================================================
+\section{Transporting notions of complexity}\label{sec:complexity}
+% =============================================================
+
+The transparency of the encoding lets us read off complexity statements
+without effort.
+
+\begin{definition}\label{def:rhocomplexity}
+Let $P$ be a rho process and $P \reduces P_1 \reduces \cdots \reduces P_k$
+a maximal reduction sequence. The \emph{step cost} of the run is $k$, the
+number of \textsc{Comm} reductions performed. The \emph{name-space cost} is
+the cardinality of the set of distinct names that appear as the subject of
+at least one output or input that participates in a reduction.
+\end{definition}
+
+\begin{proposition}\label{prop:time}
+If $\TM$ runs on input $w$ in time $T(|w|)$, then $\sembrack{c_0(w)}$
+reduces to its halting form in step cost $\Theta(T(|w|))$.
+\end{proposition}
+
+\begin{proposition}\label{prop:space}
+If $\TM$ uses $S(|w|)$ distinct tape positions on input $w$, then
+$\sembrack{c_0(w)}$ uses name-space cost $S(|w|) + O(1)$ (the additive
+constant accounting for $\St$, $\Head$, and $\Halt$).
+\end{proposition}
+
+\noindent The proofs are immediate from Theorem~\ref{thm:sim} and
+Definitions~\ref{def:enc}, \ref{def:rhocomplexity}: each Turing step
+contributes a constant number of \textsc{Comm} reductions; each
+non-blank tape position contributes exactly one $\Cell(j)$ to the name
+space.
+
+\begin{remark}
+There is a stronger correspondence. In any execution of $\sembrack{c}$,
+the messages on $\St$, $\Head$, and each $\Cell(j)$ are pairwise mutually
+exclusive in time --- only one such message exists at a time, by
+construction of the driver --- so we may read the state of the simulation
+\emph{at any moment} as a Turing configuration. The encoded process is
+not merely simulating the machine in extensional behaviour; it is
+simulating it in lockstep.
+\end{remark}
+
+So far, the rho calculus has not done anything that a careful direct
+description of a Turing machine could not also do. The payoff is in the
+generalisations, which we now turn to.
+
+% =============================================================
+\section{Beyond sequential computation}\label{sec:beyond}
+% =============================================================
+
+We described, in \S\ref{sec:tm}, the Turing machine with a single tape,
+a single head, and a single control. Each of these three restrictions is
+relaxed in the standard textbook treatment by introducing fresh machinery.
+The rho calculus does not need to.
+
+\subsection{Multiple tapes via namespaces}\label{sec:multitape}
+
+In the standard $k$-tape machine, the transition function has the shape
+$$
+\delta : Q \times \Tap^k \to Q \times \Tap^k \times \{L,R,N\}^k.
+$$
+\noindent The notation makes it look harder than it is: nothing has
+changed except that the tape index now carries a tape number as well as a
+position.
+
+In the rho encoding, ``the $\alpha$-th tape's cell at position $j$''
+needs a name distinct from ``the $\beta$-th tape's cell at position $j$''
+for $\alpha \neq \beta$. Pick any injective $\mathsf{tape} : \mathbb{N}
+\to \Procs$ and define
+$$
+\Cell^\alpha(j) \;\triangleq\; \quo{(\mathsf{tape}(\alpha), \mathsf{int}(j))},
+$$
+where the right-hand side quotes any standard pairing of the two
+constituent processes. This gives a doubly-indexed family of names, one
+per (tape, position) pair, all distinct. Each tape $\alpha$ now lives in
+its own \emph{namespace} --- the set of names of the form $\Cell^\alpha(j)$
+for $j \in \mathbb{Z}$ --- and the $k$-tape driver reads one cell per
+namespace and writes one cell per namespace per step.
+
+This is more than a syntactic convenience. The rho calculus has a
+namespace logic~\cite{NamespaceLogic} that lets us state and enforce
+discipline across collections of names: predicates over (quoted)
+processes pick out the names that belong to a namespace, and a process
+can be restricted to interact only within its declared namespaces. The
+multi-tape Turing machine is the smallest non-trivial instance of a
+program that uses two namespaces in disjoint ways.
+
+\begin{remark}\label{rem:share}
+Nothing prevents two automata from sharing a namespace. If two drivers
+$\Step_1$, $\Step_2$ are written against the same $\Cell^\alpha(\cdot)$
+family, they will race for access to the same tape. The calculus does
+not need an additional notion of ``shared variable.'' Sharing is what one
+gets by default when namespaces overlap; isolation is what one buys by
+keeping them disjoint.
+\end{remark}
+
+\subsection{Multiple heads via parallel for-comprehensions}\label{sec:multihead}
+
+Suppose we have a Turing machine with $h$ heads on a single tape, each
+with its own position. The standard treatment introduces an explicit
+synchronisation regime: the heads all advance in lockstep, the transition
+function depends on all $h$ symbols read, and there are special rules for
+the case in which two heads write to the same cell on the same step.
+
+In the rho encoding, the head positions are simply $h$ separate
+messages $\snd{\Head_1}{i_1}, \ldots, \snd{\Head_h}{i_h}$, and the driver
+contains $h$ parallel for-comprehensions to read them. If the heads' tape
+positions are distinct, the cell reads do not contend and the step
+proceeds in one round of communication. If two heads are at the same
+position, the corresponding cell-reads contend at the same name
+$\Cell(i_1) = \Cell(i_2)$ and one must complete before the other can
+begin --- which is the right behaviour, since the tape cell can only hold
+one value.
+
+The \emph{semantics} of multiple heads on a tape is, in the rho calculus,
+the literal arithmetic of contention on shared channels. Nothing further
+is stipulated. Conflict resolution is the calculus's reduction rule.
+
+\subsection{Multiple automata via parallel contracts}\label{sec:multimachine}
+
+Two Turing machines computing in parallel, in the textbook treatment,
+require either an explicit product construction or a careful interleaving
+semantics. In the rho calculus they are
+$$
+\sembrack{c_0} \,\sn\, \sembrack{c'_0},
+$$
+\noindent where the two encodings inhabit either disjoint or shared
+namespaces depending on whether the machines are intended to be
+independent or to communicate. Each machine's reductions are local to its
+own messages and contract; the parallel composition obeys the obvious
+algebraic laws.
+
+In particular, a Turing machine and an oracle become a parallel
+composition in which the oracle is just another contract listening on a
+designated name. A query is a send; a response is a send back. There is
+no separate ``oracle tape'' or ``oracle state.'' The calculus's existing
+constructors --- input, output, parallel --- already model the situation.
+
+\subsection{Concurrent complexity}\label{sec:concurrentcomplexity}
+
+When automata run in parallel, the step cost of
+\S\ref{sec:complexity} becomes \emph{two} quantities:
+
+\begin{itemize}
+\item \textbf{Work}: the total number of \textsc{Comm} reductions performed
+across the whole computation, summed over all participating sub-processes.
+\item \textbf{Span} (or \emph{depth}): the length of the longest chain of
+causally dependent reductions, where reduction $r_1$ causally precedes
+$r_2$ if $r_2$ consumes a message that $r_1$ produced.
+\end{itemize}
+
+These are the standard work/span measures of parallel
+complexity~\cite{BlellochGreiner96}. They are derivable from the rho
+calculus's reduction structure without any additional definition: the
+\textsc{Comm} rule is a binary join, and causality is by syntactic
+dependence.
+
+\begin{proposition}\label{prop:workspan}
+For a single-tape sequential Turing machine, $\mathsf{work}(\sembrack{c_0(w)})
+= \mathsf{span}(\sembrack{c_0(w)}) = \Theta(T(|w|))$. For $k$ machines run
+in parallel on disjoint namespaces, $\mathsf{work}$ is the sum of the
+individual work and $\mathsf{span}$ is the maximum of the individual spans.
+\end{proposition}
+
+\noindent This is the simplest possible parallel-cost theorem, and we get
+it for free from the encoding.
+
+% =============================================================
+\section{From ad hoc to algebraic}\label{sec:adhoc}
+% =============================================================
+
+Let us draw the moral. Each of the variants discussed in
+\S\ref{sec:beyond} is, in the standard Turing-machine literature,
+described by adding a feature: tapes, heads, machines, oracles. Each new
+feature comes with its own bookkeeping: a new index, a new tuple
+component, a new clause in the definition of step. The proofs that, say,
+$k$-tape machines are polynomially equivalent to single-tape machines
+require explicit simulations~\cite{HopcroftUllman}.
+
+In the rho calculus, the same variants are obtained by repeated
+application of three existing constructors: $\sn$, $\rcv{\cdot}{\cdot}{\cdot}$,
+and $\snd{\cdot}{\cdot}$. There is no new clause to add to the operational
+semantics; the structural rules of parallel composition already deliver
+the interleaving semantics, the synchronisation discipline, and the
+notion of causality. We have, in effect, an algebra in which:
+
+\begin{itemize}
+\item \emph{Tape} is the structure $\quo{(\mathsf{tape}, \mathsf{int}(j))}$
+on names.
+\item \emph{Read} is for-comprehension.
+\item \emph{Write} is output.
+\item \emph{Sequencing} is the nesting of for-comprehensions.
+\item \emph{Concurrency} is parallel composition.
+\item \emph{Sharing} is namespace overlap.
+\item \emph{Isolation} is namespace disjointness.
+\item \emph{Iteration} is a self-rearming contract.
+\end{itemize}
+
+The Turing machine is, in this view, one application of the calculus.
+The complexity hierarchy is the complexity hierarchy of one particular
+family of rho processes. The interesting algorithmic phenomena --- shared
+memory, message passing, concurrency, distribution --- live in the broader
+algebra and are not separated from it by a categorial line.
+
+\begin{remark}
+The reader may worry that we have gained generality at the cost of
+discipline: surely a calculus that gives concurrency for free will also
+give race conditions for free? It does. The same algebra that makes
+multi-head machines free also makes nondeterministic interference
+free, and the user must say which one is intended. The role of types is
+to enforce that intention; we sketch one approach in \S\ref{sec:types}.
+\end{remark}
+
+% =============================================================
+\section{Implementation: distribution and fault tolerance}\label{sec:impl}
+% =============================================================
+
+The encoding so far is purely formal. We claim, additionally, that it
+maps directly onto an efficient, distributed, fault-tolerant
+implementation --- not by re-architecture, but by interpretation of the
+same constructs in a different runtime.
+
+\subsection{Tuple space as storage}
+
+A \emph{tuple space} is an associative store keyed by patterns over
+data. The Linda model~\cite{Gelernter85} introduced tuple spaces as a
+coordination medium; the rho calculus's standard runtime, RSpace, is a
+content-addressable tuple space whose entries are exactly outputs (data
+tuples) and inputs (continuations).
+
+When an output $\snd{x}{v}$ is executed, RSpace records the pair
+$(\quo{x}, \quo{v})$. When an input $\rcv{y}{x}{P}$ is executed, RSpace
+records the continuation $P$ under the key $\quo{x}$, then attempts a
+join: if there is a matching output already present, the continuation
+runs immediately; otherwise the input waits. The \textsc{Comm} rule of
+the rho calculus is, operationally, the join of an input with an output
+in the tuple space.
+
+\subsection{Sharding by namespace}
+
+Two distinct names with no syntactic relationship can be stored on two
+distinct machines. The rho calculus does not require that all names
+share a single tuple space: it requires only that any given \textsc{Comm}
+takes place where both communicants are present. In practice, this means
+that one can shard the tuple space by namespace.
+
+The F1R3FLY platform exposes this as the unit of deployment. Each shard,
+called an \emph{F1R3Node}, owns a namespace (in the sense of
+\S\ref{sec:multitape}). Communications within a namespace are local;
+communications across namespaces are mediated by a cross-shard protocol
+that, at the level of the calculus, is invisible. The user writes the
+same rho process; the runtime decides where the messages live.
+
+For the encoded Turing machine, this means: a $k$-tape machine can run
+with each tape on a different node, with the state and head and driver on
+yet another node. Reads and writes within a tape are local to a single
+machine; only the per-step transition involves cross-shard traffic. For
+algorithms whose memory access patterns are spatially localised --- which
+is, in practice, most of them --- this is the same locality structure the
+algorithm would receive in a distributed shared-memory system, but
+without the user having to specify it.
+
+\subsection{Replication and consensus}
+
+A single tuple space stored on a single machine is a single point of
+failure. To make the implementation fault-tolerant, the contents of each
+namespace are replicated across a quorum of nodes, and the order in
+which \textsc{Comm} reductions are committed within that namespace is
+agreed upon by a Byzantine fault-tolerant consensus
+protocol~\cite{CasperCBC}. The protocol used in F1R3FLY is a variant of
+Casper Correct-by-Construction.
+
+For the rho calculus, the meaning of this is: each reduction step that
+appears in the formal semantics corresponds, in the runtime, to one
+committed entry in a replicated log. The semantics is not weakened by
+replication; the consensus protocol's job is precisely to ensure that
+all honest replicas see the same reduction sequence, so that the
+formally-described reduction is the operationally-realised one.
+
+The fault-tolerance properties that follow are standard: as long as the
+number of faulty nodes stays below the protocol's threshold, the
+encoded computation proceeds correctly. Crashed nodes are replaced;
+their state is restored from the replicated log; communication with the
+restored node resumes at the next reduction. None of this is visible at
+the level of the rho process.
+
+\subsection{The point}
+
+The reason for dwelling on the implementation is not to advertise it but
+to make a structural observation: the same syntactic device that
+represents a tape cell in the formal encoding represents a
+content-addressable cell in a distributed, replicated, fault-tolerant
+storage system in the deployed runtime. The user does not switch models
+to go from the textbook automaton to the distributed program; the
+runtime is faithful to the calculus, and the calculus already admits the
+generalisations of \S\ref{sec:beyond}.
+
+This is what we mean by saying that the algebraic structure of the
+calculus ``maps cleanly onto an efficient implementation.'' The mapping
+is not an analogy; it is a homomorphism.
+
+% =============================================================
+\section{Reasoning with spatial-behavioral types}\label{sec:types}
+% =============================================================
+
+The final ingredient is a specification language. Having translated a
+Turing machine into a rho process, and having argued that the
+generalisations of the machine are constructions in the calculus, we
+ought to ask how we verify that a given rho process \emph{computes the
+function} that a given Turing machine computes. We sketch the type
+discipline that supports this.
+
+\subsection{Spatial-behavioral logic}
+
+A \emph{spatial-behavioral type} is a formula in a logic with two
+families of connectives:
+
+\begin{itemize}
+\item \emph{Spatial} connectives describing the structural shape of a
+process. Examples: the constant $\nil$ asserting the empty process; the
+separating conjunction $\varphi * \psi$ asserting that the process
+splits as $P \sn Q$ with $P \models \varphi$ and $Q \models \psi$; the
+``somewhere'' modality $\diamondsuit\varphi$ asserting that a sub-process
+satisfies $\varphi$; and the freshness/quantification connectives.
+\item \emph{Behavioral} connectives describing the temporal evolution of
+a process under reduction. These are the Hennessy-Milner modalities:
+$\langle a \rangle \varphi$ (``after some reduction labelled $a$,
+$\varphi$ holds''), $[a]\varphi$ (``after every such reduction''), and
+their reflexive-transitive closures.
+\end{itemize}
+
+The spatial connectives come from separation logic and from the
+ambient-logic tradition~\cite{CairesCardelli03}; the behavioral
+connectives come from the bisimulation-logical
+literature~\cite{HennessyMilner85}. The combination is what one needs to
+reason about processes whose configuration changes over time and whose
+correctness depends on structural invariants.
+
+For the rho calculus, the appropriate spatial-behavioral logic is
+delivered by the OSLF construction~\cite{OSLF}: from a presentation of
+the calculus as a graph-structured lambda theory, one obtains a
+Hennessy-Milner logic equipped with the relevant spatial connectives,
+together with an adequacy theorem stating that the logic is
+expressive enough to characterise contextual equivalence.
+
+\subsection{Specifying the Turing encoding}
+
+Two example specifications give the flavour.
+
+\paragraph{Tape-cell uniqueness.}
+A well-formed encoded configuration has, for each cell $\Cell(j)$, at
+most one outstanding output. This is a spatial invariant:
+$$
+\Psi_{\text{cell}}(j)
+\;\triangleq\;
+\bigvee_{s \in \Tap} \snd{\Cell(j)}{s} \;\;\lor\;\; \nil
+\quad\text{at}\quad \Cell(j),
+$$
+together with the constraint that the process restricted to the name
+$\Cell(j)$ satisfies $\Psi_{\text{cell}}(j)$. A type system enforcing this
+predicate over every $\Cell(j)$ rules out, by typing, the introduction of
+races on individual cells.
+
+\paragraph{Step preservation.}
+The behavioral specification of the driver is the modal formula
+$$
+\Phi_{\Step}
+\;\triangleq\;
+[\St](\,\langle \text{two more Comms}\rangle\,\Psi_{\text{config}}\,)
+$$
+\noindent where $\Psi_{\text{config}}$ is the spatial conjunction of
+$\Psi_{\text{cell}}(j)$ for each $j$ together with the analogous
+state-cell and head-cell predicates. The reading is: whenever a message
+on $\St$ is consumed, two further communications --- the head read and
+the addressed cell read --- complete a step, after which the
+configuration invariant holds. A driver that type-checks against
+$\Phi_{\Step}$ provably preserves the configuration invariant on each
+step --- which is exactly Theorem~\ref{thm:sim} stated as a logical
+specification.
+
+\subsection{Why this matters}
+
+The spatial-behavioral approach has two virtues that conventional Hoare
+logics lack in this setting. First, the spatial connectives let us state
+properties of \emph{location}: which messages live where. For a Turing
+machine this is a trivial observation; for a distributed program with
+sharded namespaces, it is the whole point. Second, the behavioral
+modalities let us state properties of \emph{evolution} without
+collapsing the parallel structure of the process into a sequentialisation.
+A specification like ``every cell eventually stabilises'' is a
+straightforward modal formula; one does not have to commit to an order
+of writes.
+
+These two virtues compose. The single specification
+$$
+\langle\, \star\, \rangle\,(\,\Psi_{\text{config}} \;\land\; \Diamond\,\St \mapsto F\,)
+$$
+\noindent --- ``after some reductions, the configuration invariant holds
+and the state cell will eventually hold a halting state'' --- captures
+both the structural correctness of the encoding and the termination of
+the algorithm being encoded. We do not have to leave the type system to
+state correctness, and we do not have to switch logics to state
+performance.
+
+% =============================================================
+\section{Conclusion}\label{sec:concl}
+% =============================================================
+
+We have presented the rho calculus by translating Turing machines into
+it. The translation is literal: tape cells are channels, reads are
+for-comprehensions, writes are outputs, transitions are reductions. The
+standard complexity measures transport directly. Multi-tape, multi-head,
+and multi-automaton variants of the machine, each of which requires fresh
+machinery in the conventional treatment, become parallel compositions of
+constructs we have already introduced. The resulting algebra maps onto a
+distributed, fault-tolerant runtime in which the same syntactic
+expression denotes both an automaton step and a committed entry in a
+replicated tuple space. Spatial-behavioral types let us state and verify
+properties of the encoded computation without giving up either its
+parallel structure or its resource semantics.
+
+What this exposition has not addressed deserves a brief
+acknowledgement. We have not discussed nondeterministic, probabilistic,
+or quantum extensions of the calculus, all of which have natural rho
+variants~\cite{MQCalc}. We have not discussed the connection between
+the rho calculus and category theory, beyond the gesture toward graph-
+structured lambda theories. We have not discussed type inference,
+performance engineering of the runtime, or the broader economic question
+of how a computation paid for by a metered resource (phlogiston, in the
+deployed system) interacts with the algebraic structure of the calculus.
+Each of these is a paper of its own.
+
+What we hope to have conveyed is a single structural point. The Turing
+machine is one inhabitant of an algebra that has many. The shape of the
+algebra is what licenses the generalisations of the machine, and the
+soundness of the algebra is what licenses the distributed implementation.
+The calculus is not a programming language with a clever semantics
+attached; it is an algebraic theory of communication that happens to be
+expressive enough to subsume the standard models of computation.
+
+\begin{thebibliography}{99}
+
+\bibitem{MeredithRadestock}
+L.~G.~Meredith and M.~Radestock,
+\emph{A Reflective Higher-order Calculus},
+Electronic Notes in Theoretical Computer Science, vol.~141, 2005.
+
+\bibitem{Milner92}
+R.~Milner, J.~Parrow, and D.~Walker,
+\emph{A Calculus of Mobile Processes, I and II},
+Information and Computation, vol.~100, 1992.
+
+\bibitem{Milner99}
+R.~Milner,
+\emph{Communicating and Mobile Systems: The $\pi$-Calculus},
+Cambridge University Press, 1999.
+
+\bibitem{HopcroftUllman}
+J.~E.~Hopcroft and J.~D.~Ullman,
+\emph{Introduction to Automata Theory, Languages, and Computation},
+Addison-Wesley, 1979.
+
+\bibitem{Turing36}
+A.~M.~Turing,
+\emph{On Computable Numbers, with an Application to the
+Entscheidungsproblem},
+Proceedings of the London Mathematical Society, vol.~2--42, 1936.
+
+\bibitem{NamespaceLogic}
+L.~G.~Meredith and M.~Radestock,
+\emph{Namespace Logic: A Logic for a Reflective Higher-order Calculus},
+Trustworthy Global Computing, LNCS 3705, 2005.
+
+\bibitem{BlellochGreiner96}
+G.~E.~Blelloch and J.~Greiner,
+\emph{A Provable Time and Space Efficient Implementation of NESL},
+ACM SIGPLAN International Conference on Functional Programming, 1996.
+
+\bibitem{Gelernter85}
+D.~Gelernter,
+\emph{Generative Communication in Linda},
+ACM Transactions on Programming Languages and Systems, vol.~7, 1985.
+
+\bibitem{CasperCBC}
+V.~Zamfir et al.,
+\emph{Casper the Friendly Ghost: A Correct-by-Construction Blockchain
+Consensus Protocol},
+Technical Report, 2017.
+
+\bibitem{CairesCardelli03}
+L.~Caires and L.~Cardelli,
+\emph{A Spatial Logic for Concurrency (Part I)},
+Information and Computation, vol.~186, 2003.
+
+\bibitem{HennessyMilner85}
+M.~Hennessy and R.~Milner,
+\emph{Algebraic Laws for Nondeterminism and Concurrency},
+Journal of the ACM, vol.~32, 1985.
+
+\bibitem{OSLF}
+L.~G.~Meredith,
+\emph{Observer-generated logics, GSLTs, and the OSLF construction},
+Working paper, F1R3FLY Industries, 2025.
+
+\bibitem{MQCalc}
+L.~G.~Meredith,
+\emph{The MQ-Calculus: Towards a Process Calculus for Quantum Computation},
+Working notes, 2024.
+
+\end{thebibliography}
+
+\end{document}
