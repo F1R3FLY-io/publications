@@ -70,14 +70,14 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\textsc{F1R3FLY.io}}
-\fancyhead[R]{\small\textsc{Cost-Accounted Rholang}}
+\fancyhead[R]{\small\textsc{A Spectral Decomposition of Phlogiston}}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
 %% ── title ─────────────────────────────────────────────────────────
 \title{%
   \textbf{Cost-Accounted Rho Calculus}\\[6pt]
-  \large Folding Phlogiston Accounting into the Rholang Core}
+  \large A Spectral Decomposition of Phlogiston}
 \author{%
   L.\ Gregory Meredith\thanks{F1R3FLY.io; F1R3FLY Industries.
   \texttt{lgreg.meredith@f1r3fly.io}}%
@@ -984,6 +984,164 @@ implementation must provide a ground-signature equality
 predicate and a hash function for each instantiation of~$G$;
 the calculus itself is agnostic.
 
+\subsection{From Phlogiston to Spectrum: The Decomposition of
+  Cost}
+\label{sec:spectrum}
+
+In the original Rholang architecture, \emph{phlogiston} was a
+singular, undifferentiated resource: every deploy consumed units
+of the same universal fuel, regardless of who signed it or what
+it computed.  The cost-accounted calculus decomposes this
+singular resource into a \emph{spectrum} of signature-indexed
+resources --- as many distinct fuels as there are economically
+empowered actors.
+
+Two metaphors illuminate this decomposition:
+
+\paragraph{The prism.}
+Phlogiston is white light.  The signature algebra acts as a
+prism, splitting the undifferentiated beam into its many
+constituent frequencies.  Each signature~$s$ indexes a distinct
+spectral line --- a resource pool visible only to processes
+signed by~$s$.  Compound signatures $s_1 \comp s_2$ produce
+interference patterns: new frequencies that emerge only when
+two spectral components are superposed.  The linear resource
+proof at deployment-acceptance time is a \emph{spectral
+analysis}: it verifies that every frequency the deployment
+requires is present with sufficient intensity.
+
+\paragraph{Algorithmic chemistry.}
+Alternatively, one may view the calculus as an \emph{algorithmic
+chemistry} in which economic agency is the catalyst for
+computation.  Processes are reagents; tokens are catalytic
+substrates; and the rewrite rules are reaction rules that fire
+only when the appropriate catalyst is present.  A signed
+process $\signed{P}{s}$ is a reaction waiting for the
+catalyst~$s$.  A token stack $s : S$ is a quantity of catalytic
+substrate.  Communication is a catalyzed reaction: the substrate
+is consumed, the reagents are transformed, and the products
+(the continuation plus the remaining substrate) are released.
+
+In this reading, the diversity of signatures corresponds to the
+diversity of catalysts in a chemical system.  Different
+reactions require different catalysts.  A compound
+signature~$s_1 \comp s_2$ is a \emph{co-catalyst}: both
+substances must be present for the reaction to proceed.  The
+economy of the F1R3FLY platform is an algorithmic chemistry in
+which the diversity and abundance of catalysts determine the
+rate and variety of computation.
+
+\begin{remark}[Phlogiston as a limit case]
+  The original phlogiston model is recovered by assigning all
+  actors the same signature~$s_0$.  In the prism metaphor, this
+  collapses the spectrum back to white light.  In the chemistry
+  metaphor, this reduces the system to a single universal
+  catalyst.  The cost-accounted calculus generalizes from this
+  monochromatic / mono-catalytic limit to a full spectrum of
+  economic agency.
+\end{remark}
+
+\subsection{Funding Slots via Unforgeable Channels}
+\label{sec:funding-slots}
+
+The linear-transfer sugar
+$\signed{\recv{y}{x}{P}}{s_1 \multimap s_2}$ requires the
+continuation's funder~$s_2$ to be named at compile time.  In
+practice, one often wants to write a contract whose
+continuation can be funded by \emph{any} party willing to pay
+--- without knowing their identity in advance.  Adding
+existential quantification over signatures would achieve this
+but at the cost of complicating the linear resource proofs
+(the demand function~$\Delta_s$ would need to range over
+unknown signatures).
+
+A simpler and more natural solution exploits a feature that
+Rholang already provides: \emph{unforgeable channels} via
+$\mathbf{new}$.  Rather than existentially quantifying over
+the funder's signature, a contract creates a fresh funding
+channel --- a \emph{funding slot} --- and listens for tokens
+on it.  Anyone who knows the channel can deposit tokens there.
+The linear proof at acceptance time checks whether tokens are
+present on the funding slot, not who deposited them.
+
+\begin{definition}[Funding slot]
+  \label{def:funding-slot}
+  A funding slot is a pattern in which a contract creates an
+  unforgeable channel and uses it as the signature for a
+  continuation:
+  \[
+    \mathbf{new}\;\mathit{slot}\;\mathbf{in}\;
+    \bigl(
+      \signed{\recv{y}{x}{P}}
+        {s_1 \multimap \mathit{slot}}
+      \;\Par\;
+      \send{\quot{\mathit{slot}}}{(\cdots)}
+    \bigr)
+  \]
+  where the send on~$\quot{\mathit{slot}}$ publishes the
+  funding-slot address to potential funders.
+\end{definition}
+
+\noindent
+The funding slot decouples three concerns:
+
+\begin{description}[style=nextline, leftmargin=2em, nosep]
+  \item[Authorization (who may initiate).]
+    Controlled by $s_1$: only the signer of~$s_1$ can
+    trigger the communication.
+  \item[Funding (who pays for the continuation).]
+    Open: anyone who deposits tokens on~$\mathit{slot}$.
+  \item[Execution (what happens).]
+    Determined by~$P$: the continuation runs once the
+    slot is funded.
+\end{description}
+
+\begin{example}[Sponsored execution]
+  \label{ex:sponsored}
+  A new user~$u$ wants to run a deployment~$D$ but holds no
+  tokens.  A sponsor~$\sigma$ is willing to fund the
+  execution.  The on-boarding contract creates a funding slot:
+  \begin{align*}
+    \mathbf{new}\;\mathit{slot}\;\mathbf{in}\;
+    \bigl(\,
+      &\signed{\recv{\mathit{dep}}{u}{D}}
+        {u \multimap \mathit{slot}}
+      \\[-2pt]
+      &\;\Par\;
+      \send{\quot{\mathit{slot}}}
+        {\mathit{slot} : \mathit{slot} : ()}
+    \,\bigr)
+  \end{align*}
+
+  \noindent
+  The sponsor funds the slot by depositing tokens:
+  \[
+    \send{\Sigma\lsem\mathit{slot}\rsem}{
+      \mathit{slot} : \mathit{slot} : ()
+    }
+  \]
+  The user~$u$ authorizes and triggers the communication
+  (consuming $u$-tokens); the sponsor's tokens on the
+  funding slot pay for the continuation.  The linear proof
+  sees concrete tokens on a concrete channel --- no
+  existential quantification is needed.
+
+  When the slush fund is exhausted, the user must either
+  attract another sponsor or acquire tokens of their own.
+  The transition from subsidized to self-funded participation
+  is a resource-exhaustion event, not a policy decision.
+\end{example}
+
+\begin{remark}[Unforgeability and security]
+  The $\mathbf{new}$ operator guarantees that the funding
+  slot is \emph{unforgeable}: only processes that have been
+  explicitly given the channel name can deposit tokens on it.
+  This prevents unauthorized parties from draining the slot
+  or injecting spurious tokens.  The capability-security
+  properties of unforgeable channels, already well-understood
+  in the rho calculus, carry over directly to funding slots.
+\end{remark}
+
 %% ══════════════════════════════════════════════════════════════════
 \section{Relationship to the Pure Rho Calculus}
 \label{sec:relationship}
@@ -1219,13 +1377,19 @@ We illustrate the vulnerability using Rholang~1.2 syntax,
 where the $\mathtt{?!}$ operator provides synchronous
 (function-call-like) communication: $\mathtt{x?!(args)}$ sends
 on~$x$ with a return channel and blocks until the reply.
+All three code fragments below use the uniform-signing sugar
+(Definition~\ref{def:sugar-uniform}):
+$\signed{\recv{y}{x}{P}}{s}$ expands to
+$\signed{\recv{y}{x}{\signed{P}{s}}}{s}$, so each signed
+for-comprehension consumes \emph{two} tokens (one for the
+communication, one for the continuation).
 
 \medskip
 \noindent
 \textbf{Debit handler} --- extracts a purse from Alice's
 wallet:
 \begin{lstlisting}[style=rholang]
-// Signed by Alice; costs 1 Alice-token to invoke
+// Sugar: costs 2 Alice-tokens (comm + continuation)
 { for( amt <- aliceDebit?!( request, ... ) ){
      let ans = extractPurse( request, ... )
      in rtn!( ans )
@@ -1236,7 +1400,7 @@ wallet:
 \textbf{Credit handler} --- deposits a purse into Bob's
 account:
 \begin{lstlisting}[style=rholang]
-// Signed by Alice; costs 1 Alice-token to invoke
+// Sugar: costs 2 Alice-tokens (comm + continuation)
 { for( amt <- bobCredit?!( ... ) ){
     new rcpt in
        addPurseAcct( amt, ... )
@@ -1247,15 +1411,14 @@ account:
 \noindent
 \textbf{Alice's token stack:}
 \begin{lstlisting}[style=rholang]
-Alice : Alice : Alice : S
+Alice : Alice : Alice : Alice : Alice : Alice : S
 \end{lstlisting}
 
 \noindent
 \textbf{Orchestrating deployment} --- chains the debit and
 credit:
 \begin{lstlisting}[style=rholang]
-// Signed by Alice; costs 1 Alice-token for the
-// orchestrator's own for-comprehension
+// Sugar: costs 2 Alice-tokens (comm + continuation)
 { for( amt <- aliceDebit?!( request, ... );
        rcpt <- bobCredit?!( amt, ... ) ){
      P
@@ -1265,36 +1428,46 @@ credit:
 \noindent
 The total token demand of this deployment is:
 \begin{center}
-  \begin{tabular}{lc}
-    \textbf{Signed layer} & \textbf{Tokens} \\
+  \begin{tabular}{lccc}
+    \textbf{Signed layer}
+      & \textbf{Comm}
+      & \textbf{Cont.}
+      & \textbf{Total} \\
     \midrule
     Orchestrator's $\signed{\cdots}{\mathit{Alice}}$
-      & 1 \\
+      & 1 & 1 & 2 \\
     Debit handler's $\signed{\cdots}{\mathit{Alice}}$
-      & 1 \\
+      & 1 & 1 & 2 \\
     Credit handler's $\signed{\cdots}{\mathit{Alice}}$
-      & 1 \\
+      & 1 & 1 & 2 \\
     \midrule
-    \textbf{Total} & \textbf{3} \\
+    \textbf{Total} & \textbf{3} & \textbf{3} & \textbf{6} \\
   \end{tabular}
 \end{center}
 
 \noindent
-If Alice's stack is $\mathit{Alice} : \mathit{Alice} :
-\mathit{Alice} : S$ (at least three tokens), all three
-signed layers are funded and the transaction completes.  If
-the stack is only $\mathit{Alice} : \mathit{Alice} : ()$
-(two tokens), the debit fires (consuming two tokens: one for
-the orchestrator, one for the debit handler) but the credit
-handler's signed layer finds no token and \emph{blocks}.
+If Alice's stack has at least six tokens, all three
+signed layers (and their continuations) are funded and the
+transaction completes.  If the stack has only four tokens,
+the orchestrator and the debit handler fire (consuming
+four tokens), but the credit handler's signed layer finds
+no token and \emph{blocks}.
 Funds are stranded in the purse.
 
 \subsection{Decomposing the Transaction Cost}
 \label{sec:txn-cost-decomp}
 
-Each for-comprehension's token demand decomposes into the
-two computational actions of
-Section~\ref{sec:for-as-txn}:
+The six-token count of Section~\ref{sec:rholang-illustration}
+reflects the uniform-signing sugar expansion of three explicit
+$\signed{\cdots}{\mathit{Alice}}$ layers.  However, the
+$\mathtt{?!}$ operator itself desugars to a send followed by a
+for-comprehension on the return channel, so each $\mathtt{?!}$
+call involves a for-comprehension on \emph{each} side --- the
+caller's and the handler's.  These internal for-comprehensions
+are also under signed scope and therefore also consume tokens.
+
+A full accounting, decomposed into the two computational
+actions of Section~\ref{sec:for-as-txn}, is:
 
 \begin{center}
   \begin{tabular}{lccc}
@@ -1317,10 +1490,12 @@ Section~\ref{sec:for-as-txn}:
 \end{center}
 
 \noindent
-(The $\mathtt{?!}$ operator desugars to a send followed by
-a for-comprehension on the return channel, so each
-$\mathtt{?!}$ call involves a for-comprehension on each
-side --- the caller's and the handler's.)
+The six-token count from the sugar expansion is a
+\emph{syntactic} count of explicitly written signed layers;
+the eight-token count here is the \emph{semantic} count after
+full desugaring of~$\mathtt{?!}$.  The static analysis of
+Section~\ref{sec:linear-proof} must use the semantic count,
+since it is the desugared form that the runtime executes.
 
 The token stack must supply \emph{all} of these or
 \emph{none} of them.  Partial supply leads to partial
@@ -2226,7 +2401,8 @@ The validator handler is a process that:
 \end{enumerate}
 
 \noindent
-We define the handler as the signed process:
+We define the handler using the uniform-signing sugar
+(Definition~\ref{def:sugar-uniform}):
 
 \begin{equation}
   \boxed{
@@ -2236,9 +2412,7 @@ We define the handler as the signed process:
       \recv{\mathit{dep}}{v}{
         \signed{
           \recv{\mathit{tok}}{\quot{A_c}}{
-            \signed{
-              \mathit{FeeExtract}
-            }{v}
+            \mathit{FeeExtract}
           }
         }{v}
       }
@@ -2248,12 +2422,40 @@ We define the handler as the signed process:
 \end{equation}
 
 \noindent
-Each nested $\forc$-comprehension is wrapped in its own
-$\signed{\cdot}{v}$, so each step of the handler's execution
-consumes one validator token from the validator's own stake.
-Three tokens total are needed: one to receive the deployment,
-one to look up the client's tokens, and one to execute the
-fee-extraction logic.
+By the uniform-signing sugar~\eqref{eq:sugar-uniform}, each
+$\signed{\recv{y}{x}{\cdots}}{v}$ expands to
+$\signed{\recv{y}{x}{\signed{\cdots}{v}}}{v}$, so the fully
+expanded form is:
+\begin{equation}
+  \mathit{VH}^{\ast}
+  \;=\;
+  \signed{
+    \recv{\mathit{dep}}{v}{
+      \signed{
+        \signed{
+          \recv{\mathit{tok}}{\quot{A_c}}{
+            \signed{
+              \signed{
+                \mathit{FeeExtract}
+              }{v}
+            }{v}
+          }
+        }{v}
+      }{v}
+    }
+  }{v}
+  \label{eq:validator-handler-expanded}
+\end{equation}
+
+\noindent
+The sugar eliminates the need to manually double every
+$\signed{\cdot}{v}$ layer.  In the sugared form, six
+validator tokens fund the three for-comprehension steps
+(two tokens each: rendezvous + matching per
+Section~\ref{sec:for-as-txn}).  More precisely:
+one $\signed{\cdot}{v}$ per for-comprehension from the
+explicit syntax, plus one per continuation from the sugar
+expansion.
 
 The fee-extraction process $\mathit{FeeExtract}$ applies
 token decomposition~\eqref{eq:token-decomp} to the received
