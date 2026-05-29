@@ -2315,15 +2315,47 @@ Fix a ground signature scheme~$G$.  The actors are:
 
 \noindent
 Since signatures are names, $v$ and $c$ double as channel
-names.  We introduce three auxiliary channels (pure-rho names):
+names.  We introduce five auxiliary channels (pure-rho names):
 
 \begin{center}
   \begin{tabular}{ll}
+    $\quot{DQ_v}$ & The validator's \emph{deploy queue} \\
     $\quot{F_v}$ & The validator's fee-collection channel \\
     $\quot{E}$   & The error-reporting channel \\
     $\quot{A_c}$ & The address where the client deposits tokens \\
+    $\quot{W_v}$ & The validator's \emph{phlogiston wallet} \\
   \end{tabular}
 \end{center}
+
+\paragraph{Stake vs.\ phlogiston.}
+It is important to distinguish the validator's \emph{stake}
+from its \emph{phlogiston} (phlogistons).  The stake is
+the quantity of $v$-tokens locked in the staking contract; it
+determines the validator's weight in Casper CBC consensus and
+is subject to slashing.  Phlogiston is a \emph{renewable
+supply} drawn from the stake and deposited at the wallet
+channel~$\quot{W_v}$.  The validator's handler consumes
+phlogiston from~$\quot{W_v}$ to process client
+deployments.
+
+At each \emph{epoch boundary} (when the set of staked
+validators is updated), the protocol replenishes the
+validator's phlogiston wallet, provided the validator
+has followed the rules of the protocol.  If the validator
+commits a slashing offense, the entire stake and any
+remaining phlogistons are moved to a private
+unforgeable channel where they are held pending review and
+adjudication.  After adjudication, the tokens may be
+returned (if the offense was spurious), partially
+redistributed (as a penalty), or burned.  Because the
+unforgeable channel is private, the tokens are effectively
+revoked: no process can access them without explicit
+release by the adjudication contract.
+
+In the example below, we model the phlogiston wallet
+as a message on~$\quot{W_v}$ carrying a token stack.  The
+validator handler draws tokens from this wallet rather than
+directly from stake.
 
 \subsection{Token Stack Decomposition}
 \label{app:ex-decomp}
@@ -2368,7 +2400,7 @@ communication) and deposits three tokens at address~$\quot{A_c}$:
     \;\triangleq\;
     \send{\quot{A_c}}{c : c : c : ()}
     \;\Par\;
-    \send{v}{\signed{D}{c}}
+    \send{\quot{DQ_v}}{\signed{D}{c}}
   }
   \label{eq:client-assembly}
 \end{equation}
@@ -2376,8 +2408,8 @@ communication) and deposits three tokens at address~$\quot{A_c}$:
 \noindent
 Here $\send{\quot{A_c}}{c : c : c : ()}$ deposits the
 three-token stack at the client's token address, and
-$\send{v}{\signed{D}{c}}$ sends the signed deployment to
-the validator on channel~$v$.
+$\send{\quot{DQ_v}}{\signed{D}{c}}$ sends the signed deployment to
+the validator's deploy queue~$\quot{DQ_v}$.
 
 For concreteness, let~$D$ be a simple communication:
 \begin{equation}
@@ -2393,7 +2425,8 @@ client's application-level channel, continuation, and payload.
 
 The validator handler is a process that:
 \begin{enumerate}[nosep]
-  \item receives a signed deployment on channel~$v$;
+  \item receives a signed deployment on the deploy
+    queue~$\quot{DQ_v}$;
   \item looks up the client's tokens at address~$\quot{A_c}$;
   \item if tokens are present, extracts one token as a fee and
     composes the deployment with the remaining tokens;
@@ -2409,12 +2442,10 @@ We define the handler using the uniform-signing sugar
     \mathit{VH}
     \;\triangleq\;
     \signed{
-      \recv{\mathit{dep}}{v}{
-        \signed{
-          \recv{\mathit{tok}}{\quot{A_c}}{
-            \mathit{FeeExtract}
-          }
-        }{v}
+      \recv{\mathit{dep}}{\quot{DQ_v}}{
+        \recv{\mathit{tok}}{\quot{A_c}}{
+          \mathit{FeeExtract}
+        }
       }
     }{v}
   }
@@ -2422,40 +2453,19 @@ We define the handler using the uniform-signing sugar
 \end{equation}
 
 \noindent
-By the uniform-signing sugar~\eqref{eq:sugar-uniform}, each
-$\signed{\recv{y}{x}{\cdots}}{v}$ expands to
-$\signed{\recv{y}{x}{\signed{\cdots}{v}}}{v}$, so the fully
-expanded form is:
-\begin{equation}
-  \mathit{VH}^{\ast}
-  \;=\;
-  \signed{
-    \recv{\mathit{dep}}{v}{
-      \signed{
-        \signed{
-          \recv{\mathit{tok}}{\quot{A_c}}{
-            \signed{
-              \signed{
-                \mathit{FeeExtract}
-              }{v}
-            }{v}
-          }
-        }{v}
-      }{v}
-    }
-  }{v}
-  \label{eq:validator-handler-expanded}
-\end{equation}
-
-\noindent
-The sugar eliminates the need to manually double every
-$\signed{\cdot}{v}$ layer.  In the sugared form, six
-validator tokens fund the three for-comprehension steps
-(two tokens each: rendezvous + matching per
-Section~\ref{sec:for-as-txn}).  More precisely:
-one $\signed{\cdot}{v}$ per for-comprehension from the
-explicit syntax, plus one per continuation from the sugar
-expansion.
+The single outer $\signed{\cdot}{v}$ suffices because the
+uniform-signing sugar~\eqref{eq:sugar-uniform} nests
+recursively.  Expanding one level:
+$\signed{\recv{\mathit{dep}}{\quot{DQ_v}}{\recv{\mathit{tok}}
+{\quot{A_c}}{\mathit{FeeExtract}}}}{v}$ becomes
+$\signed{\recv{\mathit{dep}}{\quot{DQ_v}}{\signed{\recv{\mathit{tok}}
+{\quot{A_c}}{\mathit{FeeExtract}}}{v}}}{v}$, and the inner
+$\signed{\recv{\mathit{tok}}{\quot{A_c}}
+{\mathit{FeeExtract}}}{v}$ is itself sugar, expanding to
+$\signed{\recv{\mathit{tok}}{\quot{A_c}}
+{\signed{\mathit{FeeExtract}}{v}}}{v}$.  The fully desugared
+form therefore has three $\signed{\cdot}{v}$ layers,
+consuming three phlogistons.
 
 The fee-extraction process $\mathit{FeeExtract}$ applies
 token decomposition~\eqref{eq:token-decomp} to the received
@@ -2531,10 +2541,34 @@ Dequoting and decomposing:
 
 The validator handler~$\mathit{VH}$ is itself a signed
 process~$\signed{\cdots}{v}$.  By the cost-accounted rewrite
-rules, it cannot execute unless validator tokens are present.
-These tokens represent the validator's \emph{stake}: the
-validator must lock up stake tokens to earn the right to
-process client deployments.
+rules, it cannot execute unless $v$-tokens are present.
+These tokens come from the validator's phlogiston
+wallet~$\quot{W_v}$, which is replenished at each epoch
+boundary from the validator's stake.
+
+To connect the handler to the wallet, we wrap it in a
+for-comprehension that draws phlogistons from
+$\quot{W_v}$:
+
+\begin{equation}
+  \boxed{
+    \mathit{VB}
+    \;\triangleq\;
+    \recv{\mathit{phlo}}{\quot{W_v}}{
+      \bigl(
+        \mathit{VH} \Par \drop{\mathit{phlo}}
+      \bigr)
+    }
+  }
+  \label{eq:validator-boot}
+\end{equation}
+
+\noindent
+When a message carrying a token stack arrives on
+$\quot{W_v}$, the variable~$\mathit{phlo}$ is bound to
+the quoted stack; $\drop{\mathit{phlo}}$ dequotes it,
+releasing the tokens into the ambient parallel composition
+where they can be consumed by $\mathit{VH}$'s signed layers.
 
 The full bootstrapped system is:
 
@@ -2543,12 +2577,12 @@ The full bootstrapped system is:
     \Omega
     \;\triangleq\;
     \underbrace{
-      \mathit{VH}
-    }_{\text{validator handler}}
+      \mathit{VB}
+    }_{\text{validator bootstrap}}
     \;\Par\;
     \underbrace{
-      v : v : v : ()
-    }_{\text{validator stake (3 tokens)}}
+      \send{\quot{W_v}}{v : v : v : ()}
+    }_{\text{phlogistons from wallet}}
     \;\Par\;
     \underbrace{
       C
@@ -2558,34 +2592,44 @@ The full bootstrapped system is:
 \end{equation}
 
 \noindent
-Expanding:
+Expanding $\mathit{VB}$ and $C$ (with $\mathit{VH}$ in
+sugared form per~\eqref{eq:validator-handler}):
 \begin{align}
   \Omega
   \;=\;\;
-  &\signed{
-    \recv{\mathit{dep}}{v}{
+  &\recv{\mathit{phlo}}{\quot{W_v}}{
+    \bigl(
       \signed{
-        \recv{\mathit{tok}}{\quot{A_c}}{
-          \signed{\mathit{FeeExtract}}{v}
+        \recv{\mathit{dep}}{\quot{DQ_v}}{
+          \recv{\mathit{tok}}{\quot{A_c}}{
+            \mathit{FeeExtract}
+          }
         }
       }{v}
-    }
-  }{v}
+      \Par \drop{\mathit{phlo}}
+    \bigr)
+  }
   \notag\\
-  &\Par\; v : v : v : ()
+  &\Par\; \send{\quot{W_v}}{v : v : v : ()}
   \notag\\
   &\Par\; \send{\quot{A_c}}{c : c : c : ()}
   \;\Par\;
-  \send{v}{\signed{D}{c}}
+  \send{\quot{DQ_v}}{\signed{D}{c}}
   \label{eq:full-expanded}
 \end{align}
 
 \noindent
-The three validator tokens $v : v : v : ()$ are matched
-exactly to the three signed layers of the handler: one
-token per $\signed{\cdots}{v}$.  This is the bootstrap
-invariant: the validator's stake must be at least as deep as
-the handler's nesting depth.
+Recall that $\mathit{VH}$ uses the recursive uniform-signing
+sugar (Definition~\ref{def:sugar-uniform}): the single outer
+$\signed{\cdot}{v}$ expands recursively to three
+$\signed{\cdot}{v}$ layers in the fully desugared form, one
+per for-comprehension plus one for $\mathit{FeeExtract}$.
+
+The validator's stake (locked in the staking contract) is
+\emph{not} consumed directly.  The three phlogistons
+$v : v : v : ()$ on~$\quot{W_v}$ are a renewable budget
+drawn from stake, matched exactly to the three desugared
+signed layers of the handler.
 
 \subsection{Reduction in the Cost-Accounted Calculus}
 \label{app:ex-reduction-ca}
@@ -2596,18 +2640,53 @@ we identify which rule applies.
 
 \bigskip
 \noindent
+\textbf{Step~0} --- The bootstrap process draws execution
+tokens from the wallet (\textsc{Comm} on~$\quot{W_v}$):
+
+The for-comprehension $\recv{\mathit{phlo}}{\quot{W_v}}{\cdots}$
+communicates with $\send{\quot{W_v}}{v : v : v : ()}$, binding
+$\mathit{phlo} \mapsto \quot{v : v : v : ()}$.  After
+dequotation of $\drop{\mathit{phlo}}$, the system becomes:
+\begin{align*}
+  &\signed{
+    \recv{\mathit{dep}}{\quot{DQ_v}}{
+      \signed{
+        \recv{\mathit{tok}}{\quot{A_c}}{
+          \signed{\mathit{FeeExtract}}{v}
+        }
+      }{v}
+    }
+  }{v}
+  \;\Par\; v : v : v : ()
+  \\
+  &\Par\; \send{\quot{A_c}}{c : c : c : ()}
+  \;\Par\;
+  \send{\quot{DQ_v}}{\signed{D}{c}}
+\end{align*}
+
+\noindent
+The phlogistons are now in the ambient parallel
+composition, available to the handler's signed layers.  Note
+that this step is \emph{not} a cost-accounted rewrite: the
+bootstrap for-comprehension on~$\quot{W_v}$ is an unsigned
+process (a pure-rho communication), not a signed term.  It
+is free infrastructure, analogous to the operating system's
+process scheduler.
+
+\bigskip
+\noindent
 \textbf{Step~1} --- The outermost signed handler consumes one
-validator token and receives the signed deployment
+phlogiston and receives the signed deployment
 (\textbf{Rule~1}):
 
 The signed handler's outermost layer is
-$\signed{\recv{\mathit{dep}}{v}{\cdots}}{v}$, and the send
-$\send{v}{\signed{D}{c}}$ provides a message on~$v$.  With
+$\signed{\recv{\mathit{dep}}{\quot{DQ_v}}{\cdots}}{v}$, and the send
+$\send{\quot{DQ_v}}{\signed{D}{c}}$ provides a message on~$\quot{DQ_v}$.  With
 token~$v : v : v : ()$, decomposed as
 $(v : ()) \Par (v : v : ())$:
 \begin{align*}
   &\signed{
-    \recv{\mathit{dep}}{v}{\cdots} \Par \send{v}{\signed{D}{c}}
+    \recv{\mathit{dep}}{\quot{DQ_v}}{\cdots} \Par \send{\quot{DQ_v}}{\signed{D}{c}}
   }{v}
   \;\Par\; v : ()
   \\
@@ -2615,7 +2694,7 @@ $(v : ()) \Par (v : v : ())$:
   \cdots\bigl\{\quot{\signed{D}{c}}\big/\mathit{dep}\bigr\}
 \end{align*}
 After this step, $\mathit{dep}$ is bound to
-$\quot{\signed{D}{c}}$ and one validator token is consumed.
+$\quot{\signed{D}{c}}$ and one phlogiston is consumed.
 The system becomes:
 \begin{align*}
   &\signed{
@@ -2634,7 +2713,7 @@ $\mathit{FeeExtract}$).
 
 \bigskip
 \noindent
-\textbf{Step~2} --- The second layer consumes one validator
+\textbf{Step~2} --- The second layer consumes one execution
 token and looks up the client's tokens (\textbf{Rule~1}):
 \begin{align*}
   &\signed{
@@ -2651,12 +2730,12 @@ token and looks up the client's tokens (\textbf{Rule~1}):
 
 \noindent
 Now $\mathit{tok} = \quot{c : c : c : ()}$ and one more
-validator token is consumed.  One validator token remains.
+phlogiston is consumed.  One phlogiston remains.
 
 \bigskip
 \noindent
 \textbf{Step~3} --- The innermost layer consumes the last
-validator token and executes fee extraction
+phlogiston and executes fee extraction
 (\textbf{Rule~1}):
 \[
   \signed{\mathit{FeeExtract}}{v}
@@ -2827,9 +2906,14 @@ Appendix~\ref{app:verification}.
 We trace the key reductions in the translated system,
 suppressing intermediate structural equivalence steps.
 
-\begin{enumerate}[label=\textbf{Step \arabic*.}, leftmargin=3em]
+\begin{enumerate}[label=\textbf{Step \arabic*.}, leftmargin=3em, start=0]
+  \item \textbf{Wallet draw} on~$\quot{W_v}$.  The bootstrap
+    for-comprehension receives the phlogiston stack.
+    $\drop{\mathit{phlo}}$ releases three sends on~$n_v$
+    into the ambient parallel composition.
+
   \item \textbf{Validator fuel gate~1} fires on~$n_v$.
-    The outermost send in the validator's token chain is
+    The outermost send in the phlogiston chain is
     consumed.  The handler's first $\forc$ unblocks.
     Remainder: two sends on~$n_v$.
 
@@ -2839,7 +2923,7 @@ suppressing intermediate structural equivalence steps.
     $\mathit{dep}$ is bound.
 
   \item \textbf{Validator fuel gate~2} fires on~$n_v$.
-    One more validator token consumed.
+    One more phlogiston consumed.
 
   \item \textbf{Token lookup} on~$\quot{A_c}$.  The
     client's token deposit communicates with the handler's
@@ -2847,7 +2931,7 @@ suppressing intermediate structural equivalence steps.
     to the quoted three-token chain.
 
   \item \textbf{Validator fuel gate~3} fires on~$n_v$.
-    Last validator token consumed.  $\mathit{FeeExtract}$
+    Last phlogiston consumed.  $\mathit{FeeExtract}$
     is now active.
 
   \item \textbf{Fee interceptor} fires on~$n_c$
@@ -2888,18 +2972,54 @@ suppressing intermediate structural equivalence steps.
 \subsection{Discussion}
 \label{app:ex-discussion}
 
-\paragraph{Bootstrap economics.}
-The validator must hold at least as many $v$-tokens as the
-nesting depth of its handler.  In the example, three
-$\signed{\cdots}{v}$ layers require three tokens.  In
-production, this depth corresponds to the cost of the
-validator's own computation: receiving a deploy, looking up
-tokens, and executing the fee logic.  The validator's
-\emph{stake} is the supply of $v$-tokens it holds; a
-validator that exhausts its stake can no longer process
-deploys.  Stake replenishment comes from fee revenue
-(discussed below) and from external funding by the
-validator's operator.
+\paragraph{Stake, phlogistons, and epochs.}
+The validator's \emph{stake} --- the quantity of $v$-tokens
+locked in the staking contract --- is not consumed directly
+by the handler.  Instead, the staking contract deposits a
+renewable supply of \emph{phlogistons} at the wallet
+channel~$\quot{W_v}$ at each epoch boundary (the point at
+which the set of staked validators is updated).  The handler
+draws from this wallet.
+
+The phlogiston wallet must supply at least as many
+tokens as the handler's nesting depth per deployment.  In the
+example, three $\signed{\cdots}{v}$ layers require three
+phlogistons per deploy.  A persistent validator
+($!\,\mathit{VB}$) re-draws from the wallet after each
+deployment, consuming phlogistons at a rate proportional
+to the throughput of client deploys.
+
+\paragraph{Slashing.}
+In the current F1R3FLY slashing algorithm, any slashing
+offense results in the removal of the validator's entire
+stake.  In the cost-accounted model, slashing is implemented
+as a \emph{channel revocation}: the slashing contract moves
+the validator's stake and any remaining phlogistons to a
+private unforgeable channel, where they are inaccessible to
+the validator's handler.
+
+Because the handler draws phlogistons from
+$\quot{W_v}$, moving the wallet's contents to a private
+channel immediately halts the validator: the bootstrap
+for-comprehension $\recv{\mathit{phlo}}{\quot{W_v}}{\cdots}$
+finds no message and blocks.  No further deployments can be
+processed.  The validator is effectively offline.
+
+The tokens held at the private channel are not destroyed.
+They remain available for recovery pending review and
+adjudication.  After adjudication, the tokens may be:
+\begin{itemize}[nosep]
+  \item \textbf{Returned} to the validator's wallet (if the
+    offense was spurious or the result of a network fault).
+  \item \textbf{Partially redistributed} to affected parties
+    (as a penalty proportional to the severity of the
+    offense).
+  \item \textbf{Burned} (removed from circulation, reducing
+    the total token supply).
+\end{itemize}
+The adjudication contract is itself a Rholang program,
+expressible in the cost-accounted calculus, and subject to
+the same formal verification tools.
 
 \paragraph{Fee conversion.}
 The fee token $(c : ())$ is a \emph{client-signature}
@@ -2927,30 +3047,43 @@ variable rates, order books, or automated market makers ---
 all within Rholang.
 
 \paragraph{Persistent validator.}
-The example handler processes a single deployment and
+The example bootstrap processes a single deployment and
 halts.  A production validator runs persistently,
-re-advertising itself after each deployment.  Using the
-standard reflective replication encoding, the persistent
-handler is:
+re-drawing phlogistons from the wallet after each
+deployment.  Using the standard reflective replication
+encoding:
 \[
-  !\, \mathit{VH}
+  !\, \mathit{VB}
 \]
-Each iteration consumes validator tokens from stake,
-collects fees, and (via the exchange contract) converts
-fees to replenish stake --- establishing the economic
-feedback loop that sustains the validator.
+Each iteration draws phlogistons from~$\quot{W_v}$,
+processes a deployment, collects fees, and (via the exchange
+contract) converts fees to replenish the phlogiston
+supply --- establishing the economic feedback loop that
+sustains the validator between epoch boundaries.
 
 \paragraph{Connection to Casper CBC.}
 In the F1R3FLY platform, the validator's stake
-($v$-tokens) is locked via a staking contract that
-participates in Casper CBC consensus.  The number of
-$v$-tokens held determines the validator's weight in the
-consensus algorithm.  The cost-accounted calculus makes
-this relationship \emph{intrinsic}: the validator
-literally cannot act without tokens, and the rate of
+($v$-tokens locked in the staking contract) determines
+the validator's weight in Casper CBC consensus.  The
+cost-accounted calculus makes this relationship
+\emph{intrinsic}: the validator literally cannot act
+without phlogistons drawn from stake, and the rate of
 token consumption is determined by the structure of the
 handler --- the same structure that the consensus layer
-inspects.
+inspects.  Slashing, epoch-boundary replenishment, and
+stake-weighted voting are all expressible as
+cost-accounted Rholang contracts, unifying the consensus
+and execution layers under a single formal semantics.
+
+%% ══════════════════════════════════════════════════════════════════
+\section*{Acknowledgements}
+
+The author thanks Mike Stay for extensive discussions on the
+connections between linear logic and resource accounting,
+Dylon Edwards for detailed feedback on the operational
+semantics and implementation path, and Kevin Machiels for
+insightful comments on the validator economics and slashing
+model.
 
 %% ══════════════════════════════════════════════════════════════════
 \begin{thebibliography}{9}
