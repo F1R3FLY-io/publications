@@ -406,6 +406,23 @@ object-capability model for agentic AI
 governance~\cite{VACRADA} is a direct application of this
 structure.
 
+\paragraph{Simplified minting.}
+Because token stacks are first-class terms that can be
+constructed, communicated, and composed within the calculus,
+\emph{minting} --- the creation of new tokens --- is a
+straightforward operation: a minting contract sends a
+freshly constructed token stack on the appropriate signature
+channel.  No privileged runtime hook or external oracle is
+required.  The protocol's phlogiston minting at epoch
+boundaries, the slush-fund grants for new users, and the
+fee-to-stake conversion all reduce to the same primitive:
+constructing a token stack and sending it on a channel.
+This uniformity dramatically simplifies the implementation
+of token economies, including ERC-20-like fungible token
+contracts, which become expressible as standard
+cost-accounted Rholang programs --- a direction we develop
+in a companion paper.
+
 %% ══════════════════════════════════════════════════════════════════
 \section{The Cost-Accounted Rho Calculus}
 \label{sec:calculus}
@@ -2329,33 +2346,38 @@ names.  We introduce five auxiliary channels (pure-rho names):
 
 \paragraph{Stake vs.\ phlogiston.}
 It is important to distinguish the validator's \emph{stake}
-from its \emph{phlogiston} (phlogistons).  The stake is
-the quantity of $v$-tokens locked in the staking contract; it
-determines the validator's weight in Casper CBC consensus and
-is subject to slashing.  Phlogiston is a \emph{renewable
-supply} drawn from the stake and deposited at the wallet
-channel~$\quot{W_v}$.  The validator's handler consumes
-phlogiston from~$\quot{W_v}$ to process client
-deployments.
+from its \emph{phlogiston}.  The stake is the quantity of
+$v$-tokens locked in the staking contract; it determines the
+validator's weight in Casper CBC consensus and is subject to
+slashing.  Phlogiston is a \emph{renewable resource} that is
+\emph{minted} at the time of staking and \emph{freshly
+minted} at each epoch boundary, deposited at the wallet
+channel~$\quot{W_v}$.  Phlogiston is not drawn from stake
+--- it is a separate resource whose continued minting is
+contingent on the validator's good behavior.
 
 At each \emph{epoch boundary} (when the set of staked
-validators is updated), the protocol replenishes the
-validator's phlogiston wallet, provided the validator
+validators is updated), the protocol mints a fresh supply of
+phlogiston for the validator's wallet, provided the validator
 has followed the rules of the protocol.  If the validator
-commits a slashing offense, the entire stake and any
-remaining phlogistons are moved to a private
-unforgeable channel where they are held pending review and
-adjudication.  After adjudication, the tokens may be
-returned (if the offense was spurious), partially
-redistributed (as a penalty), or burned.  Because the
-unforgeable channel is private, the tokens are effectively
-revoked: no process can access them without explicit
-release by the adjudication contract.
+commits a slashing offense, all remaining phlogiston is
+removed and no further phlogiston is minted.  The validator
+is effectively offline: the bootstrap for-comprehension
+on~$\quot{W_v}$ finds no message and blocks.
 
-In the example below, we model the phlogiston wallet
-as a message on~$\quot{W_v}$ carrying a token stack.  The
-validator handler draws tokens from this wallet rather than
-directly from stake.
+A slashed validator may be \emph{redeemed} --- proven to have
+been in the right on the slashing offense, or having reached
+some other arrangement with the shard.  Upon redemption,
+phlogiston minting resumes at the next epoch boundary.  The
+stake and any phlogiston held at the time of slashing are
+moved to a private unforgeable channel pending adjudication.
+After adjudication, the tokens may be returned, partially
+redistributed as a penalty, or burned.
+
+In the example below, we model the phlogiston wallet as a
+message on~$\quot{W_v}$ carrying a token stack.  The
+validator handler consumes phlogiston from this wallet to
+process client deployments.
 
 \subsection{Token Stack Decomposition}
 \label{app:ex-decomp}
@@ -2465,7 +2487,7 @@ $\signed{\recv{\mathit{tok}}{\quot{A_c}}
 $\signed{\recv{\mathit{tok}}{\quot{A_c}}
 {\signed{\mathit{FeeExtract}}{v}}}{v}$.  The fully desugared
 form therefore has three $\signed{\cdot}{v}$ layers,
-consuming three phlogistons.
+consuming three phlogiston.
 
 The fee-extraction process $\mathit{FeeExtract}$ applies
 token decomposition~\eqref{eq:token-decomp} to the received
@@ -2543,11 +2565,11 @@ The validator handler~$\mathit{VH}$ is itself a signed
 process~$\signed{\cdots}{v}$.  By the cost-accounted rewrite
 rules, it cannot execute unless $v$-tokens are present.
 These tokens come from the validator's phlogiston
-wallet~$\quot{W_v}$, which is replenished at each epoch
-boundary from the validator's stake.
+wallet~$\quot{W_v}$, which receives freshly minted
+phlogiston at each epoch boundary.
 
 To connect the handler to the wallet, we wrap it in a
-for-comprehension that draws phlogistons from
+for-comprehension that draws phlogiston from
 $\quot{W_v}$:
 
 \begin{equation}
@@ -2582,7 +2604,7 @@ The full bootstrapped system is:
     \;\Par\;
     \underbrace{
       \send{\quot{W_v}}{v : v : v : ()}
-    }_{\text{phlogistons from wallet}}
+    }_{\text{phlogiston from wallet}}
     \;\Par\;
     \underbrace{
       C
@@ -2626,10 +2648,10 @@ $\signed{\cdot}{v}$ layers in the fully desugared form, one
 per for-comprehension plus one for $\mathit{FeeExtract}$.
 
 The validator's stake (locked in the staking contract) is
-\emph{not} consumed directly.  The three phlogistons
-$v : v : v : ()$ on~$\quot{W_v}$ are a renewable budget
-drawn from stake, matched exactly to the three desugared
-signed layers of the handler.
+\emph{not} consumed directly.  The phlogiston
+$v : v : v : ()$ on~$\quot{W_v}$ is a renewable resource
+minted at epoch boundaries, matched exactly to the three
+desugared signed layers of the handler.
 
 \subsection{Reduction in the Cost-Accounted Calculus}
 \label{app:ex-reduction-ca}
@@ -2665,7 +2687,7 @@ dequotation of $\drop{\mathit{phlo}}$, the system becomes:
 \end{align*}
 
 \noindent
-The phlogistons are now in the ambient parallel
+The phlogiston are now in the ambient parallel
 composition, available to the handler's signed layers.  Note
 that this step is \emph{not} a cost-accounted rewrite: the
 bootstrap for-comprehension on~$\quot{W_v}$ is an unsigned
@@ -2972,44 +2994,47 @@ suppressing intermediate structural equivalence steps.
 \subsection{Discussion}
 \label{app:ex-discussion}
 
-\paragraph{Stake, phlogistons, and epochs.}
+\paragraph{Stake, phlogiston, and epochs.}
 The validator's \emph{stake} --- the quantity of $v$-tokens
 locked in the staking contract --- is not consumed directly
-by the handler.  Instead, the staking contract deposits a
-renewable supply of \emph{phlogistons} at the wallet
-channel~$\quot{W_v}$ at each epoch boundary (the point at
-which the set of staked validators is updated).  The handler
-draws from this wallet.
+by the handler.  Instead, the protocol \emph{mints} a fresh
+supply of phlogiston at the wallet channel~$\quot{W_v}$ at
+the time of staking and again at each epoch boundary (the
+point at which the set of staked validators is updated),
+provided the validator has been following the protocol rules.
+The handler draws from this wallet.
 
 The phlogiston wallet must supply at least as many
 tokens as the handler's nesting depth per deployment.  In the
 example, three $\signed{\cdots}{v}$ layers require three
-phlogistons per deploy.  A persistent validator
+units of phlogiston per deploy.  A persistent validator
 ($!\,\mathit{VB}$) re-draws from the wallet after each
-deployment, consuming phlogistons at a rate proportional
+deployment, consuming phlogiston at a rate proportional
 to the throughput of client deploys.
 
 \paragraph{Slashing.}
 In the current F1R3FLY slashing algorithm, any slashing
 offense results in the removal of the validator's entire
-stake.  In the cost-accounted model, slashing is implemented
-as a \emph{channel revocation}: the slashing contract moves
-the validator's stake and any remaining phlogistons to a
-private unforgeable channel, where they are inaccessible to
-the validator's handler.
+stake.  In the cost-accounted model, slashing has two
+effects: (i)~all remaining phlogiston is removed and no
+further phlogiston is minted, and (ii)~the validator's stake
+is moved to a private unforgeable channel pending
+adjudication.
 
-Because the handler draws phlogistons from
-$\quot{W_v}$, moving the wallet's contents to a private
-channel immediately halts the validator: the bootstrap
+Because the handler draws phlogiston from
+$\quot{W_v}$, removing the wallet's contents
+immediately halts the validator: the bootstrap
 for-comprehension $\recv{\mathit{phlo}}{\quot{W_v}}{\cdots}$
 finds no message and blocks.  No further deployments can be
 processed.  The validator is effectively offline.
 
-The tokens held at the private channel are not destroyed.
-They remain available for recovery pending review and
-adjudication.  After adjudication, the tokens may be:
+A slashed validator may be \emph{redeemed} --- proven to
+have been in the right, or having reached an arrangement
+with the shard.  Upon redemption, phlogiston minting resumes
+at the next epoch boundary.  The stake held at the private
+channel may be:
 \begin{itemize}[nosep]
-  \item \textbf{Returned} to the validator's wallet (if the
+  \item \textbf{Returned} to the validator (if the
     offense was spurious or the result of a network fault).
   \item \textbf{Partially redistributed} to affected parties
     (as a penalty proportional to the severity of the
@@ -3049,17 +3074,18 @@ all within Rholang.
 \paragraph{Persistent validator.}
 The example bootstrap processes a single deployment and
 halts.  A production validator runs persistently,
-re-drawing phlogistons from the wallet after each
+re-drawing phlogiston from the wallet after each
 deployment.  Using the standard reflective replication
 encoding:
 \[
   !\, \mathit{VB}
 \]
-Each iteration draws phlogistons from~$\quot{W_v}$,
-processes a deployment, collects fees, and (via the exchange
-contract) converts fees to replenish the phlogiston
-supply --- establishing the economic feedback loop that
-sustains the validator between epoch boundaries.
+Each iteration draws phlogiston from~$\quot{W_v}$,
+processes a deployment, and collects fees.  Via the exchange
+contract, fees can be converted to replenish the
+phlogiston supply between epoch-boundary minting events,
+establishing the economic feedback loop that sustains the
+validator.
 
 \paragraph{Connection to Casper CBC.}
 In the F1R3FLY platform, the validator's stake
@@ -3067,11 +3093,12 @@ In the F1R3FLY platform, the validator's stake
 the validator's weight in Casper CBC consensus.  The
 cost-accounted calculus makes this relationship
 \emph{intrinsic}: the validator literally cannot act
-without phlogistons drawn from stake, and the rate of
-token consumption is determined by the structure of the
+without phlogiston, whose minting is contingent on
+continued good behavior.  The rate of phlogiston
+consumption is determined by the structure of the
 handler --- the same structure that the consensus layer
-inspects.  Slashing, epoch-boundary replenishment, and
-stake-weighted voting are all expressible as
+inspects.  Slashing, epoch-boundary minting, redemption,
+and stake-weighted voting are all expressible as
 cost-accounted Rholang contracts, unifying the consensus
 and execution layers under a single formal semantics.
 
