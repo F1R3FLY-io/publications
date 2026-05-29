@@ -11,6 +11,25 @@
 \usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{booktabs}
+\usepackage{listings}
+
+%% ── listings style ────────────────────────────────────────────────
+\lstdefinestyle{rholang}{
+  basicstyle=\small\ttfamily,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{gray},
+  morekeywords={for,new,let,in,match},
+  literate={<-}{{$\leftarrow$}}2
+           {!}{{!}}1
+           {|}{{$\mid$}}1,
+  breaklines=true,
+  frame=single,
+  framesep=6pt,
+  xleftmargin=1em,
+  xrightmargin=1em,
+  aboveskip=\medskipamount,
+  belowskip=\medskipamount,
+}
 
 %% ── theorem environments ──────────────────────────────────────────
 \newtheorem{theorem}{Theorem}[section]
@@ -18,33 +37,26 @@
 \newtheorem{proposition}[theorem]{Proposition}
 \newtheorem{definition}[theorem]{Definition}
 \newtheorem{remark}[theorem]{Remark}
+\newtheorem{example}[theorem]{Example}
 
 %% ── macros ────────────────────────────────────────────────────────
-\newcommand{\rho}{\varrho}
 \newcommand{\lsem}{\llbracket}
 \newcommand{\rsem}{\rrbracket}
-
-% semantic brackets
-\newcommand{\Nsem}[1]{\mathcal{N}\lsem #1 \rsem}
-\newcommand{\Tsem}[1]{\mathcal{T}\lsem #1 \rsem}
-\newcommand{\Psem}[1]{\mathcal{P}\lsem #1 \rsem}
-\newcommand{\Ssem}[1]{\mathcal{S}\lsem #1 \rsem}
 
 % calculus syntax
 \newcommand{\Par}{\mathbin{|}}
 \newcommand{\forc}{\mathbf{for}}
-\newcommand{\send}[2]{#1 !\left( #2 \right)}
+\newcommand{\send}[2]{#1 !\!\left( #2 \right)}
 \newcommand{\recv}[3]{\forc\!\left( #1 \leftarrow #2 \right) #3}
 \newcommand{\nil}{\mathbf{0}}
 \newcommand{\drop}[1]{{\ast} #1}
 \newcommand{\quot}[1]{@#1}
 \newcommand{\subst}[3]{#1\{#2 / #3\}}
+\newcommand{\signed}[2]{\{#1\}_{#2}}
 
 % signatures and tokens
-\newcommand{\sig}{\mathfrak{s}}
-\newcommand{\sigs}{\mathfrak{s}}
-\newcommand{\hashf}{\mathrm{hash}}
-\newcommand{\amp}{\mathbin{\&}}
+\newcommand{\comp}{\mathbin{*}}
+\newcommand{\hashf}{\texttt{\#}}
 
 % structural equivalence and reduction
 \newcommand{\Seq}{\equiv_{\!S}}
@@ -58,46 +70,52 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\textsc{F1R3FLY.io}}
-\fancyhead[R]{\small\textsc{Cost-Accounted Rho Calculus}}
+\fancyhead[R]{\small\textsc{Cost-Accounted Rholang}}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
 %% ── title ─────────────────────────────────────────────────────────
 \title{%
-  \textbf{Translating Cost-Accounted Rho Calculus\\
-  Back to the Pure Rho Calculus}\\[6pt]
-  \large Toward Rearchitecting Phlogiston Accounting in Rholang}
+  \textbf{Cost-Accounted Rho Calculus}\\[6pt]
+  \large Folding Phlogiston Accounting into the Rholang Core}
 \author{%
-  L.\ Gregory Meredith\thanks{F1R3FLY.io; F1R3FLY Industries.  \texttt{lgreg.meredith@f1r3fly.io}}%
+  L.\ Gregory Meredith\thanks{F1R3FLY.io; F1R3FLY Industries.
+  \texttt{lgreg.meredith@f1r3fly.io}}%
 }
-\date{April 2026}
+\date{May 2026}
 
 %% ══════════════════════════════════════════════════════════════════
 \begin{document}
 \maketitle
 
 \begin{abstract}
-The rho calculus, the formal core of the Rholang smart-contract language,
-is a reflective higher-order process calculus in which channels are
-the quoted codes of processes and processes may be recovered from
-channels by dequotation.  Rholang's current cost-accounting mechanism
----~the \emph{phlogiston} (phlo) system~--- is specified as an
-extension of the calculus with digital signatures and token-carrying
-rewrite rules.  In this note we show that the entire cost-accounting
-layer can be \emph{translated back} into the pure rho calculus via a
-compositional encoding.  Signatures become channels, tokens become
-messages on those channels, and signed processes must consume
-``fuel'' before they can communicate.  Five mediator infrastructure
-processes (splitters and joiners) handle the bookkeeping between
-combined and decomposed token representations.
+We present a revision of the rho calculus in which cost
+accounting is not an external extension to be translated back
+into the core language, but is \emph{folded directly into the
+grammar and operational semantics} of the calculus itself.
+Signatures become a species of name alongside quoted processes;
+token stacks become first-class terms; and the
+for-comprehension and send operators range over \emph{signed
+terms} rather than bare processes.  The result is a calculus in
+which every communicating process must engage the cost layer
+--- embodying the principle of \emph{valuable friction} at the
+syntactic level.  The signature grammar is parameterized by a
+type variable~$G$ representing the cryptographic backend,
+making the calculus generic over signature schemes.
+
+We identify the for-comprehension as the transaction primitive
+of the calculus: the binding specification is the transaction,
+the substitution is the witness, and application to the
+continuation is the state update.  Individual transactions are
+atomic by construction.  Multi-step transactions are made atomic
+by a decidable static analysis at deployment-acceptance time: a
+linear resource proof verifying that every for-comprehension in
+the deployment's call graph is funded before any step executes.
 
 Because the rho calculus is the formal core of Rholang, this
-translation doubles as a blueprint for rearchitecting phlogiston
-accounting in Rholang~1.2 and beyond:  cost control is expressible
-\emph{within} the language, eliminating the need for a privileged
-runtime extension and opening the door to user-definable fee
-structures, composable metering contracts, and formal verification
-of the accounting layer itself.
+revised calculus serves as the design specification for
+rearchitecting phlogiston accounting in Rholang~1.4 (MeTTaIL)
+and the F1R3FLY platform.
 \end{abstract}
 
 \tableofcontents
@@ -107,752 +125,2630 @@ of the accounting layer itself.
 \section{Introduction}
 \label{sec:intro}
 
-The rho calculus~\cite{MeredithRadestock2005} is a variant of
-Milner's $\pi$-calculus~\cite{Milner1999} distinguished by its
-support for \emph{reflection}: processes can be turned into channels
-(via the quoting operator~$\quot{\cdot}$) and channels can be turned
-back into processes (via the dequoting operator~$\drop{\cdot}$).
-This reflective structure makes the rho calculus especially
-well-suited as the formal core of a smart-contract language, and
-indeed it is the theoretical foundation of
-\textbf{Rholang}~\cite{RholangSpec}, the native language of the
-RChain / F1R3FLY platform.
+The rho calculus~\cite{MeredithRadestock2005} is a reflective
+higher-order process calculus: channels are the quoted codes of
+processes, and processes may be recovered from channels by
+dequotation.  As the formal core of
+Rholang~\cite{RholangSpec}, the rho calculus underpins the
+computation and storage model of the F1R3FLY platform.
 
-In production, every Rholang deploy is gated by a cost-accounting
-mechanism:  the \emph{phlogiston} (phlo) system.  A deploy is
-signed by one or more digital signatures, each associated with a
-\emph{token balance}; execution consumes phlo proportionally to the
-resources used.  The current implementation treats cost accounting as
-a runtime concern, external to the calculus itself.
+Rholang's cost-accounting mechanism --- the \emph{phlogiston}
+(phlo) system --- gates every deploy behind a token balance
+associated with a digital signature.  In previous work, this
+mechanism was specified as an \emph{extension} of the rho
+calculus: additional syntax for signatures and tokens, and
+additional rewrite rules for gated communication.  One could
+then \emph{translate} the extension back into the pure rho
+calculus, demonstrating that cost accounting is expressible
+within the language.
 
-This paper demonstrates that the cost-accounting extension can be
-faithfully \emph{encoded} in the pure rho calculus.  Because the rho
-calculus is the core of Rholang, the encoding immediately suggests a
-rearchitecture of phlogiston accounting:
+This paper takes the next step.  Rather than treating cost
+accounting as an external layer and then recovering it via
+translation, we \emph{fold it directly into the calculus}.  The
+key design moves are:
 
 \begin{enumerate}[label=(\roman*)]
-  \item \textbf{Cost control within the language.}  Rather than a
-    privileged runtime extension, phlo accounting becomes a Rholang
-    program, subject to the same formal semantics and verification
-    tools as any other contract.
-  \item \textbf{Composable metering.}  User-definable fee structures
-    and composable metering contracts become possible, because the
-    accounting layer is written in the same language as the
-    contracts it meters.
-  \item \textbf{Formal verification.}  The translation is
-    compositional and can be verified using the standard
-    bisimulation and full-abstraction proof techniques of the rho
-    calculus, including the ongoing Lean~4 formalization effort.
+  \item \textbf{Signatures are names.}  The name sort is
+    extended so that $x, y \;::=\; \quot{T} \mid s$, where~$s$
+    ranges over signatures.  Signatures and quoted processes
+    coexist as first-class channel names.
+  \item \textbf{Two axes of reflection.}  Alongside the
+    structural quoting operator~$\quot{T}$ (the code of a
+    signed term used as a channel), a \emph{cryptographic
+    quoting}
+    operator~$\hashf P$ (the hash of a process) appears in the
+    signature grammar.  This gives the calculus two axes of
+    reflection: one for communication, one for authentication.
+  \item \textbf{Signed terms pervade the syntax.}  The
+    for-comprehension and send take \emph{signed terms}~$T, U$
+    as their body and payload respectively, rather than bare
+    processes.  One cannot write a communicating process without
+    engaging the cost layer.
+  \item \textbf{Token stacks are first-class terms.}  Token
+    stacks $S \;::=\; () \mid s : S$ are included in the
+    signed-term grammar, so they participate in reduction on
+    equal footing with signed processes.
+  \item \textbf{Parametric polymorphism.}  Parallel composition
+    is overloaded: $P \Par Q$ composes processes, $T \Par U$
+    composes signed terms.  The operator is parametrically
+    polymorphic in the sort it composes.
+  \item \textbf{Generic cryptography.}  The signature grammar
+    is parameterized by a type variable~$G$ representing the
+    ground signature scheme (Ed25519, secp256k1, etc.),  making
+    the calculus independent of any particular cryptographic
+    backend.
 \end{enumerate}
 
-\medskip
 \noindent
-The remainder of the paper is organized as follows.
-Section~\ref{sec:rho} reviews the syntax and semantics of the pure
-rho calculus.  Section~\ref{sec:cost} presents the cost-accounted
-extension.  Section~\ref{sec:translation} gives the compositional
-translation.  Section~\ref{sec:verification} verifies each of the
-five rewrite rules.  Section~\ref{sec:architecture} discusses
-implications for the Rholang architecture.
+Because the rho calculus \emph{is} the core of Rholang, this
+revised calculus is not a theoretical curiosity --- it is the
+design specification for rearchitecting phlogiston accounting in
+Rholang~1.4 (MeTTaIL) and the F1R3FLY platform.
 
 %% ══════════════════════════════════════════════════════════════════
-\section{The Pure Rho Calculus}
-\label{sec:rho}
+\section{Motivation: From Run-to-Completion to Concurrent Acceptance}
+\label{sec:motivation}
 
-We recall the syntax and operational semantics of the rho calculus,
-presented here as a graph-structured lambda theory (GSLT).
+The redesign presented in this paper is motivated by a
+fundamental architectural limitation in the current F1R3FLY
+implementation, inherited from RChain.
 
-\subsection{Syntax}
+\subsection{The Run-to-Completion Model}
+\label{sec:run-to-completion}
 
-Processes and names are mutually defined:
-%
-\begin{align}
-  P, Q &\;::=\; \nil
-        \;\mid\; \recv{y}{x}{P}
-        \;\mid\; \send{x}{Q}
-        \;\mid\; P \Par Q
-        \;\mid\; \drop{x}
-  \label{eq:proc-syntax}
-  \\[4pt]
-  x, y &\;::=\; \quot{P}
-  \label{eq:name-syntax}
-\end{align}
+In the current architecture, each deployment submitted to a
+F1R3Node is executed under \emph{run-to-completion} semantics:
+the RSpace tuplespace engine accepts a deployment, executes it
+to termination (or until phlogiston is exhausted), commits the
+resulting state changes, and only then accepts the next
+deployment.  This model introduces two related problems:
 
-\noindent
-The intended readings are:
-\begin{description}[style=nextline, leftmargin=2em]
-  \item[$\nil$]
-    The \emph{stopped process}: does nothing.
-  \item[$\recv{y}{x}{P}$]
-    The process that \emph{waits} for a message on channel~$x$,
-    binds the received name to~$y$ in~$P$, and continues as the
-    resulting instance of~$P$.
-    (In Rholang: \texttt{for( y <- x ) \{ P \}}.)
-  \item[$\send{x}{Q}$]
-    \emph{Sends} the code of process~$Q$ on channel~$x$.
-    (In Rholang: \texttt{x!( Q )}.)
-  \item[$P \Par Q$]
-    The \emph{parallel composition} of~$P$ and~$Q$.
-  \item[$\drop{x}$]
-    \emph{Dequotes} (reflects) channel~$x$ back into a running
-    process.
-  \item[$\quot{P}$]
-    The \emph{quote} (code) of process~$P$, used as a channel name.
+\begin{enumerate}[label=(\roman*)]
+  \item \textbf{Implicit transaction boundaries.}  The entire
+    deployment is treated as a single, implicit transaction.
+    There is no formal specification of what constitutes a
+    transaction --- the deployment boundary \emph{is} the
+    transaction boundary, by convention rather than by
+    design.  This conflates the unit of submission (the
+    deployment) with the unit of atomicity (the transaction),
+    making it impossible to express deployments that contain
+    multiple independent transactions or to share
+    transactional structure across deployments.
+
+  \item \textbf{Limited availability.}  Because RSpace
+    executes deployments sequentially, it is \emph{locked}
+    for the duration of each deployment's execution.  No
+    other deployment can be accepted, pattern-matched, or
+    reduced while the current deployment is running.  The
+    throughput of the F1R3Node is bounded by the execution
+    time of the slowest deployment in the queue.  This is a
+    severe bottleneck: a single expensive deployment blocks
+    all other activity on the node.
+\end{enumerate}
+
+\subsection{The Merge Analysis Burden}
+\label{sec:merge-burden}
+
+To recover concurrency in the current architecture, F1R3FLY
+(following RChain) employs \emph{merge analysis}: after
+multiple deployments have been executed independently (e.g.,
+by different validators or in speculative parallel
+execution), their resulting states must be \emph{merged}
+into a single consistent state.  The merge analysis
+determines whether the independently computed states are
+compatible (no conflicting writes to the same tuplespace
+entries) and, if so, how to combine them.
+
+Merge analysis is expensive, complex, and a persistent
+source of bugs.  It requires tracking read and write sets
+for every deployment, computing conflict graphs, and
+resolving or rejecting conflicting state transitions.
+Moreover, the analysis is \emph{post-hoc}: deployments are
+executed speculatively, and conflicts are detected only
+after the work has been done.  Wasted computation is the
+norm, not the exception.
+
+\subsection{The New Model: Acceptance by Linear Proof}
+\label{sec:new-model}
+
+The cost-accounted rho calculus eliminates both problems by
+replacing run-to-completion with \emph{concurrent acceptance
+gated by linear resource proofs}.
+
+Under the new model:
+\begin{enumerate}[label=(\roman*)]
+  \item \textbf{Explicit transaction boundaries.}  The
+    for-comprehension is the transaction primitive
+    (Section~\ref{sec:for-as-txn}).  Transaction boundaries
+    are determined by the syntactic structure of signed terms,
+    not by deployment boundaries.  A deployment may contain
+    multiple transactions; multiple deployments may
+    participate in a single financial transaction (via shared
+    signature channels).
+
+  \item \textbf{Concurrent acceptance.}  RSpace can accept
+    deployments \emph{at any time}, provided each deployment
+    carries a linear resource proof
+    (Section~\ref{sec:linear-proof}) demonstrating that
+    sufficient tokens exist to complete all of its
+    transactions.  Multiple deployments can be active
+    simultaneously, each drawing from its own committed token
+    supply.  RSpace is never locked by a single deployment.
+
+  \item \textbf{Throughput.}  Because acceptance is gated by a
+    static check (linear in the AST size) rather than by
+    sequential execution, the F1R3Node can accept and begin
+    executing deployments in parallel.  The throughput
+    bottleneck shifts from ``one deployment at a time'' to
+    ``as many deployments as there are non-conflicting token
+    supplies'' --- a dramatic improvement.
+
+  \item \textbf{Merge via signatures and cost accounting.}
+    The need for post-hoc merge analysis is substantially
+    reduced.  In the cost-accounted calculus, conflicts are
+    detected \emph{at acceptance time} through the linear
+    resource proof: two deployments that compete for the same
+    tokens are two proof obligations competing for the same
+    linear hypotheses, and at most one can succeed
+    (Section~\ref{sec:deploy-boundaries}).  Merging is no
+    longer a separate analysis pass over execution traces ---
+    it is a consequence of the signature and cost-accounting
+    structure of the calculus itself.
+
+    Specifically, deployments signed by \emph{different}
+    signatures draw from \emph{disjoint} token pools and
+    cannot conflict.  They may be executed in parallel and
+    their results composed without merge analysis.
+    Deployments signed by the \emph{same} signature (or
+    overlapping compound signatures) compete for the same
+    token pool and are serialized by the linear proof ---
+    again without merge analysis.  The only case requiring
+    attention is deployments that interact via shared
+    data channels, and even here the cost-accounting
+    structure provides a natural serialization order.
+\end{enumerate}
+
+\begin{remark}[From blocking to budgeting]
+  The architectural shift can be summarized in a single
+  sentence: the current model asks ``is the tuplespace
+  free?''\ (blocking); the new model asks ``is this
+  deployment funded?''\ (budgeting).  The first question
+  serializes all activity.  The second question can be
+  answered independently for each deployment, enabling
+  concurrency proportional to the diversity of the
+  token supply.
+\end{remark}
+
+\subsection{New Capability: Multi-Signature Execution}
+\label{sec:multisig-motivation}
+
+Beyond streamlining execution and increasing throughput, the
+cost-accounted calculus introduces a feature absent from the
+current architecture: \emph{$n$-party multi-signature
+execution}.
+
+The compound signature $s_1 \comp s_2 \comp \cdots \comp s_n$
+in the signed term
+$\signed{P}{s_1 \comp \cdots \comp s_n}$
+requires that \emph{all} $n$ parties explicitly sign off on the
+execution of~$P$.  The rewrite rules enforce this structurally:
+the process cannot fire unless tokens from every component
+signature are present.  There is no separate multi-sig
+verification layer, no threshold-signature scheme, no
+off-chain coordination protocol.  Multi-sig is a consequence
+of the grammar.
+
+\paragraph{Programmable tokenized capabilities.}
+The interaction between compound signatures and token stacks
+yields a rich \emph{object-capability} model with
+programmable amplification and attenuation:
+
+\begin{description}[style=nextline, leftmargin=2em, nosep]
+  \item[Attenuation.]
+    A token stack limits what a capability can do.  A process
+    signed by~$s$ with a two-token stack $s : s : ()$ can
+    perform at most two funded actions.  By controlling the
+    depth of the token stack granted to a subprocess, a parent
+    process \emph{attenuates} the subprocess's authority.
+    This is token-metered capability attenuation: the child
+    can do no more than the parent has budgeted.
+
+  \item[Amplification.]
+    Composing signatures via $\comp$ \emph{amplifies}
+    authority.  A process signed by $s_1 \comp s_2$ can
+    perform actions that neither~$s_1$ nor~$s_2$ could
+    authorize alone.  For example, a funds-transfer contract
+    might require $\signed{\mathit{transfer}}
+    {s_{\mathit{sender}} \comp s_{\mathit{compliance}}}$,
+    meaning the transfer executes only if both the sender and
+    the compliance officer have signed.  Neither party alone
+    can move funds; their composed authority can.
+
+  \item[Programmable delegation.]
+    Because signatures are names and token stacks are
+    first-class terms, a process can \emph{delegate}
+    authority by sending tokens on a signature channel.  A
+    manager process holding $s_{\mathit{mgr}} : S$ can send a
+    portion of its stack to a subordinate process, granting
+    the subordinate a metered budget of the manager's
+    authority.  When the subordinate exhausts its budget, it
+    halts --- no revocation protocol needed.
+
+  \item[Just-in-time funding.]
+    Because token stacks are first-class terms, they can be
+    \emph{constructed and supplied dynamically} --- not merely
+    pre-allocated at deployment time.  A contract can mint a
+    token stack $s : s : ()$ and send it on a signature
+    channel at the precise moment it is needed, funding a
+    capability on an as-needed basis.
+
+    This enables natural \emph{on-boarding} patterns: a
+    platform contract grants a new user a small slush fund
+    (a shallow token stack) to explore the system.  The
+    user's initial deployments are funded by this grant,
+    letting them experiment without acquiring tokens of
+    their own.  Once the slush fund is exhausted, further
+    execution requires the user to acquire tokens through
+    the token economy --- purchase, earn, or receive via
+    delegation.  The transition from subsidized exploration
+    to self-funded participation is not a policy check
+    external to the calculus; it is a \emph{resource
+    exhaustion event} within it.
 \end{description}
 
-\subsection{Free Names}
+\noindent
+This capability model is \emph{intrinsic} to the calculus:
+amplification, attenuation, delegation, and just-in-time
+funding are not library features or design patterns but
+direct consequences of the signature algebra and token-stack
+semantics.  The F1R3FLY platform's token-attenuated
+object-capability model for agentic AI
+governance~\cite{VACRADA} is a direct application of this
+structure.
 
-The $\forc$-comprehension binds~$y$.  Free names are computed
-recursively:
-%
+%% ══════════════════════════════════════════════════════════════════
+\section{The Cost-Accounted Rho Calculus}
+\label{sec:calculus}
+
+\subsection{Syntax}
+\label{sec:syntax}
+
+The calculus has four mutually defined syntactic categories:
+\emph{processes}, \emph{names}, \emph{signed terms}, and
+\emph{signatures}.
+
+\begin{definition}[Processes and names]
+  \label{def:proc-name}
+  \begin{align}
+    P, Q &\;::=\; \nil
+          \;\mid\; \recv{y}{x}{T}
+          \;\mid\; \send{x}{U}
+          \;\mid\; P \Par Q
+          \;\mid\; \drop{x}
+    \label{eq:proc-syntax}
+    \\[4pt]
+    x, y &\;::=\; \quot{T} \;\mid\; s
+    \label{eq:name-syntax}
+  \end{align}
+\end{definition}
+
+\noindent
+The intended readings carry over from the pure rho calculus,
+with one critical change: the for-comprehension
+$\recv{y}{x}{T}$ has a \emph{signed term}~$T$ as its
+continuation, and the send $\send{x}{U}$ carries a signed
+term~$U$ as its payload.
+
+\begin{definition}[Signed terms and token stacks]
+  \label{def:signed-term}
+  \begin{align}
+    T, U &\;::=\; \signed{P}{s}
+          \;\mid\; T \Par U
+          \;\mid\; S
+    \label{eq:signed-term-syntax}
+    \\[4pt]
+    S &\;::=\; ()
+       \;\mid\; s : S
+    \label{eq:token-syntax}
+  \end{align}
+\end{definition}
+
+\noindent
+A signed term is one of:
+\begin{description}[style=nextline, leftmargin=2em]
+  \item[$\signed{P}{s}$]
+    A process~$P$ signed by signature~$s$.  The braces
+    delimit the scope of the signature.
+  \item[$T \Par U$]
+    Parallel composition of signed terms --- the same
+    $\Par$ operator as at the process level, lifted to
+    signed terms.
+  \item[$S$]
+    A token stack, representing a phlogiston balance.
+\end{description}
+
+\noindent
+A token stack $s_1 : s_2 : \cdots : s_n : ()$ is read as a
+sequence of signature-indexed balance layers.  The empty
+stack~$()$ represents a depleted balance.
+
+\begin{definition}[Signatures, parameterized by~$G$]
+  \label{def:sig}
+  \begin{equation}
+    s(G) \;::=\; g
+          \;\mid\; \hashf P
+          \;\mid\; s \comp s
+    \label{eq:sig-syntax}
+  \end{equation}
+  where $g \in G$ is a \emph{ground signature} drawn from the
+  cryptographic backend~$G$.
+\end{definition}
+
+\noindent
+The three forms of signature are:
+\begin{description}[style=nextline, leftmargin=2em]
+  \item[$g$]
+    A \emph{ground signature}: an opaque value from the
+    cryptographic backend~$G$ (e.g., an Ed25519 public key, a
+    secp256k1 key hash).  The calculus is parametrically
+    polymorphic in~$G$.
+  \item[$\hashf P$]
+    \emph{Cryptographic quoting}: the hash of a process~$P$,
+    yielding a signature.  This is the authentication-axis
+    analog of structural quoting~$\quot{P}$.
+  \item[$s_1 \comp s_2$]
+    \emph{Signature composition}: the compound authority of
+    $s_1$ and~$s_2$ acting jointly.
+\end{description}
+
+\begin{remark}[Two axes of reflection]
+  \label{rem:two-axes}
+  The calculus now has two quoting operators:
+  \begin{center}
+    \begin{tabular}{lll}
+      \textbf{Operator} & \textbf{Axis} & \textbf{Purpose} \\
+      \midrule
+      $\quot{T}$ & Structural  & Signed term $\to$ channel name \\
+      $\hashf P$ & Cryptographic & Process $\to$ signature \\
+    \end{tabular}
+  \end{center}
+  Both are forms of \emph{reflection}: they take a computational
+  entity and produce a \emph{name} (a datum that can be
+  communicated, compared, and used as an address).  The
+  difference is that $\quot{T}$ preserves full structural
+  information --- including the signature and cost provenance
+  of~$T$, and the signed term can be recovered
+  via~$\drop{x}$ --- while $\hashf P$ is a one-way,
+  collision-resistant digest, suitable for authentication but
+  not for recovery.
+\end{remark}
+
+\subsection{Parametric Polymorphism of Parallel Composition}
+\label{sec:par-poly}
+
+The parallel composition operator~$\Par$ appears at two levels:
+
+\begin{enumerate}[nosep]
+  \item $P \Par Q$ --- parallel composition of processes.
+  \item $T \Par U$ --- parallel composition of signed terms.
+\end{enumerate}
+
+\noindent
+This is a parametrically polymorphic operator: the same symbol,
+the same algebraic structure (commutative monoid with
+appropriate identity), but ranging over different sorts.  At the
+process level the identity is~$\nil$; at the signed-term level
+the identity is the empty stack~$()$.
+
+\subsection{Free Names}
+\label{sec:fn}
+
+The binding discipline carries over from the pure rho calculus:
+$\recv{y}{x}{T}$ binds~$y$.  Free names are computed
+recursively over both processes and signed terms:
+
 \begin{align*}
-  \FN(\nil)           &= \emptyset \\
-  \FN(\recv{y}{x}{P}) &= \bigl(\FN(P) \setminus \{y\}\bigr) \cup \{x\} \\
-  \FN(\send{x}{Q})    &= \FN(Q) \cup \{x\} \\
-  \FN(P \Par Q)       &= \FN(P) \cup \FN(Q) \\
-  \FN(\drop{x})       &= \{x\}
+  \FN(\nil) &= \emptyset \\
+  \FN(\recv{y}{x}{T})
+    &= \bigl(\FN(T) \setminus \{y\}\bigr) \cup \{x\} \\
+  \FN(\send{x}{U})
+    &= \FN(U) \cup \{x\} \\
+  \FN(P \Par Q) &= \FN(P) \cup \FN(Q) \\
+  \FN(\drop{x}) &= \{x\}
+\end{align*}
+
+\noindent
+Extended to signed terms:
+\begin{align*}
+  \FN(\signed{P}{s})
+    &= \FN(P) \cup \FN_s(s) \\
+  \FN(T \Par U)
+    &= \FN(T) \cup \FN(U) \\
+  \FN(())   &= \emptyset \\
+  \FN(s : S)
+    &= \FN_s(s) \cup \FN(S)
+\end{align*}
+
+\noindent
+where $\FN_s$ extracts names from signatures:
+\begin{align*}
+  \FN_s(g) &= \emptyset \\
+  \FN_s(\hashf P) &= \FN(P) \\
+  \FN_s(s_1 \comp s_2)
+    &= \FN_s(s_1) \cup \FN_s(s_2)
 \end{align*}
 
 \subsection{Structural Equivalence}
+\label{sec:struct-equiv}
 
-Structural equivalence, written~$\Seq$, is the smallest
-equivalence relation on processes that includes
-$\alpha$-equivalence and makes $(P, \Par, \nil)$ a commutative
-monoid:
-%
+Structural equivalence~$\Seq$ is the smallest equivalence
+relation on processes including $\alpha$-equivalence and making
+$(P, \Par, \nil)$ a commutative monoid:
+
 \begin{align*}
-  P \Par \nil    &\Seq P           & \text{(identity)}   \\
-  P \Par Q       &\Seq Q \Par P    & \text{(commutativity)} \\
-  (P \Par Q) \Par R &\Seq P \Par (Q \Par R) & \text{(associativity)}
+  P \Par \nil    &\Seq P           \\
+  P \Par Q       &\Seq Q \Par P    \\
+  (P \Par Q) \Par R &\Seq P \Par (Q \Par R)
 \end{align*}
 
-\subsection{Rewrite Rules (Operational Semantics)}
+\noindent
+Likewise, at the signed-term level, $(T, \Par, ())$ forms a
+commutative monoid under~$\Seq$:
 
-The single computational step is the \textsc{Comm} rule
-(communication):
-%
+\begin{align*}
+  T \Par ()      &\Seq T           \\
+  T \Par U       &\Seq U \Par T    \\
+  (T \Par U) \Par V &\Seq T \Par (U \Par V)
+\end{align*}
+
+\subsection{Substitution}
+\label{sec:subst}
+
+Substitution $T\{\quot{U}/y\}$ is the standard capture-avoiding
+substitution of~$\quot{U}$ for~$y$ in~$T$, extended to signed
+terms.  Following the pure rho calculus, the only non-trivial
+case is dequotation:
+\[
+  (\drop{x})\{\quot{U}/y\}
+  \;=\;
+  \begin{cases}
+    U & \text{if } y \Neq x, \\
+    \drop{x} & \text{otherwise,}
+  \end{cases}
+\]
+where $\Neq$ denotes name equality.
+
+\begin{remark}[Signed-term substitution]
+  \label{rem:signed-subst}
+  Because the name sort is $x, y \;::=\; \quot{T} \mid s$,
+  the substitution $T\{\quot{U}/y\}$ naturally substitutes the
+  quoted \emph{signed term}~$U$, not a bare process extracted
+  from~$U$.  There is no unwrapping.  This means the signature
+  and cost information associated with~$U$ is \emph{preserved
+  through communication}: a signed term received on a channel
+  retains its provenance.
+\end{remark}
+
+\subsection{Rewrite Rules}
+\label{sec:rewrites}
+
+The operational semantics consists of five rewrite rules, each
+a variation on the \textsc{Comm} rule of the pure rho calculus
+gated by token consumption.  In every rule, a communication
+fires only when matching tokens are present, and the
+consumed tokens are released as residual terms.
+
+\bigskip
+\noindent
+\textbf{Rule 1} --- Single signature, whole redex:
 \begin{equation}
-  \recv{y}{x}{P} \Par \send{x}{Q}
-  \;\red\;
-  \subst{P}{\quot{Q}}{y}
-  \label{eq:comm}
+  \boxed{
+    \signed{\recv{y}{x}{T} \Par \send{x}{U}}{s}
+    \;\Par\; s : S
+    \;\;\red\;\;
+    \subst{T}{\quot{U}}{y} \Par S
+  }
+  \label{eq:rule1}
 \end{equation}
-%
-subject to the contextual closure rules:
-%
+
+\noindent
+The entire redex (input and output) is signed by~$s$.  A single
+layer of token is consumed; the stack remainder~$S$ is released.
+
+\bigskip
+\noindent
+\textbf{Rule 2} --- Compound signature, whole redex, split
+tokens:
+\begin{equation}
+  \boxed{
+    \signed{\recv{y}{x}{T} \Par \send{x}{U}}{s_1 \comp s_2}
+    \;\Par\; s_1 : S \Par s_2 : S'
+    \;\;\red\;\;
+    \subst{T}{\quot{U}}{y} \Par S \Par S'
+  }
+  \label{eq:rule2}
+\end{equation}
+
+\noindent
+The redex is signed by the compound authority~$s_1 \comp s_2$.
+Both component signatures must supply tokens; both remainders
+are released.
+
+\bigskip
+\noindent
+\textbf{Rule 3} --- Compound signature, whole redex, combined
+token:
+\begin{equation}
+  \boxed{
+    \signed{\recv{y}{x}{T} \Par \send{x}{U}}{s_1 \comp s_2}
+    \;\Par\; (s_1 \comp s_2) : S
+    \;\;\red\;\;
+    \subst{T}{\quot{U}}{y} \Par S
+  }
+  \label{eq:rule3}
+\end{equation}
+
+\noindent
+The compound authority~$s_1 \comp s_2$ holds a single combined
+token.  One layer is consumed; the remainder~$S$ is released.
+
+\bigskip
+\noindent
+\textbf{Rule 4} --- Split processes, split tokens:
+\begin{equation}
+  \boxed{
+    \signed{\recv{y}{x}{T}}{s_1}
+    \;\Par\; \signed{\send{x}{U}}{s_2}
+    \;\Par\; s_1 : S \Par s_2 : S'
+    \;\;\red\;\;
+    \subst{T}{\quot{U}}{y} \Par S \Par S'
+  }
+  \label{eq:rule4}
+\end{equation}
+
+\noindent
+Input and output are signed separately.  Each signer supplies
+their own token.
+
+\bigskip
+\noindent
+\textbf{Rule 5} --- Split processes, combined token:
+\begin{equation}
+  \boxed{
+    \signed{\recv{y}{x}{T}}{s_1}
+    \;\Par\; \signed{\send{x}{U}}{s_2}
+    \;\Par\; (s_1 \comp s_2) : S
+    \;\;\red\;\;
+    \subst{T}{\quot{U}}{y} \Par S
+  }
+  \label{eq:rule5}
+\end{equation}
+
+\noindent
+Input and output are signed separately, but the token is held
+jointly under the compound authority.
+
+\bigskip
+\noindent
+As in the pure rho calculus, these rules are closed under
+parallel context and structural equivalence:
 \begin{gather}
   \frac{P \red P'}{P \Par Q \red P' \Par Q}
   \qquad\text{(\textsc{Par})}
   \label{eq:par-ctx}
   \\[6pt]
-  \frac{P \Seq P' \qquad P' \red Q' \qquad Q' \Seq Q}{P \red Q}
+  \frac{P \Seq P' \qquad P' \red Q' \qquad Q' \Seq Q}
+       {P \red Q}
   \qquad\text{(\textsc{Struct})}
   \label{eq:struct-ctx}
 \end{gather}
 
-\begin{remark}[Semantic substitution]
-  The notation $\subst{P}{u}{v}$ denotes \emph{semantic}
-  substitution.  It coincides with ordinary syntactic substitution
-  in all cases except dequotation, where:
+\subsection{Summary of the Five Rules}
+\label{sec:rule-summary}
+
+The five rules can be organized along two axes:
+
+\begin{center}
+  \begin{tabular}{l|cc}
+    & \textbf{Split tokens} & \textbf{Combined token} \\
+    \midrule
+    \textbf{Whole redex, single sig}
+      & Rule~1 & Rule~1 \\
+    \textbf{Whole redex, compound sig}
+      & Rule~2 & Rule~3 \\
+    \textbf{Split processes}
+      & Rule~4 & Rule~5 \\
+  \end{tabular}
+\end{center}
+
+\noindent
+Every rule follows the same pattern: \emph{communication is
+gated by token consumption}.  The variations arise from the
+granularity of signing (whole redex vs.\ split processes) and
+the granularity of token holding (split vs.\ combined).
+
+\subsection{Syntactic Sugar}
+\label{sec:sugar}
+
+Two abbreviations streamline the common case of signing a
+for-comprehension together with its continuation.
+
+\begin{definition}[Uniform signing]
+  \label{def:sugar-uniform}
+  \begin{equation}
+    \signed{\recv{y}{x}{P}}{s}
+    \;\;\triangleq\;\;
+    \signed{
+      \recv{y}{x}{\signed{P}{s}}
+    }{s}
+    \label{eq:sugar-uniform}
+  \end{equation}
+\end{definition}
+
+\noindent
+When a for-comprehension and its continuation are signed by
+the \emph{same} signature~$s$, the abbreviation on the left
+expands to two nested signed layers on the right.  The outer
+$\signed{\cdot}{s}$ pays for the transaction (rendezvous and
+matching); the inner $\signed{\cdot}{s}$ pays for executing
+the continuation.  This is the common case for single-party
+execution: both the communication and its effect are
+authorized and funded by the same signer.
+
+\begin{definition}[Linear transfer of authority ($\multimap$)]
+  \label{def:sugar-lollipop}
+  \begin{equation}
+    \signed{\recv{y}{x}{P}}{s_1 \multimap s_2}
+    \;\;\triangleq\;\;
+    \signed{
+      \recv{y}{x}{\signed{P}{s_2}}
+    }{s_1}
+    \label{eq:sugar-lollipop}
+  \end{equation}
+\end{definition}
+
+\noindent
+The \emph{lollipop} notation
+$\signed{\cdot}{s_1 \multimap s_2}$ denotes a
+\emph{transfer of authority}: signature~$s_1$ authorizes and
+funds the communication, but signature~$s_2$ authorizes and
+funds the continuation.  The $\multimap$ is deliberately
+chosen to evoke the linear implication of linear logic:
+$s_1$'s resource is consumed to establish the communication,
+and $s_2$'s resource funds the resulting computation.
+
+\begin{example}[Cross-party service invocation]
+  \label{ex:cross-party}
+  A client~$c$ invokes a service operated by provider~$p$.
+  The client pays for the call; the provider pays for the
+  execution:
   \[
-    \subst{(\drop{x})}{\quot{Q}}{y}
-    \;=\;
-    \begin{cases}
-      Q & \text{if } y \Neq x, \\
-      \drop{x} & \text{otherwise,}
-    \end{cases}
+    \signed{
+      \recv{\mathit{result}}{\mathit{service}}{\mathit{handleResult}}
+    }{c \multimap p}
+    \;\;=\;\;
+    \signed{
+      \recv{\mathit{result}}{\mathit{service}}{
+        \signed{\mathit{handleResult}}{p}
+      }
+    }{c}
   \]
-  and $\Neq$ denotes name equality.
-  See~\cite{MeredithRadestock2005} for full details.
+  The client's token funds the rendezvous with the service
+  channel; the provider's token funds the execution of
+  $\mathit{handleResult}$.  Neither party can impose costs
+  on the other beyond what the sugar makes explicit.
+\end{example}
+
+\begin{remark}[Composability]
+  Both sugar forms compose with compound signatures.  For
+  example,
+  $\signed{\recv{y}{x}{P}}{(s_1 \comp s_2) \multimap s_3}$
+  requires both~$s_1$ and~$s_2$ to authorize the
+  communication, while $s_3$ alone funds the continuation.
+  Chains of transfers are also expressible:
+  nested for-comprehensions can each carry their own
+  $\multimap$, threading authority through a pipeline of
+  parties.
 \end{remark}
 
 %% ══════════════════════════════════════════════════════════════════
-\section{The Cost-Accounted Extension}
-\label{sec:cost}
+\section{Design Analysis}
+\label{sec:analysis}
 
-We now present an extension of the rho calculus with digital
-signatures and a token-based cost-accounting mechanism.  This
-extension captures the essential structure of phlogiston accounting
-in Rholang: processes carry signatures, tokens carry balances, and
-communication is gated by token consumption.
+\subsection{Signatures as Names: Eliminating the Translation Layer}
+\label{sec:sig-as-name}
 
-\subsection{Extended Syntax}
+In a previous formulation, the cost-accounted calculus was
+specified as an extension of the pure rho calculus, and a
+compositional translation $\mathcal{N}\lsem\cdot\rsem$ mapped
+signatures to names, tokens to messages, and signed processes
+to fuel-gated wrappers.  While that translation demonstrated
+expressibility, it introduced an indirection: the
+implementation had to maintain two representations and a mapping
+between them.
 
-\begin{definition}[Token and system syntax]
-  \label{def:cost-syntax}
-  \begin{align}
-    T &\;::=\; () \;\mid\; \sig \;\mid\; T {:} T
-    \label{eq:token-syntax} \\
-    S &\;::=\; P^{\sig} \;\mid\; T \;\mid\; S \Par S
-    \label{eq:system-syntax} \\
-    \sig &\;::=\; () \;\mid\; \hashf(\langle\mathit{signature}\rangle) \;\mid\; \sig \amp \sig
-    \label{eq:sig-syntax}
-  \end{align}
-  where $P^{\sig}$ denotes a process~$P$ signed by a digital
-  signature~$\sig$.
-\end{definition}
+The present formulation eliminates this indirection.  By
+declaring $x, y \;::=\; \quot{T} \mid s$, signatures \emph{are}
+names.  There is nothing to translate.  The implementation
+maintains a single namespace in which quoted signed terms and
+signatures coexist.  This has direct consequences for the
+Rholang runtime:
 
-The token $\sig {:} T$ is read as ``the signature~$\sig$ holds
-the remaining balance~$T$.''
-
-\subsection{Cost-Accounted Rewrite Rules}
-
-The five rewrite rules of the cost-accounted calculus are:
-
-\medskip
-\noindent
-\textbf{Rule 1} (single signature, whole redex):
-\begin{equation}
-  (\recv{y}{x}{P} \Par \send{x}{Q})^{\sig}
-  \Par \sig {:} T
-  \;\longrightarrow\;
-  (\subst{P}{\quot{Q}}{y})^{\sig} \Par T
-  \label{eq:rule1}
-\end{equation}
-
-\noindent
-\textbf{Rule 2} (compound signature, whole redex, split tokens):
-\begin{equation}
-  (\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
-  \Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
-  \;\longrightarrow\;
-  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2}
-  \Par T_1 \Par T_2
-  \label{eq:rule2}
-\end{equation}
-
-\noindent
-\textbf{Rule 3} (compound signature, whole redex, combined token):
-\begin{equation}
-  (\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
-  \Par (\sig_1 \amp \sig_2) {:} T
-  \;\longrightarrow\;
-  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T
-  \label{eq:rule3}
-\end{equation}
-
-\noindent
-\textbf{Rule 4} (compound signature, split processes, combined token):
-\begin{equation}
-  (\recv{y}{x}{P})^{\sig_1}
-  \Par (\send{x}{Q})^{\sig_2}
-  \Par (\sig_1 \amp \sig_2) {:} T
-  \;\longrightarrow\;
-  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T
-  \label{eq:rule4}
-\end{equation}
-
-\noindent
-\textbf{Rule 5} (compound signature, split processes, split tokens):
-\begin{equation}
-  (\recv{y}{x}{P})^{\sig_1}
-  \Par (\send{x}{Q})^{\sig_2}
-  \Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
-  \;\longrightarrow\;
-  (\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2}
-  \Par T_1 \Par T_2
-  \label{eq:rule5}
-\end{equation}
-
-\begin{remark}
-  Rules~1--5 can be understood as variations on a single theme:
-  a communication (the \textsc{Comm} rule of the pure calculus)
-  that is \emph{gated} by the consumption of a token whose
-  signature matches the signature(s) of the communicating
-  processes.  The five rules differ in whether the redex is
-  signed as a whole or its components are signed separately,
-  and whether the token is combined or split across signatures.
-\end{remark}
-
-%% ══════════════════════════════════════════════════════════════════
-\section{The Translation}
-\label{sec:translation}
-
-The central observation is that the cost-accounting mechanism is a
-\emph{fuel-acquisition protocol}: before a signed process can
-communicate, it must consume a token (fuel) from the channel
-associated with its signature.  This protocol is expressible
-entirely within the pure rho calculus.
-
-\subsection{Signatures to Names}
-
-We define $\mathcal{N} : \sig \to \text{Names}$:
-%
-\begin{align}
-  \Nsem{()}
-    &= \quot{\nil}
-    \label{eq:nsem-unit}
-  \\
-  \Nsem{\hashf(\sigma)}
-    &= \quot{H_\sigma}
-    \quad\text{for a canonical process~$H_\sigma$ encoding $\sigma$}
-    \label{eq:nsem-hash}
-  \\
-  \Nsem{\sig_1 \amp \sig_2}
-    &= \quot{\bigl(\drop{\Nsem{\sig_1}} \Par \drop{\Nsem{\sig_2}}\bigr)}
-    \label{eq:nsem-amp}
-\end{align}
-%
-The compound-signature case~\eqref{eq:nsem-amp} exploits
-reflection: the name for~$\sig_1 \amp \sig_2$ is the quote of
-the parallel composition of the dequotations of the two
-component names.  This ensures injectivity of the encoding.
-
-\subsection{Tokens to Processes}
-
-We define $\mathcal{T} : T \to \text{Processes}$:
-%
-\begin{align}
-  \Tsem{()}      &= \nil
-    \label{eq:tsem-unit}
-  \\
-  \Tsem{\sig : T} &= \send{\Nsem{\sig}}{\Tsem{T}}
-    \label{eq:tsem-send}
-\end{align}
-%
-A token $\sig {:} T$ becomes a \emph{message} on the channel
-$\Nsem{\sig}$ carrying the code of the remaining token~$T$ as
-its payload.
-
-\subsection{Signed Processes}
-\label{sec:signed-procs}
-
-The key idea: a signed process must \emph{first consume fuel}
-from its signature channel before it can perform its intended
-communication.  The leftover token (the payload of the fuel
-message) is released into the continuation via dequotation.
-
-\subsubsection{Atomic Signatures}
-
-\begin{align}
-  \Psem{(\recv{y}{x}{P})^{\sig}}
-    &= \recv{t}{\Nsem{\sig}}{\bigl(\recv{y}{x}{(\drop{t} \Par \Psem{P})}\bigr)}
-    \label{eq:psem-recv-atomic}
-  \\[4pt]
-  \Psem{(\send{x}{Q})^{\sig}}
-    &= \recv{t}{\Nsem{\sig}}{\bigl(\send{x}{\Psem{Q}} \Par \drop{t}\bigr)}
-    \label{eq:psem-send-atomic}
-  \\[4pt]
-  \Psem{(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig}}
-    &= \recv{t}{\Nsem{\sig}}{
-        \bigl(
-          \recv{y}{x}{(\drop{t} \Par \Psem{P})}
-          \Par \send{x}{\Psem{Q}}
-        \bigr)
-      }
-    \label{eq:psem-redex-atomic}
-\end{align}
-
-\noindent
-In each case, the outermost $\forc$ on~$\Nsem{\sig}$ acts as a
-\emph{fuel gate}: the process blocks until a token is available.
-
-\subsubsection{Compound Signatures}
-
-For $\sig_1 \amp \sig_2$, the process must acquire fuel from
-\emph{both} component channels:
-%
-\begin{align}
-  \Psem{(\recv{y}{x}{P})^{\sig_1 \amp \sig_2}}
-    &= \recv{t_1}{\Nsem{\sig_1}}{
-        \recv{t_2}{\Nsem{\sig_2}}{
-          \recv{y}{x}{(\drop{t_1} \Par \drop{t_2} \Par \Psem{P})}
-        }
-      }
-    \label{eq:psem-recv-compound}
-  \\[4pt]
-  \Psem{(\send{x}{Q})^{\sig_1 \amp \sig_2}}
-    &= \recv{t_1}{\Nsem{\sig_1}}{
-        \recv{t_2}{\Nsem{\sig_2}}{
-          \bigl(\send{x}{\Psem{Q}} \Par \drop{t_1} \Par \drop{t_2}\bigr)
-        }
-      }
-    \label{eq:psem-send-compound}
-  \\[4pt]
-  \Psem{(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}}
-    &= \recv{t_1}{\Nsem{\sig_1}}{
-        \recv{t_2}{\Nsem{\sig_2}}{
-          \bigl(
-            \recv{y}{x}{(\drop{t_1} \Par \drop{t_2} \Par \Psem{P})}
-            \Par \send{x}{\Psem{Q}}
-          \bigr)
-        }
-      }
-    \label{eq:psem-redex-compound}
-\end{align}
-
-\subsection{System Translation}
-
-The system translation $\mathcal{S}$ is defined compositionally:
-%
-\begin{align}
-  \Ssem{P^{\sig}}       &= \Psem{P^{\sig}}
-    \label{eq:ssem-signed}
-  \\
-  \Ssem{T}              &= \Tsem{T}
-    \label{eq:ssem-token}
-  \\
-  \Ssem{S_1 \Par S_2}   &= \Ssem{S_1} \Par \Ssem{S_2}
-    \label{eq:ssem-par}
-\end{align}
-
-\subsection{Infrastructure Processes}
-\label{sec:infrastructure}
-
-Rules~2--5 involve situations where the granularity of the token
-(combined vs.\ split) does not match the granularity expected by
-the signed process.  We introduce two families of
-\emph{infrastructure processes} to mediate:
-
-\begin{definition}[Splitter]
-  \label{def:splitter}
-  The splitter converts a combined token for~$\sig_1 \amp \sig_2$
-  into separate tokens for~$\sig_1$ and~$\sig_2$:
-  \[
-    \mathrm{Split}(\sig_1, \sig_2)
-    \;=\;
-    \recv{t}{\Nsem{\sig_1 \amp \sig_2}}{
-      \bigl(
-        \send{\Nsem{\sig_1}}{\nil}
-        \Par
-        \send{\Nsem{\sig_2}}{\drop{t}}
-      \bigr)
-    }
-  \]
-  (In the persistent variant, the outermost $\forc$ is replicated.)
-\end{definition}
-
-\begin{definition}[Joiner]
-  \label{def:joiner}
-  The joiner converts separate tokens for~$\sig_1$ and~$\sig_2$
-  into a combined token for~$\sig_1 \amp \sig_2$:
-  \[
-    \mathrm{Join}(\sig_1, \sig_2)
-    \;=\;
-    \recv{t_1}{\Nsem{\sig_1}}{
-      \recv{t_2}{\Nsem{\sig_2}}{
-        \send{\Nsem{\sig_1 \amp \sig_2}}{(\drop{t_1} \Par \drop{t_2})}
-      }
-    }
-  \]
-\end{definition}
-
-\begin{remark}[Persistent infrastructure]
-  In practice, splitters and joiners should be \emph{persistent}
-  (replicated) processes.  The standard rho-calculus encoding of
-  replication via self-referencing through reflection
-  (cf.~\cite{MeredithRadestock2005}) applies directly.
-\end{remark}
-
-%% ══════════════════════════════════════════════════════════════════
-\section{Verification}
-\label{sec:verification}
-
-We verify that each of the five cost-accounted rewrite rules is
-faithfully simulated by the translation.
-
-\subsection{Rule 1: Single Signature, Whole Redex}
-
-\noindent
-\textbf{Source:}\quad
-$(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig} \Par \sig {:} T
-\;\longrightarrow\;
-(\subst{P}{\quot{Q}}{y})^{\sig} \Par T$
-
-\medskip\noindent
-\textbf{Translation:}
-\[
-  \underbrace{
-    \recv{t}{\Nsem{\sig}}{
-      \bigl(
-        \recv{y}{x}{(\drop{t} \Par \Psem{P})}
-        \Par \send{x}{\Psem{Q}}
-      \bigr)
-    }
-  }_{\Psem{(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig}}}
-  \;\Par\;
-  \underbrace{
-    \send{\Nsem{\sig}}{\Tsem{T}}
-  }_{\Tsem{\sig:T}}
-\]
-
-\noindent
-\textbf{Step 1} --- fuel consumption on~$\Nsem{\sig}$,
-binding $t \mapsto \quot{\Tsem{T}}$:
-\[
-  \recv{y}{x}{\bigl(\drop{(\quot{\Tsem{T}})} \Par \Psem{P}\bigr)}
-  \Par \send{x}{\Psem{Q}}
-  \;\Seq\;
-  \recv{y}{x}{\bigl(\Tsem{T} \Par \Psem{P}\bigr)}
-  \Par \send{x}{\Psem{Q}}
-\]
-
-\noindent
-\textbf{Step 2} --- communication on~$x$,
-binding $y \mapsto \quot{\Psem{Q}}$:
-\[
-  \Tsem{T} \Par \Psem{\subst{P}{\quot{Q}}{y}}
-  \;=\;
-  \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig} \Par T}
-  \quad\checkmark
-\]
-
-\subsection{Rule 2: Compound Signature, Whole Redex, Split Tokens}
-
-\noindent
-\textbf{Source:}\quad
-$(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
-\Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
-\;\longrightarrow\;
-(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2$
-
-\medskip\noindent
-\textbf{Translation} (using~\eqref{eq:psem-redex-compound}):
-\begin{multline*}
-  \recv{t_1}{\Nsem{\sig_1}}{
-    \recv{t_2}{\Nsem{\sig_2}}{
-      \bigl(
-        \recv{y}{x}{(\drop{t_1} \Par \drop{t_2} \Par \Psem{P})}
-        \Par \send{x}{\Psem{Q}}
-      \bigr)
-    }
-  }
-  \\
-  \Par\;
-  \send{\Nsem{\sig_1}}{\Tsem{T_1}}
-  \;\Par\;
-  \send{\Nsem{\sig_2}}{\Tsem{T_2}}
-\end{multline*}
-
-\noindent
-\textbf{Step 1} --- fuel from~$\Nsem{\sig_1}$:
-$t_1 \mapsto \quot{\Tsem{T_1}}$.
-
-\noindent
-\textbf{Step 2} --- fuel from~$\Nsem{\sig_2}$:
-$t_2 \mapsto \quot{\Tsem{T_2}}$.
-
-\noindent
-\textbf{Step 3} --- \textsc{Comm} on~$x$:
-\[
-  \Tsem{T_1} \Par \Tsem{T_2} \Par \Psem{\subst{P}{\quot{Q}}{y}}
-  \;=\;
-  \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2}
-  \quad\checkmark
-\]
-
-\subsection{Rule 3: Compound Signature, Whole Redex, Combined Token}
-
-\noindent
-\textbf{Source:}\quad
-$(\recv{y}{x}{P} \Par \send{x}{Q})^{\sig_1 \amp \sig_2}
-\Par (\sig_1 \amp \sig_2) {:} T
-\;\longrightarrow\;
-(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T$
-
-\medskip\noindent
-The whole-redex encoding~\eqref{eq:psem-redex-compound} listens
-on both $\Nsem{\sig_1}$ and $\Nsem{\sig_2}$, but the combined
-token lives on $\Nsem{\sig_1 \amp \sig_2}$.  The
-$\mathrm{Split}(\sig_1, \sig_2)$ infrastructure process
-(Definition~\ref{def:splitter}) mediates:
-%
-\begin{align*}
-  &\mathrm{Split}(\sig_1, \sig_2) \Par \send{\Nsem{\sig_1 \amp \sig_2}}{\Tsem{T}}
-  \\
-  &\qquad\red\quad
-  \send{\Nsem{\sig_1}}{\nil} \Par \send{\Nsem{\sig_2}}{\Tsem{T}}
-\end{align*}
-%
-Now both fuel channels are populated and the reduction proceeds
-as in Rule~2, yielding
-$\nil \Par \Tsem{T} \Par \Psem{\subst{P}{\quot{Q}}{y}}
-\Seq \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T}$.
-\quad$\checkmark$
-
-\subsection{Rule 4: Split Processes, Combined Token}
-
-\noindent
-\textbf{Source:}\quad
-$(\recv{y}{x}{P})^{\sig_1}
-\Par (\send{x}{Q})^{\sig_2}
-\Par (\sig_1 \amp \sig_2) {:} T
-\;\longrightarrow\;
-(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T$
-
-\medskip\noindent
-The translations of the separately signed processes listen on
-$\Nsem{\sig_1}$ and $\Nsem{\sig_2}$ respectively
-(equations~\eqref{eq:psem-recv-atomic}
-and~\eqref{eq:psem-send-atomic}).  The token lives on
-$\Nsem{\sig_1 \amp \sig_2}$.  Again, the splitter mediates:
-%
-\[
-  \mathrm{Split}(\sig_1, \sig_2) \Par \send{\Nsem{\sig_1 \amp \sig_2}}{\Tsem{T}}
-  \;\red\;
-  \send{\Nsem{\sig_1}}{\nil}
-  \Par \send{\Nsem{\sig_2}}{\Tsem{T}}
-\]
-%
-After fuel consumption, the remainder is
-$\nil \Par \Tsem{T} \Par \Psem{\subst{P}{\quot{Q}}{y}}
-\Seq \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T}$.
-\quad$\checkmark$
-
-\subsection{Rule 5: Split Processes, Split Tokens}
-
-\noindent
-\textbf{Source:}\quad
-$(\recv{y}{x}{P})^{\sig_1}
-\Par (\send{x}{Q})^{\sig_2}
-\Par \sig_1 {:} T_1 \Par \sig_2 {:} T_2
-\;\longrightarrow\;
-(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2$
-
-\medskip\noindent
-\textbf{Translation:}
-\begin{multline*}
-  \recv{t_1}{\Nsem{\sig_1}}{
-    \recv{y}{x}{(\drop{t_1} \Par \Psem{P})}
-  }
-  \;\Par\;
-  \recv{t_2}{\Nsem{\sig_2}}{
-    \bigl(\send{x}{\Psem{Q}} \Par \drop{t_2}\bigr)
-  }
-  \\
-  \Par\;
-  \send{\Nsem{\sig_1}}{\Tsem{T_1}}
-  \;\Par\;
-  \send{\Nsem{\sig_2}}{\Tsem{T_2}}
-\end{multline*}
-
-\noindent
-\textbf{Step 1} --- both fuel channels fire:
-\[
-  \recv{y}{x}{(\Tsem{T_1} \Par \Psem{P})}
-  \;\Par\;
-  \send{x}{\Psem{Q}} \Par \Tsem{T_2}
-\]
-
-\noindent
-\textbf{Step 2} --- \textsc{Comm} on~$x$:
-\[
-  \Tsem{T_1} \Par \Psem{\subst{P}{\quot{Q}}{y}} \Par \Tsem{T_2}
-  \;=\;
-  \Ssem{(\subst{P}{\quot{Q}}{y})^{\sig_1 \amp \sig_2} \Par T_1 \Par T_2}
-  \quad\checkmark
-\]
-
-%% ══════════════════════════════════════════════════════════════════
-\section{Implications for Rholang Architecture}
-\label{sec:architecture}
-
-Because the rho calculus is the formal core of Rholang, the
-translation developed above is not merely a theoretical exercise
---- it is a \emph{blueprint} for rearchitecting the phlogiston
-cost-accounting layer in Rholang~1.2 and beyond.
-
-\subsection{Cost Control as a Rholang Program}
-
-In the current architecture, phlogiston accounting is
-implemented as a privileged runtime extension: the Rholang
-virtual machine intercepts communications, checks balances,
-and debits tokens before allowing reduction to proceed.  The
-translation shows that this entire mechanism can be
-\emph{internalized} as a Rholang program.
-
-Concretely:
 \begin{itemize}[nosep]
-  \item Each deploy's \emph{signature} becomes a Rholang
-    \emph{channel name}, generated by quoting a canonical
-    process that encodes the signer's identity.
-  \item Each \emph{token} (phlo balance) becomes a
-    \emph{message} on the corresponding signature channel.
-  \item Each \emph{signed process} is wrapped in a fuel-gate:
-    a $\forc$-comprehension on its signature channel that
-    must receive a token before the process can proceed.
+  \item The tuplespace (RSpace) stores both data channels
+    ($\quot{T}$) and signature channels ($s$) in the same
+    structure.
+  \item Pattern matching in for-comprehensions can match on
+    both kinds of name, enabling contracts that dispatch on
+    the kind of authority presented.
+  \item Namespace isolation is enforced by the existing
+    namespace logic~\cite{MeredithRadestock2005}, now extended
+    to cover the signature sort.
 \end{itemize}
 
-\subsection{Composable Metering}
+\subsection{Cryptographic Quoting}
+\label{sec:crypto-quote}
 
-Because the accounting layer is now written in Rholang, it
-becomes \emph{composable}.  Different metering strategies can
-be implemented as different Rholang contracts:
+The operator $\hashf P$ introduces a second axis of reflection.
+If structural quoting~$\quot{T}$ is the ``mirror'' that
+reflects a signed term into a name preserving all structure
+(including signature and cost provenance), then
+cryptographic quoting~$\hashf P$ is a ``one-way mirror'': it
+produces a name (usable as a signature, an address, a key) from
+which the original process cannot be recovered.
+
+This distinction is fundamental.  A structurally quoted signed
+term can be dequoted ($\drop{(\quot{T})} = T$) and the process
+within it re-executed.  A
+cryptographically quoted process cannot: $\hashf P$ is a
+commitment, not a capability.  This makes $\hashf P$ suitable
+for authentication, content addressing, and integrity
+verification --- all operations that require binding to content
+without granting the power to execute it.
+
+In the F1R3FLY platform, $\hashf P$ will be implemented as a
+configurable hash function (SHA-256, Blake2b, etc.) applied to
+the serialized process tree.  The parameterization of~$s$ by~$G$
+ensures that the choice of hash function is a deployment
+decision, not a calculus-level commitment.
+
+\subsection{Valuable Friction at the Syntactic Level}
+\label{sec:valuable-friction}
+
+The F1R3FLY platform's design philosophy of \emph{valuable
+friction} holds that every resource-consuming operation should
+carry an explicit cost, and that this cost is not merely a
+runtime check but a \emph{structural feature} of the language.
+The revised calculus embodies this principle:
+
 \begin{itemize}[nosep]
-  \item \textbf{Flat-rate metering:}  A single token per
-    communication.
-  \item \textbf{Proportional metering:}  Tokens whose
-    continuation-payload encodes the remaining balance,
-    debited proportionally to resource consumption.
-  \item \textbf{Delegated metering:}  Splitters and joiners
-    (Section~\ref{sec:infrastructure}) allow one entity to
-    fund another's computation by transferring tokens across
-    signature channels.
-  \item \textbf{Market-based metering:}  Token prices can
-    float based on demand for particular signature channels,
-    implementing a fee market entirely within Rholang.
+  \item A for-comprehension $\recv{y}{x}{T}$ cannot fire unless
+    its continuation~$T$ includes (possibly nested) signed
+    terms with matching tokens.
+  \item A send $\send{x}{U}$ carries a signed term~$U$ as
+    payload, so the receiver inherits the sender's cost
+    commitments.
+  \item There is no way to write a communicating process that
+    ``escapes'' the cost layer, because the grammar does not
+    allow bare processes in the positions where communication
+    occurs.
 \end{itemize}
 
-\subsection{Formal Verification}
+\subsection{Token Stacks as First-Class Terms}
+\label{sec:token-stacks}
 
-The compositionality of the translation means it can be
-verified using standard techniques:
+Token stacks $S \;::=\; () \mid s : S$ are lists of signatures,
+representing layered balances.  Their inclusion in the
+signed-term grammar ($T \;::=\; \cdots \mid S$) means that
+tokens are not inert metadata --- they are terms that appear in
+parallel compositions, flow through channels as parts of signed
+messages, and participate in reduction.
+
+This design enables several patterns:
+
 \begin{itemize}[nosep]
-  \item \textbf{Bisimulation:}  The translation preserves
-    barbed bisimulation up to the infrastructure processes.
-  \item \textbf{Full abstraction:}  The ongoing Lean~4
-    formalization of the rho calculus
-    can be extended to cover the cost-accounted extension
-    and its translation.
-  \item \textbf{Security:}  The fuel-gate pattern ensures
-    that no process can communicate without first acquiring
-    a valid token, which is a capability-security property
-    expressible and provable within the calculus.
+  \item \textbf{Token delegation:}  A contract can receive a
+    token stack on a channel and use it to fund subsequent
+    communications.
+  \item \textbf{Token splitting:}  A stack $s_1 : s_2 : S$ can
+    be destructured by separate rules consuming $s_1$ and $s_2$
+    independently.
+  \item \textbf{Token markets:}  Because tokens are terms, they
+    can be exchanged, auctioned, and composed using standard
+    Rholang contract patterns.
 \end{itemize}
+
+\subsection{Genericity over the Cryptographic Backend}
+\label{sec:genericity}
+
+The signature grammar is parameterized: $s(G) \;::=\; g \mid
+\hashf P \mid s \comp s$, where $g \in G$ and $G$ is a type
+parameter.  This makes the entire calculus --- and therefore
+the Rholang implementation --- generic over the cryptographic
+backend.
+
+Instantiating~$G$ yields a concrete calculus:
+\begin{itemize}[nosep]
+  \item $G = \mathrm{Ed25519}$:  ground signatures are Ed25519
+    public keys.
+  \item $G = \mathrm{secp256k1}$:  ground signatures are
+    Ethereum-compatible key hashes.
+  \item $G = \mathrm{Ed25519} + \mathrm{secp256k1}$:  a
+    coproduct backend supporting both schemes.
+\end{itemize}
+
+\noindent
+The $\comp$ operator composes signatures regardless of their
+ground type, enabling cross-scheme multi-sig patterns.  The
+implementation must provide a ground-signature equality
+predicate and a hash function for each instantiation of~$G$;
+the calculus itself is agnostic.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Relationship to the Pure Rho Calculus}
+\label{sec:relationship}
+
+The cost-accounted calculus is a \emph{conservative extension}
+of the pure rho calculus.  Setting $T = \signed{P}{s_0}$ for a
+distinguished ``free'' signature~$s_0$ with unbounded token
+supply, and collapsing the signed-term and process levels,
+recovers the pure rho calculus exactly:
+
+\[
+  \signed{\recv{y}{x}{\signed{P'}{s_0}} \Par
+    \send{x}{\signed{Q}{s_0}}}{s_0}
+  \;\Par\; s_0 : S
+  \;\;\red\;\;
+  \signed{P'}{s_0}\{\quot{\signed{Q}{s_0}}/y\} \Par S
+\]
+
+\noindent
+With $s_0 : S$ always available (supplied by a persistent
+infrastructure process), this reduces to the standard
+\textsc{Comm} rule.  The free signature~$s_0$ plays the role of
+an ``always-funded'' system account, modeling the behavior of
+the pure calculus where cost is not a concern.
+
+This embedding also clarifies the implementation path: the
+Rholang~1.4 runtime need only implement the cost-accounted
+calculus, and the ``free'' mode (for testing, development, and
+system-level contracts) is obtained by fixing~$s_0$ and
+providing an inexhaustible token supply.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Implications for the F1R3FLY Platform}
+\label{sec:implications}
+
+\subsection{Rholang 1.4 (MeTTaIL) Integration}
+
+MeTTaIL~\cite{MeTTaIL}, the Rholang~1.4 language, provides
+means to define languages as triples of types (syntactic
+categories), equations on types, and rewrites on types.  The
+cost-accounted rho calculus is itself such a triple:
+
+\begin{itemize}[nosep]
+  \item \textbf{Types:}  $P$, $T$, $S$, $s(G)$, and the name
+    sort.
+  \item \textbf{Equations:}  Structural equivalence ($\Seq$)
+    at both the process and signed-term levels.
+  \item \textbf{Rewrites:}  Rules~1--5 and the contextual
+    closure rules.
+\end{itemize}
+
+\noindent
+This means the cost-accounted calculus can be \emph{defined
+within MeTTaIL as a GSLT} (graph-structured lambda theory),
+inheriting MeTTaIL's tooling for type checking, bisimulation,
+and OSLF-generated logics.
+
+\subsection{RSpace and the Tuplespace}
+
+In the current F1R3FLY architecture, RSpace is a tuple-space
+storage engine keyed by channel names.  The revised calculus
+requires RSpace to store entries keyed by both~$\quot{T}$
+and~$s$.  Since both are names, this is a matter of extending
+the serialization format to accommodate the signature sort,
+not a structural change to RSpace.
+
+Token stacks~$S$ are stored as values in signature-keyed
+entries.  The five rewrite rules correspond to tuplespace
+match-and-consume operations that the reducer already performs,
+extended with a signature-matching predicate.
+
+\subsection{Casper CBC Consensus}
+
+The cost-accounting rules interact with Casper CBC consensus at
+the validator level:  a proposed block is valid only if every
+communication it contains is backed by matching tokens.  The
+revised calculus makes this validity check a syntactic
+predicate: the block's contents must be well-typed in the
+cost-accounted grammar, with token stacks present for every
+signed communication.
 
 \subsection{Implementation Path}
 
-For the F1R3FLY platform, we envision the following implementation
-path:
-
 \begin{enumerate}[nosep]
-  \item \textbf{Phase 1:}  Implement the translation as a
-    source-to-source transformation in the Rholang~1.2 compiler,
-    replacing the current runtime cost-accounting hooks.
-  \item \textbf{Phase 2:}  Deploy splitters, joiners, and
-    persistent infrastructure processes as system-level
-    Rholang contracts on each F1R3Node shard.
-  \item \textbf{Phase 3:}  Expose the signature-channel and
-    token APIs to user contracts, enabling composable and
-    user-definable metering.
-  \item \textbf{Phase 4:}  Extend the Lean~4 formalization
-    to cover the cost-accounted extension and verify the
-    translation.
+  \item \textbf{Phase 1:}  Extend the Rholang parser and AST
+    to include the signed-term, token-stack, and parameterized
+    signature sorts.  Implement the five rewrite rules in the
+    reducer.
+  \item \textbf{Phase 2:}  Extend RSpace serialization to
+    handle signature-keyed entries and token-stack values.
+  \item \textbf{Phase 3:}  Define the cost-accounted calculus as
+    a GSLT in MeTTaIL, enabling formal verification via OSLF.
+  \item \textbf{Phase 4:}  Expose the signature and token APIs
+    to user contracts, enabling composable metering,
+    cross-chain fee markets, and delegated funding patterns.
 \end{enumerate}
 
 %% ══════════════════════════════════════════════════════════════════
+\section{Transactions, Atomicity, and Static Analysis}
+\label{sec:transactions}
+
+The cost-accounted calculus reveals a precise correspondence
+between the for-comprehension and the concept of a
+\emph{transaction}.  This section develops that correspondence,
+identifies a partial-funding vulnerability in multi-step
+transactions, and shows that the vulnerability is eliminated by
+a decidable static analysis at deployment-acceptance time.
+
+\subsection{The For-Comprehension as Transaction Primitive}
+\label{sec:for-as-txn}
+
+Every for-comprehension $\recv{y}{x}{T}$ in the cost-accounted
+calculus is a \emph{transaction} in the precise sense that it
+decomposes into two funded computational actions:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Rendezvous at the channel.}  The runtime must
+    locate a matching send $\send{x}{U}$ on channel~$x$.  This
+    is a search operation over the tuplespace, and its cost is
+    paid by one token from the signer's stack.
+  \item \textbf{Matching.}  The runtime must verify that the
+    pattern~$y$ matches the offered payload~$U$ and compute
+    the substitution $\{\quot{U}/y\}$.  This is a
+    pattern-matching and substitution operation, and its cost
+    is paid by a second token.
+\end{enumerate}
+
+\noindent
+The \emph{transaction} is exactly what appears between the
+round braces of the for-comprehension: the binding
+specification $(y \leftarrow x)$.  Everything else --- the
+continuation~$T$, the surrounding signed-term structure, the
+token stack --- is the \emph{context} in which the transaction
+executes.
+
+\begin{definition}[Transaction, witness, state update]
+  \label{def:txn}
+  Given a signed for-comprehension
+  $\signed{\recv{y}{x}{T}}{s}$ and a matching send
+  $\send{x}{U}$:
+  \begin{description}[style=nextline, leftmargin=2em, nosep]
+    \item[Transaction]
+      The binding specification $(y \leftarrow x)$: the
+      declaration that we seek a value on channel~$x$ and
+      will bind it to~$y$.
+    \item[Witness]
+      The substitution $\{\quot{U}/y\}$: the proof that the
+      transaction succeeded.  A message was present on~$x$, it
+      matched the pattern, and here is the concrete value that
+      was bound.
+    \item[State update]
+      The application of the substitution to the
+      continuation, $\subst{T}{\quot{U}}{y}$: the
+      computational effect of the transaction on the system
+      state.
+    \item[Atomicity]
+      The substitution is either applied or not.  There is no
+      intermediate state.  The rewrite rule
+      \[
+        \signed{\recv{y}{x}{T} \Par \send{x}{U}}{s}
+        \Par s : S
+        \;\red\;
+        \subst{T}{\quot{U}}{y} \Par S
+      \]
+      fires as a single, indivisible step.  If the token is
+      absent or the send is missing, nothing happens ---
+      the process blocks.
+  \end{description}
+\end{definition}
+
+\begin{remark}[Database atomicity by construction]
+  \label{rem:db-atomicity}
+  It is important to distinguish two levels of atomicity that
+  the community frequently conflates:
+  \emph{database-transaction atomicity} and
+  \emph{financial-transaction atomicity}.
+
+  \textbf{Database-transaction atomicity} is the property of a
+  single communication step: the substitution is either applied
+  or not, the token is either consumed or not, the state is
+  either updated or not.  In the cost-accounted rho calculus,
+  this is a \emph{theorem} of the operational semantics ---
+  the rewrite rules are defined so that a communication either
+  fires completely or does not fire at all.  There is no rule
+  that performs a ``partial'' communication.  No locks,
+  two-phase commit, or rollback logs are needed.
+
+  \textbf{Financial-transaction atomicity} is a different
+  property: a multi-step operation (e.g., a payment decomposed
+  into debit and credit) should either complete entirely or not
+  begin at all.  This is \emph{not} guaranteed by the rewrite
+  rules alone --- it requires the static analysis developed in
+  Section~\ref{sec:linear-proof} and the deployment-boundary
+  semantics of Section~\ref{sec:deploy-boundaries}.
+\end{remark}
+
+\subsection{The Partial Funding Vulnerability}
+\label{sec:partial-funding}
+
+Single-step transactions are atomic by construction.  The
+vulnerability arises in \emph{multi-step} transactions: a
+deployment that chains two or more for-comprehensions
+sequentially may have enough tokens to fund the first step
+but not the second.
+
+Consider a payment from Alice to Bob, decomposed into two
+operations:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Debit:}  Extract a purse of amount~$n$ from
+    Alice's wallet.
+  \item \textbf{Credit:}  Deposit the purse into Bob's wallet.
+\end{enumerate}
+
+\noindent
+Each operation is a for-comprehension, each wrapped in a
+signed term $\signed{\cdots}{\mathit{Alice}}$, each consuming
+tokens from Alice's stack.  If Alice's stack has enough tokens
+for the debit but not the credit, the system reaches an
+inconsistent intermediate state: funds extracted from Alice's
+wallet, sitting in a purse, but the deposit into Bob's wallet
+never fires because the fuel ran out.
+
+This is a \emph{partial funding vulnerability}: the
+transaction is semantically atomic (it should either complete
+or not happen) but operationally non-atomic (it can stall
+midway through).
+
+\subsection{Rholang 1.2 Illustration}
+\label{sec:rholang-illustration}
+
+We illustrate the vulnerability using Rholang~1.2 syntax,
+where the $\mathtt{?!}$ operator provides synchronous
+(function-call-like) communication: $\mathtt{x?!(args)}$ sends
+on~$x$ with a return channel and blocks until the reply.
+
+\medskip
+\noindent
+\textbf{Debit handler} --- extracts a purse from Alice's
+wallet:
+\begin{lstlisting}[style=rholang]
+// Signed by Alice; costs 1 Alice-token to invoke
+{ for( amt <- aliceDebit?!( request, ... ) ){
+     let ans = extractPurse( request, ... )
+     in rtn!( ans )
+} }_{ Alice }
+\end{lstlisting}
+
+\noindent
+\textbf{Credit handler} --- deposits a purse into Bob's
+account:
+\begin{lstlisting}[style=rholang]
+// Signed by Alice; costs 1 Alice-token to invoke
+{ for( amt <- bobCredit?!( ... ) ){
+    new rcpt in
+       addPurseAcct( amt, ... )
+       in rtn!( rcpt )
+} }_{ Alice }
+\end{lstlisting}
+
+\noindent
+\textbf{Alice's token stack:}
+\begin{lstlisting}[style=rholang]
+Alice : Alice : Alice : S
+\end{lstlisting}
+
+\noindent
+\textbf{Orchestrating deployment} --- chains the debit and
+credit:
+\begin{lstlisting}[style=rholang]
+// Signed by Alice; costs 1 Alice-token for the
+// orchestrator's own for-comprehension
+{ for( amt <- aliceDebit?!( request, ... );
+       rcpt <- bobCredit?!( amt, ... ) ){
+     P
+} }_{ Alice }
+\end{lstlisting}
+
+\noindent
+The total token demand of this deployment is:
+\begin{center}
+  \begin{tabular}{lc}
+    \textbf{Signed layer} & \textbf{Tokens} \\
+    \midrule
+    Orchestrator's $\signed{\cdots}{\mathit{Alice}}$
+      & 1 \\
+    Debit handler's $\signed{\cdots}{\mathit{Alice}}$
+      & 1 \\
+    Credit handler's $\signed{\cdots}{\mathit{Alice}}$
+      & 1 \\
+    \midrule
+    \textbf{Total} & \textbf{3} \\
+  \end{tabular}
+\end{center}
+
+\noindent
+If Alice's stack is $\mathit{Alice} : \mathit{Alice} :
+\mathit{Alice} : S$ (at least three tokens), all three
+signed layers are funded and the transaction completes.  If
+the stack is only $\mathit{Alice} : \mathit{Alice} : ()$
+(two tokens), the debit fires (consuming two tokens: one for
+the orchestrator, one for the debit handler) but the credit
+handler's signed layer finds no token and \emph{blocks}.
+Funds are stranded in the purse.
+
+\subsection{Decomposing the Transaction Cost}
+\label{sec:txn-cost-decomp}
+
+Each for-comprehension's token demand decomposes into the
+two computational actions of
+Section~\ref{sec:for-as-txn}:
+
+\begin{center}
+  \begin{tabular}{lccc}
+    \textbf{For-comprehension}
+      & \textbf{Rendezvous}
+      & \textbf{Matching}
+      & \textbf{Total} \\
+    \midrule
+    Orchestrator: $\mathtt{aliceDebit?!}$
+      & 1 & 1 & 2 \\
+    Orchestrator: $\mathtt{bobCredit?!}$
+      & 1 & 1 & 2 \\
+    Debit handler: $\forc$
+      & 1 & 1 & 2 \\
+    Credit handler: $\forc$
+      & 1 & 1 & 2 \\
+    \midrule
+    \textbf{Total} & \textbf{4} & \textbf{4} & \textbf{8} \\
+  \end{tabular}
+\end{center}
+
+\noindent
+(The $\mathtt{?!}$ operator desugars to a send followed by
+a for-comprehension on the return channel, so each
+$\mathtt{?!}$ call involves a for-comprehension on each
+side --- the caller's and the handler's.)
+
+The token stack must supply \emph{all} of these or
+\emph{none} of them.  Partial supply leads to partial
+execution, which is the vulnerability.
+
+\subsection{Static Analysis as a Linear Resource Proof}
+\label{sec:linear-proof}
+
+The partial funding vulnerability is eliminated by a
+\emph{static analysis} performed at deployment-acceptance
+time --- the moment the validator's fuel gate fires and the
+signed deployment enters execution.
+
+\begin{definition}[Token demand]
+  \label{def:token-demand}
+  The \emph{token demand} of a signed term~$T$ with respect
+  to a signature~$s$, written $\Delta_s(T)$, is the total
+  number of $\signed{\cdots}{s}$ layers in~$T$ and in all
+  processes reachable from~$T$ via synchronous calls ($?!$)
+  or dequotation ($\drop{\cdot}$).  Formally:
+  \begin{align*}
+    \Delta_s(\signed{P}{s})
+      &= 1 + \Delta_s(P) \\
+    \Delta_s(\signed{P}{s'})
+      &= \Delta_s(P)
+      \qquad\text{for } s' \neq s \\
+    \Delta_s(\recv{y}{x}{T})
+      &= \Delta_s(T) \\
+    \Delta_s(\send{x}{U})
+      &= \Delta_s(U) \\
+    \Delta_s(T \Par U)
+      &= \Delta_s(T) + \Delta_s(U) \\
+    \Delta_s(\drop{x})
+      &= \Delta_s^{\mathit{resolve}}(x)
+  \end{align*}
+  where $\Delta_s^{\mathit{resolve}}(x)$ resolves the
+  name~$x$ to its definition (if statically known) and
+  computes $\Delta_s$ on the result.
+\end{definition}
+
+\begin{definition}[Token supply]
+  \label{def:token-supply}
+  The \emph{token supply} of a signature~$s$ in a system is
+  the depth of $s$-indexed token stacks in the ambient
+  parallel composition:
+  \begin{align*}
+    \Sigma_s(s : S)
+      &= 1 + \Sigma_s(S) \\
+    \Sigma_s(s' : S)
+      &= \Sigma_s(S)
+      \qquad\text{for } s' \neq s \\
+    \Sigma_s(())
+      &= 0 \\
+    \Sigma_s(T \Par U)
+      &= \Sigma_s(T) + \Sigma_s(U)
+  \end{align*}
+\end{definition}
+
+\begin{definition}[Funding proof obligation]
+  \label{def:funding-proof}
+  A deployment is \emph{fully funded} if, for every
+  signature~$s$ appearing in the deployment:
+  \begin{equation}
+    \Sigma_s \;\geq\; \Delta_s
+    \label{eq:funding-obligation}
+  \end{equation}
+  This is a \emph{linear resource inequality}: each token is
+  consumed exactly once, and the total supply must meet or
+  exceed the total demand.
+\end{definition}
+
+\begin{theorem}[Decidability of the funding check]
+  \label{thm:decidability}
+  For a deployment whose call graph is statically known (no
+  higher-order channel passing, no recursive dequotation
+  chains), the funding proof
+  obligation~\eqref{eq:funding-obligation} is decidable in
+  time linear in the size of the deployment's AST.
+\end{theorem}
+
+\noindent
+\textit{Proof sketch.}  $\Delta_s$ is computed by a single
+pass over the AST, incrementing a counter at each
+$\signed{\cdots}{s}$ node.  $\Sigma_s$ is computed by
+inspecting the token stacks in the ambient parallel
+composition.  The comparison is a single integer inequality.
+In the presence of higher-order channels or recursive
+dequotation, the analysis becomes a conservative
+over-approximation: unresolvable $\drop{x}$ terms contribute
+an ``unknown'' demand, and the validator rejects unless the
+supply exceeds the known lower bound plus a configurable
+safety margin.\qed
+
+\subsection{The Validator's Acceptance Protocol}
+\label{sec:acceptance-protocol}
+
+The static analysis integrates into the validator's acceptance
+protocol (Appendix~\ref{app:example}) as follows:
+
+\begin{enumerate}[nosep]
+  \item The validator receives a signed deployment
+    $\signed{D}{c}$ and looks up the client's token stack.
+  \item \textbf{Before} executing any part of the deployment,
+    the validator computes $\Delta_c(D)$ by static analysis
+    of the deployment's AST and call graph.
+  \item The validator computes $\Sigma_c$ from the available
+    token stack.
+  \item If $\Sigma_c \geq \Delta_c$, the deployment is
+    \emph{accepted}: the validator knows, by the linear
+    resource proof, that every for-comprehension in the
+    deployment's execution will be funded.  Every substitution
+    that begins will complete.  No funds will be stranded.
+  \item If $\Sigma_c < \Delta_c$, the deployment is
+    \emph{rejected}: the validator returns an error
+    (``insufficient phlogiston'') without executing any part
+    of the deployment.  No state change occurs.  No tokens
+    are consumed.
+\end{enumerate}
+
+\noindent
+This protocol converts the database-level
+atomicity-by-construction of individual rewrite rules into
+\emph{financial-level} atomicity of multi-step transactions:
+either the entire transaction is funded and executes to
+completion, or it is rejected before any step fires.  The gap
+between ``each step is atomic'' and ``the whole transaction is
+atomic'' is bridged by the static analysis at acceptance time.
+
+\subsection{Deployment Boundaries and Financial Atomicity}
+\label{sec:deploy-boundaries}
+
+The \emph{deployment} is the unit of financial-transaction
+atomicity.  A deployment is a signed term submitted to a
+validator for execution.  The validator's acceptance protocol
+(Section~\ref{sec:acceptance-protocol}) either accepts the
+entire deployment (the linear resource proof succeeds) or
+rejects it entirely (the proof fails).  No partial acceptance
+is possible.
+
+This deployment-boundary semantics resolves several scenarios
+that are problematic in conventional transaction processing:
+
+\paragraph{Duplicate deployments.}
+Suppose two copies of the same Alice~$\to$~Bob payment
+deployment arrive at a validator, and Alice's token stack
+contains exactly three tokens --- enough for one payment but
+not two.  The validator processes each deployment as a
+separate acceptance decision:
+
+\begin{enumerate}[nosep]
+  \item The first deployment arrives.  The validator computes
+    $\Delta_{\mathit{Alice}} = 3$ and $\Sigma_{\mathit{Alice}}
+    = 3$.  The linear proof succeeds: $3 \geq 3$.  The
+    deployment is accepted.  Three tokens are committed.
+  \item The second deployment arrives.  The validator computes
+    $\Delta_{\mathit{Alice}} = 3$ and $\Sigma_{\mathit{Alice}}
+    = 0$ (the tokens are already committed to the first
+    deployment).  The linear proof fails: $0 < 3$.  The
+    deployment is rejected.  No state change occurs.
+\end{enumerate}
+
+\noindent
+The second deployment is rejected \emph{before any step
+executes}.  There is no risk of a partial debit, no stranded
+purse, no inconsistent state.  The linear resource proof
+ensures that accepted deployments run to completion and
+rejected deployments have no effect.
+
+\paragraph{Simultaneous arrival.}
+If the two deployments arrive at the same time, the validator
+treats them as a \emph{single deployment} consisting of the
+parallel composition of both terms:
+\[
+  \signed{D_1}{\mathit{Alice}} \Par \signed{D_2}{\mathit{Alice}}
+\]
+The static analysis computes
+$\Delta_{\mathit{Alice}} = 3 + 3 = 6$ but
+$\Sigma_{\mathit{Alice}} = 3$.  The linear proof fails:
+$3 < 6$.  The combined deployment is rejected.  Neither
+payment executes.
+
+This is the correct behavior: there are not enough resources
+to complete both financial transactions, so neither should
+begin.  The linear resource proof detects this automatically,
+without locks, priority queues, or rollback mechanisms.
+
+\paragraph{Interleaved racing execution.}
+In a na\"{\i}ve runtime that interleaves execution steps from
+multiple deployments without checking resource bounds, the
+following race is possible: deployment~1's debit fires
+(consuming 2 tokens), then deployment~2's debit fires
+(consuming the last token), and now neither deployment has
+enough tokens for its credit step.  Both payments stall with
+funds stranded in purses.
+
+The linear resource proof eliminates this race entirely.
+Acceptance is a \emph{gate}: a deployment passes through the
+gate only if it carries a proof that all its resources are
+available.  Once accepted, those resources are committed and
+unavailable to other deployments.  There is no interleaving
+of acceptance and execution --- acceptance is a single,
+atomic decision that precedes all execution.
+
+\begin{remark}[Deployment acceptance as linear proof search]
+  The semantics is precise: a deployment is accepted
+  \emph{if and only if} a linear proof of its resource usage
+  exists.  The tokens consumed by the proof are
+  \emph{linearly} committed --- they cannot be used by any
+  other proof.  Two deployments competing for the same tokens
+  are two proof obligations competing for the same linear
+  hypotheses.  At most one can succeed.  This is not an
+  implementation choice or a heuristic --- it is a theorem of
+  linear logic.
+\end{remark}
+
+\begin{remark}[Connection to linear logic]
+  The funding proof obligation~\eqref{eq:funding-obligation}
+  is a judgment in the resource-sensitive fragment of linear
+  logic.  Each token is a \emph{linear resource} that must
+  be consumed exactly once.  The demand $\Delta_s$ is the
+  number of linear hypotheses required; the supply $\Sigma_s$
+  is the number of linear hypotheses available.  A successful
+  funding check is a \emph{proof} in the linear resource
+  logic that the deployment is well-resourced.
+
+  This connection is not merely an analogy.  The OSLF functor
+  (observer-generated logic) associated with the
+  cost-accounted GSLT can be extended to generate a linear
+  resource logic whose judgments \emph{are} funding proofs.
+  The static analysis is then a proof search in this logic,
+  and the validator is a proof checker.
+\end{remark}
+
+%% ══════════════════════════════════════════════════════════════════
 \section{Conclusion}
+\label{sec:conclusion}
 
-We have shown that the cost-accounted extension of the rho
-calculus --- capturing the essential structure of Rholang's
-phlogiston system --- can be faithfully translated back into
-the pure rho calculus.  The translation is compositional and
-rests on a single idea: \emph{signatures become channels,
-tokens become messages, and signed processes must consume
-fuel before they can communicate.}
+We have presented a revision of the rho calculus in which cost
+accounting is folded directly into the grammar and operational
+semantics, eliminating the need for an external extension or a
+translation layer.  The central design moves are: signatures as
+names, cryptographic quoting as a second axis of reflection,
+signed terms pervading the syntax, token stacks as first-class
+terms, parametric polymorphism of parallel composition, and
+genericity over the cryptographic backend.
 
-For the F1R3FLY platform, this result is both a theoretical
-contribution and a practical blueprint.  By internalizing
-cost accounting within Rholang itself, we eliminate the need
-for a privileged runtime extension, enable composable and
-formally verifiable metering, and open the door to
-user-definable fee structures --- all without leaving the
-expressive universe of the rho calculus.
+The identification of the for-comprehension as the transaction
+primitive --- with rendezvous and matching as the two funded
+actions, the substitution as the witness, and application to the
+continuation as the state update --- yields a precise theory of
+atomicity at two levels.  \emph{Database-transaction atomicity}
+(individual communications) is a theorem of the rewrite rules.
+\emph{Financial-transaction atomicity} (multi-step operations
+like payments) is guaranteed by a decidable static analysis at
+deployment-acceptance time: a linear resource proof that
+verifies every for-comprehension in the deployment's call
+graph is funded before any step executes.  Deployment boundaries
+provide the unit of financial atomicity, and the linear proof
+serves as the concurrency control mechanism --- competing
+deployments are competing proof obligations over the same
+linear resources, and at most one can succeed.
+
+The result is a calculus that embodies \emph{valuable friction}
+at the syntactic level: every communicating process must engage
+the cost layer, and the cost layer is rich enough to guarantee
+transactional integrity.  Because the rho calculus is the formal
+core of Rholang, this calculus serves directly as the design
+specification for rearchitecting phlogiston accounting in
+Rholang~1.4 and the F1R3FLY platform.
 
 \bigskip
 \begin{flushright}
   \textit{E Pluribus Potentia}
 \end{flushright}
+
+\appendix
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Source-to-Source Translation to Pure Rho Calculus}
+\label{app:translation}
+
+This appendix defines a compositional source-to-source
+translation from the cost-accounted rho calculus of
+Section~\ref{sec:calculus} to the \emph{pure} rho calculus.
+The translation is intended as a small-step development path:
+one implements it as a compiler pass, and the existing Rholang
+runtime handles the translated source without modification.
+
+The translation is organized into five mutually recursive
+functions:
+
+\begin{center}
+  \begin{tabular}{llll}
+    \textbf{Function} & \textbf{Domain} & \textbf{Codomain}
+      & \textbf{Purpose} \\
+    \midrule
+    $\mathcal{P}\lsem\cdot\rsem$
+      & Processes   & Pure processes
+      & Translate processes \\
+    $\mathcal{N}\lsem\cdot\rsem$
+      & Names       & Pure names
+      & Translate names \\
+    $\mathcal{T}\lsem\cdot\rsem$
+      & Signed terms & Pure processes
+      & Translate signed terms \\
+    $\mathcal{K}\lsem\cdot\rsem$
+      & Token stacks & Pure processes
+      & Translate token stacks \\
+    $\Sigma\lsem\cdot\rsem$
+      & Signatures  & Pure names
+      & Translate signatures \\
+  \end{tabular}
+\end{center}
+
+\subsection{Signature Translation: $\Sigma\lsem\cdot\rsem$}
+\label{app:sig-trans}
+
+Signatures are mapped to names in the pure rho calculus.  Each
+signature becomes a channel on which fuel tokens will be
+communicated.
+
+\begin{align}
+  \Sigma\lsem g \rsem
+    &= \quot{H_g}
+    \quad\text{for a canonical process~$H_g$ encoding ground
+      signature~$g \in G$}
+    \label{eq:app-sig-ground}
+  \\[4pt]
+  \Sigma\lsem \hashf P \rsem
+    &= \quot{H(\mathcal{P}\lsem P \rsem)}
+    \quad\text{where~$H(\cdot)$ is a hash-encoding process
+      constructor}
+    \label{eq:app-sig-hash}
+  \\[4pt]
+  \Sigma\lsem s_1 \comp s_2 \rsem
+    &= \quot{\bigl(
+        \drop{\Sigma\lsem s_1 \rsem}
+        \Par
+        \drop{\Sigma\lsem s_2 \rsem}
+      \bigr)}
+    \label{eq:app-sig-comp}
+\end{align}
+
+\noindent
+Equation~\eqref{eq:app-sig-comp} exploits reflection: the
+name for a compound signature is the quote of the parallel
+composition of the dequotations of the component names,
+ensuring injectivity.
+
+\begin{remark}[Ground-signature encoding]
+  The canonical process~$H_g$ must be injective in~$g$: distinct
+  ground signatures yield distinct processes.  In practice, $H_g$
+  can be a process whose serialized form is the byte sequence of
+  the public key or key hash~$g$.  Similarly, $H(\cdot)$ encodes
+  the output of the cryptographic hash function applied to the
+  serialized process tree.
+\end{remark}
+
+\subsection{Name Translation: $\mathcal{N}\lsem\cdot\rsem$}
+\label{app:name-trans}
+
+\begin{align}
+  \mathcal{N}\lsem \quot{T} \rsem
+    &= \quot{\mathcal{T}\lsem T \rsem}
+    \label{eq:app-name-quote}
+  \\[4pt]
+  \mathcal{N}\lsem s \rsem
+    &= \Sigma\lsem s \rsem
+    \label{eq:app-name-sig}
+\end{align}
+
+\noindent
+Quoted signed terms become quoted translations.  Signatures
+become their signature-channel names.
+
+\subsection{Token-Stack Translation: $\mathcal{K}\lsem\cdot\rsem$}
+\label{app:token-trans}
+
+A token stack becomes a chain of sends, one per layer, on the
+corresponding signature channels.  Each send carries the
+translation of the remaining stack as its payload.
+
+\begin{align}
+  \mathcal{K}\lsem () \rsem
+    &= \nil
+    \label{eq:app-tok-empty}
+  \\[4pt]
+  \mathcal{K}\lsem s : S \rsem
+    &= \send{\Sigma\lsem s \rsem}{\mathcal{K}\lsem S \rsem}
+    \label{eq:app-tok-cons}
+\end{align}
+
+\noindent
+The token $s : S$ becomes a message on channel
+$\Sigma\lsem s \rsem$ whose payload is the code of the
+remaining balance~$\mathcal{K}\lsem S \rsem$.  This is the
+\emph{fuel} that a signed process must consume before it can
+act.
+
+\subsection{Signed-Term Translation: $\mathcal{T}\lsem\cdot\rsem$}
+\label{app:signed-trans}
+
+Signed terms translate to pure processes.
+
+\begin{align}
+  \mathcal{T}\lsem T \Par U \rsem
+    &= \mathcal{T}\lsem T \rsem \Par \mathcal{T}\lsem U \rsem
+    \label{eq:app-st-par}
+  \\[4pt]
+  \mathcal{T}\lsem S \rsem
+    &= \mathcal{K}\lsem S \rsem
+    \label{eq:app-st-stack}
+\end{align}
+
+\noindent
+For signed processes $\signed{P}{s}$, the translation wraps
+the process in a \emph{fuel gate}: a for-comprehension on the
+signature channel that must receive a token before the process
+can proceed.  The consumed token's payload (the remaining
+balance) is released into the continuation via dequotation.
+
+\medskip
+\noindent
+\textbf{Atomic signature:}
+\begin{equation}
+  \mathcal{T}\lsem \signed{P}{s} \rsem
+  \;=\;
+  \recv{t}{\Sigma\lsem s \rsem}{
+    \bigl(\drop{t} \Par \mathcal{P}\lsem P \rsem\bigr)
+  }
+  \label{eq:app-st-signed-atomic}
+\end{equation}
+
+\noindent
+The process $\mathcal{P}\lsem P \rsem$ is blocked behind the
+fuel gate~$\recv{t}{\Sigma\lsem s \rsem}{\cdots}$.  When a
+token arrives, $t$ is bound to the code of the remaining
+balance; $\drop{t}$ releases it; and the translated process
+runs in parallel.
+
+\medskip
+\noindent
+\textbf{Compound signature:}
+\begin{equation}
+  \mathcal{T}\lsem \signed{P}{s_1 \comp s_2} \rsem
+  \;=\;
+  \recv{t_1}{\Sigma\lsem s_1 \rsem}{
+    \recv{t_2}{\Sigma\lsem s_2 \rsem}{
+      \bigl(
+        \drop{t_1} \Par \drop{t_2}
+        \Par \mathcal{P}\lsem P \rsem
+      \bigr)
+    }
+  }
+  \label{eq:app-st-signed-compound}
+\end{equation}
+
+\noindent
+Both component channels must supply fuel.  This generalizes
+to $n$-ary composition $s_1 \comp s_2 \comp \cdots \comp s_n$
+by nesting~$n$ fuel gates.
+
+\subsection{Process Translation: $\mathcal{P}\lsem\cdot\rsem$}
+\label{app:proc-trans}
+
+\begin{align}
+  \mathcal{P}\lsem \nil \rsem
+    &= \nil
+    \label{eq:app-p-nil}
+  \\[4pt]
+  \mathcal{P}\lsem \recv{y}{x}{T} \rsem
+    &= \recv{y}{\mathcal{N}\lsem x \rsem}{
+        \mathcal{T}\lsem T \rsem
+      }
+    \label{eq:app-p-recv}
+  \\[4pt]
+  \mathcal{P}\lsem \send{x}{U} \rsem
+    &= \send{\mathcal{N}\lsem x \rsem}{
+        \mathcal{T}\lsem U \rsem
+      }
+    \label{eq:app-p-send}
+  \\[4pt]
+  \mathcal{P}\lsem P \Par Q \rsem
+    &= \mathcal{P}\lsem P \rsem
+       \Par \mathcal{P}\lsem Q \rsem
+    \label{eq:app-p-par}
+  \\[4pt]
+  \mathcal{P}\lsem \drop{x} \rsem
+    &= \drop{\mathcal{N}\lsem x \rsem}
+    \label{eq:app-p-drop}
+\end{align}
+
+\subsection{Infrastructure Processes}
+\label{app:infrastructure}
+
+When the granularity of token holding (combined vs.\ split)
+does not match what the fuel gates expect, infrastructure
+processes mediate the conversion.  These are deployed as
+persistent system-level contracts.
+
+\begin{definition}[Splitter]
+  \label{def:app-splitter}
+  Converts a combined token for~$s_1 \comp s_2$ into separate
+  tokens for~$s_1$ and~$s_2$:
+  \[
+    \mathrm{Split}(s_1, s_2)
+    \;=\;
+    \recv{t}{\Sigma\lsem s_1 \comp s_2 \rsem}{
+      \bigl(
+        \send{\Sigma\lsem s_1 \rsem}{\nil}
+        \Par
+        \send{\Sigma\lsem s_2 \rsem}{\drop{t}}
+      \bigr)
+    }
+  \]
+\end{definition}
+
+\begin{definition}[Joiner]
+  \label{def:app-joiner}
+  Converts separate tokens for~$s_1$ and~$s_2$ into a combined
+  token for~$s_1 \comp s_2$:
+  \[
+    \mathrm{Join}(s_1, s_2)
+    \;=\;
+    \recv{t_1}{\Sigma\lsem s_1 \rsem}{
+      \recv{t_2}{\Sigma\lsem s_2 \rsem}{
+        \send{\Sigma\lsem s_1 \comp s_2 \rsem}{
+          (\drop{t_1} \Par \drop{t_2})
+        }
+      }
+    }
+  \]
+\end{definition}
+
+\begin{remark}[Persistence]
+  In production, splitters and joiners must be
+  \emph{replicated} (persistent) processes.  The standard
+  rho-calculus encoding of replication via self-referencing
+  through reflection applies:
+  \[
+    !\,P
+    \;\triangleq\;
+    \recv{y}{\quot{D}}{(\drop{y} \Par P)}
+    \Par
+    \send{\quot{D}}{D}
+    \qquad\text{where } D = \recv{y}{\quot{D}}{(\drop{y} \Par P)}
+  \]
+\end{remark}
+
+\subsection{Verification Sketch}
+\label{app:verification}
+
+We verify that each rewrite rule of the cost-accounted
+calculus is faithfully simulated by the translation.  Write
+$\Vert\cdot\Vert$ for the system-level translation that
+applies $\mathcal{T}\lsem\cdot\rsem$ to every signed-term
+component and $\mathcal{K}\lsem\cdot\rsem$ to every token
+stack, composing them in parallel.
+
+\bigskip
+\noindent
+\textbf{Rule~1.}\;
+$\signed{\recv{y}{x}{T} \Par \send{x}{U}}{s} \Par s : S
+\;\red\; \subst{T}{\quot{U}}{y} \Par S$
+
+\medskip\noindent
+\textit{Translation of LHS:}
+\begin{align*}
+  &\recv{t}{\Sigma\lsem s \rsem}{
+    \bigl(
+      \drop{t}
+      \Par \recv{y}{\mathcal{N}\lsem x \rsem}{
+        \mathcal{T}\lsem T \rsem
+      }
+      \Par \send{\mathcal{N}\lsem x \rsem}{
+        \mathcal{T}\lsem U \rsem
+      }
+    \bigr)
+  }
+  \\
+  &\Par\;
+  \send{\Sigma\lsem s \rsem}{\mathcal{K}\lsem S \rsem}
+\end{align*}
+
+\noindent
+\textit{Step~1} --- fuel consumption on
+$\Sigma\lsem s \rsem$, binding
+$t \mapsto \quot{\mathcal{K}\lsem S \rsem}$:
+\[
+  \mathcal{K}\lsem S \rsem
+  \Par
+  \recv{y}{\mathcal{N}\lsem x \rsem}{
+    \mathcal{T}\lsem T \rsem
+  }
+  \Par
+  \send{\mathcal{N}\lsem x \rsem}{
+    \mathcal{T}\lsem U \rsem
+  }
+\]
+
+\noindent
+\textit{Step~2} --- communication on
+$\mathcal{N}\lsem x \rsem$, binding
+$y \mapsto \quot{\mathcal{T}\lsem U \rsem}$:
+\[
+  \mathcal{K}\lsem S \rsem
+  \Par
+  \mathcal{T}\lsem T \rsem
+    \bigl\{\quot{\mathcal{T}\lsem U \rsem}\big/y\bigr\}
+\]
+
+\noindent
+By compositionality of the translation (the translation
+commutes with substitution, Proposition~\ref{prop:subst-commute}),
+this equals
+$\mathcal{T}\lsem \subst{T}{\quot{U}}{y} \rsem \Par
+\mathcal{K}\lsem S \rsem = \Vert \subst{T}{\quot{U}}{y} \Par S
+\Vert$.\quad$\checkmark$
+
+\bigskip
+\noindent
+\textbf{Rule~2.}\;
+$\signed{\recv{y}{x}{T} \Par \send{x}{U}}{s_1 \comp s_2}
+\Par s_1 : S \Par s_2 : S'
+\;\red\; \subst{T}{\quot{U}}{y} \Par S \Par S'$
+
+\medskip\noindent
+The compound-signature fuel gate
+\eqref{eq:app-st-signed-compound} nests two
+$\mathbf{for}$-comprehensions on $\Sigma\lsem s_1 \rsem$ and
+$\Sigma\lsem s_2 \rsem$.  The two token translations
+$\mathcal{K}\lsem s_1 : S \rsem$ and
+$\mathcal{K}\lsem s_2 : S' \rsem$ supply fuel to each.
+After both fire and the data communication on
+$\mathcal{N}\lsem x \rsem$ completes, the result is
+$\mathcal{K}\lsem S \rsem \Par \mathcal{K}\lsem S' \rsem \Par
+\mathcal{T}\lsem \subst{T}{\quot{U}}{y} \rsem
+= \Vert \subst{T}{\quot{U}}{y} \Par S \Par S' \Vert$.
+\quad$\checkmark$
+
+\bigskip
+\noindent
+\textbf{Rule~3.}\;
+$\signed{\recv{y}{x}{T} \Par \send{x}{U}}{s_1 \comp s_2}
+\Par (s_1 \comp s_2) : S
+\;\red\; \subst{T}{\quot{U}}{y} \Par S$
+
+\medskip\noindent
+The fuel gate listens on $\Sigma\lsem s_1 \rsem$ and
+$\Sigma\lsem s_2 \rsem$, but the token lives on
+$\Sigma\lsem s_1 \comp s_2 \rsem$.  The splitter
+(Definition~\ref{def:app-splitter}) mediates:
+\[
+  \mathrm{Split}(s_1, s_2)
+  \Par
+  \send{\Sigma\lsem s_1 \comp s_2 \rsem}{
+    \mathcal{K}\lsem S \rsem
+  }
+  \;\red\;
+  \send{\Sigma\lsem s_1 \rsem}{\nil}
+  \Par
+  \send{\Sigma\lsem s_2 \rsem}{
+    \mathcal{K}\lsem S \rsem
+  }
+\]
+Now both fuel channels are populated and the reduction
+proceeds as in Rule~2.  The residual $\nil$ from the
+$s_1$-token is absorbed by structural equivalence.
+\quad$\checkmark$
+
+\bigskip
+\noindent
+\textbf{Rule~4.}\;
+$\signed{\recv{y}{x}{T}}{s_1}
+\Par \signed{\send{x}{U}}{s_2}
+\Par s_1 : S \Par s_2 : S'
+\;\red\; \subst{T}{\quot{U}}{y} \Par S \Par S'$
+
+\medskip\noindent
+Each signed process has an atomic fuel gate.  The
+separately signed for-comprehension listens on
+$\Sigma\lsem s_1 \rsem$; the separately signed send listens
+on $\Sigma\lsem s_2 \rsem$.  Both tokens supply fuel
+independently.  After fuel consumption:
+\[
+  \mathcal{K}\lsem S \rsem
+  \Par
+  \recv{y}{\mathcal{N}\lsem x \rsem}{
+    \mathcal{T}\lsem T \rsem
+  }
+  \Par
+  \send{\mathcal{N}\lsem x \rsem}{
+    \mathcal{T}\lsem U \rsem
+  }
+  \Par
+  \mathcal{K}\lsem S' \rsem
+\]
+The data communication on $\mathcal{N}\lsem x \rsem$
+completes, yielding
+$\Vert \subst{T}{\quot{U}}{y} \Par S \Par S' \Vert$.
+\quad$\checkmark$
+
+\bigskip
+\noindent
+\textbf{Rule~5.}\;
+$\signed{\recv{y}{x}{T}}{s_1}
+\Par \signed{\send{x}{U}}{s_2}
+\Par (s_1 \comp s_2) : S
+\;\red\; \subst{T}{\quot{U}}{y} \Par S$
+
+\medskip\noindent
+The fuel gates listen on $\Sigma\lsem s_1 \rsem$ and
+$\Sigma\lsem s_2 \rsem$ separately, but the token is
+combined on $\Sigma\lsem s_1 \comp s_2 \rsem$.  The splitter
+mediates exactly as in Rule~3, producing separate tokens.
+After fuel consumption and data communication, the result is
+$\Vert \subst{T}{\quot{U}}{y} \Par S \Vert$.
+\quad$\checkmark$
+
+\subsection{Compositionality}
+\label{app:compositionality}
+
+The correctness of the verification rests on the following
+property:
+
+\begin{proposition}[Translation commutes with substitution]
+  \label{prop:subst-commute}
+  For all signed terms~$T$, $U$ and variables~$y$:
+  \[
+    \mathcal{T}\lsem T \rsem
+    \bigl\{
+      \quot{\mathcal{T}\lsem U \rsem} \big/ y
+    \bigr\}
+    \;=\;
+    \mathcal{T}\lsem
+      \subst{T}{\quot{U}}{y}
+    \rsem
+  \]
+\end{proposition}
+
+\noindent
+The proof proceeds by structural induction on~$T$, with the
+base case at~$\drop{x}$ using the semantic substitution
+mechanism of the rho calculus.  The critical case is:
+\[
+  \drop{\mathcal{N}\lsem x \rsem}
+  \bigl\{
+    \quot{\mathcal{T}\lsem U \rsem} \big/ y
+  \bigr\}
+  \;=\;
+  \begin{cases}
+    \mathcal{T}\lsem U \rsem
+      & \text{if } y \Neq \mathcal{N}\lsem x \rsem \\
+    \drop{\mathcal{N}\lsem x \rsem}
+      & \text{otherwise}
+  \end{cases}
+\]
+which matches
+$\mathcal{P}\lsem (\drop{x})\{\quot{U}/y\} \rsem$
+by definition of semantic substitution.
+
+\subsection{Implementation Notes}
+\label{app:impl}
+
+The translation is designed as a \textbf{compiler pass} in the
+Rholang toolchain:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Parse} the extended syntax (processes, signed
+    terms, token stacks, parameterized signatures) into an
+    extended AST.
+  \item \textbf{Apply} $\mathcal{P}\lsem\cdot\rsem$ to the
+    top-level process, which recursively invokes
+    $\mathcal{T}\lsem\cdot\rsem$,
+    $\mathcal{K}\lsem\cdot\rsem$,
+    $\mathcal{N}\lsem\cdot\rsem$, and
+    $\Sigma\lsem\cdot\rsem$.
+  \item \textbf{Inject} persistent $\mathrm{Split}$ and
+    $\mathrm{Join}$ infrastructure for every compound
+    signature that appears in the source, unless the
+    programmer has explicitly provided them.
+  \item \textbf{Emit} pure rho calculus (Rholang~1.1) source.
+    The existing runtime, reducer, and RSpace handle
+    execution without modification.
+\end{enumerate}
+
+\noindent
+This gives the platform immediate access to cost-accounted
+semantics while the native implementation
+(Section~\ref{sec:implications}) is developed in parallel.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Worked Example: Validator with Fee Extraction}
+\label{app:example}
+
+This appendix develops a complete worked example: a simplified
+model of a validator node in the F1R3FLY network, expressed
+first in the cost-accounted rho calculus and then translated
+to pure rho via the compiler pass of Appendix~\ref{app:translation}.
+The example exercises the bootstrap problem, token lookup,
+error handling, and conversion of client tokens into validator
+fees.
+
+\subsection{Scenario and Conventions}
+\label{app:ex-scenario}
+
+Fix a ground signature scheme~$G$.  The actors are:
+
+\begin{center}
+  \begin{tabular}{lll}
+    \textbf{Actor} & \textbf{Signature} & \textbf{Role} \\
+    \midrule
+    Validator & $v \in G$ & Accepts and executes deploys \\
+    Client    & $c \in G$ & Submits a signed deploy \\
+  \end{tabular}
+\end{center}
+
+\noindent
+Since signatures are names, $v$ and $c$ double as channel
+names.  We introduce three auxiliary channels (pure-rho names):
+
+\begin{center}
+  \begin{tabular}{ll}
+    $\quot{F_v}$ & The validator's fee-collection channel \\
+    $\quot{E}$   & The error-reporting channel \\
+    $\quot{A_c}$ & The address where the client deposits tokens \\
+  \end{tabular}
+\end{center}
+
+\subsection{Token Stack Decomposition}
+\label{app:ex-decomp}
+
+We adopt the following structural equivalence for token stacks,
+which asserts that tokens are \emph{fungible and decomposable}:
+
+\begin{equation}
+  s : S
+  \;\Seq\;
+  (s : ()) \Par S
+  \qquad\text{(token decomposition)}
+  \label{eq:token-decomp}
+\end{equation}
+
+\noindent
+Read: a multi-layer token stack is structurally equivalent to
+the parallel composition of a single-token stack and the
+remaining stack.  Repeated application decomposes
+$s : s : s : ()$ into three parallel single-token stacks
+$\bigl(s : ()\bigr) \Par \bigl(s : ()\bigr) \Par
+\bigl(s : ()\bigr)$.
+
+This equivalence is justified operationally: in the
+source-to-source translation
+(Appendix~\ref{app:translation}), the token stack
+$s : s : s : ()$ translates to a \emph{nested} chain of
+sends on $\Sigma\lsem s \rsem$, each carrying the remainder
+as payload.  Decomposition corresponds to the standard
+property that a communication can peel off one layer,
+releasing the rest.
+
+\subsection{Client-Side Assembly}
+\label{app:ex-client}
+
+The client prepares a deployment~$D$ (a process containing a
+communication) and deposits three tokens at address~$\quot{A_c}$:
+
+\begin{equation}
+  \boxed{
+    C
+    \;\triangleq\;
+    \send{\quot{A_c}}{c : c : c : ()}
+    \;\Par\;
+    \send{v}{\signed{D}{c}}
+  }
+  \label{eq:client-assembly}
+\end{equation}
+
+\noindent
+Here $\send{\quot{A_c}}{c : c : c : ()}$ deposits the
+three-token stack at the client's token address, and
+$\send{v}{\signed{D}{c}}$ sends the signed deployment to
+the validator on channel~$v$.
+
+For concreteness, let~$D$ be a simple communication:
+\begin{equation}
+  D \;\triangleq\;
+  \recv{z}{x}{T_{\mathit{app}}} \Par \send{x}{U_{\mathit{app}}}
+  \label{eq:deploy-body}
+\end{equation}
+where $x$, $T_{\mathit{app}}$, and $U_{\mathit{app}}$ are the
+client's application-level channel, continuation, and payload.
+
+\subsection{Validator Handler}
+\label{app:ex-validator}
+
+The validator handler is a process that:
+\begin{enumerate}[nosep]
+  \item receives a signed deployment on channel~$v$;
+  \item looks up the client's tokens at address~$\quot{A_c}$;
+  \item if tokens are present, extracts one token as a fee and
+    composes the deployment with the remaining tokens;
+  \item if no tokens are present, reports an error.
+\end{enumerate}
+
+\noindent
+We define the handler as the signed process:
+
+\begin{equation}
+  \boxed{
+    \mathit{VH}
+    \;\triangleq\;
+    \signed{
+      \recv{\mathit{dep}}{v}{
+        \signed{
+          \recv{\mathit{tok}}{\quot{A_c}}{
+            \signed{
+              \mathit{FeeExtract}
+            }{v}
+          }
+        }{v}
+      }
+    }{v}
+  }
+  \label{eq:validator-handler}
+\end{equation}
+
+\noindent
+Each nested $\forc$-comprehension is wrapped in its own
+$\signed{\cdot}{v}$, so each step of the handler's execution
+consumes one validator token from the validator's own stake.
+Three tokens total are needed: one to receive the deployment,
+one to look up the client's tokens, and one to execute the
+fee-extraction logic.
+
+The fee-extraction process $\mathit{FeeExtract}$ applies
+token decomposition~\eqref{eq:token-decomp} to the received
+token stack and splits it into a fee portion and a deployment
+portion:
+
+\begin{equation}
+  \mathit{FeeExtract}
+  \;\triangleq\;
+  \send{\quot{F_v}}{c : ()}
+  \;\Par\;
+  \drop{\mathit{dep}} \;\Par\; (c : c : ())
+  \label{eq:fee-extract}
+\end{equation}
+
+\noindent
+Here:
+\begin{itemize}[nosep]
+  \item $\send{\quot{F_v}}{c : ()}$ sends one token (the fee)
+    to the validator's fee-collection channel~$\quot{F_v}$.
+  \item $\drop{\mathit{dep}}$ dequotes the received deployment,
+    recovering the signed term~$\signed{D}{c}$.
+  \item $(c : c : ())$ is the remaining two-token stack,
+    placed in parallel with the deployment so that the
+    cost-accounted rewrite rules can fire.
+\end{itemize}
+
+\noindent
+The token decomposition~\eqref{eq:token-decomp} justifies the
+split: when the validator receives the three-token stack via
+$\recv{\mathit{tok}}{\quot{A_c}}{\cdots}$, the bound
+name~$\mathit{tok}$ carries $\quot{c : c : c : ()}$.
+Dequoting and decomposing:
+\[
+  c : c : c : ()
+  \;\Seq\;
+  (c : ()) \Par (c : c : ())
+\]
+
+\begin{remark}[Error handling]
+  \label{rem:error}
+  If the client fails to deposit tokens, the lookup
+  $\recv{\mathit{tok}}{\quot{A_c}}{\cdots}$ simply
+  \emph{blocks}: no message is available on~$\quot{A_c}$,
+  and the fuel gate prevents execution.  This is the
+  \emph{default} error mode --- the deployment is silently
+  rejected by resource starvation.
+
+  For proactive error reporting, the validator can race the
+  token lookup against a timeout.  Using the standard
+  select encoding in the rho calculus (a pair of
+  for-comprehensions on the token channel and a timeout
+  channel, with the first to fire pre-empting the other):
+  \[
+    \recv{\mathit{tok}}{\quot{A_c}}{
+      \signed{\mathit{FeeExtract}}{v}
+    }
+    \;\Par\;
+    \recv{\mathit{\_}}{\quot{\mathit{timeout}}}{
+      \signed{
+        \send{\quot{E}}{
+          \signed{\mathit{ErrNoTokens}}{v}
+        }
+      }{v}
+    }
+  \]
+  where a timeout process concurrently sends on
+  $\quot{\mathit{timeout}}$ after a deadline.
+\end{remark}
+
+\subsection{Bootstrap: The Full System}
+\label{app:ex-bootstrap}
+
+The validator handler~$\mathit{VH}$ is itself a signed
+process~$\signed{\cdots}{v}$.  By the cost-accounted rewrite
+rules, it cannot execute unless validator tokens are present.
+These tokens represent the validator's \emph{stake}: the
+validator must lock up stake tokens to earn the right to
+process client deployments.
+
+The full bootstrapped system is:
+
+\begin{equation}
+  \boxed{
+    \Omega
+    \;\triangleq\;
+    \underbrace{
+      \mathit{VH}
+    }_{\text{validator handler}}
+    \;\Par\;
+    \underbrace{
+      v : v : v : ()
+    }_{\text{validator stake (3 tokens)}}
+    \;\Par\;
+    \underbrace{
+      C
+    }_{\text{client assembly}}
+  }
+  \label{eq:full-system}
+\end{equation}
+
+\noindent
+Expanding:
+\begin{align}
+  \Omega
+  \;=\;\;
+  &\signed{
+    \recv{\mathit{dep}}{v}{
+      \signed{
+        \recv{\mathit{tok}}{\quot{A_c}}{
+          \signed{\mathit{FeeExtract}}{v}
+        }
+      }{v}
+    }
+  }{v}
+  \notag\\
+  &\Par\; v : v : v : ()
+  \notag\\
+  &\Par\; \send{\quot{A_c}}{c : c : c : ()}
+  \;\Par\;
+  \send{v}{\signed{D}{c}}
+  \label{eq:full-expanded}
+\end{align}
+
+\noindent
+The three validator tokens $v : v : v : ()$ are matched
+exactly to the three signed layers of the handler: one
+token per $\signed{\cdots}{v}$.  This is the bootstrap
+invariant: the validator's stake must be at least as deep as
+the handler's nesting depth.
+
+\subsection{Reduction in the Cost-Accounted Calculus}
+\label{app:ex-reduction-ca}
+
+We trace the reduction of~$\Omega$ using the cost-accounted
+rewrite rules of Section~\ref{sec:rewrites}.  At each step
+we identify which rule applies.
+
+\bigskip
+\noindent
+\textbf{Step~1} --- The outermost signed handler consumes one
+validator token and receives the signed deployment
+(\textbf{Rule~1}):
+
+The signed handler's outermost layer is
+$\signed{\recv{\mathit{dep}}{v}{\cdots}}{v}$, and the send
+$\send{v}{\signed{D}{c}}$ provides a message on~$v$.  With
+token~$v : v : v : ()$, decomposed as
+$(v : ()) \Par (v : v : ())$:
+\begin{align*}
+  &\signed{
+    \recv{\mathit{dep}}{v}{\cdots} \Par \send{v}{\signed{D}{c}}
+  }{v}
+  \;\Par\; v : ()
+  \\
+  &\quad\red\quad
+  \cdots\bigl\{\quot{\signed{D}{c}}\big/\mathit{dep}\bigr\}
+\end{align*}
+After this step, $\mathit{dep}$ is bound to
+$\quot{\signed{D}{c}}$ and one validator token is consumed.
+The system becomes:
+\begin{align*}
+  &\signed{
+    \recv{\mathit{tok}}{\quot{A_c}}{
+      \signed{\mathit{FeeExtract}}{v}
+    }
+  }{v}
+  \;\Par\; v : v : ()
+  \\
+  &\Par\; \send{\quot{A_c}}{c : c : c : ()}
+\end{align*}
+
+\noindent
+(with $\mathit{dep} = \quot{\signed{D}{c}}$ captured in
+$\mathit{FeeExtract}$).
+
+\bigskip
+\noindent
+\textbf{Step~2} --- The second layer consumes one validator
+token and looks up the client's tokens (\textbf{Rule~1}):
+\begin{align*}
+  &\signed{
+    \recv{\mathit{tok}}{\quot{A_c}}{\cdots}
+    \Par \send{\quot{A_c}}{c : c : c : ()}
+  }{v}
+  \;\Par\; v : ()
+  \\
+  &\quad\red\quad
+  \signed{\mathit{FeeExtract}}{v}
+    \bigl\{\quot{c : c : c : ()}\big/\mathit{tok}\bigr\}
+  \;\Par\; v : ()
+\end{align*}
+
+\noindent
+Now $\mathit{tok} = \quot{c : c : c : ()}$ and one more
+validator token is consumed.  One validator token remains.
+
+\bigskip
+\noindent
+\textbf{Step~3} --- The innermost layer consumes the last
+validator token and executes fee extraction
+(\textbf{Rule~1}):
+\[
+  \signed{\mathit{FeeExtract}}{v}
+  \;\Par\; v : ()
+  \;\;\red\;\;
+  \mathit{FeeExtract} \Par ()
+\]
+
+\noindent
+Substituting the bound values into~$\mathit{FeeExtract}$
+\eqref{eq:fee-extract} and applying token decomposition:
+\begin{equation}
+  \send{\quot{F_v}}{c : ()}
+  \;\Par\;
+  \signed{D}{c}
+  \;\Par\;
+  (c : c : ())
+  \label{eq:after-fee}
+\end{equation}
+
+\noindent
+The system now contains the signed deployment~$\signed{D}{c}$
+in parallel with two client tokens~$(c : c : ())$, plus a
+fee token~$(c : ())$ en route to the validator's fee channel.
+
+\bigskip
+\noindent
+\textbf{Step~4} --- The client deployment fires
+(\textbf{Rule~1}):
+
+Expanding $D = \recv{z}{x}{T_{\mathit{app}}} \Par
+\send{x}{U_{\mathit{app}}}$:
+\begin{align*}
+  &\signed{
+    \recv{z}{x}{T_{\mathit{app}}}
+    \Par \send{x}{U_{\mathit{app}}}
+  }{c}
+  \;\Par\; c : c : ()
+  \\[4pt]
+  &\quad\red\quad
+  \subst{T_{\mathit{app}}}
+    {\quot{U_{\mathit{app}}}}{z}
+  \;\Par\; c : ()
+\end{align*}
+
+\noindent
+One client token is consumed.  The application continuation
+runs with one remaining client token.
+
+\bigskip
+\noindent
+\textbf{Final state:}
+\[
+  \send{\quot{F_v}}{c : ()}
+  \;\Par\;
+  \subst{T_{\mathit{app}}}
+    {\quot{U_{\mathit{app}}}}{z}
+  \;\Par\;
+  (c : ())
+\]
+
+\noindent
+The fee token is deposited at the validator's fee channel.
+The application continuation runs.  One client token remains
+for further computation.
+
+\subsection{Source-to-Source Translation}
+\label{app:ex-translation}
+
+We now apply the translation of
+Appendix~\ref{app:translation} to the system~$\Omega$.
+Write $n_v = \Sigma\lsem v \rsem$ and
+$n_c = \Sigma\lsem c \rsem$ for the translated signature
+channels.
+
+\medskip
+\noindent
+\textbf{Validator tokens:}
+\begin{align*}
+  \mathcal{K}\lsem v : v : v : () \rsem
+  &= \send{n_v}{\send{n_v}{\send{n_v}{\nil}}}
+\end{align*}
+
+\noindent
+A triple-nested send on~$n_v$.
+
+\medskip
+\noindent
+\textbf{Client tokens:}
+\begin{align*}
+  \mathcal{K}\lsem c : c : c : () \rsem
+  &= \send{n_c}{\send{n_c}{\send{n_c}{\nil}}}
+\end{align*}
+
+\medskip
+\noindent
+\textbf{Validator handler} (outermost fuel gate only,
+for brevity):
+\begin{align*}
+  \mathcal{T}\lsem \mathit{VH} \rsem
+  \;=\;\;
+  &\recv{t_1}{n_v}{\bigl(
+    \drop{t_1} \Par
+    \recv{\mathit{dep}}{n_v}{\mathcal{T}\lsem\text{inner}\rsem}
+  \bigr)}
+\end{align*}
+
+\noindent
+where $\mathcal{T}\lsem\text{inner}\rsem$ nests two more
+fuel gates on~$n_v$ (one per remaining $\signed{\cdots}{v}$
+layer), followed by the token lookup on~$\quot{A_c}$, the
+fee extraction, and the translated deployment.
+
+\medskip
+\noindent
+\textbf{Fee extraction in the translated system:}
+
+The critical observation is that fee extraction corresponds to
+an \emph{additional fuel gate} on the client's signature
+channel~$n_c$.  After the validator handler runs, the
+translated system contains (among other terms):
+\begin{equation}
+  \underbrace{
+    \recv{t_{\mathit{fee}}}{n_c}{
+      \bigl(
+        \send{\quot{F_v}}{\nil}
+        \Par \drop{t_{\mathit{fee}}}
+      \bigr)
+    }
+  }_{\text{fee interceptor}}
+  \;\Par\;
+  \underbrace{
+    \send{n_c}{\send{n_c}{\send{n_c}{\nil}}}
+  }_{\text{client's 3 tokens}}
+  \label{eq:fee-interceptor}
+\end{equation}
+
+\noindent
+The fee interceptor consumes the outermost send on~$n_c$
+(one token).  Its payload is
+$\send{n_c}{\send{n_c}{\nil}}$ --- the remaining two
+tokens --- which is released via $\drop{t_{\mathit{fee}}}$.
+The fee is recorded as a send on~$\quot{F_v}$.
+
+After this reduction:
+\[
+  \send{\quot{F_v}}{\nil}
+  \;\Par\;
+  \send{n_c}{\send{n_c}{\nil}}
+  \;\Par\;
+  \underbrace{
+    \recv{t}{n_c}{
+      \bigl(\drop{t} \Par
+        \mathcal{P}\lsem D \rsem
+      \bigr)
+    }
+  }_{\text{deployment fuel gate}}
+\]
+
+\noindent
+The deployment's own fuel gate now consumes from the
+remaining two-token chain on~$n_c$, exactly as verified in
+Appendix~\ref{app:verification}.
+
+\subsection{Reduction Trace in Pure Rho}
+\label{app:ex-trace-rho}
+
+We trace the key reductions in the translated system,
+suppressing intermediate structural equivalence steps.
+
+\begin{enumerate}[label=\textbf{Step \arabic*.}, leftmargin=3em]
+  \item \textbf{Validator fuel gate~1} fires on~$n_v$.
+    The outermost send in the validator's token chain is
+    consumed.  The handler's first $\forc$ unblocks.
+    Remainder: two sends on~$n_v$.
+
+  \item \textbf{Deployment received} on~$n_v$.  The
+    translated $\send{n_v}{\mathcal{T}\lsem\signed{D}{c}\rsem}$
+    communicates with the handler's inner $\forc$ on~$n_v$.
+    $\mathit{dep}$ is bound.
+
+  \item \textbf{Validator fuel gate~2} fires on~$n_v$.
+    One more validator token consumed.
+
+  \item \textbf{Token lookup} on~$\quot{A_c}$.  The
+    client's token deposit communicates with the handler's
+    $\forc$ on~$\quot{A_c}$.  $\mathit{tok}$ is bound
+    to the quoted three-token chain.
+
+  \item \textbf{Validator fuel gate~3} fires on~$n_v$.
+    Last validator token consumed.  $\mathit{FeeExtract}$
+    is now active.
+
+  \item \textbf{Fee interceptor} fires on~$n_c$
+    \eqref{eq:fee-interceptor}.  One client token consumed
+    as fee.  Two-token chain released.
+
+  \item \textbf{Deployment fuel gate} fires on~$n_c$.
+    One client token consumed.  Application continuation
+    $\mathcal{P}\lsem T_{\mathit{app}} \rsem$ unblocks.
+    One-token chain released.
+
+  \item \textbf{Application communication} on
+    $\mathcal{N}\lsem x \rsem$.  The translated
+    $\recv{z}{\mathcal{N}\lsem x \rsem}{\cdots}$ and
+    $\send{\mathcal{N}\lsem x \rsem}{\cdots}$
+    communicate.  The application payload is delivered.
+\end{enumerate}
+
+\noindent
+\textbf{Final state} (in pure rho):
+\[
+  \underbrace{
+    \send{\quot{F_v}}{\nil}
+  }_{\text{fee deposited}}
+  \;\Par\;
+  \underbrace{
+    \mathcal{T}\lsem
+      \subst{T_{\mathit{app}}}
+        {\quot{U_{\mathit{app}}}}{z}
+    \rsem
+  }_{\text{application result}}
+  \;\Par\;
+  \underbrace{
+    \send{n_c}{\nil}
+  }_{\text{1 client token remaining}}
+\]
+
+\subsection{Discussion}
+\label{app:ex-discussion}
+
+\paragraph{Bootstrap economics.}
+The validator must hold at least as many $v$-tokens as the
+nesting depth of its handler.  In the example, three
+$\signed{\cdots}{v}$ layers require three tokens.  In
+production, this depth corresponds to the cost of the
+validator's own computation: receiving a deploy, looking up
+tokens, and executing the fee logic.  The validator's
+\emph{stake} is the supply of $v$-tokens it holds; a
+validator that exhausts its stake can no longer process
+deploys.  Stake replenishment comes from fee revenue
+(discussed below) and from external funding by the
+validator's operator.
+
+\paragraph{Fee conversion.}
+The fee token $(c : ())$ is a \emph{client-signature}
+token.  For the validator to use it as fuel for its own
+operations (which require $v$-signature tokens), the fee
+must be \emph{converted}.  This conversion is a
+market-making operation, expressible as a Rholang contract:
+\[
+  \mathrm{Exchange}(c, v)
+  \;=\;
+  \recv{t_c}{n_c}{
+    \recv{t_v}{n_v}{
+      \bigl(
+        \send{n_c}{\drop{t_v}}
+        \Par
+        \send{n_v}{\drop{t_c}}
+      \bigr)
+    }
+  }
+\]
+This persistent exchange contract swaps one $c$-token for
+one $v$-token (and vice versa), implementing a 1:1 peg.
+More sophisticated exchange contracts can implement
+variable rates, order books, or automated market makers ---
+all within Rholang.
+
+\paragraph{Persistent validator.}
+The example handler processes a single deployment and
+halts.  A production validator runs persistently,
+re-advertising itself after each deployment.  Using the
+standard reflective replication encoding, the persistent
+handler is:
+\[
+  !\, \mathit{VH}
+\]
+Each iteration consumes validator tokens from stake,
+collects fees, and (via the exchange contract) converts
+fees to replenish stake --- establishing the economic
+feedback loop that sustains the validator.
+
+\paragraph{Connection to Casper CBC.}
+In the F1R3FLY platform, the validator's stake
+($v$-tokens) is locked via a staking contract that
+participates in Casper CBC consensus.  The number of
+$v$-tokens held determines the validator's weight in the
+consensus algorithm.  The cost-accounted calculus makes
+this relationship \emph{intrinsic}: the validator
+literally cannot act without tokens, and the rate of
+token consumption is determined by the structure of the
+handler --- the same structure that the consensus layer
+inspects.
 
 %% ══════════════════════════════════════════════════════════════════
 \begin{thebibliography}{9}
@@ -872,6 +2768,18 @@ expressive universe of the rho calculus.
   L.~G.~Meredith \textit{et al.},
   ``Rholang Specification,''
   F1R3FLY.io / RChain Cooperative, 2017--2026.
+
+\bibitem{MeTTaIL}
+  L.~G.~Meredith,
+  ``MeTTaIL (Rholang 1.4): A language for defining languages,''
+  F1R3FLY.io, 2025--2026.
+
+\bibitem{VACRADA}
+  L.~G.~Meredith \textit{et al.},
+  ``Secure Blockchain-Based Health Data Platform: Cooperative
+  Research and Development Agreement,''
+  F1R3FLY Industries / U.S.\ Department of Veterans Affairs,
+  2025--2026.
 
 \end{thebibliography}
 
