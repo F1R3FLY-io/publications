@@ -1,0 +1,993 @@
+\documentclass[11pt]{article}
+
+%% ── packages ──────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage{mathrsfs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage[colorlinks=true,linkcolor=NavyBlue,citecolor=NavyBlue,urlcolor=SkyBlue]{hyperref}
+
+%% ── F1R3FLY brand colours ─────────────────────────────────────────
+\definecolor{NavyBlue}{HTML}{1A1A2E}
+\definecolor{SkyBlue}{HTML}{3FA9F5}
+\definecolor{Yellow}{HTML}{F3D630}
+\definecolor{Sage}{HTML}{8BB999}
+
+%% ── theorem environments ──────────────────────────────────────────
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{construction}[definition]{Construction}
+\newtheorem{example}[definition]{Example}
+\newtheorem{remark}[definition]{Remark}
+
+\theoremstyle{plain}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+
+%% ── notation macros ───────────────────────────────────────────────
+\newcommand{\GSLT}{\mathrm{GSLT}}
+\newcommand{\iGSLT}{\mathbf{iGSLT}}
+\newcommand{\ciGSLT}{\mathbf{ciGSLT}}
+\newcommand{\ciGSLTtc}{\mathbf{ciGSLT}_{\mathrm{TC}}}
+\newcommand{\CostC}{\mathbf{Cost}\text{-}\ciGSLT}
+\newcommand{\Free}{\mathsf{Free}}
+\newcommand{\Forget}{\mathsf{Forget}}
+\newcommand{\Imp}{\mathcal{I}}
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\Sig}{\mathsf{Sig}}
+\newcommand{\Tok}{\mathsf{Stk}}
+\newcommand{\WT}{\mathbb{T}}                  % wrapped-term sort
+\newcommand{\Cost}{\mathfrak{C}}              % the cost / continuation endofunctor
+\newcommand{\sgn}[2]{\{#1\}_{#2}}             % signed term  {T}_s
+\newcommand{\cons}{\mathbin{:}}               % temporal cons
+\newcommand{\nil}{(\,)}
+\newcommand{\red}{\longrightarrow}
+\newcommand{\Seq}{\equiv}
+\newcommand{\hashf}{\#}
+\newcommand{\quot}[1]{@#1}
+\newcommand{\drop}[1]{{\ast}#1}
+\newcommand{\subst}[3]{#1\{#2/#3\}}
+\newcommand{\compute}{\mathsf{compute}}
+\newcommand{\cf}{\mathsf{cf}}
+\newcommand{\Term}{\mathcal{T}}
+\newcommand{\cTerm}{\widehat{\mathcal{T}}}
+\newcommand{\Kp}{K_{\mathrm{p}}}
+\newcommand{\Ke}{K_{\mathrm{e}}}
+\newcommand{\defeq}{\;\mathrel{:=}\;}
+\newcommand{\Par}{\mathbin{|}}
+\newcommand{\Card}[1]{\lvert #1 \rvert}
+
+\title{\textbf{Continued Interactive GSLTs and the\\[2pt]
+Cost Endofunctor}\\[6pt]
+\large A construction one level up from cost-accounted Rholang\\[2pt]
+\normalsize\textit{(revised: wrapping by construction)}}
+
+\author{L.~G.~Meredith\thanks{\texttt{lgreg.meredith@f1r3fly.io}}
+\quad\textit{with}\quad Claude (Anthropic)\\[2pt]
+\small F1R3FLY.io}
+
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We lift the cost-accounting construction of the rho calculus from a
+single calculus to an endofunctor on a category of interactive
+graph-structured lambda theories (GSLTs). The earlier work folded
+phlogiston accounting into the grammar of Rholang by signing terms and
+replacing the communication rule by a family of rules that rewrite
+\emph{signed} terms while consuming \emph{tokens}. Here we observe that
+this is a generic procedure governed by a single shape of dynamics, the
+\emph{symmetric metered cut}: an interaction constructor $K$ brings two
+(co-)introductions $\Kp(I,C_{\mathrm p})$ and $\Ke(J,C_{\mathrm e})$ into
+contact, and a contraction $\compute(I,J,C_{\mathrm p},C_{\mathrm e})$
+produces residual continuations. An interactive GSLT whose dynamics
+admits this presentation, together with a computable section of its
+structural-congruence quotient and a contraction compatible with
+wrapping, we call a \emph{continued} interactive GSLT. The point of the
+adjective is not that such a theory is already metered or wrapped --- a
+continued interactive GSLT is an ordinary, un-metered calculus --- but
+that it carries exactly the structure needed for the cost construction
+to \emph{build} a metered version from it.
+
+That construction is the endofunctor $\Cost$. Given a continued
+interactive GSLT, $\Cost$ produces a calculus in which the continuation
+slots are \emph{wrapped terms by construction}: every continuation is a
+metered thunk in the grammar of the image. The decisive design move is
+that this wrapping lives in the \emph{output}, so that ``every redex sits
+inside a wrapper'' is a sorting invariant of $\Cost(G)$ preserved by
+reduction --- not a property that must be re-established by traversing
+each contractum. The source theory's contraction need not be lifted; in
+the image it already maps wrapped terms to wrapped terms, and the only
+run-time interaction with tokens is \emph{unwrapping}: forcing a thunk by
+spending a matching token. Metering is thereby \emph{lazy} --- work is
+charged when performed, not when exposed --- and the temporal token stack
+is consumed exactly in step with the reductions, realising the modulus of
+the underlying cut elimination as the run length itself.
+
+We show that $\Cost$ is an endofunctor on the category $\ciGSLT$ of
+continued interactive GSLTs with bisimulation-preserving, quote-faithful
+morphisms. Throughout we keep $\ciGSLT$ formally distinct from the
+ambient category $\iGSLT$ of interactive GSLTs: a forgetful functor
+$U : \ciGSLT \to \iGSLT$ exhibits ``continued'' as a proper structural
+enrichment of ``interactive,'' so that the endofunctor's domain pins down
+exactly which interactive theories admit sound, lazy cost accounting.
+Finally, iterated cost accounting flattens --- nested signatures multiply
+and stacks-of-stacks concatenate --- so $\Cost$ is a (non-idempotent)
+monad, resolving through two adjunctions with opposite embeddings: a
+structural free--forgetful adjunction that detaches the apparatus, and,
+over a Turing-complete base, an internalisation adjunction that dissolves
+the apparatus into the base's own computation up to weak bisimulation.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+
+In previous work we showed that the cost-accounting layer of Rholang ---
+the phlogiston (phlo) system --- need not be a privileged runtime
+extension. By treating signatures as a species of name, token stacks as
+first-class terms, and the for/send operators as ranging over
+\emph{signed} terms, we folded cost accounting directly into the grammar
+and operational semantics of the rho calculus. The single communication
+rule \textsc{Comm} became a family of rules that gate communication on
+the consumption of a matching token. Because the rho calculus is the
+formal core of Rholang, this revised calculus serves as the design
+specification for rearchitecting phlo accounting in Rholang~1.4.
+
+This note takes the construction \emph{one level up}, asking what the
+move requires of the underlying theory and to which theories it applies.
+Two observations drive the development. First, the dynamics must be
+presented as a \emph{symmetric} cut: the eliminand is not a bare term
+but a co-introduction carrying its own continuation, exactly as the
+sender $x!(U)$ in rho carries a payload $U$ with the same status as the
+receiver's continuation $T$. Second --- and this is the heart of the
+revision --- a theory presented in this form carries enough structure for
+the cost endofunctor to build a metered version in which the continuation
+slots are \emph{wrapped terms by construction}. We are careful to keep
+the two apart: the underlying theory (a \emph{continued} interactive
+GSLT) is an ordinary un-metered calculus that merely \emph{admits} the
+construction; the wrapping is a feature of the \emph{image} $\Cost(G)$,
+not of $G$. In that image every continuation is a metered thunk in the
+grammar, so the contractum is born guarded: no traversal re-wraps it, the
+contraction is not lifted, and the absence of leaks is a sorting
+invariant of $\Cost(G)$ rather than a dynamic obligation. The run-time
+semantics of the metered calculus only ever \emph{unwraps}, forcing a
+thunk by spending a token.
+
+The $\lambda$-calculus is the foil throughout. In the rho calculus
+several distinct structures are fused into $\Par$ and $\quot{\cdot}$;
+pulling them apart in $\lambda$, where they are visibly separate, exposes
+the construction as a genuine endofunctor and identifies precisely what
+an interactive theory must supply.
+
+Section~\ref{sec:metered-cut} isolates the symmetric metered cut.
+Section~\ref{sec:wrapped} introduces wrapping by construction, derives
+no-leak as subject reduction, and contrasts lazy with eager metering.
+Section~\ref{sec:two-monoids} identifies the spatial monoid $K$ and the
+temporal monoid $\cons$, with the stack as a reified clock and lazily
+extracted modulus. Section~\ref{sec:signatures} treats signature
+construction as a section of the structural-congruence quotient, with
+de~Bruijn canonicalisation supplying it for $\lambda$.
+Section~\ref{sec:functor} assembles the endofunctor $\Cost$ on $\ciGSLT$.
+Section~\ref{sec:adequacy} records the graded adequacy statement.
+Section~\ref{sec:examples} works the two anchoring instances.
+Section~\ref{sec:monad} observes that iterated cost accounting flattens,
+so that $\Cost$ is a monad, and exhibits its two resolutions: a
+structural free--forgetful adjunction and, over Turing-complete bases, a
+computational internalisation adjunction.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{The symmetric metered cut}
+\label{sec:metered-cut}
+
+\subsection{Interactive GSLTs}
+
+A \emph{graph-structured lambda theory} is a multi-sorted term theory
+$G = (\Sigma, E, R)$: a signature $\Sigma$ of sorts and operators, a set
+$E$ of equations imposing a structural congruence $\Seq$, and a set $R$
+of rewrite rules. It is \emph{interactive} when it carries a
+distinguished interacting sort $P$ with a labelled transition system,
+generated by $R$ modulo $\Seq$, on which bisimulation is the intended
+equivalence. The rho calculus ($P$ = processes, $\Seq$ the
+$\Par$-monoid congruence with $\alpha$, $R$ = \textsc{Comm}) and the
+$\lambda$-calculus ($P$ = terms, $\Seq$ = $\alpha$, $R$ = $\beta$) are
+the motivating examples.
+
+\begin{definition}[The category $\iGSLT$]
+\label{def:iGSLT}
+$\iGSLT$ is the category whose objects are interactive GSLTs and whose
+morphisms are \emph{theory maps} --- sort- and operator-preserving
+translations that respect $\Seq$ and $R$ --- that are
+\textbf{bisimulation-preserving} on the interacting sort.
+\end{definition}
+
+This is the base category of the present note. The cost construction
+does \emph{not} act on all of $\iGSLT$; it acts on the objects that
+carry enough additional structure to be metered, which we isolate as a
+subcategory in Section~\ref{sec:functor}. Keeping the two apart is
+deliberate: ``interactive'' is the ambient setting, while ``continued''
+(Definition~\ref{def:ciGSLT}) is the structural condition under which
+sound, lazy cost accounting exists. The distinction is what the
+endofunctor's domain makes precise --- an interactive GSLT is a place
+where processes interact; a continued interactive GSLT is one whose
+interaction is presented as a meterable cut.
+
+\subsection{The symmetric presentation}
+
+The cost construction acts on dynamics presented in a particular shape.
+Write the generating rule of $R$ as
+%
+\begin{equation}
+  \frac{(C_{\mathrm p}',\,C_{\mathrm e}') \;=\;
+        \compute(I,\,J,\,C_{\mathrm p},\,C_{\mathrm e})}
+       {\,K\bigl(\Kp(I,\,C_{\mathrm p}),\; \Ke(J,\,C_{\mathrm e})\bigr)
+        \ \red\
+        K'\bigl(C_{\mathrm p}',\,C_{\mathrm e}'\bigr)\,}
+  \tag{$\dagger$}
+  \label{eq:metered-cut}
+\end{equation}
+%
+distinguishing:
+%
+\begin{description}[leftmargin=2.2em,itemsep=2pt]
+  \item[the interaction constructor $K$,] which brings two operands into
+    \emph{contact}. In rho, $K = {\Par}$; in $\lambda$, $K = \mathrm{App}$.
+  \item[two (co-)introductions $\Kp(I,C_{\mathrm p})$ and
+    $\Ke(J,C_{\mathrm e})$,] each a constructor separating a bound or
+    active part ($I$, $J$) from a \emph{continuation} ($C_{\mathrm p}$,
+    $C_{\mathrm e}$). In rho, $\Kp = \mathrm{for}$ with
+    $I \sim (y,x)$ and $C_{\mathrm p} = T$, while
+    $\Ke = {!}$ with $J \sim x$ and $C_{\mathrm e} = U$.
+  \item[the contraction $\compute$,] a partial operation that, on
+    contact, transforms the two continuations into residuals
+    $C_{\mathrm p}', C_{\mathrm e}'$ repackaged by $K'$. In rho and
+    $\lambda$ it is (semantic) substitution.
+\end{description}
+%
+We call \eqref{eq:metered-cut} a \emph{cut}: two introductions meet and a
+contraction eliminates them. The form is \emph{symmetric} in the two
+operands: the eliminand is not a bare term but a co-introduction with its
+own continuation. This matches rho exactly, where $x!(U)$ was never bare
+--- its payload $U$ has the same status as the receiver's continuation
+$T$. The earlier asymmetric form, with a bare eliminand $E$, was an
+under-elaboration; the $\lambda$-calculus recovers it as the
+\emph{degenerate} case in which $\Ke$ has an empty bound part, so that
+the argument is its own continuation (Section~\ref{sec:examples}).
+
+\begin{remark}[$K$ is the only constructor that needs overloading]
+The cut isolates one contact site. Every cost rule interposes a token
+between the operands of $K$ and drains it on contact. There is one $K$
+per cut, hence one constructor to make polymorphic. ``Meter the cut'' is
+the generic content of ``place valuable friction at every interaction.''
+\end{remark}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Wrapping by construction}
+\label{sec:wrapped}
+
+This section describes what the cost endofunctor \emph{builds}. Given a
+continued interactive GSLT $G$ --- an un-metered calculus presented as a
+symmetric cut, with a section and a wrapping-compatible contraction
+(Section~\ref{sec:functor}) --- the endofunctor $\Cost$ produces a
+metered calculus $\Cost(G)$ whose grammar makes every continuation a
+metered thunk. The wrapping discipline below is therefore a property of
+the image $\Cost(G)$; the source $G$ supplies only the structure that
+makes the discipline installable.
+
+\subsection{Continuations are metered thunks in the image}
+
+In $\Cost(G)$ the cost endofunctor adjoins a sort $\Sig$ of signatures
+(Section~\ref{sec:signatures}), a \emph{wrapped-term} sort $\WT$ with the
+wrapper $\sgn{\cdot}{s} : P \times \Sig \to \WT$, and a sort $\Tok$ of
+token stacks
+%
+\begin{equation}
+  S \;::=\; \nil \;\mid\; s \cons S, \qquad s \in \Sig .
+  \label{eq:stack}
+\end{equation}
+%
+The pivotal discipline is grammatical, and it is imposed by $\Cost$ on
+its image: \textbf{in $\Cost(G)$ every continuation slot of $\Kp$ and
+$\Ke$ has sort $\WT$.} Structural composition (parallel composition in
+rho) lives at the $\WT$ level, between wrappers, so that each
+redex-bearing thread is individually wrapped. Thus a continuation in the
+metered calculus is not a bare process awaiting metering; it is a
+\emph{metered thunk} --- $\sgn{P}{s}$ --- whose activation is gated by a
+token keyed to $s$, and whose own continuations are again thunks. (In
+the source $G$ these slots carried ordinary terms; re-sorting them to
+$\WT$ is part of what $\Cost$ does, Construction~\ref{con:object}.)
+Reading $C_{\mathrm p} = \sgn{P}{s_{\mathrm p}}$ and
+$C_{\mathrm e} = \sgn{Q}{s_{\mathrm e}}$, the contraction of the image has
+the type
+%
+\[
+  \compute \;:\; \mathit{Bnd}\times\mathit{Bnd}\times\WT\times\WT
+            \;\longrightarrow\; \WT\times\WT,
+\]
+%
+mapping wrapped continuations to wrapped continuations. It need not know
+that wrapping exists: substituting a wrapped term into a position yields a
+wrapped term, so $\compute$ preserves the sort $\WT$ for free.
+
+\subsection{The gated rule: force by unwrapping}
+
+A wrapped redex is forced by consuming a matching token. The
+single-signature rule is
+%
+\begin{equation}
+  \frac{(C_{\mathrm p}',C_{\mathrm e}') = \compute(I,J,C_{\mathrm p},C_{\mathrm e})}
+       {\,K\!\bigl(\sgn{K(\Kp(I,C_{\mathrm p}),\,\Ke(J,C_{\mathrm e}))}{s},
+        \; s \cons S\bigr)
+        \ \red\
+        K\!\bigl(K'(C_{\mathrm p}',C_{\mathrm e}'),\; S\bigr)\,}
+  \tag{R1}
+  \label{eq:R1}
+\end{equation}
+%
+in which the outer polymorphic $K$ combines the wrapped redex with the
+token stack, the head cell $s$ is consumed (the act of \emph{unwrapping}
+the redex), and the result $K'(C_{\mathrm p}',C_{\mathrm e}')$ is --- by
+the typing of $\compute$ --- already built from wrapped terms. There is
+no re-wrapping step and no lifted contraction. The remaining
+token-distribution cases vary how the redex is split across $K$ and how
+tokens are presented:
+%
+\begin{align}
+  &K\!\bigl(K(\sgn{\Kp(I,C_{\mathrm p})}{s_1},\,\sgn{\Ke(J,C_{\mathrm e})}{s_2}),\;
+        s_1 \cons s_2 \cons S\bigr)
+   \ \red\
+   K\!\bigl(K'(C_{\mathrm p}',C_{\mathrm e}'),\; S\bigr),
+   \tag{R2}\label{eq:R2}\\[3pt]
+  &K\!\bigl(K(\sgn{\Kp(I,C_{\mathrm p})}{s_1},\,\sgn{\Ke(J,C_{\mathrm e})}{s_2}),\;
+        K(s_1\cons S_1,\, s_2\cons S_2)\bigr)
+   \ \red\
+   K\!\bigl(K'(C_{\mathrm p}',C_{\mathrm e}'),\; K(S_1,S_2)\bigr),
+   \tag{R3}\label{eq:R3}
+\end{align}
+%
+each under the same premise. Here the continuations $C_{\mathrm p},
+C_{\mathrm e}$ are themselves wrapped (suppressed inner signatures), so
+the residuals $C_{\mathrm p}', C_{\mathrm e}'$ remain wrapped and the next
+layer of redexes is guarded without any action by the rule.
+
+\subsection{No leak, as a sorting invariant}
+
+\begin{definition}[Well-wrapped configuration]
+A configuration of $\Cost(G)$ is \emph{well-wrapped} when it is
+well-sorted in the grammar of Construction~\ref{con:object} --- in
+particular, every continuation occupies a slot of sort $\WT$, so every
+redex occurrence lies inside a wrapper $\sgn{\cdot}{s}$.
+\end{definition}
+
+\begin{lemma}[Subject reduction for wrapping]
+\label{lem:subject}
+Well-wrapping is preserved by \eqref{eq:R1}--\eqref{eq:R3}.
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+Each rule replaces a wrapped redex by $K'(C_{\mathrm p}',C_{\mathrm e}')$
+with $(C_{\mathrm p}',C_{\mathrm e}') = \compute(\dots)$. Since
+$\compute : \cdots \to \WT\times\WT$ and $K'$ packages terms of sort
+$\WT$, the residual is well-sorted; the consumed cell leaves a
+well-sorted stack. Redexes elsewhere are untouched. Hence the result is
+well-wrapped.
+\end{proof}
+
+\begin{corollary}[No leak, by construction]
+\label{cor:noleak}
+In a well-wrapped configuration no redex can fire without being unwrapped,
+i.e.\ without consuming a token. There is no dynamic wrapping operation;
+the cost-accounting steps only ever unwrap.
+\end{corollary}
+
+The contrast with the earlier formulation is the substance of this
+revision.
+
+\begin{remark}[Eager vs.\ lazy metering]
+\label{rem:lazy}
+An alternative discipline re-wraps the contractum at contraction time,
+traversing it to sign each exposed redex --- charging \emph{eagerly} for
+every redex the step exposes. Wrapping by construction charges
+\emph{lazily}: each redex is born wrapped and is charged only when
+actually forced. Lazy metering pays for work performed, not work merely
+exposed; redexes beneath a discarded binder are never charged. The token
+stack drains exactly in step with the reductions performed, which is also
+the operational reality of phlogiston consumption.
+\end{remark}
+
+\begin{remark}[Duplication needs no fresh signatures]
+\label{rem:dup}
+Because multiplicity is carried by the \emph{stack} (linear token
+consumption) and not by key distinctness, copying a wrapped term
+$\sgn{Q}{s}$ copies its key $s$ but not its tokens. Each copy must be
+forced separately and so funded separately from the stack: $n$ copies of
+an $s$-redex require $n$ cells keyed to $s$. Shared keys with a linear
+token supply already make duplication cost, so no fresh-per-copy minting
+is required. Created redexes --- where a substituted wrapped term lands in
+head position --- are guarded for the same reason: the substituted
+material carries its own wrapper. Thus a single mechanism (wrapped
+continuations $+$ linear stack) handles duplicated and created redexes
+alike, where the eager formulation needed a separate fresh-signature
+discipline.
+\end{remark}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Two monoids: space and time}
+\label{sec:two-monoids}
+
+The construction places two combination operators side by side, of
+different character. The interaction constructor $K$ is \emph{spatial}:
+it records what is in contact with what, and may carry equations ---
+associative--commutative in rho (an unordered bag of processes), free in
+$\lambda$ (a positional application spine). The cons operator $\cons$ of
+\eqref{eq:stack} is \emph{temporal}: it records what is spent next, then
+next. It is a free monoid (a list), \emph{never} commutative, because
+reduction is sequential even when interaction is parallel. Each forcing
+pops a cell; the order of popping is the order of steps. The stack is the
+time axis of the computation reified as a term: $\Seq$ leaves it
+invariant (spatial congruence consumes no time), $\red$ pops it (a step
+is a tick), and its ordering is the arrow of the computation.
+
+\begin{proposition}[Stack consumption is the modulus, lazily realised]
+\label{prop:modulus}
+For a terminating reduction in $\Cost(G)$, the number of cells consumed
+equals the number of forced redexes, which equals the number of cuts
+eliminated --- including those introduced by duplication, each charged
+when forced. The consumed prefix of the temporal stack is therefore an
+exact operational modulus for the cut elimination, realised by running
+the reduction rather than by a separate traversal.
+\end{proposition}
+
+Where eager metering pre-computes a bound by traversing each contractum,
+wrapping by construction lets the reduction \emph{be} the bound
+extraction: the consumed stack is the realised cost, tight by
+construction and lazy. Evaluation is cut elimination; the token stack is
+the extracted modulus; metering at the granularity of forcing makes the
+two coincide.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Signature construction as a section of the quotient}
+\label{sec:signatures}
+
+Tokenisation derives its expressiveness from minting signatures from
+runtime data, so the construction adjoins a constructor turning terms
+into signatures. We isolate what the base theory must provide.
+
+\subsection{Quotient and section}
+
+Let $\Term$ be the free (pre-congruence) syntax of the interacting sort
+and $\cTerm = \Term/{\Seq}$ its quotient by structural congruence. Two
+maps relate them, differing precisely in their relationship to $\Seq$:
+%
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+  \item the \textbf{quotient} $\Term \twoheadrightarrow \cTerm$,
+    \emph{respecting} $\Seq$, invertible up to congruence --- the
+    structure a name constructor exposes when channels are taken up to
+    $\Seq$ (in rho, $\quot{P}$ with $\quot{P}=\quot{Q}\iff P\Seq Q$). It
+    is not a constructor the cost functor requires; it is the congruence
+    the cut is gated modulo.
+  \item a \textbf{section} $\cf : \cTerm \to \Term$, a choice of
+    canonical representative per class. Composing with a
+    collision-resistant digest gives the signature constructor
+    $\hashf = \mathrm{digest}\circ\cf : \cTerm \to \Sig$, a one-way
+    commitment to a representative. It does \emph{not} respect $\Seq$ ---
+    and must not, since a commitment identifying congruent-but-distinct
+    representatives would be no commitment.
+\end{itemize}
+%
+$\Sig$ carries a commutative monoid $(\Sig,*,\nil)$ compounding
+signatures, matching the compound-signature gating of \eqref{eq:R2},
+\eqref{eq:R3}. Signatures never reduce: they are a rewrite-free
+sub-theory meeting the behavioural theory only at the matching guard.
+Hence the $\Seq$-incoherence of $\hashf$ is harmless for bisimulation,
+which factors as ``$P$-bisimulation gated by signature-key matching.''
+
+\begin{remark}[The two axes, disentangled]
+In rho the section and the communication-quotient are the \emph{same}
+operator $\quot{\cdot}$ viewed two ways, which is why the cost story there
+appeared to need ``two axes of reflection.'' They are not two signature
+schemes. One axis ($\quot{\cdot}$ up to $\Seq$) is the communication
+quotient the LTS already carries; the other
+($\hashf=\mathrm{digest}\circ\cf$) is the authentication section the cost
+functor adds. The signature is $\hashf$ alone; the functor needs both
+because metering tracks \emph{what a process does} (quotient) and
+\emph{who committed to it} (section).
+\end{remark}
+
+\subsection{The \texorpdfstring{$\lambda$}{lambda}-calculus supplies a
+section without a channel constructor}
+
+The $\lambda$-calculus has no analogue of $\quot{\cdot}$. This is the
+sharp test, and it passes, because the functor never required a
+\emph{channel} constructor; it required a \emph{section}. For $\lambda$
+the congruence is $\alpha$ and a section is a canonical representative of
+each $\alpha$-class: the de~Bruijn encoding. Thus
+$\hashf_\lambda = \mathrm{digest}\circ(\text{de~Bruijn})$, and a signature
+commits to the de~Bruijn form. The communication-quotient role that
+$\quot{\cdot}$ played in rho is, in $\lambda$, filled not by a constructor
+but by $\alpha$-equality of redexes in the guard. Rho fused section and
+quotient; $\lambda$ pulls them apart, and the construction is identical.
+
+\begin{definition}[Section-equipped]
+\label{def:section}
+An interactive GSLT is \emph{section-equipped} when it comes with a
+computable section $\cf : \cTerm \to \Term$ of its $\Seq$-quotient
+(equivalently, a computable canonical-form function on the interacting
+sort).
+\end{definition}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{The cost endofunctor}
+\label{sec:functor}
+
+\subsection{Continued interactive GSLTs}
+
+\begin{definition}[Continued interactive GSLT]
+\label{def:ciGSLT}
+A \emph{continued interactive GSLT} is an interactive GSLT (an object of
+$\iGSLT$) \emph{equipped with} the following additional structure:
+\begin{enumerate}[label=(\roman*),itemsep=1pt]
+  \item a presentation of its dynamics in symmetric metered-cut form
+    \eqref{eq:metered-cut}, naming the constructors $K, \Kp, \Ke, K'$
+    and the partial contraction $\compute$;
+  \item a section (Definition~\ref{def:section}), i.e.\ it is
+    section-equipped; and
+  \item \emph{wrappability}: the contraction $\compute$ is well-sorted as
+    an operation on wrapped continuations,
+    $\compute : \cdots \to \WT\times\WT$ --- equivalently, $\compute$ is
+    definable on metered thunks, mapping wrapped inputs to wrapped
+    outputs.
+\end{enumerate}
+We write $\ciGSLT$ for the category whose objects are continued
+interactive GSLTs and whose morphisms are theory maps that are
+\textbf{bisimulation-preserving} on the interacting sort and
+\textbf{quote-faithful}: injective on the reachable signature keys.
+\end{definition}
+
+The adjective \emph{continued} thus names a strict enrichment of
+\emph{interactive}: clauses (i)--(iii) are data and conditions added on
+top of an $\iGSLT$-object, not a restriction of it. Forgetting them
+recovers the underlying interactive GSLT.
+
+\begin{definition}[The forgetful functor]
+\label{def:forget}
+Let $U : \ciGSLT \to \iGSLT$ send a continued interactive GSLT to its
+underlying interactive GSLT --- discarding the metered-cut presentation,
+the section, and the wrappability witness --- and act as the identity on
+the underlying theory map of a morphism.
+\end{definition}
+
+\begin{proposition}[The distinction is proper]
+\label{prop:proper}
+$U$ is faithful but neither full nor essentially surjective. Hence
+$\ciGSLT$ is a genuine, proper subcategory of $\iGSLT$: strictly more
+structure on objects, strictly fewer morphisms between them.
+\end{proposition}
+
+\begin{proof}[Discussion]
+\emph{Faithful, not full.} $U$ forgets no information about a morphism's
+action, so it is faithful. It is not full because a $\ciGSLT$-morphism
+must additionally be quote-faithful: an $\iGSLT$-morphism that is
+bisimulation-preserving yet collapses two distinct signature keys is a
+map between the underlying objects with no lift to $\ciGSLT$. (This
+refines the naive expectation that the inclusion be full: the section
+structure on objects induces a real constraint on morphisms, so the
+inclusion is faithful-not-full rather than full.)
+
+\emph{Not essentially surjective.} Not every interactive GSLT admits the
+added structure. Clause (i) requires the dynamics to factor as a
+symmetric cut --- contact $K$ then contraction $\compute$ --- which a
+theory with non-local or unfactorable rewrites need not; clause (ii)
+requires a \emph{computable} section of the $\Seq$-quotient, which a
+theory with undecidable structural congruence lacks; clause (iii)
+requires the contraction to preserve wrapping. An interactive GSLT
+failing any of these is an object of $\iGSLT$ with no preimage under
+$U$.
+\end{proof}
+
+\begin{remark}[$\lambda$ exhibits the distinction]
+\label{rem:lambda-distinction}
+The $\lambda$-calculus is an object of $\iGSLT$ \emph{as such}: terms,
+$\alpha$, $\beta$. It becomes an object of $\ciGSLT$ only once one
+\emph{chooses} the added structure --- the de~Bruijn section for (ii),
+the degenerate-$\Ke$ symmetric-cut presentation of $\beta$ for (i),
+substitution-on-thunks for (iii) (Section~\ref{sec:examples}). The same
+underlying calculus thus sits at both levels, witnessing that
+``continued'' is added structure and not a property read off the
+interactive GSLT alone. This is exactly the role $\lambda$ plays as a
+control: each clause is a real question about it, with a real answer.
+\end{remark}
+
+The morphism conditions are dual and jointly necessary.
+Bisimulation-preservation forbids distinguishing too much
+(behaviourally); quote-faithfulness forbids collapsing too much
+(representationally). A morphism merging two signatures would let a term
+signed by one drain a token minted for the other, so the target would
+gain transitions the source lacked. $\Cost$ lives exactly where both are
+jointly satisfiable.
+
+\begin{remark}[Wrappability replaces traversability]
+The condition (iii) is the wrapped-by-construction successor of the
+earlier ``traversable contractum'' requirement. We no longer need to walk
+a contractum to re-sign its exposed redexes; we need only that the
+contraction be a well-sorted operation on thunks. An opaque contraction
+that destroyed wrapping --- returning bare redexes --- would violate
+(iii) and is excluded, which is the same exclusion as a contraction whose
+cost could not be accounted.
+\end{remark}
+
+\subsection{The functor on objects}
+
+\begin{construction}[$\Cost$ on objects]
+\label{con:object}
+For $G = (\Sigma,E,R,K,\Kp,\Ke,K',\compute,\cf) \in \ciGSLT$, let
+$\Cost(G)$ be the continued interactive GSLT with:
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+  \item \textbf{signature} $\Sigma$ extended by $\Sig$ (with
+    $\hashf=\mathrm{digest}\circ\cf$, monoid $*,\nil$); the wrapped-term
+    sort $\WT$ with $\sgn{\cdot}{s}$; the token-stack sort $\Tok$ with
+    $\cons$; the polymorphic typing of $K$ over wrapped-term/stack and
+    stack/stack pairs; and, crucially, the re-sorting of every
+    continuation slot of $\Kp,\Ke$ to $\WT$;
+  \item \textbf{equations} $E$ with the commutative-monoid equations on
+    $(\Sig,*,\nil)$ and the inertness of $\Sig$ and $\Tok$ under $\red$;
+  \item \textbf{rewrites} the gated family
+    \eqref{eq:R1}--\eqref{eq:R3}, with the \emph{unchanged} contraction
+    $\compute$ (now read at sort $\WT\times\WT$);
+  \item \textbf{section} the evident lift of $\cf$ ignoring inert sorts.
+\end{itemize}
+\end{construction}
+
+\begin{proposition}[Closure]
+\label{prop:closure}
+$\Cost(G)$ is again a continued interactive GSLT.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+The gated rules are themselves in symmetric metered-cut form: the outer
+polymorphic $K$ is contact, the signed redex and the token stack are the
+two operands, and $\compute$ (with the stack tail) is the contraction.
+$\Cost(G)$ is section-equipped by the lifted $\cf$, and wrappable because
+$\compute$ preserves $\WT$ by Lemma~\ref{lem:subject}. All three clauses
+of Definition~\ref{def:ciGSLT} hold.
+\end{proof}
+
+\subsection{The functor on morphisms}
+
+\begin{construction}[$\Cost$ on morphisms]
+For $f : G \to H$ in $\ciGSLT$, let $\Cost(f)$ act as $f$ on the
+interacting sort and transport the adjoined structure along $f$:
+signatures by $\hashf_H\circ f$ on canonical forms, wrappers and stacks
+componentwise, the polymorphic $K$ structurally.
+\end{construction}
+
+\begin{theorem}[$\Cost$ is an endofunctor on $\ciGSLT$]
+\label{thm:functor}
+$\Cost : \ciGSLT \to \ciGSLT$ preserves identities and composition, and
+$\Cost(f)$ is a $\ciGSLT$-morphism whenever $f$ is.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Object closure is Proposition~\ref{prop:closure}; identity and
+composition preservation are immediate from the componentwise definition.
+By the factoring of bisimulation as ``$P$-bisimulation gated by key
+matching,'' and since $f$ is $P$-bisimulation-preserving and
+quote-faithful, $\Cost(f)$ preserves a gated transition iff $f$ preserves
+the underlying $P$-transition and respects the key match --- both hold.
+Quote-faithfulness transports along the injective $\hashf_H$.
+\end{proof}
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Graded adequacy}
+\label{sec:adequacy}
+
+The token stack grades transitions of $\Cost(G)$ by the signature monoid
+$(\Sig,*,\nil)$: a forced step is labelled by the signature(s) it
+consumes. Applying OSLF --- which auto-generates a Hennessy--Milner logic
+from a GSLT with an adequacy theorem --- to the graded transition system
+of $\Cost(G)$ yields a \emph{graded} Hennessy--Milner logic with
+modalities $\langle a\rangle_s$ indexed by the consumed signature.
+
+\begin{theorem}[Graded adequacy, schematic]
+\label{thm:adequacy}
+For $\Cost(G)$ the graded Hennessy--Milner logic generated by OSLF is
+adequate for quote-faithful bisimulation: two configurations satisfy the
+same graded-HML formulae iff they are quote-faithfully bisimilar.
+\end{theorem}
+
+This also explains the throughput improvement mechanically. In the
+translation presentation, fuel acquisition was an encoded multi-step
+protocol on auxiliary channels; under $\Cost$ it is a single primitive
+graded transition --- the grading absorbs the sub-protocol into the step
+relation (\emph{protocol fusion}). With wrapping by construction the
+fusion is total: there is no re-wrapping sub-step either, only forcing.
+Together with Proposition~\ref{prop:modulus}, phlogiston is the conserved
+grade, invariant under $\Seq$ (signatures inert), strictly consumed along
+$\red$ (forcing drains the temporal stack), in the order recorded by
+$\cons$.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{Two anchoring instances}
+\label{sec:examples}
+
+\subsection{Communication (rho): the symmetric case}
+
+Instantiate at the rho calculus: $K = {\Par}$ (associative--commutative);
+$\Kp = \mathrm{for}$ with $I\sim(y,x)$ and continuation
+$C_{\mathrm p} = T = \sgn{P}{s_{\mathrm p}}$;
+$\Ke = {!}$ with $J\sim x$ and continuation
+$C_{\mathrm e} = U = \sgn{Q}{s_{\mathrm e}}$;
+$\compute$ semantic substitution; $\cf$ a normal form for the
+$\Par$-congruence. Both operands are genuine introductions carrying
+wrapped continuations --- this is the symmetric cut in full. Rule
+\eqref{eq:R1} reads
+%
+\[
+  \sgn{\mathrm{for}(y\!\leftarrow\! x)\,T \,\Par\, x!(U)}{s}
+  \;\Par\; s\cons S
+  \ \red\
+  \subst{T}{\quot{U}}{y} \;\Par\; S,
+\]
+%
+and since $T = \sgn{P}{s_{\mathrm p}}$ and $U = \sgn{Q}{s_{\mathrm e}}$,
+the residual $\subst{T}{\quot{U}}{y} =
+\sgn{\subst{P}{\quot{\sgn{Q}{s_{\mathrm e}}}}{y}}{s_{\mathrm p}}$ is again
+a wrapped thunk, to be forced later by a token keyed to $s_{\mathrm p}$.
+No re-wrapping occurs; the AC structure of $\Par$ supplies the split-redex
+and split/combined-token cases \eqref{eq:R2}, \eqref{eq:R3} up to $\Seq$,
+recovering the earlier five-rule lattice.
+
+\subsection{\texorpdfstring{$\beta$}{beta}-reduction: the degenerate case}
+
+Instantiate at the $\lambda$-calculus: $K = \mathrm{App}$ (free, no
+equations); $\Kp = \lambda$ with $I = x$ and wrapped body
+$C_{\mathrm p} = \sgn{M}{s_{\mathrm p}}$. The argument is not a binding
+co-introduction, so $\Ke$ is \emph{degenerate}: empty bound part, the
+argument being its own wrapped continuation
+$C_{\mathrm e} = \sgn{N}{s_{\mathrm e}}$. The contraction is substitution,
+$\compute(x,-,\sgn{M}{s_{\mathrm p}},\sgn{N}{s_{\mathrm e}}) =
+(\subst{\sgn{M}{s_{\mathrm p}}}{\sgn{N}{s_{\mathrm e}}}{x},\ \nil)$. Rule
+\eqref{eq:R1} reads
+%
+\[
+  \mathrm{App}\!\bigl(
+    \sgn{\mathrm{App}(\lambda x.\sgn{M}{s_{\mathrm p}},\,
+                      \sgn{N}{s_{\mathrm e}})}{s},
+    \; s\cons S\bigr)
+  \ \red\
+  \mathrm{App}\!\bigl(\subst{\sgn{M}{s_{\mathrm p}}}{\sgn{N}{s_{\mathrm e}}}{x},\; S\bigr),
+\]
+%
+with $s = \hashf_\lambda$ of the de~Bruijn form of the redex. Every copy
+of $\sgn{N}{s_{\mathrm e}}$ that substitution places into $M$ carries its
+wrapper, so duplicated redexes are guarded; and where $x$ stood in head
+position, the landed $\sgn{N}{s_{\mathrm e}}$ guards the newly created
+application --- both by construction, with no traversal
+(Remark~\ref{rem:dup}). Token supply is \emph{not} function application;
+the temptation to write $(\sgn{\mathrm{App}(\lambda x.M,N)}{s}\; s)$ feeds
+the key as a value and gates nothing. The token sits at the contact site
+and is consumed by forcing.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{The cost monad and two adjunctions}
+\label{sec:monad}
+
+Three further facts organise the construction: iterated cost accounting
+flattens, so $\Cost$ carries a monad structure; and that monad relates to
+its base through two different adjunctions --- one structural, one
+computational --- whose embeddings have opposite characteristics.
+
+\subsection{Flattening: \texorpdfstring{$\Cost$}{Cost} is a monad}
+
+Applying the construction twice yields $\Cost^2(G) = \Cost(\Cost(G))$: a
+calculus that meters the metering of $G$. Its signatures are signatures
+of signed terms, its stacks are stacks of stacks, and its wrappers nest as
+$\sgn{\sgn{P}{s_2}}{s_1}$. There is a canonical way to collapse the two
+layers into one, and --- tellingly --- it is assembled entirely from the
+two monoids already present in the construction.
+
+\begin{construction}[Unit and multiplication]
+\label{con:monad}
+Define the \emph{unit} $\eta_G : G \to \Cost(G)$ to wrap each term with
+the unit signature and present it against the freely available unit
+token,
+\[
+  \eta_G(P) \;=\; \sgn{P}{\nil}.
+\]
+Since $\nil$ is the unit of $(\Sig,*,\nil)$, an $\nil$-keyed redex fires
+without net resource; thus $\eta_G$ embeds $G$ as the \emph{cost-free
+fragment} of $\Cost(G)$ --- the metered calculus restricted to
+trivially-funded interactions. (This is consistent with the source/image
+discipline of Section~\ref{sec:wrapped}: $\eta$ is precisely the wrapping
+that installs apparatus at zero charge.)
+
+Define the \emph{multiplication} $\mu_G : \Cost^2(G) \to \Cost(G)$ to
+flatten the two layers by
+\begin{enumerate}[label=(\roman*),itemsep=1pt]
+  \item \textbf{multiplying nested signatures} in $\Sig$,
+    $\sgn{\sgn{P}{s_2}}{s_1} \mapsto \sgn{P}{\,s_1 * s_2\,}$; and
+  \item \textbf{concatenating the stack-of-stacks} into a single stack ---
+    the free-monoid (list) multiplication on $\Tok$.
+\end{enumerate}
+The outer account is thereby merged into the inner: the grade of the
+flattened redex is the product of the two grades, and its temporal stack
+is the concatenation, in the order the two layers would have drained them.
+\end{construction}
+
+\begin{proposition}[The cost monad]
+\label{prop:monad}
+$(\Cost, \eta, \mu)$ is a monad on $\ciGSLT$. Its laws descend from the
+laws of the two constituent monoids: the unit laws from
+$s * \nil = s = \nil * s$ together with the singleton/empty laws of the
+list monad, and associativity from associativity of $*$ and of list
+concatenation.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+$\eta$ and $\mu$ are $\ciGSLT$-morphisms. Each is quote-faithful, since
+$*$ is injective in each argument up to the collision-resistance of the
+digest, and bisimulation-preserving, since flattening neither creates nor
+destroys gated transitions --- it relabels each by the product grade and
+consolidates the (spatially commutative, temporally sequential)
+consumption order consistently. Naturality is the componentwise action on
+the adjoined sorts. The monad identities
+$\mu \circ \Cost\eta = \id = \mu \circ \eta_{\Cost}$ reduce to the unit
+laws of $*$ and of concatenation; $\mu \circ \Cost\mu = \mu \circ
+\mu_{\Cost}$ reduces to their associativity.
+\end{proof}
+
+\begin{remark}[A genuine, non-idempotent resource monad]
+$\Cost$ is not idempotent: $\mu_G$ is no isomorphism, because
+concatenating two stacks forgets the boundary between them and
+multiplying two grades forgets the factorisation. Flattening is a true
+\emph{merge} of two resource accounts, not the collapse of a redundant
+copy. This is the expected signature of a resource monad --- re-metering a
+metered calculus yields a finer account, which $\mu$ then consolidates ---
+and it distinguishes $\Cost$ from idempotent ``closure'' monads.
+\end{remark}
+
+The Eilenberg--Moore algebras of $\Cost$ are continued interactive GSLTs
+equipped with a coherent \emph{discharge} map $\alpha : \Cost(A) \to A$
+interpreting tokens --- a calculus that knows how to ``pay'' --- and the
+Kleisli category is that of cost-accounted translations between calculi.
+The structural adjunction below is the free resolution generating the
+monad; the Turing-complete adjunction is a separate phenomenon.
+
+\subsection{Adjunction I: install \texorpdfstring{$\dashv$}{-|} forget}
+
+Let $\CostC$ be the category of \emph{cost-accounted} continued
+interactive GSLTs: objects carry the installed apparatus
+($\Sig$, $\Tok$, the wrapper, the gated family), morphisms preserve it.
+A forgetful functor $\Forget : \CostC \to \ciGSLT$ strips the apparatus,
+returning the underlying un-metered calculus; a free functor
+$\Free : \ciGSLT \to \CostC$ installs it --- exactly
+Construction~\ref{con:object}.
+
+\begin{proposition}[Free--forgetful resolution]
+\label{prop:adj1}
+$\Free \dashv \Forget$, with unit $\eta$ of Construction~\ref{con:monad},
+and the induced monad $\Forget \circ \Free$ on $\ciGSLT$ is $\Cost$.
+\end{proposition}
+
+The embedding is \emph{structural and strict}: $\Free$ adjoins sorts and
+rules, $\Forget$ erases them on the nose. Crucially, forgetting is
+\emph{not} behaviour-preserving in the metering sense --- erasing the
+apparatus removes the gating, so $\Forget\,\Free\,G$ runs $G$'s
+interactions \emph{without friction}. The structural resolution answers
+``what apparatus was added?'' and lets us remove it; it does not claim the
+metered and un-metered dynamics agree. Its character is
+\textbf{structure-preserving, behaviour-altering}.
+
+\subsection{Adjunction II: internalise \texorpdfstring{$\dashv$}{-|} include, over a universal base}
+
+Restrict to the full subcategory $\ciGSLTtc \hookrightarrow \ciGSLT$ of
+\emph{Turing-complete} continued interactive GSLTs. For such a $G$, the
+entire metering apparatus of $\Cost(G)$ --- signature equality, stack
+maintenance, gating --- is computable, hence \emph{encodable in $G$
+itself}. This yields an \emph{internalisation}
+\[
+  \Imp_G : \Cost(G) \longrightarrow G,
+\]
+realising the cost-accounted semantics inside the un-metered but
+universal base by simulation: tokens become encoded data, the gated rules
+become an interpreter loop, and each forced step is simulated by a finite
+run of $G$.
+
+\begin{proposition}[Internalisation as an adjoint retraction]
+\label{prop:adj2}
+For $G \in \ciGSLTtc$ the internalisation satisfies
+$\Imp_G \circ \eta_G \approx \id_G$ up to weak bisimulation, exhibiting
+$\Cost(G)$ as a behavioural retract of $G$. In the bicategory of
+continued interactive GSLTs, simulations, and simulation transformations,
+$\eta_G \dashv \Imp_G$ is an adjoint retraction: the unit
+$\eta_G$ is an (iso-up-to-bisimulation) section and the counit is the
+collapsing simulation $\eta_G \circ \Imp_G \Rightarrow \id_{\Cost(G)}$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Turing completeness of $G$ gives a computable encoding of the finite data
+and decidable guards of $\Cost(G)$; standard interpreter constructions
+make $\Imp_G$ a weak simulation that reflects every gated transition.
+Composing with $\eta_G$ (which installs apparatus at unit cost) returns
+$G$'s dynamics up to the administrative reductions of the interpreter,
+i.e.\ up to weak bisimulation. The triangle identities hold up to the
+2-cells witnessing these weak bisimulations, which is the content of an
+adjunction internal to the simulation bicategory.
+\end{proof}
+
+The embedding is the mirror image of Adjunction~I. It is
+\emph{behaviour-preserving} --- the simulation faithfully reproduces every
+gated step --- but \emph{structure-encoding rather than
+structure-preserving}: the clean sorts $\Sig, \Tok$ dissolve into encoded
+data, and the agreement holds only up to weak bisimulation, since the
+interpreter interposes administrative reductions. Its character is
+\textbf{behaviour-preserving, structure-dissolving}, exactly opposite to
+Adjunction~I.
+
+\begin{remark}[Two senses of conservativity, and where they hold]
+The two adjunctions express two senses in which cost accounting is
+conservative over its base. Structurally (Adjunction~I, available for
+every object) the apparatus is a detachable layer. Computationally
+(Adjunction~II) the apparatus is already expressible, so metering is a
+definitional extension up to weak bisimulation --- but this holds
+\emph{only} when the base is Turing complete. The second is therefore a
+genuine property of the object: universal interactive theories are
+exactly those whose cost-accounted versions fold back into them, a
+distinction invisible to the purely structural resolution.
+\end{remark}
+
+The cost-accounting move of the rho calculus is an instance of a generic
+endofunctor on the category $\ciGSLT$ of \emph{continued} interactive
+GSLTs: interactive theories presented as a symmetric metered cut
+(contact $K$, two (co-)introductions $\Kp(I,C_{\mathrm p})$,
+$\Ke(J,C_{\mathrm e})$, contraction $\compute$), equipped with a
+computable section of their structural-congruence quotient, and with
+continuation slots sorted as \emph{wrapped terms by construction}. The
+functor $\Cost$ signs terms, adjoins a token stack, makes the contact
+constructor $K$ polymorphic, and replaces the cut by a gated family. Its
+soundness is a sorting invariant: every redex is born inside a wrapper,
+reduction preserves wrapping (Lemma~\ref{lem:subject}), so no computation
+proceeds for free and the contraction need not be lifted --- the
+cost-accounting steps only ever unwrap. Metering is thereby lazy, paying
+for work performed rather than exposed, and the temporal token stack is
+consumed exactly in step with reduction, realising the modulus of cut
+elimination as the run length. The cons operator is extension in time,
+dual to the spatial extension of $K$; OSLF lifts $\Cost(G)$ to a graded
+Hennessy--Milner logic with adequacy ``graded-HML equivalence equals
+quote-faithful bisimulation.'' The $\lambda$-calculus, with $K$ and the
+section visibly distinct and $\Ke$ degenerate, shows the construction
+requires a section --- de~Bruijn canonicalisation --- not a channel
+constructor; rho's apparent need for two axes of reflection was the
+self-overlap of one operator serving as both quotient and section.
+
+Finally, the construction is deliberately sited one rung below the
+ambient category: $\Cost$ is an endofunctor on $\ciGSLT$, not on
+$\iGSLT$, and the forgetful functor $U : \ciGSLT \to \iGSLT$
+(Definition~\ref{def:forget}, Proposition~\ref{prop:proper}) records that
+``continued'' is a proper structural enrichment of ``interactive.'' The
+content of the note is therefore as much about \emph{where} cost
+accounting lives as about what it does: an interactive GSLT is a setting
+for interaction; a continued interactive GSLT is one whose interaction is
+presented as a meterable cut, and it is precisely on these that the cost
+endofunctor exists --- indeed, as a monad
+(Section~\ref{sec:monad}), since iterated metering flattens. Its two
+resolutions sharpen the picture: the structural free--forgetful
+adjunction shows the apparatus is detachable, while over a Turing-complete
+base the internalisation adjunction shows it is already expressible, so
+that cost accounting is a definitional extension up to weak bisimulation.
+That second adjunction holds only for universal bases, and so quietly
+begins to sort interactive theories by a structural property --- a thread
+we leave for the sequel.
+
+\end{document}
