@@ -57,6 +57,8 @@
 % signatures and tokens
 \newcommand{\comp}{\mathbin{*}}
 \newcommand{\hashf}{\texttt{\#}}
+\newcommand{\bigParop}{\mathop{\big|}\displaylimits}
+\newcommand{\bigCompop}{\mathop{\text{\Large$\ast$}}\displaylimits}
 
 % structural equivalence and reduction
 \newcommand{\Seq}{\equiv_{\!S}}
@@ -89,31 +91,39 @@
 \maketitle
 
 \begin{abstract}
-We present a revision of the rho calculus in which cost
-accounting is not an external extension to be translated back
-into the core language, but is \emph{folded directly into the
-grammar and operational semantics} of the calculus itself.
-Signatures become a species of name alongside quoted processes;
-token stacks become first-class terms; and the
-for-comprehension and send operators range over \emph{signed
-terms} rather than bare processes.  The result is a calculus in
-which every communicating process must engage the cost layer
---- embodying the principle of \emph{valuable friction} at the
-syntactic level.  The signature grammar is parameterized by a
-type variable~$G$ representing the cryptographic backend,
-making the calculus generic over signature schemes.
+We construct a cost-accounted version of the rho calculus by
+exhibiting the rho calculus as an object of the category
+\textbf{ciGSLT} of continued interactive graph-structured
+lambda theories and then applying the cost
+endofunctor~$\mathcal{C}$ to it.  The instantiation identifies
+the rho interaction cut ($K = |$, $K_p = \mathbf{for}$,
+$K_e = {!}$, contraction = Milner's pseudo-application);
+applying~$\mathcal{C}$ produces a calculus in which signatures
+are a species of name, token stacks are first-class terms, and
+every continuation is a metered thunk by construction; and
+Turing completeness lets us translate the result back to pure
+rho via the internalisation adjunction.  The signature grammar
+is parameterized by a type variable~$G$ representing the
+cryptographic backend, making the calculus generic over
+signature schemes.  The object-capability analysis of the
+general construction ensures that the AC nature of parallel
+composition does not introduce ambient authority: located
+resource stacks and the nearness predicate (channel-name
+equality) confine authority to holders of matching channel
+names.
 
 We identify the for-comprehension as the transaction primitive
 of the calculus: the binding specification is the transaction,
 the substitution is the witness, and application to the
 continuation is the state update.  Individual transactions are
-atomic by construction.  Multi-step transactions are made atomic
-by a decidable static analysis at deployment-acceptance time: a
+atomic by construction (the subject-reduction lemma for
+wrapping).  Multi-step transactions are made atomic by a
+decidable static analysis at deployment-acceptance time: a
 linear resource proof verifying that every for-comprehension in
 the deployment's call graph is funded before any step executes.
 
 Because the rho calculus is the formal core of Rholang, this
-revised calculus serves as the design specification for
+instantiation serves as the design specification for
 rearchitecting phlogiston accounting in Rholang~1.4 (MeTTaIL)
 and the F1R3FLY platform.
 \end{abstract}
@@ -134,54 +144,102 @@ computation and storage model of the F1R3FLY platform.
 
 Rholang's cost-accounting mechanism --- the \emph{phlogiston}
 (phlo) system --- gates every deploy behind a token balance
-associated with a digital signature.  In previous work, this
-mechanism was specified as an \emph{extension} of the rho
-calculus: additional syntax for signatures and tokens, and
-additional rewrite rules for gated communication.  One could
-then \emph{translate} the extension back into the pure rho
-calculus, demonstrating that cost accounting is expressible
-within the language.
+associated with a digital signature.  In a companion
+paper~\cite{CostEndofunctor} we showed that this construction
+is an instance of a generic endofunctor~$\mathcal{C}$ on the
+category \textbf{ciGSLT} of \emph{continued interactive
+graph-structured lambda theories}: interactive theories
+presented as an \emph{interaction cut} (contact constructor~$K$,
+two introductions $K_p(I, C_p)$ and $K_e(J, C_e)$ meeting
+along matching interaction surfaces, contraction
+$\mathit{compute}$), equipped with a computable section of
+their structural-congruence quotient and with continuation
+slots sorted as wrapped terms by construction.
 
-This paper takes the next step.  Rather than treating cost
-accounting as an external layer and then recovering it via
-translation, we \emph{fold it directly into the calculus}.  The
-key design moves are:
+The present paper constructs a cost-accounted rho calculus by
+exhibiting the rho calculus as an object of \textbf{ciGSLT} and
+applying~$\mathcal{C}$ to it, developed in sufficient detail to
+serve as the design specification for rearchitecting phlogiston
+accounting in Rholang~1.4 (MeTTaIL) and the F1R3FLY platform.
+The development proceeds in three phases:
+
+\begin{enumerate}[label=\textbf{Phase \arabic*.}]
+  \item \textbf{Instantiation.}  We exhibit the rho calculus
+    as an object of \textbf{ciGSLT} by identifying the
+    interaction-cut components: $K = \Par$ (associative--commutative), $K_p = \forc$ with surface
+    $I = x$ and program continuation $C_p = \lambda y.\,T$,
+    $K_e = {!}$ with surface $J = x$ and degenerate
+    environment continuation $C_e = -$, and $\mathit{compute}$
+    is Milner's pseudo-application (semantic substitution with
+    empty release).  The section is $\hashf\!{} = \mathit{digest}
+    \circ \mathit{cf}$ where $\mathit{cf}$ is a canonical-form
+    function on processes.
+
+  \item \textbf{Cost construction.}  Applying the endofunctor
+    $\mathcal{C}$ to this instantiation produces the
+    cost-accounted rho calculus: signatures become a species
+    of name, token stacks become first-class terms, the
+    $\forc$/$!$ operators range over signed terms, and $\Par$
+    becomes polymorphic over signed-term/stack pairs.  The five
+    rewrite rules are the gated family (R1)--(R3) of the
+    general construction, specialised to the rho interaction cut.
+
+  \item \textbf{Internalisation.}  Because the rho calculus is
+    Turing-complete, the internalisation adjunction
+    (Adjunction~II of~\cite{CostEndofunctor}) applies: the
+    entire cost-accounting apparatus can be encoded back into
+    the pure rho calculus via a source-to-source translation.
+    This translation is a compositional compiler pass that
+    emits pure Rholang~1.1, giving the platform immediate
+    access to cost-accounted semantics while the native
+    implementation is developed.
+\end{enumerate}
+
+\noindent
+The key design moves, now understood as consequences of the
+general construction, are:
 
 \begin{enumerate}[label=(\roman*)]
   \item \textbf{Signatures are names.}  The name sort is
     extended so that $x, y \;::=\; \quot{T} \mid s$, where~$s$
     ranges over signatures.  Signatures and quoted processes
     coexist as first-class channel names.
-  \item \textbf{Two axes of reflection.}  Alongside the
-    structural quoting operator~$\quot{T}$ (the code of a
-    signed term used as a channel), a \emph{cryptographic
-    quoting}
-    operator~$\hashf P$ (the hash of a process) appears in the
-    signature grammar.  This gives the calculus two axes of
-    reflection: one for communication, one for authentication.
-  \item \textbf{Signed terms pervade the syntax.}  The
-    for-comprehension and send take \emph{signed terms}~$T, U$
-    as their body and payload respectively, rather than bare
-    processes.  One cannot write a communicating process without
-    engaging the cost layer.
+  \item \textbf{Section and quotient disentangled.}  In the
+    general construction~\cite{CostEndofunctor}, the section
+    $\hashf = \mathit{digest} \circ \mathit{cf}$ (authentication)
+    and the structural-congruence quotient (communication) are
+    independent.  In rho, the operator~$\quot{\cdot}$ serves
+    both roles, which is why the cost story previously appeared
+    to need ``two axes of reflection.''  They are not two
+    signature schemes; one axis ($\quot{\cdot}$ up to~$\Seq$)
+    is the communication quotient the LTS already carries, the
+    other ($\hashf = \mathit{digest} \circ \mathit{cf}$) is the
+    authentication section the cost functor adds.
+  \item \textbf{Signed terms pervade the syntax.}  Every
+    continuation slot is re-sorted to the wrapped-term sort~$T$,
+    so every redex is born inside a wrapper $\signed{\cdot}{s}$
+    --- the ``wrapping by construction'' discipline of the
+    general theory.
   \item \textbf{Token stacks are first-class terms.}  Token
-    stacks $S \;::=\; () \mid s : S$ are included in the
-    signed-term grammar, so they participate in reduction on
-    equal footing with signed processes.
-  \item \textbf{Parametric polymorphism.}  Parallel composition
-    is overloaded: $P \Par Q$ composes processes, $T \Par U$
-    composes signed terms.  The operator is parametrically
-    polymorphic in the sort it composes.
+    stacks $S \;::=\; () \mid s : S$ are the temporal
+    monoid of the general construction (Section~4
+    of~\cite{CostEndofunctor}), reifying the computation's time
+    axis as a term.
+  \item \textbf{$\Par$ is polymorphic.}  Parallel composition
+    is the interaction constructor~$K$, made polymorphic by
+    the cost functor to range over signed-term/stack and
+    stack/stack pairs (Remark~2.2 of~\cite{CostEndofunctor}:
+    $K$ is the only constructor that needs overloading).
   \item \textbf{Generic cryptography.}  The signature grammar
     is parameterized by a type variable~$G$ representing the
-    ground signature scheme (Ed25519, secp256k1, etc.),  making
-    the calculus independent of any particular cryptographic
-    backend.
+    ground signature scheme (Ed25519, secp256k1, OQS, etc.),
+    making the calculus independent of any particular
+    cryptographic backend.
 \end{enumerate}
 
 \noindent
 Because the rho calculus \emph{is} the core of Rholang, this
-revised calculus is not a theoretical curiosity --- it is the
+instantiation is not a theoretical exercise --- it is the
 design specification for rearchitecting phlogiston accounting in
 Rholang~1.4 (MeTTaIL) and the F1R3FLY platform.
 
@@ -422,6 +480,126 @@ of token economies, including ERC-20-like fungible token
 contracts, which become expressible as standard
 cost-accounted Rholang programs --- a direction we develop
 in a companion paper.
+
+%% ══════════════════════════════════════════════════════════════════
+\section{The Rho Calculus as a Continued Interactive GSLT}
+\label{sec:instantiation}
+
+This section presents the rho calculus as an object of
+\textbf{ciGSLT} by identifying each component of the
+interaction-cut presentation~\cite{CostEndofunctor}.
+
+\subsection{The Interaction-Cut Components}
+\label{sec:cut-components}
+
+\begin{definition}[Rho interaction cut]
+  \label{def:rho-cut}
+  The rho calculus is a continued interactive GSLT with:
+  \begin{description}[style=nextline, leftmargin=2em, nosep]
+    \item[Interaction constructor $K = \Par$.]
+      Associative--commutative (an unordered bag of processes).
+      This is the spatial monoid of the construction: it records
+      what is in contact with what.
+    \item[Program introduction $K_p = \forc$.]
+      The for-comprehension $\recv{y}{x}{T}$, with interaction
+      surface $I = x$ (the channel) and program continuation
+      $C_p = \lambda y.\,T$ (the abstraction on~$y$ over the
+      continuation~$T$).
+    \item[Environment introduction $K_e = {!}$.]
+      The send $\send{x}{U}$, with interaction surface
+      $J = x$ (the same channel) and environment continuation
+      $C_e = -$ (degenerate: asynchronous output carries no
+      sender continuation).
+    \item[Surface match: $\mathit{near}(I, J)$.]
+      Name equality of channels: $I = x = J$.  Because $K = \Par$
+      is AC, the surface must be carried nominally (by the
+      channel name) rather than structurally (by position) ---
+      see Section~\ref{sec:ocap-authority}.
+    \item[Contraction: $\mathit{compute}$.]
+      Milner's pseudo-application: semantic substitution with
+      empty release.
+      $\mathit{compute}(x, x, \lambda y.\,T, U) = (T\{\quot{U}/y\}, -)$.
+      The datum~$U$ migrates from the environment continuation
+      into the program continuation through the binder~$y$.
+      There is no environment residual (asynchronous output).
+    \item[Section: $\hashf = \mathit{digest} \circ \mathit{cf}$.]
+      A collision-resistant digest composed with a canonical-form
+      function~$\mathit{cf}$ on the $\Seq$-quotient of
+      processes.  This is the authentication section; the
+      communication quotient $\quot{\cdot}$ up to~$\Seq$ is a
+      separate, pre-existing structure.
+    \item[Wrappability.]
+      The contraction $\mathit{compute}$ is well-sorted on
+      wrapped continuations: substituting a wrapped term
+      $\signed{Q}{s}$ into a position yields a wrapped term,
+      so $\mathit{compute}$ preserves the sort~$T$ for free.
+  \end{description}
+\end{definition}
+
+\begin{remark}[Asynchronous output as degenerate $K_e$]
+  \label{rem:async}
+  In the synchronous $\pi$-calculus, the environment continuation
+  is the pair $C_e = [Q_1, Q_2]$ of sent process and sender
+  continuation.  Rholang's asynchronous output has $C_e = -$:
+  the sender does not wait, so there is no continuation.  This
+  is the temporal counterpart of $\lambda$'s degenerate
+  environment surface: where $\lambda$ has a degenerate
+  (structurally carried) surface, rho has a degenerate (absent)
+  environment residual.
+\end{remark}
+
+\subsection{Object Capabilities and Ambient Authority}
+\label{sec:ocap-authority}
+
+Because $K = \Par$ is associative--commutative, the interaction
+surfaces must be carried \emph{nominally} rather than
+\emph{structurally}~\cite{CostEndofunctor}.  In a rigid $K$
+(such as $\mathit{App}$ in $\lambda$), position is
+unforgeable and the context $K([\,], S)$ is itself the
+capability to draw on the stack~$S$ --- authority is
+structural.  But in the AC bag of rho, position is
+non-exclusive: any process in the bag floats into adjacency
+with any stack.  Taking mere adjacency as authority would be
+\emph{ambient authority}~\cite{MillerYeeShapiro2003,
+MillerPhD2006} --- the antithesis of an object-capability
+discipline.
+
+The recovery is the \emph{nearness predicate}:
+$\mathit{near}(I, J)$ requires that the receiver's surface
+(channel name~$x$) match the token's surface before
+interaction fires.  Authority is conferred not by position in
+the bag but by possession of a matching channel name --- which,
+for unforgeable channels created by $\mathbf{new}$, is a
+genuine capability.
+
+\begin{definition}[Located resource stack]
+  \label{def:located-stack}
+  A resource stack \emph{located at a surface}
+  $S(I, s : S')$ is a stack indexed by the interaction
+  surface~$I$ (a channel name) that may draw on it.  In rho,
+  this is a token stack sitting on a specific channel: only
+  processes holding a matching channel name can consume tokens
+  from it.
+\end{definition}
+
+\noindent
+The located stack turns ``reachable by whatever is adjacent''
+into ``reachable by a matching surface.''  This is the form on
+which the linear resource proofs of
+Section~\ref{sec:linear-proof} operate: the static analysis
+checks token availability \emph{per located surface}, not
+globally over all processes in the bag.
+
+\begin{remark}[Funding slots as located stacks]
+  The funding-slot pattern of Section~\ref{sec:funding-slots} is
+  precisely a located resource stack: the unforgeable channel
+  created by $\mathbf{new}$ is the surface~$I$, and the token
+  stack deposited on it is $S(I, \cdot)$.  The
+  object-capability security of the funding slot --- only
+  processes explicitly given the channel name can deposit or
+  withdraw tokens --- is a consequence of the general
+  ocap analysis of the AC case.
+\end{remark}
 
 %% ══════════════════════════════════════════════════════════════════
 \section{The Cost-Accounted Rho Calculus}
@@ -784,6 +962,286 @@ gated by token consumption}.  The variations arise from the
 granularity of signing (whole redex vs.\ split processes) and
 the granularity of token holding (split vs.\ combined).
 
+\subsection{Cost Accounting for Joins}
+\label{sec:joins}
+
+Rholang is based not on the binary rho calculus but on a rho
+calculus with \emph{joins}: a single for-comprehension may
+await messages on several channels at once, firing only when
+all are present:
+\begin{equation}
+  \recv{y_1}{x_1}{} \,\&\, \cdots \,\&\, \recv{y_N}{x_N}{}\,P
+  \;\Par\; \send{x_1}{Q_1} \;\Par\; \cdots \;\Par\; \send{x_N}{Q_N}
+  \;\red\;
+  P\{\quot{Q_1}/y_1, \ldots, \quot{Q_N}/y_N\}
+  \label{eq:join-rule}
+\end{equation}
+In interaction-cut terms (Section~\ref{sec:instantiation}), a
+join is an \emph{$N$-ary cut}: one receiver introduction with
+$N$ interaction surfaces $x_1, \ldots, x_N$, and $N$ separate
+sender introductions, each matching one surface.  The
+contraction fires only when all $N$ rendezvous succeed
+simultaneously --- the join is an all-or-nothing atomic
+synchronization across $N$ channels.  This built-in atomicity
+is what makes cost accounting for joins both richer and, in a
+precise sense, safer than the binary case.
+
+\subsubsection{The Base Cases}
+
+\paragraph{Case J1 (whole-join signing, single funding signature).}
+The entire join redex --- the receiver together with all $N$
+sends --- is wrapped under a single signature~$s_1$, and a
+single token funds it:
+\begin{multline}
+  \signed{
+    (\recv{y_1}{x_1}{} \,\&\, \cdots \,\&\, \recv{y_N}{x_N}{})
+    \signed{P}{s_2}
+    \Par \send{x_1}{U_1} \Par \cdots \Par \send{x_N}{U_N}
+  }{s_1}
+  \Par s_1 : S
+  \\
+  \red\;
+  \signed{P\{\quot{U_1}/y_1, \ldots, \quot{U_N}/y_N\}}{s_2}
+  \Par S
+  \label{eq:join-J1}
+\end{multline}
+The whole $N$-way rendezvous-and-match is a \emph{single}
+funded event under~$s_1$: one token consumed, regardless
+of~$N$.  The continuation~$P$ carries its own
+signature~$s_2$ (the linear-transfer pattern of
+Section~\ref{sec:sugar}: $s_1$ funds the join, $s_2$ funds the
+continuation), and the substitutions for all $N$ bindings are
+applied simultaneously.  This is the join analogue of Rule~1.
+
+\paragraph{Case J2 (separately-signed participants, single combined token).}
+Each participant is signed independently --- the receiver
+under~$s_1$, each sender~$\send{x_i}{U_i}$ under its own~$t_i$
+--- and a single combined token keyed to the compound signature
+funds the join:
+\begin{multline}
+  \signed{
+    (\recv{y_1}{x_1}{} \,\&\, \cdots \,\&\, \recv{y_N}{x_N}{})
+    \signed{P}{s_2}
+  }{s_1}
+  \Par \signed{\send{x_1}{U_1}}{t_1} \Par \cdots
+  \Par \signed{\send{x_N}{U_N}}{t_N}
+  \\
+  \Par\; (s_1 \comp t_1 \comp \cdots \comp t_N) : S
+  \;\red\;
+  \signed{P\{\quot{U_1}/y_1, \ldots, \quot{U_N}/y_N\}}{s_2}
+  \Par S
+  \label{eq:join-J2}
+\end{multline}
+This is a genuine multi-party join: $N+1$ distinct economic
+actors must all be present for the synchronization.  The
+crucial design choice is that the token's key is the
+\emph{fusion} of all participants' signatures
+$s_1 \comp t_1 \comp \cdots \comp t_N$, so the whole join
+fires on one combined payment or not at all.  There is no way
+to debit $t_1$ and $t_2$ and then block waiting for~$x_3$ ---
+the single combined cell is consumed atomically the moment all
+surfaces match.  The partial-funding hazard that arises
+\emph{across} multi-step transactions
+(Section~\ref{sec:partial-funding}) is structurally impossible
+\emph{within} a join.  This is the join analogue of Rule~3,
+generalized so that the compound signature fuses the receiver's
+authority with all $N$ senders' authorities.
+
+\subsubsection{Per-Clause Signing and the Two-Sided Surface}
+
+The receiver signature need not be monolithic.  Each binding
+clause may carry its own signature, pushing the signing down
+onto the individual rendezvous surfaces:
+\begin{equation}
+  \forc\!\left(
+    \signed{y_1 \leftarrow x_1}{s_1} \,\&\, \cdots \,\&\,
+    \signed{y_N \leftarrow x_N}{s_N}
+  \right) P
+  \label{eq:join-per-clause}
+\end{equation}
+Each clause $\signed{y_i \leftarrow x_i}{s_i}$ is one
+receiver-side introduction with surface~$x_i$, funded by~$s_i$
+independently.  This gives the receiver side the same
+combinatorial freedom as the sender side, and sharpens the
+interaction-cut reading: per channel~$i$, the rendezvous
+on~$x_i$ requires \emph{both}~$s_i$ (the right to receive
+on~$x_i$) \emph{and}~$t_i$ (the right to send~$U_i$).  The
+join is thus a two-sided capability check: one needs authority
+to offer each message and authority to consume it, and the
+join gathers all $2N$ authorities at once.
+
+\subsubsection{The General Schema}
+
+For $N$-ary joins, enumerating cases is hopeless; we present a
+single schema quantified over partitions.  Three independent
+axes of granularity, all over the index set
+$\{1, \ldots, N\}$, govern how a join may be signed and funded:
+
+\begin{description}[style=nextline, leftmargin=2em, nosep]
+  \item[Axis C (receiver clauses).]
+    How the binding clauses $\{y_i \leftarrow x_i\}$ are
+    grouped under receiver signatures, ranging from a single
+    monolithic $s_1$ over the whole $\forc$ (as in J1, J2) to
+    a distinct $s_i$ per clause (as
+    in~\eqref{eq:join-per-clause}).
+  \item[Axis B (sends).]
+    How the sends $\send{x_i}{U_i}$ are grouped under sender
+    signatures, from all sends under one signature to each
+    individually signed.
+  \item[Axis A (token presentation).]
+    How the resulting signatures' tokens are partitioned across
+    stacks, from a single fully combined cell
+    $s_1 \comp \cdots \comp t_N : S$ to fully split
+    $s_1 : S_1 \Par \cdots \Par t_N : S_N$, and every
+    grouping in between.
+\end{description}
+
+\begin{definition}[Join cost schema]
+  \label{def:join-schema}
+  Let a join carry receiver clauses grouped by a partition~$\pi_C$
+  of $\{1,\ldots,N\}$ (clauses in the same block share a receiver
+  signature) and sends grouped by a partition~$\pi_B$.  Let the
+  required authorities form the multiset
+  \[
+    \mathcal{A}
+    \;=\;
+    \{\sigma_b : b \in \pi_C\}
+    \;\uplus\;
+    \{\tau_b : b \in \pi_B\},
+  \]
+  where $\sigma_b$ (resp.\ $\tau_b$) is the signature on
+  block~$b$.  For \emph{any} partition~$\pi_A$ of~$\mathcal{A}$
+  into composite tokens --- one stack-headed cell per block of
+  $\pi_A$, keyed by the $\comp$-product of the signatures in
+  that block --- the join fires when every surface matches and
+  every cell of~$\pi_A$ is present, consuming all of them and
+  releasing their stack remainders:
+  \[
+    (\text{join under } \pi_C, \pi_B)
+    \;\Par\;
+    \bigParop_{b \in \pi_A}
+      \Bigl( \bigCompop_{a \in b} a \Bigr) : S_b
+    \;\red\;
+    \signed{P\{\quot{U_1}/y_1, \ldots, \quot{U_N}/y_N\}}{s_2}
+    \;\Par\;
+    \bigParop_{b \in \pi_A} S_b .
+  \]
+\end{definition}
+
+\begin{proposition}[Conservation of authority]
+  \label{prop:join-conservation}
+  Across every instance of the schema --- for all choices of
+  $\pi_C$, $\pi_B$, $\pi_A$ --- the multiset of signatures
+  consumed when a join fires is exactly
+  \[
+    \{s_1, \ldots, s_N\} \;\uplus\; \{t_1, \ldots, t_N\},
+  \]
+  one receiver-authority and one sender-authority per channel.
+  Grouping (along any axis) changes the bookkeeping; it never
+  changes the total.  The join either gathers one token's worth
+  of every participant's authority, or it does not fire.
+\end{proposition}
+
+\noindent
+The binary Rules~1--5 are the $N = 1$ special cases; Cases J1
+and J2 are the fully-combined corners of the receiver axis.
+
+\subsubsection{Regrouping Tokens: Reverse Currying}
+
+Because $\comp$ is associative--commutative, the demand of
+Definition~\ref{def:join-schema} is for a \emph{multiset} of
+authorities, and any partition of that multiset into composite
+tokens satisfies it.  Two composite tokens may therefore be
+assembled into one, or one split into two, without changing
+what they can fund:
+\begin{equation}
+  (s_i \comp t_i) : S \;\Par\; (s_j \comp t_j) : S'
+  \qquad\xrightleftharpoons[\;\mathrm{Split}\;]{\;\mathrm{Join}\;}\qquad
+  (s_i \comp t_i \comp s_j \comp t_j) : (S \cdot S')
+  \label{eq:reverse-curry}
+\end{equation}
+We call the right-to-left direction \emph{reverse Currying}:
+it assembles a large composite authority from smaller ones,
+the iso between a curried and an uncurried presentation of the
+same compound signature.  The splitter and joiner
+infrastructure processes
+(Appendix~\ref{app:infrastructure}) are the operational
+witnesses of this iso: $\mathrm{Join}$ assembles,
+$\mathrm{Split}$ disassembles.  Reverse Currying preserves the
+conserved multiset of Proposition~\ref{prop:join-conservation};
+it is the sanctioned way to regroup tokens to match a join's
+demand.
+
+\subsubsection{Weakening Is Forbidden}
+
+The dangerous dual operation is \emph{weakening}: consuming a
+composite token $s_i \comp s_j$ to discharge a demand for
+$s_i$ alone, discarding the $s_j$ component.  We forbid it.
+
+The reason is the multi-signature semantics of
+Section~\ref{sec:multisig-motivation}.  A token minted as
+$s_{\mathit{sender}} \comp s_{\mathit{compliance}}$ encodes
+``neither party alone may act.''  If such a token could be
+partially consumed as just $s_{\mathit{sender}}$, the
+compliance requirement would evaporate --- the multi-sig
+guarantee would be defeated by weakening.  A composite
+signature must therefore be discharged \emph{in full}, or
+\emph{explicitly} $\mathrm{Split}$ first (an observable
+reduction step that leaves the $s_j$ component live on its own
+stack, not discarded).
+
+\begin{remark}[Two monoids, two disciplines]
+  The temporal monoid~$:$ and the spatial-signature
+  monoid~$\comp$ behave oppositely with respect to weakening.
+  The temporal stack \emph{admits} weakening in the benign
+  sense that reduction consumes a head cell and keeps the tail
+  --- that is simply what a step does.  The spatial-signature
+  monoid \emph{does not} admit weakening: a composite must be
+  discharged in full or explicitly split, never silently
+  partially consumed.  Reverse Currying
+  (\eqref{eq:reverse-curry}) --- assembling and disassembling
+  composites via $\mathrm{Join}$ and $\mathrm{Split}$ --- is
+  the only sanctioned way to regroup~$\comp$, and it conserves
+  the multiset.
+\end{remark}
+
+\begin{remark}[The tensor--hom adjunction]
+  \label{rem:tensor-hom}
+  Reverse Currying and the linear-transfer sugar~$\multimap$
+  (Section~\ref{sec:sugar}) are two halves of a single
+  structure.  The compound operator~$\comp$ is a tensor on
+  signatures; the transfer~$\multimap$ is its right adjoint
+  (internal hom), so that
+  \[
+    (s_1 \comp s_2) \multimap s_3
+    \;\cong\;
+    s_1 \multimap (s_2 \multimap s_3).
+  \]
+  Currying relates joint funding ($s_1 \comp s_2$ funds in one
+  combined event) to staged funding ($s_1$ funds, then $s_2$
+  funds the continuation).  The full development of this
+  adjunction --- and whether the token discipline is a model of
+  intuitionistic linear logic with $\comp = \otimes$ and
+  $\multimap$ the linear function space --- we leave to the
+  sequel.
+\end{remark}
+
+\begin{remark}[Joins and the static analysis]
+  \label{rem:join-static}
+  A join blocks until all $N$ senders are present, which may be
+  data-dependent.  The overcharge-and-refund discipline of
+  Section~\ref{sec:data-dependent} extends cleanly: the demand
+  of a join is the fixed multiset of
+  Proposition~\ref{prop:join-conservation}, independent of the
+  partition axes, so the conservative bound counts $2N$
+  authorities per join.  Reverse Currying does not change the
+  count, and the prohibition on weakening keeps the demand a
+  clean multiset equality.  Whether all $N$ senders \emph{will}
+  arrive is the data-dependent question, handled exactly as
+  before --- by funding the worst case and refunding the
+  unforced remainder.
+\end{remark}
+
 \subsection{Syntactic Sugar}
 \label{sec:sugar}
 
@@ -903,25 +1361,28 @@ Rholang runtime:
     to cover the signature sort.
 \end{itemize}
 
-\subsection{Cryptographic Quoting}
+\subsection{Section and Quotient Disentangled}
 \label{sec:crypto-quote}
 
-The operator $\hashf P$ introduces a second axis of reflection.
-If structural quoting~$\quot{T}$ is the ``mirror'' that
-reflects a signed term into a name preserving all structure
-(including signature and cost provenance), then
-cryptographic quoting~$\hashf P$ is a ``one-way mirror'': it
-produces a name (usable as a signature, an address, a key) from
-which the original process cannot be recovered.
+The general construction~\cite{CostEndofunctor} identifies two
+maps relating a theory's free syntax~$T$ to its
+structural-congruence quotient~$T/{\Seq}$: the
+\emph{quotient}~$T \twoheadrightarrow T/{\Seq}$, which respects~$\Seq$
+and is the structure a channel constructor exposes (in rho,
+$\quot{P}$ with $\quot{P} = \quot{Q} \iff P \Seq Q$); and the
+\emph{section}~$\mathit{cf} : T \to T/{\Seq}$, a choice of
+canonical representative per class, which composed with a
+collision-resistant digest gives the signature constructor
+$\hashf = \mathit{digest} \circ \mathit{cf}$.
 
-This distinction is fundamental.  A structurally quoted signed
-term can be dequoted ($\drop{(\quot{T})} = T$) and the process
-within it re-executed.  A
-cryptographically quoted process cannot: $\hashf P$ is a
-commitment, not a capability.  This makes $\hashf P$ suitable
-for authentication, content addressing, and integrity
-verification --- all operations that require binding to content
-without granting the power to execute it.
+The quotient is not new --- it is the LTS the rho calculus
+already carries.  The section is the authentication mechanism
+the cost functor adds.  In rho, the operator~$\quot{\cdot}$
+happens to serve both roles (viewed two ways), which is why the
+earlier formulation appeared to need ``two axes of
+reflection.''  The general construction pulls them apart: one
+axis is the communication quotient, the other is the
+authentication section, and the signature is $\hashf$ alone.
 
 In the F1R3FLY platform, $\hashf P$ will be implemented as a
 configurable hash function (SHA-256, Blake2b, etc.) applied to
@@ -1618,6 +2079,106 @@ an ``unknown'' demand, and the validator rejects unless the
 supply exceeds the known lower bound plus a configurable
 safety margin.\qed
 
+\subsection{Data-Dependent Interaction: Overcharge and Refund}
+\label{sec:data-dependent}
+
+The linear resource proof certifies a \emph{fixed}
+consumption: it sums the tokens a deployment will draw and
+checks the sum against the supply.  This is sound when the
+interactions a deployment performs are determinable
+statically.  Under \emph{data-dependent interaction} it is
+not immediate.  If a received value selects a branch, or a
+name computed at run time determines which $\mathit{near}$
+match fires, then which interactions occur --- and so how many
+tokens of which signatures are drawn --- depends on the run,
+and there is no single fixed quantity for the proof to
+sum~\cite{CostEndofunctor}.
+
+The companion paper identifies two strategies for the
+data-dependent fragment: make the proof \emph{dependent}
+(parameterised by the data, with each branch discharging its
+own linear obligation), or fall back to a \emph{conservative
+static bound} --- the worst case over all branches --- which
+is sound but may over-charge.
+
+\paragraph{We prefer overcharge-and-refund.}
+For the F1R3FLY platform we adopt the conservative-bound
+strategy, deliberately preferring to \emph{overcharge and
+refund} rather than to under-fund.  The reasoning is a direct
+consequence of the atomicity analysis:
+
+\begin{itemize}[nosep]
+  \item \textbf{Under-funding is a correctness failure.}  If
+    the static bound under-estimates the demand --- as a
+    naive per-branch or average-case bound might --- then a
+    deployment can be accepted yet run out of phlogiston
+    mid-execution, stranding funds in a purse
+    (Section~\ref{sec:partial-funding}).  This reintroduces
+    the partial-funding vulnerability the static analysis
+    exists to eliminate.
+  \item \textbf{Over-funding is merely an inefficiency.}  If
+    the static bound over-estimates the demand --- charging
+    the worst case over all branches --- then a deployment is
+    accepted with more phlogiston committed than it will
+    actually consume.  The unused phlogiston is simply
+    refunded after execution completes.  No funds are
+    stranded; no transaction stalls.
+\end{itemize}
+
+\noindent
+Concretely, the validator computes a conservative demand
+$\Delta_c^{\max}(D)$ --- the maximum over all reachable
+branches of the data-dependent control flow --- and checks
+$\Sigma_c \geq \Delta_c^{\max}$.  Execution consumes only the
+tokens actually forced; the residual
+$\Delta_c^{\max} - (\text{tokens consumed})$ is returned to
+the client's token stack as part of the deployment's
+settlement.
+
+\begin{definition}[Conservative demand with refund]
+  \label{def:conservative-demand}
+  For a deployment~$D$ with data-dependent control flow, the
+  \emph{conservative demand} is
+  \[
+    \Delta_c^{\max}(D)
+    \;=\;
+    \max_{\beta \in \mathrm{Branches}(D)} \Delta_c(\beta),
+  \]
+  the maximum token demand over all statically reachable
+  branches.  Acceptance requires $\Sigma_c \geq
+  \Delta_c^{\max}(D)$.  After execution, the refund is
+  $\Delta_c^{\max}(D) - \kappa$, where~$\kappa$ is the number
+  of tokens actually forced during the run.
+\end{definition}
+
+\begin{remark}[Why refund is safe]
+  The refund is computed from the \emph{actual} run, which is
+  observable: by Proposition~\ref{prop:subst-commute} and the
+  subject-reduction lemma for wrapping
+  (\cite{CostEndofunctor}, Lemma~3.2), the number of tokens
+  consumed equals the number of forced redexes, which the
+  runtime counts exactly as it executes.  Over-funding never
+  threatens atomicity because the worst-case bound guarantees
+  that \emph{every} branch is fully funded; the branch that
+  actually runs is therefore funded a fortiori.  The refund
+  reconciles the conservative estimate with the realised cost
+  without ever risking a stall.
+\end{remark}
+
+\begin{remark}[Located purses sharpen the bound]
+  The located resource stacks of
+  Section~\ref{sec:ocap-authority} let the conservative bound
+  be computed \emph{per surface} rather than globally.  If
+  data-dependence is confined to a particular interaction
+  surface, only that purse's sub-bound need be conservative;
+  every other purse retains its exact static demand.  Location
+  thus quarantines the over-charge to the surfaces that
+  actually require it, minimising the refund overhead.  This
+  is the rho-calculus realisation of the local-sufficiency
+  decomposition of the companion paper
+  (\cite{CostEndofunctor}, Proposition~12.1).
+\end{remark}
+
 \subsection{The Validator's Acceptance Protocol}
 \label{sec:acceptance-protocol}
 
@@ -1628,21 +2189,35 @@ protocol (Appendix~\ref{app:example}) as follows:
   \item The validator receives a signed deployment
     $\signed{D}{c}$ and looks up the client's token stack.
   \item \textbf{Before} executing any part of the deployment,
-    the validator computes $\Delta_c(D)$ by static analysis
-    of the deployment's AST and call graph.
+    the validator computes the demand by static analysis of
+    the deployment's AST and call graph: the exact demand
+    $\Delta_c(D)$ for the data-independent fragment, or the
+    conservative bound $\Delta_c^{\max}(D)$
+    (Definition~\ref{def:conservative-demand}) where control
+    flow is data-dependent.
   \item The validator computes $\Sigma_c$ from the available
     token stack.
-  \item If $\Sigma_c \geq \Delta_c$, the deployment is
+  \item If $\Sigma_c \geq \Delta_c^{\max}$, the deployment is
     \emph{accepted}: the validator knows, by the linear
-    resource proof, that every for-comprehension in the
-    deployment's execution will be funded.  Every substitution
-    that begins will complete.  No funds will be stranded.
-  \item If $\Sigma_c < \Delta_c$, the deployment is
+    resource proof, that every for-comprehension in
+    \emph{every reachable branch} of the deployment's
+    execution will be funded.  Every substitution that begins
+    will complete.  No funds will be stranded.  After
+    execution, any phlogiston committed beyond what was
+    actually forced is refunded.
+  \item If $\Sigma_c < \Delta_c^{\max}$, the deployment is
     \emph{rejected}: the validator returns an error
     (``insufficient phlogiston'') without executing any part
     of the deployment.  No state change occurs.  No tokens
     are consumed.
 \end{enumerate}
+
+\noindent
+The choice of the conservative bound $\Delta_c^{\max}$ over an
+optimistic estimate is deliberate: it trades a refund (a
+benign inefficiency) for the guarantee that no accepted
+deployment can ever stall for lack of phlogiston (a
+correctness property).  Over-charge, never under-fund.
 
 \noindent
 This protocol converts the database-level
@@ -1762,37 +2337,61 @@ atomic decision that precedes all execution.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We have presented a revision of the rho calculus in which cost
-accounting is folded directly into the grammar and operational
-semantics, eliminating the need for an external extension or a
-translation layer.  The central design moves are: signatures as
-names, cryptographic quoting as a second axis of reflection,
-signed terms pervading the syntax, token stacks as first-class
-terms, parametric polymorphism of parallel composition, and
-genericity over the cryptographic backend.
+We have presented the rho calculus as an instantiation of the
+cost endofunctor~$\mathcal{C}$ on the category \textbf{ciGSLT}
+of continued interactive graph-structured lambda
+theories~\cite{CostEndofunctor}.  The instantiation proceeds
+in three phases: identifying the rho interaction cut
+($K = \Par$, $K_p = \forc$, $K_e = {!}$, $\mathit{compute}$
+= pseudo-application), applying the cost construction to
+produce the cost-accounted rho calculus, and exploiting
+Turing completeness to translate the result back to the pure
+rho calculus via the internalisation adjunction.
+
+Each feature of the cost-accounted calculus is a consequence
+of the general construction: signatures as names (the section
+adjoined by~$\mathcal{C}$), signed terms pervading the syntax
+(continuation slots re-sorted to~$T$), token stacks as
+first-class terms (the temporal monoid), polymorphic~$\Par$
+($K$ is the only constructor that needs overloading), and the
+five rewrite rules (the gated family (R1)--(R3) specialised to
+the rho interaction cut).  The disentangling of section and
+quotient resolves the apparent need for ``two axes of
+reflection'' --- a self-overlap specific to rho, where
+$\quot{\cdot}$ serves both roles.
 
 The identification of the for-comprehension as the transaction
 primitive --- with rendezvous and matching as the two funded
 actions, the substitution as the witness, and application to the
 continuation as the state update --- yields a precise theory of
 atomicity at two levels.  \emph{Database-transaction atomicity}
-(individual communications) is a theorem of the rewrite rules.
-\emph{Financial-transaction atomicity} (multi-step operations
-like payments) is guaranteed by a decidable static analysis at
-deployment-acceptance time: a linear resource proof that
-verifies every for-comprehension in the deployment's call
+(individual communications) is a theorem of the rewrite rules
+--- indeed, it is the subject-reduction lemma (Lemma~3.2
+of~\cite{CostEndofunctor}) for the wrapping-by-construction
+discipline.  \emph{Financial-transaction atomicity} (multi-step
+operations like payments) is guaranteed by a decidable static
+analysis at deployment-acceptance time: a linear resource proof
+that verifies every for-comprehension in the deployment's call
 graph is funded before any step executes.  Deployment boundaries
 provide the unit of financial atomicity, and the linear proof
 serves as the concurrency control mechanism --- competing
 deployments are competing proof obligations over the same
 linear resources, and at most one can succeed.
 
+The object-capability analysis --- carried by the general
+construction's treatment of $K$'s equational theory --- ensures
+that the AC nature of~$\Par$ does not introduce ambient
+authority: the nearness predicate (channel-name equality) and
+located resource stacks confine authority to holders of matching
+channel names, with unforgeable channels created by
+$\mathbf{new}$ providing genuine capabilities.
+
 The result is a calculus that embodies \emph{valuable friction}
 at the syntactic level: every communicating process must engage
 the cost layer, and the cost layer is rich enough to guarantee
 transactional integrity.  Because the rho calculus is the formal
-core of Rholang, this calculus serves directly as the design
-specification for rearchitecting phlogiston accounting in
+core of Rholang, this instantiation serves directly as the
+design specification for rearchitecting phlogiston accounting in
 Rholang~1.4 and the F1R3FLY platform.
 
 \bigskip
@@ -1809,9 +2408,51 @@ Rholang~1.4 and the F1R3FLY platform.
 This appendix defines a compositional source-to-source
 translation from the cost-accounted rho calculus of
 Section~\ref{sec:calculus} to the \emph{pure} rho calculus.
-The translation is intended as a small-step development path:
-one implements it as a compiler pass, and the existing Rholang
-runtime handles the translated source without modification.
+In the categorical framework of~\cite{CostEndofunctor}, this
+translation is an instance of the \emph{internalisation
+adjunction} (Adjunction~II): because the rho calculus is
+Turing-complete, the entire cost-accounting apparatus of
+$\mathcal{C}(G)$ --- signature equality, stack maintenance,
+gating --- is computable and hence encodable in~$G$ itself.
+The translation realizes the cost-accounted semantics inside
+the un-metered but universal base by simulation: tokens become
+encoded data, the gated rules become a fuel-acquisition
+protocol, and each forced step is simulated by a finite run of
+the pure rho calculus.
+
+The translation proceeds in three phases, mirroring the
+three-phase structure of the paper:
+
+\begin{enumerate}[label=\textbf{Phase \arabic*.}, nosep]
+  \item \textbf{Instantiation $\to$ signatures.}
+    The interaction-cut components of
+    Section~\ref{sec:instantiation} determine how signatures
+    are mapped to pure-rho names ($\Sigma\lsem\cdot\rsem$).
+  \item \textbf{Cost construction $\to$ fuel gates.}
+    The wrapping-by-construction discipline determines how
+    signed terms become fuel-gated processes
+    ($\mathcal{T}\lsem\cdot\rsem$), and how token stacks
+    become messages on signature channels
+    ($\mathcal{K}\lsem\cdot\rsem$).
+  \item \textbf{Internalisation $\to$ infrastructure.}
+    The splitter and joiner processes that mediate between
+    combined and decomposed token representations are the
+    ``administrative reductions'' of the internalisation:
+    they simulate the token-distribution cases (R2), (R3)
+    that the cost endofunctor provides as primitive rules.
+\end{enumerate}
+
+\noindent
+The object-capability analysis of
+Section~\ref{sec:ocap-authority} is preserved by the
+translation: in the pure-rho encoding, the \emph{nearness
+predicate} $\mathit{near}(I, J)$ becomes channel-name equality
+--- only processes holding a matching channel name can consume
+tokens from a located stack.  Because the rho calculus creates
+unforgeable channel names via $\mathbf{new}$, the translation
+automatically inherits the ocap discipline: authority over a
+resource stack is conferred by possession of the channel name,
+not by adjacency in the parallel-composition bag.
 
 The translation is organized into five mutually recursive
 functions:
@@ -2290,28 +2931,52 @@ by definition of semantic substitution.
 \label{app:impl}
 
 The translation is designed as a \textbf{compiler pass} in the
-Rholang toolchain:
+Rholang toolchain, structured to mirror the three phases
+above:
 
 \begin{enumerate}[nosep]
-  \item \textbf{Parse} the extended syntax (processes, signed
-    terms, token stacks, parameterized signatures) into an
-    extended AST.
-  \item \textbf{Apply} $\mathcal{P}\lsem\cdot\rsem$ to the
-    top-level process, which recursively invokes
+  \item \textbf{Phase 1 (Instantiation):}  Parse the extended
+    syntax (processes, signed terms, token stacks, parameterized
+    signatures) into an extended AST.  The parser recognizes the
+    interaction-cut components: $\forc$ as~$K_p$, $!$ as~$K_e$,
+    channels as interaction surfaces, and $\signed{\cdot}{s}$ as
+    wrapping.
+  \item \textbf{Phase 2 (Cost construction):}  Apply
+    $\mathcal{P}\lsem\cdot\rsem$ to the top-level process,
+    which recursively invokes
     $\mathcal{T}\lsem\cdot\rsem$,
     $\mathcal{K}\lsem\cdot\rsem$,
     $\mathcal{N}\lsem\cdot\rsem$, and
-    $\Sigma\lsem\cdot\rsem$.
-  \item \textbf{Inject} persistent $\mathrm{Split}$ and
-    $\mathrm{Join}$ infrastructure for every compound
-    signature that appears in the source, unless the
-    programmer has explicitly provided them.
+    $\Sigma\lsem\cdot\rsem$.  Each signed term becomes a
+    fuel-gated process; each token stack becomes a chain of
+    sends on the corresponding signature channel.  The
+    ocap discipline is preserved: channel-name equality in
+    the output serves as the $\mathit{near}(I, J)$ predicate.
+  \item \textbf{Phase 3 (Internalisation):}  Inject persistent
+    $\mathrm{Split}$ and $\mathrm{Join}$ infrastructure for
+    every compound signature that appears in the source,
+    unless the programmer has explicitly provided them.
+    These are the administrative reductions of the
+    internalisation adjunction: they simulate the
+    token-distribution cases (R2), (R3) within the pure rho
+    calculus.
   \item \textbf{Emit} pure rho calculus (Rholang~1.1) source.
     The existing runtime, reducer, and RSpace handle
     execution without modification.
 \end{enumerate}
 
 \noindent
+In the terminology of~\cite{CostEndofunctor}, this compiler
+pass is the internalisation map
+$I_G : \mathcal{C}(G) \to G$ of Adjunction~II
+(Proposition~9.5): it realises the cost-accounted semantics
+inside the un-metered but Turing-complete base by simulation,
+with each forced step simulated by a finite run of the pure
+rho calculus.  The agreement $I_G \circ \eta_G \approx
+\mathrm{id}_G$ holds up to weak bisimulation, the
+administrative reductions being those of the fuel-acquisition
+protocol.
+
 This gives the platform immediate access to cost-accounted
 semantics while the native implementation
 (Section~\ref{sec:implications}) is developed in parallel.
@@ -3147,6 +3812,24 @@ model.
   L.~G.~Meredith,
   ``MeTTaIL (Rholang 1.4): A language for defining languages,''
   F1R3FLY.io, 2025--2026.
+
+\bibitem{CostEndofunctor}
+  L.~G.~Meredith,
+  ``Continued interactive GSLTs and the cost endofunctor:
+  A construction one level up from cost-accounted Rholang,''
+  F1R3FLY.io, 2026.
+
+\bibitem{MillerYeeShapiro2003}
+  M.~S.~Miller, K.-P.~Yee, and J.~Shapiro,
+  ``Capability myths demolished,''
+  Technical Report SRL2003-02, Systems Research Laboratory,
+  Johns Hopkins University, 2003.
+
+\bibitem{MillerPhD2006}
+  M.~S.~Miller,
+  \textit{Robust Composition: Towards a Unified Approach to
+  Access Control and Concurrency Control},
+  PhD thesis, Johns Hopkins University, 2006.
 
 \bibitem{VACRADA}
   L.~G.~Meredith \textit{et al.},
