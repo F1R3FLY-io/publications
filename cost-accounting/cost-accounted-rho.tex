@@ -3780,6 +3780,230 @@ cost-accounted Rholang contracts, unifying the consensus
 and execution layers under a single formal semantics.
 
 %% ══════════════════════════════════════════════════════════════════
+\section{Concrete Syntax for Rholang 1.2}
+\label{app:concrete}
+
+The abstract syntax used throughout this paper --- in particular
+the wrapper $\signed{P}{s}$ and the compound-signature
+operator~$\comp$ --- is convenient for mathematical exposition
+but cannot be used as concrete syntax: the brace-subscript form
+$\{\cdot\}_s$ has no linear ASCII rendering, and~$\comp$
+collides with the heavily overloaded \texttt{*}
+(dereference~\texttt{PEval}, multiplication~\texttt{PMult}) of
+Rholang.  This appendix specifies a concrete syntax that
+extends the Rholang~1.2 BNFC grammar, chosen to avoid all such
+collisions.
+
+\subsection{The Wrapper and Signature Notation}
+\label{app:concrete-wrapper}
+
+The signed-term wrapper $\signed{P}{s}$ is written
+\begin{center}
+  \verb|{% P %}[s]|
+\end{center}
+The \verb|{%|\,\ldots\,\verb|%}| delimiters are unambiguous
+against the existing block-brace \verb|{|\,\ldots\,\verb|}|
+(\texttt{Proc16}) and map-collection
+\verb|{|\,\ldots\,\verb|}| (\texttt{CollectMap}), and the
+signature rides in a trailing \verb|[s]| bracket.  Within that
+bracket:
+
+\begin{center}
+  \begin{tabular}{lll}
+    \textbf{Abstract} & \textbf{Concrete} & \textbf{Reading} \\
+    \midrule
+    $g$        & \verb|g|          & ground signature (a name) \\
+    $\hashf P$ & \verb|# P|        & cryptographic section \\
+    $s_1 \comp s_2$ & \verb|s1 (*) s2| & compound signature \\
+    $s_1 \multimap s_2$ & \verb|s1 -o s2| & linear transfer \\
+  \end{tabular}
+\end{center}
+
+\noindent
+The bracketed operator \verb|(*)| renders~$\comp$ without
+colliding with \texttt{*}: the parentheses make it a distinct
+lexeme available only in signature position.  The
+lollipop~$\multimap$ is the ASCII \verb|-o|.  The
+section~$\hashf$ uses \verb|#|, which is absent from the base
+grammar.
+
+\subsection{BNFC Productions}
+\label{app:concrete-bnfc}
+
+The following productions extend the Rholang~1.2 grammar.  They
+introduce a new syntactic category \texttt{SignedProc} for
+wrapped terms, polymorphic forms of send, receive, and parallel
+composition that range over signed terms, a \texttt{Sig}
+category for signatures, and a \texttt{Stk} category for token
+stacks.
+
+\begin{lstlisting}[basicstyle=\small\ttfamily,frame=single,framesep=6pt,xleftmargin=1em,xrightmargin=1em]
+-- Signed processes (the wrapper {P}_s).
+-- A new syntactic category sitting alongside Proc.
+SignedProcWrap.   SignedProc ::= "{%" Proc "%}" "[" Sig "]" ;
+SignedProcStk.    SignedProc ::= Stk ;
+SignedProcPar.    SignedProc ::= SignedProc "|" SignedProc1 ;
+_.                SignedProc1 ::= SignedProc2 ;
+_.                SignedProc2 ::= "(" SignedProc ")" ;
+
+-- Signatures (the sort Sig).
+SigGround.        Sig2 ::= Name ;             -- ground signature g
+SigHash.          Sig2 ::= "#" Proc12 ;       -- section  # P
+SigCompound.      Sig1 ::= Sig1 "(*)" Sig2 ;  -- compound s1 (*) s2
+SigTransfer.      Sig  ::= Sig1 "-o" Sig ;    -- transfer s1 -o s2
+_.                Sig  ::= Sig1 ;
+_.                Sig1 ::= Sig2 ;
+_.                Sig2 ::= "(" Sig ")" ;
+
+-- Token stacks (the sort Stk).
+StkEmpty.         Stk2 ::= "(" ")" ;          -- empty stack ()
+StkCons.          Stk1 ::= Sig "::" Stk1 ;    -- cons   s :: S
+StkPar.           Stk  ::= Stk "|" Stk1 ;     -- located/parallel stacks
+_.                Stk  ::= Stk1 ;
+_.                Stk1 ::= Stk2 ;
+_.                Stk2 ::= "(" Stk ")" ;
+
+-- Polymorphic send/receive over signed terms.
+-- The payload and continuation range over SignedProc.
+PSignedSend.      SignedProc2 ::= Name Send "(" SignedProc ")" ;
+PSignedInput.     SignedProc2 ::= "for" "(" [SignedReceipt] ")"
+                                  "{%" SignedProc "%}" ;
+
+-- Per-clause signed binds (Axis C of the join schema).
+SignedBindImpl.   SignedBind ::= "{%" [Name] NameRemainder
+                                 "<-" NameSource "%}" "[" Sig "]" ;
+PlainBindImpl.    SignedBind ::= [Name] NameRemainder
+                                 "<-" NameSource ;
+separator nonempty SignedBind "&" ;
+
+SignedReceiptImpl. SignedReceipt ::= [SignedBind] ;
+separator nonempty SignedReceipt ";" ;
+\end{lstlisting}
+
+\noindent
+Three points on the design:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Precedence of signatures.}  \texttt{Sig} is
+    stratified so that \verb|-o| binds loosest and \verb|(*)|
+    tighter, matching the abstract reading
+    $s_1 \comp s_2 \multimap s_3 = (s_1 \comp s_2) \multimap s_3$
+    and the curry iso of Remark~\ref{rem:tensor-hom}.  Ground
+    signatures and sections sit at the tightest level
+    \texttt{Sig2}.
+  \item \textbf{Token stacks use \texttt{::}.}  The cons
+    operator is the double colon \verb|::|, distinct from the
+    single \verb|:| of map key--value pairs
+    (\texttt{KeyValuePairImpl}).  The \texttt{StkPar}
+    production accommodates located stacks
+    (Section~\ref{sec:ocap-authority}): several stacks parked
+    at different surfaces, composed with~\verb"|".
+  \item \textbf{Polymorphic \texttt{|}.}  Parallel composition
+    appears at three levels --- \texttt{PPar} (processes),
+    \texttt{SignedProcPar} (signed terms), and \texttt{StkPar}
+    (stacks) --- realising the parametric polymorphism
+    of~$K = \Par$ (Remark~2.2 of~\cite{CostEndofunctor}: $K$ is
+    the only constructor that needs overloading).
+\end{enumerate}
+
+\subsection{Worked Examples in Concrete Syntax}
+\label{app:concrete-examples}
+
+The uniform-signing sugar (Definition~\ref{def:sugar-uniform})
+$\signed{\recv{y}{x}{P}}{s}$, whose desugaring nests
+recursively, is written:
+\begin{lstlisting}[style=rholang]
+{% for( y <- x ) P %}[ s ]
+\end{lstlisting}
+
+\noindent
+The linear-transfer form
+$\signed{\recv{y}{x}{P}}{s_1 \multimap s_2}$ of
+Example~\ref{ex:cross-party} (client~$c$ funds the call,
+provider~$p$ funds the continuation):
+\begin{lstlisting}[style=rholang]
+{% for( result <- service ) handleResult %}[ c -o p ]
+\end{lstlisting}
+
+\noindent
+The multi-signature transfer contract
+$\signed{\mathit{transfer}}{s_{\mathit{sender}} \comp
+s_{\mathit{compliance}}}$ of
+Section~\ref{sec:multisig-motivation}:
+\begin{lstlisting}[style=rholang]
+{% transfer %}[ sender (*) compliance ]
+\end{lstlisting}
+
+\noindent
+A per-clause-signed join (Axis~C,
+Section~\ref{sec:joins}) in which each rendezvous surface is
+funded independently:
+\begin{lstlisting}[style=rholang]
+{% for( {% y1 <- x1 %}[s1] & {% y2 <- x2 %}[s2] ) P %}[ s0 ]
+\end{lstlisting}
+
+\noindent
+A token stack of three units keyed to signature~\verb|c|,
+located on the client's address (a single stack at one
+surface):
+\begin{lstlisting}[style=rholang]
+c :: c :: c :: ()
+\end{lstlisting}
+
+\noindent
+The validator's deploy-queue handler of
+Appendix~\ref{app:example}
+$\signed{\recv{\mathit{dep}}{\quot{DQ_v}}{
+\recv{\mathit{tok}}{\quot{A_c}}{\mathit{FeeExtract}}}}{v}$:
+\begin{lstlisting}[style=rholang]
+{% for( dep <- DQv ) for( tok <- Ac ) FeeExtract %}[ v ]
+\end{lstlisting}
+
+\subsection{Abstract-to-Concrete Correspondence}
+\label{app:concrete-table}
+
+\begin{center}
+  \begin{tabular}{lll}
+    \textbf{Construct} & \textbf{Abstract} & \textbf{Concrete} \\
+    \midrule
+    Signed process & $\signed{P}{s}$
+      & \verb|{% P %}[s]| \\
+    Ground signature & $g$
+      & \verb|g| \\
+    Section & $\hashf P$
+      & \verb|# P| \\
+    Compound signature & $s_1 \comp s_2$
+      & \verb|s1 (*) s2| \\
+    Linear transfer & $s_1 \multimap s_2$
+      & \verb|s1 -o s2| \\
+    Empty stack & $()$
+      & \verb|()| \\
+    Token cons & $s : S$
+      & \verb|s :: S| \\
+    Located/parallel stacks & $S_1 \Par S_2$
+      & \verb#S1 | S2# \\
+    Signed send & $\send{x}{U}$
+      & \verb|x!( U )| \\
+    Signed receive & $\recv{y}{x}{T}$
+      & \verb|for( y <- x ) T| \\
+    Per-clause bind & $\signed{y \leftarrow x}{s}$
+      & \verb|{% y <- x %}[s]| \\
+  \end{tabular}
+\end{center}
+
+\noindent
+The mapping is purely notational: a front-end parser reads the
+concrete forms into the abstract syntax of
+Section~\ref{sec:calculus}, after which the source-to-source
+translation of Appendix~\ref{app:translation} compiles to pure
+Rholang~1.1.  Because \verb|?!| and \verb|!?| are already part
+of the Rholang~1.2 \texttt{NameSource} and \texttt{PSendSynch}
+productions, the synchronous-call patterns of
+Section~\ref{sec:rholang-illustration} require no new syntax;
+they appear inside \texttt{NameSource} positions of signed
+binds unchanged.
+
+%% ══════════════════════════════════════════════════════════════════
 \section*{Acknowledgements}
 
 The author thanks Mike Stay for extensive discussions on the
