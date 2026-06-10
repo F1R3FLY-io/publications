@@ -1,0 +1,249 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[table]{xcolor}
+\usepackage{siunitx}
+\usepackage{enumitem}
+\usepackage[expansion=false,protrusion=true]{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+\usepackage{caption}
+
+% --- F1R3FLY brand accent ---
+\definecolor{f1r3red}{HTML}{D7263D}
+\definecolor{f1r3ink}{HTML}{1A1A1A}
+\definecolor{f1r3ash}{HTML}{6B6B6B}
+\definecolor{coolrow}{HTML}{EAF5EC}
+\definecolor{hotrow}{HTML}{FBE9EC}
+
+\titleformat{\section}{\color{f1r3red}\large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\color{f1r3ink}\normalsize\bfseries}{\thesubsection}{0.6em}{}
+
+\hypersetup{colorlinks=true,linkcolor=f1r3red,citecolor=f1r3red,urlcolor=f1r3red}
+
+\newcommand{\near}{\operatorname{near}}
+\newcommand{\rent}{r}
+\sisetup{group-separator={,},group-minimum-digits=4}
+
+\newtheorem{remark}{Remark}
+
+\title{\color{f1r3red}\bfseries Rent and Shard Splitting\\[2pt]
+\large\color{f1r3ink}\mdseries A storage-economics companion to occupancy-driven sharding in F1R3FLY}
+\author{\normalsize F1R3FLY Industries --- working note}
+\date{\normalsize \today}
+
+\begin{document}
+\maketitle
+
+\noindent\textit{A short note. The arithmetic in \S\ref{sec:estimate} is an engineering estimate built on public Oracle Cloud list prices as of Q1--Q2 2026; every assumption is stated so the numbers can be re-derived or re-priced.}
+
+\section{The problem in one paragraph}
+
+In the F1R3FLY core---an implementation of the rho calculus~\cite{rho2005}---a submitted term is normalized; normalization induces a total order on the syntax tree, which yields content-addressed names and efficient hashes for dispatching \textsc{comm} events. As a shard serves more deploys, its serviceable hash table fills, and dispatch cost rises toward linear search. Splitting the shard into two relieves that pressure but converts some single-channel locality into cross-shard coordination priced in consensus rounds. \emph{Rent} is the third actor: standing residuals---unconsumed outputs and unmatched for-comprehensions---pay an amortization of real network cost over time, and tenants whose access income falls can opt for cheaper rent deeper in the tree. This note sketches how rent is collected, how it interacts with the split threshold, and what rent actually costs on a concrete ten-node shard.
+
+\section{How rent is done}
+\label{sec:rent}
+
+Rent reuses the precharge machinery already present in the reducer; it introduces no new currency.
+
+\subsection{End of deploy: the fork}
+A deploy arrives with a precharge of $\text{phloLimit}\times\text{phloPrice}$. Reduction draws it down; what remains is the \emph{residual budget}. The same reduction leaves \emph{residual state}: outputs and for-comprehensions that will sit in RSpace and pay rent. The fork sits exactly where stock Rholang would refund unused phlogiston:
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Default (no refund flag).} The residual budget is \emph{not} returned. It is sealed as the persistence fund for that deploy's residuals---its new tenants. Unused \emph{compute} budget becomes prepaid \emph{storage}.
+  \item \textbf{Refund flagged.} The budget returns to the deployer; the residuals have nothing backing them and are evicted at deploy-end.
+\end{itemize}
+The flag is therefore a lifetime declaration---\emph{refund $=$ my residuals are ephemeral, reap them; no refund $=$ they are durable, fund them}---and is the economic twin of the ephemeral/persistent bit in the RSpace $2\times2$, set by the deployer's choice to reclaim money rather than by a channel annotation.
+
+\subsection{Steady state: the draw}
+Rent debits periodically: a base amortized network cost plus a congestion premium for the tenant's current tier. It is paid against the deployer's account, two claims in priority order---the earmarked residual fund first, then the committed on-chain balance as backstop. The division of labor is clean: \emph{rent} (paid by the owner) covers \emph{standby}; the eventual \textsc{comm} that consumes a residual is \emph{activation}, paid by the precharge of whoever brings the matching datum. The owner pays to keep an output waiting; the counterparty pays to complete it.
+
+\subsection{Depletion: the cascade}
+When both claims are exhausted: serve notice to the owner; a short grace window; on no top-up, demote the residual one tier down the tree (cheaper rent, via name migration); repeat; eviction at the leaf. Each demotion is a stay of execution bought at lower rent, so depletion is graceful degradation rather than a cliff. It is also forced bid-rent sorting: voluntary sinking is a tenant whose access income fell choosing a longer commute; involuntary sinking is the same motion driven by an empty fund.
+
+\begin{remark}[Mortality semantics]
+Rent makes residuals \emph{mortal}, which changes the delivery guarantee. In pure rho an output waits forever for its match; here it waits only while solvent. ``\textsc{comm}s are eventually delivered'' weakens to ``\textsc{comm}s are delivered while funded,'' and an unfunded possible match silently never fires. This is a feature---garbage collection of dead state with an economic reaper---but deployers must see it. It is the mortal-computation story wearing an accountant's hat: the funded residual is soma, the on-chain account is germ line, eviction is the Weismann barrier~\cite{weismann1893} enforced by an empty wallet.
+\end{remark}
+
+\begin{remark}[A constraint on migration]
+Demotion must be \emph{cheaper than the rent it relieves}, or the cascade costs more than letting the tenant squat. Because names are content-addressed under the normal-form total order, a demotion should be a range handoff (B-tree-style) rather than a rehash. This is a hard bound on how heavy the migration negotiation may be.
+\end{remark}
+
+\section{Splitting: the density threshold}
+\label{sec:split}
+
+Let the shard hold $N$ slots, occupancy $\alpha=m/N$, request rate $\lambda$, and per-\textsc{comm} dispatch cost $c(\alpha)$. Splitting roughly halves occupancy per child but converts a fraction $\chi$ of traffic into cross-shard coordination at cost $X$ per event (Casper rounds, denominated in phlo), plus a one-time migration cost $M$ amortized over horizon $T$. Splitting is right when the marginal dispatch saving beats the overhead,
+\[
+\lambda\bigl[c(\alpha)-c(\alpha/2)\bigr] \;>\; \chi\lambda X + \tfrac{M}{T}.
+\]
+Write $K=\chi X + M/(\lambda T)$ for the total split overhead in units of probe-cost-per-request. Two regimes:
+
+\begin{description}[leftmargin=0pt,labelsep=0.6em]
+  \item[\textnormal{\emph{Conventional open addressing,} $c(\alpha)=\tfrac{1}{1-\alpha}$.}] The condition $\dfrac{\alpha}{(1-\alpha)(2-\alpha)}=K$ gives, near a full table,
+  \[
+    \boxed{\;\alpha^\star \approx 1-\tfrac{1}{K}\;}
+  \]
+  The split density is the reciprocal of the split overhead: overhead of $50$ probe-equivalents $\Rightarrow$ split at $98\%$; a poorly separable join graph (small $K$) $\Rightarrow$ split much earlier.
+
+  \item[\textnormal{\emph{Elastic hashing} (Farach-Colton--Krapivin--Kuszmaul~\cite{fkk2025})\textnormal{,} $c(\alpha)=C\log\tfrac{1}{1-\alpha}$.}] The same calculation gives
+  \[
+    \boxed{\;\alpha^\star \approx 1-\tfrac{1}{2}\,e^{-K/C}\;}
+  \]
+  The threshold moves \emph{exponentially} closer to full. This is the real engineering content of the elastic-hashing result for F1R3FLY: not faster dispatch per se, but a license to run shards much denser before splitting, because the cost curve has no knee (the bound disproves Yao's conjecture that uniform hashing is optimal~\cite{yao1985})---and a threshold far more forgiving to mis-estimating $K$.
+\end{description}
+
+\paragraph{Occupancy is endogenous.} $\alpha$ is not a fill fraction but the stationary occupancy of a birth--death process: outputs and receives deposit, \textsc{comm}s consume. The ephemeral component reaches a queueing equilibrium set by the match rate; persistent receives never die, so occupancy carries a monotone ratchet under the fluctuation. The ratchet guarantees the shard eventually reaches $\alpha^\star$ regardless of throughput---\emph{unless} rent intervenes. With rent, raising the congestion premium lets tenants self-select downward, holding $\alpha$ at an efficient level; the shard splits when the premium collected exceeds $K$, i.e.\ when a competitor could profitably stand up a second shard, undercut the premium, and still cover migration and cross-shard joins. Density need not hit a wall; price hits a threshold instead, and both sides are already in phlo.
+
+\section{Bid-rent stratification}
+\label{sec:bidrent}
+
+Rent turns the shard tree into a city. Each resident has access-fee income $f_i$ and sits at the tier maximizing $f_i - \rent(\text{tier}) - (\text{latency penalty})$---the Alonso--Muth--Mills bid-rent model~\cite{alonso1964,muth1969,mills1967} with tree depth playing the role of distance from the center. Hot contracts bid up rent near the root; cold content cascades toward the leaves. The funnel structure re-emerges as the \emph{equilibrium} of the rent market rather than a design choice.
+
+The elastic-hashing result does its real work at the \emph{cold tail}. Leaf shards serve low $\lambda$, so dispatch cost barely matters there, and the FKK bounds permit packing at $\alpha\to1$ with only logarithmic probe penalty. The equilibrium therefore has an inverse gradient: rent falls and density \emph{rises} down the tree, with cold-storage leaves run nearly full at near-zero rent---which is exactly what makes low rent economically viable (maximum residents per unit of amortized hardware). The ratchet is cured: a persistent receive that stops earning can no longer squat in the hot core; rent forces it to sink, the funnel cascade operating as foreclosure rather than overflow.
+
+\section{A concrete rent estimate}
+\label{sec:estimate}
+
+\paragraph{Configuration.} One shard $=$ ten nodes, each \num{16} cores, \SI{16}{\giga\byte} memory, \SI{2}{\tera\byte} data, all co-resident in one Oracle Cloud (OCI) region. Aggregate: \num{160} OCPU, \SI{160}{\giga\byte} RAM, \SI{20}{\tera\byte} block storage.
+
+\paragraph{Unit prices (OCI public list, Q1--Q2 2026~\cite{oci2026}).} x86 flexible compute \$\num{0.025} per OCPU-hour; flexible-shape memory \$\num{0.0015} per GB-hour; Balanced block volume \$\num{0.0255} per GB-month; the first \SI{10}{\tera\byte}/month of egress is free. One OCPU is one physical core (two x86 vCPUs). We take \num{730} hours per month.
+
+\begin{table}[h]
+\centering
+\caption*{\textbf{Table 1.} Monthly network cost of the ten-node shard (OCI list prices).}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Resource & Quantity & Unit price & Monthly cost \\
+\midrule
+Compute (OCPU-hours)      & \num{160} OCPU $\times$ 730\,h & \$0.025 / OCPU-h   & \$2{,}920.00 \\
+Memory (GB-hours)         & \num{160} GB $\times$ 730\,h   & \$0.0015 / GB-h    & \$175.20 \\
+Block storage (Balanced)  & \num{20480} GB                & \$0.0255 / GB-mo   & \$522.24 \\
+Egress ($\le$ 10\,TB/mo)  & ---                           & free tier          & \$0.00 \\
+\midrule
+\textbf{Subtotal}         &                               &                    & \textbf{\$3{,}617.44} \\
+Ops / monitoring / LB (15\%) &                            &                    & \$542.62 \\
+\midrule
+\textbf{All-in $C$}       &                               &                    & \textbf{\$4{,}160.06} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent We use the all-in $C\approx\$4{,}160$/month as the quantity rent must amortize. (A three-year Universal Credits commitment would shave $10$--$35\%$ off; the table below is therefore conservative.)
+
+\subsection{From deployment rate to tenant population}
+Rent per tenant is $C$ divided by the standing tenant population $N_t$. Let each deploy leave on average $\bar r=5$ residuals, accumulating over a 30-day amortization window:
+\[
+N_t \;=\; D \times 30\,\text{days} \times \bar r,\qquad
+\rent_{\text{base}}(D) \;=\; \frac{C}{N_t}.
+\]
+The binding capacity is \emph{memory} (the hot serviceable table): at \SI{1}{\kilo\byte} per residual, \SI{160}{\giga\byte} holds $\approx\num{1.6e8}$ hot slots (storage holds $\approx\num{2e10}$, far larger, so memory binds first).
+
+\begin{table}[h]
+\centering
+\caption*{\textbf{Table 2.} Standing tenants and base rent versus client deployment rate.}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+Deploys / day $D$ & Standing tenants $N_t$ & Hot-table $\alpha$ & Base rent / tenant-month \\
+\midrule
+\num{100}        & \num{15000}      & $<0.001$  & \$0.2773 \\
+\num{1000}       & \num{150000}     & $0.001$   & \$0.02773 \\
+\num{10000}      & \num{1500000}    & $0.009$   & \$0.002773 \\
+\num{100000}     & \num{15000000}   & $0.094$   & \$0.0002773 \\
+\rowcolor{hotrow}\num{1000000} & \num{150000000} & $0.94$ & \$0.00002773 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The shaded row is the split regime: at $10^6$ deploys/day the hot table is $\sim\!94\%$ full, exactly where \S\ref{sec:split} fires. The rent estimate and the split threshold meet at the high-deployment end---rent per tenant is in the tens of microdollars precisely when the shard is about to divide.
+
+\subsection{Solvency: rent against access fees}
+A tenant is \emph{self-sustaining} when its access-fee income covers its rent; otherwise it draws down the precharge fund and, when that empties, sinks. Table 3 gives net rent $=\rent_{\text{base}}(D)-f$ per tenant-month. Negative entries (shaded) mean the tenant pays its own way and may hold its tier indefinitely; positive entries are a net draw on the residual fund with finite runway.
+
+\begin{table}[h]
+\centering
+\caption*{\textbf{Table 3.} Net rent per tenant-month, $\rent_{\text{base}}(D)-f$. Shaded $=$ self-sustaining (surplus).}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}r|rrrrr@{}}
+\toprule
+ & \multicolumn{5}{c}{Access fee collected $f$ (\$/tenant-month)} \\
+Deploys/day & \$0 & \$0.0001 & \$0.001 & \$0.01 & \$0.10 \\
+\midrule
+\num{100}    & $+0.2773$ & $+0.2772$ & $+0.2763$ & $+0.2673$ & $+0.1773$ \\
+\num{1000}   & $+0.02773$ & $+0.02763$ & $+0.02673$ & $+0.01773$ & \cellcolor{coolrow}$-0.07227$ \\
+\num{10000}  & $+0.002773$ & $+0.002673$ & $+0.001773$ & \cellcolor{coolrow}$-0.007227$ & \cellcolor{coolrow}$-0.09723$ \\
+\num{100000} & $+0.0002773$ & $+0.0001773$ & \cellcolor{coolrow}$-0.0007227$ & \cellcolor{coolrow}$-0.009723$ & \cellcolor{coolrow}$-0.09972$ \\
+\num{1000000}& $+0.00002773$ & \cellcolor{coolrow}$-0.00007227$ & \cellcolor{coolrow}$-0.0009723$ & \cellcolor{coolrow}$-0.009972$ & \cellcolor{coolrow}$-0.09997$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The diagonal frontier is the bid-rent boundary in action: as the shard densifies (down the table), the access fee needed to stay solvent collapses by an order of magnitude per row. A contract earning a tenth of a cent per month is insolvent on a sparse shard but comfortably self-sustaining once the shard carries a million-plus tenants---which is the cold-tail packing argument of \S\ref{sec:bidrent} stated in dollars.
+
+\subsection{Runway and the cascade}
+For a net-paying tenant, the residual fund sets the time to first demotion. If a deploy seals, say, \$0.01 of leftover phlo behind its five residuals (\$0.002/tenant) and collects no access fees, the runway is $0.002/\rent_{\text{base}}(D)$:
+\[
+D=100:\ \approx 5\ \text{hours};\qquad
+D=10^4:\ \approx 22\ \text{days};\qquad
+D=10^5:\ \approx 7\ \text{months}.
+\]
+Density makes squatting cheap, which is the point---cold leaves should be hospitable to nearly-idle state, and the same \$0.002 buys months of tenancy there but only hours near a contended root.
+
+\paragraph{Sensitivity.} Every number scales transparently. Halving the per-residual footprint doubles $N_t$ and halves rent. A Universal Credits discount scales $C$ directly. Raising $\bar r$ (residuals per deploy) scales $N_t$ linearly. The congestion premium of \S\ref{sec:split} adds \emph{on top} of these base figures in the hot core only; in the cold tail it is negligible by construction.
+
+\section{One open design knob}
+
+The base rent above is charged per occupied slot. The incentive-compatible alternative is to charge for the \emph{probe displacement} a tenant causes at the current $\alpha$---the true externality, $\propto c'(\alpha)$---which under elastic hashing is small until the shard is nearly full and then rises sharply, automatically pricing tenants out of an over-dense core. The cost is that a tenant's rent then depends on its neighbors' behavior, complicating the name-migration negotiation. Slot rent is simpler and predictable; displacement rent is correct. We lean toward displacement rent in the hot core and flat slot rent in the cold tail, with the crossover at the tier where $c'(\alpha)$ first becomes non-negligible---but we are flagging it as a decision, not settling it here.
+
+\bigskip
+\noindent\textit{Pieces assembled: the rent lifecycle and its mortality semantics (\S\ref{sec:rent}), the occupancy-driven split threshold in both hashing regimes (\S\ref{sec:split}), bid-rent stratification (\S\ref{sec:bidrent}), and a concrete dollar estimate on a ten-node OCI shard (\S\ref{sec:estimate}).}
+
+\begin{thebibliography}{9}
+\addcontentsline{toc}{section}{References}
+
+\bibitem{rho2005}
+L.~G. Meredith and M.~Radestock.
+\newblock A reflective higher-order calculus.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}, 141(5):49--67, 2005.
+
+\bibitem{fkk2025}
+M.~Farach-Colton, A.~Krapivin, and W.~Kuszmaul.
+\newblock Optimal bounds for open addressing without reordering.
+\newblock arXiv:2501.02305, 2025.
+
+\bibitem{yao1985}
+A.~C. Yao.
+\newblock Uniform hashing is optimal.
+\newblock \emph{Journal of the ACM}, 32(3):687--693, 1985.
+
+\bibitem{alonso1964}
+W.~Alonso.
+\newblock \emph{Location and Land Use: Toward a General Theory of Land Rent}.
+\newblock Harvard University Press, Cambridge, MA, 1964.
+
+\bibitem{muth1969}
+R.~F. Muth.
+\newblock \emph{Cities and Housing: The Spatial Pattern of Urban Residential Land Use}.
+\newblock University of Chicago Press, Chicago, 1969.
+
+\bibitem{mills1967}
+E.~S. Mills.
+\newblock An aggregative model of resource allocation in a metropolitan area.
+\newblock \emph{American Economic Review}, 57(2):197--210, 1967.
+
+\bibitem{weismann1893}
+A.~Weismann.
+\newblock \emph{The Germ-Plasm: A Theory of Heredity}.
+\newblock Charles Scribner's Sons, New York, 1893.
+
+\bibitem{oci2026}
+Oracle Corporation.
+\newblock Oracle Cloud Infrastructure pricing (compute, block volume, and networking price lists).
+\newblock \url{https://www.oracle.com/cloud/price-list/}, accessed June 2026.
+
+\end{thebibliography}
+
+\end{document}
