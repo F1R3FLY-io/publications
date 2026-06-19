@@ -1,0 +1,474 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[table]{xcolor}
+\usepackage{siunitx}
+\usepackage{enumitem}
+\usepackage[expansion=false,protrusion=true]{microtype}
+\DisableLigatures[f]{encoding = *}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+\usepackage{caption}
+
+% --- F1R3FLY brand accent ---
+\definecolor{f1r3red}{HTML}{D7263D}
+\definecolor{f1r3ink}{HTML}{1A1A1A}
+\definecolor{f1r3ash}{HTML}{6B6B6B}
+\definecolor{coolrow}{HTML}{EAF5EC}
+\definecolor{hotrow}{HTML}{FBE9EC}
+
+\titleformat{\section}{\color{f1r3red}\large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\color{f1r3ink}\normalsize\bfseries}{\thesubsection}{0.6em}{}
+
+\hypersetup{colorlinks=true,linkcolor=f1r3red,citecolor=f1r3red,urlcolor=f1r3red}
+
+\newcommand{\shards}{S}
+\newcommand{\agentcost}{a}
+\sisetup{group-separator={,},group-minimum-digits=4}
+
+\newtheorem{remark}{Remark}
+
+\title{\color{f1r3red}\bfseries Managing the Shard Tree\\[2pt]
+\large\color{f1r3ink}\mdseries Agents, DevOps, and the automation crossover ---
+a management-economics companion to occupancy-driven sharding in F1R3FLY}
+\author{\normalsize F1R3FLY Industries --- working note}
+\date{\normalsize \today}
+
+\begin{document}
+\maketitle
+
+\noindent\textit{A short note, and a companion to ``Rent and Shard Splitting.'' That note priced
+\emph{running} a shard tree; this one prices \emph{operating} it---who provisions the nodes, watches
+the tables fill, fires the split, migrates the cold tenants, and answers the pager at 3 a.m. The
+arithmetic in \S\ref{sec:cross} is an engineering estimate built on public 2026 figures (Anthropic
+API list prices, OCI GPU list prices, and US SRE/DevOps compensation surveys); every assumption is a
+lever in the companion workbook so the numbers can be re-derived or re-priced.}
+
+\section{The problem in one paragraph}
+
+A single F1R3FLY shard is ten nodes costing $C\approx\$\num{4160}$/month
+(``Rent and Shard Splitting,'' \S5). But a shard is never alone for long: as occupancy ratchets
+toward the split threshold $\alpha^\star$, the tree fans out, and the sector roadmap in the
+sharding-economics workbook carries the AI engine alone from one shard to $\sim\!\num{334}$ by
+year five, with the cross-shard \emph{connector} layer reaching $\sim\!\num{12000}$ shards at
+maturity. Each of those shards must be stood up, monitored, split, and---per the rent
+lifecycle---have its tenants demoted and evicted on schedule. That operational work can be done by
+a human DevOps team, by an autonomous agent, or by a mix. The three differ not in \emph{what} they
+do but in \emph{how their cost scales}: human cost is a step function with a high fixed floor and a
+steep per-shard slope; agent cost is nearly flat, a fixed platform charge plus pennies of inference
+per shard. Where those curves cross is the whole question, and it lands at a surprisingly small
+tree.
+
+\section{Three regimes}
+\label{sec:regimes}
+
+We cost three ways of operating a tree of $\shards$ homogeneous shards.
+
+\begin{description}[leftmargin=0pt,labelsep=0.6em]
+  \item[\textnormal{\textbf{(1) Full automation.}}] An agent provisions hardware, stands up nodes,
+  and manages the whole tree---health, splits, rent decisions, tenant migration. No in-house
+  operators; physical failures are absorbed by the cloud provider's own hardware replacement, and a
+  thin premium-support retainer covers SLA disputes. This is the cloud-native limit. It is a
+  \emph{price floor}, not a deployable plan, because an agent cannot currently re-seat a failed DIMM
+  or litigate a credit with a carrier; we cost it anyway, because it is the asymptote the other two
+  are measured against.
+  \item[\textnormal{\textbf{(2) Agent in the mix (hybrid).}}] The agent does the routine---all
+  monitoring, provisioning, split and migration decisions---and escalates the exceptions to a thin
+  human team sized by the \emph{exception rate}, not by the shard count. This is the realistic
+  deployment.
+  \item[\textnormal{\textbf{(3) DevOps team.}}] Humans provision and manage the tree with
+  conventional infrastructure-as-code. The agent platform is not built; cost is people.
+\end{description}
+
+\section{The cost models}
+\label{sec:models}
+
+Let $W$ be the fully-loaded monthly cost of one SRE, $\sigma$ a span of control (shards one engineer
+can carry), $\varphi$ a coverage floor (minimum head\-count for a 24/7 rotation), $P$ the fixed cost
+of \emph{having} an ops agent (the engineers who build and maintain the harness, evals, and
+guardrails, plus telemetry), $\rho$ a premium-support retainer, and $\agentcost$ the agent's
+inference cost to manage one shard for one month. Then
+
+\begin{align}
+\text{DevOps:}     \quad M_d(\shards) &= W\cdot\max\!\bigl(\varphi_d,\ \lceil \shards/\sigma_d\rceil\bigr), \label{eq:devops}\\
+\text{Full-auto:}  \quad M_f(\shards) &= P + \rho + \agentcost\,\shards, \label{eq:full}\\
+\text{Hybrid:}     \quad M_h(\shards) &= P + \agentcost\,\shards + W\cdot\max\!\bigl(\varphi_h,\ \lceil \shards/\sigma_h\rceil\bigr). \label{eq:hybrid}
+\end{align}
+
+The structure is the entire story. Equation~\eqref{eq:devops} is flat at $W\varphi_d$ until the tree
+outgrows the on-call floor, then climbs one engineer per $\sigma_d$ shards---marginal cost
+$W/\sigma_d$ per shard. Equation~\eqref{eq:full} is a fixed intercept plus a gentle slope
+$\agentcost$. Equation~\eqref{eq:hybrid} pays \emph{both} a platform intercept and a human term, but
+the human term uses $\sigma_h\gg\sigma_d$ because the agent has absorbed everything routine: one
+operator now backstops hundreds of shards instead of dozens.
+
+\subsection{What the agent's \texorpdfstring{$\agentcost$}{a} actually is}
+The per-shard inference cost is a transparent token sum over the agent's activities $k$ (routine
+monitoring, hard decisions, provisioning), each with $n_k$ calls per shard-month, input/output token
+counts $\tau^{\text{in}}_k,\tau^{\text{out}}_k$, a cached-input fraction $\beta_k$, and model prices
+$p^{\text{in}}_k,p^{\text{out}}_k$ per million tokens with cache multiplier $\gamma$ (prompt caching
+bills cached input at \SI{10}{\percent}):
+\[
+\agentcost \;=\; \sum_k n_k\,\frac{\bigl[\beta_k\gamma + (1-\beta_k)\bigr]\,\tau^{\text{in}}_k\,p^{\text{in}}_k
+\;+\; \tau^{\text{out}}_k\,p^{\text{out}}_k}{10^6}.
+\]
+With routine monitoring on Haiku 4.5, hard decisions (split / migrate / triage) on Opus 4.8, and
+provisioning on Sonnet 4.6 at June 2026 list prices~\cite{anthropicprice2026}, the workbook returns
+
+\begin{table}[h]
+\centering
+\caption*{\textbf{Table 1.} Agent inference cost to manage one shard for one month.}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Activity & Calls/shard-mo & Model & Cost (\$/shard-mo) \\
+\midrule
+Routine monitoring   & \num{720} & Haiku 4.5  & \$2.61 \\
+Hard decisions       & \num{6}   & Opus 4.8   & \$1.40 \\
+Provisioning / stand-up & \num{0.5} & Sonnet 4.6 & \$0.17 \\
+\midrule
+\textbf{Total $\agentcost$} & & & \textbf{\$4.17} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Four dollars and change. Against an infrastructure bill of $C\approx\$\num{4160}$ per
+shard, the agent's management overhead is \emph{one tenth of one percent}. The same shard managed at
+the margin by a human costs $W/\sigma_d\approx\$\num{667}$/month---about \SI{16}{\percent} of infra,
+and roughly \num{160} times the agent. That ratio, not any subtlety of the curves, is why the
+crossover exists and why it is early.
+
+\section{The crossover}
+\label{sec:cross}
+
+\paragraph{Parameters.} Loaded SRE $W=\$\num{20000}$/month (a \$\num{150000} total-comp engineer at a
+$1.6\times$ loading factor~\cite{builtin2026,kore2026}); DevOps span $\sigma_d=30$ shards/SRE with a
+lean 24/7 floor $\varphi_d=2$; hybrid span $\sigma_h=300$ with exception floor $\varphi_h=1$; agent
+platform $P=\$\num{28000}$/month ($1.25$ platform FTEs plus \$\num{3000} tooling); retainer
+$\rho=\$\num{2000}$. All are levers; \S\ref{sec:sens} sweeps the ones that move the answer.
+
+\begin{table}[h]
+\centering
+\caption*{\textbf{Table 2.} Monthly cost to manage the whole tree. ``Feasible best'' chooses between
+the two deployable regimes (DevOps, Hybrid); Full-auto is shown as the floor.}
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+Shards $\shards$ & DevOps & Full-auto (floor) & Hybrid & Feasible best \\
+\midrule
+\num{1}     & \$\num{40000}      & \$\num{30004}  & \$\num{48004}  & DevOps \\
+\num{25}    & \$\num{40000}      & \$\num{30104}  & \$\num{48104}  & DevOps \\
+\num{50}    & \$\num{40000}      & \$\num{30208}  & \$\num{48208}  & DevOps \\
+\num{60}    & \$\num{40000}      & \$\num{30250}  & \$\num{48250}  & DevOps \\
+\rowcolor{coolrow}\num{90} & \$\num{60000} & \$\num{30375} & \$\num{48375} & Hybrid \\
+\num{100}   & \$\num{80000}      & \$\num{30417}  & \$\num{48417}  & Hybrid \\
+\num{250}   & \$\num{180000}     & \$\num{31042}  & \$\num{49042}  & Hybrid \\
+\num{334}   & \$\num{240000}     & \$\num{31392}  & \$\num{69392}  & Hybrid \\
+\num{1000}  & \$\num{680000}     & \$\num{34166}  & \$\num{112166} & Hybrid \\
+\num{5000}  & \$\num{3340000}    & \$\num{50832}  & \$\num{388832} & Hybrid \\
+\rowcolor{hotrow}\num{12074} & \$\num{8060000} & \$\num{80305} & \$\num{898305} & Hybrid \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Where it crosses.} Below $\sim\!60$ shards a lean human team is the cheapest
+\emph{deployable} option: the tree is small enough that two on-call engineers cover it, and that
+\$\num{40000} undercuts the \$\num{48000} floor of standing up \emph{and} owning an agent platform.
+The flip comes the moment DevOps must hire its third engineer---at $\shards>2\sigma_d=60$---after
+which human cost climbs a step every thirty shards while hybrid barely moves. Dropping the ceilings
+and floors, the crossover has a clean closed form:
+\[
+\shards^\star \;\approx\; \frac{P+W}{\,W/\sigma_d - \agentcost\,}
+\;=\; \frac{\num{28000}+\num{20000}}{\,\num{20000}/30 - 4.17\,}
+\;\approx\; \num{72}\ \text{shards}.
+\]
+The denominator is the per-shard \emph{advantage} of an agent over a human ($\$\num{667}-\$4$); the
+numerator is the fixed price of admission to automation. Both sides are small numbers, so the
+quotient is small: F1R3FLY crosses into agent-favourable territory while its tree is still in the
+low dozens---well inside the year-four AI ramp, and an order of magnitude before the connector layer
+exists at all.
+
+\paragraph{The two asymptotes.} At the high end the regimes separate brutally. At the connector-scale
+$\num{12074}$-shard tree, a pure DevOps organisation needs \num{403} engineers and
+\$\num{8.06}M/month; the hybrid model needs \num{41} (one platform team plus exception coverage) and
+\$\num{0.90}M---\SI{11}{\percent} of the DevOps bill; full automation, were it feasible alone, would
+cost \$\num{80000}, or \SI{1}{\percent}. As a fraction of the \$\num{50}M infrastructure spend at
+that scale, human-bound management is a persistent \SI{16}{\percent} tax, while agent-led management
+falls below \SI{2}{\percent} and keeps falling. Management is a major line item exactly when it is
+human and the tree is large; it is a rounding error exactly when it is automated.
+
+\begin{remark}[The agent is already in the design]
+The hard decisions priced on Opus above are not generic ``ops.'' They are the very events the rent
+companion specifies: \emph{when to split} (the $\alpha^\star$ test), \emph{which tenants to demote}
+and \emph{how far} (the bid-rent sort), and \emph{when to evict} (the depletion cascade). These are
+local, state-dependent, content-addressed decisions over a tuplespace---precisely the shape a
+reactive agent handles well, and precisely the shape that scales badly across a human on-call
+rotation. The split threshold and the management model are the same artefact seen twice: occupancy
+fires the split; the agent executes it; rent prices the migration. Automating the tree is not a new
+system bolted on, but the reducer's own lifecycle given an operator.
+\end{remark}
+
+\section{Why hybrid, and what stays human}
+\label{sec:hybrid}
+
+Full automation wins on dollars at every scale (Table 2, floor column) for the same reason it is not
+deployable: it books no humans. The residual that keeps humans in the loop is small but irreducible,
+and it is physical or adversarial rather than computational:
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Hardware the provider won't touch.} On managed cloud the carrier swaps failed
+  disks and hosts; on owned or co-located metal someone must. This is the difference between
+  $\rho$ (a support line item) and an on-site hands contract.
+  \item \textbf{SLA and contract disputes.} Negotiating a credit for a region outage, or a
+  commitment discount, is a human-to-human commercial act. The agent can assemble the evidence; a
+  person signs.
+  \item \textbf{Novel incidents and change authority.} The first occurrence of a failure mode, and
+  any irreversible action (key rotation, consensus reconfiguration), wants a human in the approval
+  path until the agent's eval coverage earns autonomy.
+\end{itemize}
+Hybrid prices exactly this: it pays the agent's flat $\agentcost\shards$ for everything routine and
+keeps a team sized by how often the above fires---captured here as the tenfold span
+$\sigma_h=300$. Raise the exception rate (owned hardware, regulated change control, immature evals)
+and $\sigma_h$ falls toward $\sigma_d$, pulling hybrid back toward DevOps; lower it (fully managed
+cloud, mature autonomy) and $\sigma_h$ rises, pulling hybrid toward the full-auto floor. The single
+parameter $\sigma_h$ is the dial between ``agent with human backup'' and ``humans with agent help.''
+
+\section{Sensitivity: the levers that move the answer}
+\label{sec:sens}
+
+\paragraph{The DevOps floor.} The crossover sits at $\sim\!60$ shards \emph{because} we modelled a
+lean two-person rotation. A team holding a strict 24/7 SLA at $\varphi_d=4$ pays \$\num{80000} from
+the first shard, and hybrid wins essentially everywhere; conversely a single-engineer hobby
+deployment ($\varphi_d=1$) pushes the crossover out past \num{100} shards. The floor is the most
+consequential single assumption, and it is a policy choice (what coverage you promise), not a
+technical one.
+
+\paragraph{The agent platform $P$.} Halving the platform cost (a shared agent across many trees,
+amortised tooling) moves $\shards^\star$ down proportionally and makes hybrid competitive against
+even a one-person team. Doubling it (bespoke harness, heavy eval burden) roughly doubles the
+crossover. $P$ is a one-time-ish capability cost; the more trees it serves, the lower its effective
+per-tree share.
+
+\paragraph{Inference price and model mix.} The agent slope $\agentcost$ is dominated by routine
+monitoring on Haiku; pushing more decisions to Opus, or polling more often, raises it, but it would
+have to rise by two orders of magnitude---to $\sim\!\$\num{667}$/shard---before it matched the human
+marginal cost. There is enormous headroom: prompt caching, batch settlement of non-urgent checks,
+and cheaper routine models all cut $\agentcost$ further. The agent's cost advantage is not fragile.
+
+\paragraph{Span of control.} Better human tooling raises $\sigma_d$ and delays the crossover; it does
+not remove it, because the human curve still has positive slope and the agent curve is essentially
+flat. No achievable $\sigma_d$ closes a gap that is two orders of magnitude per shard at the margin.
+
+\section{Self-hosting the agent's model: local inference}
+\label{sec:local}
+
+Everything so far priced the agent's inference at third-party API rates---pure variable cost, a few
+dollars per shard, zero fixed outlay. Dedicating hardware to a \emph{local} model inverts that
+structure. A GPU runs whether it serves one shard or three thousand, so local inference is a
+\emph{fixed step cost}: the same shape as the human team, one level down the stack. The question is
+the same too---at what tree size does the fixed asset amortise below the variable bill?
+
+\paragraph{The commodity tier.} Split the agent's work by volume. Routine monitoring is high-volume
+($\sim\!\num{720}$ calls/shard-month) and cognitively cheap---exactly what a small open-weight model
+on a commodity inference GPU does well. On an OCI inference shape (an L40S- or A10-class card at
+$\sim\$1.50$/GPU-hour list, $\sim\$\num{1095}$/month; $\sim\$0.85$ on a three-year
+commit~\cite{oci2026}) running a quantised model at a conservative $\num{5000}$ tokens/s and
+\SI{70}{\percent} utilisation, one GPU clears $\sim\!\num{9.2}$ billion tokens/month. The routine
+workload is $\num{3.24}$\,M tokens/shard-month, so a single card saturates at $\sim\!\num{2840}$
+shards.
+
+\paragraph{Where local beats the API.} Per-shard local cost is the GPU bill divided by the tree it
+serves; it falls as the card fills. It crosses the flat API price (\$2.61/shard for routine on Haiku
+4.5) at the \emph{break-even tree size}
+\[
+\shards_{\text{BE}} \;=\; \frac{\text{GPU \$/month}}{\text{API \$/shard}}
+\;=\; \frac{\num{1095}}{2.61} \;\approx\; \num{420}\ \text{shards}.
+\]
+Below \num{420} shards the card sits mostly idle and the API is cheaper; above it, local routine cost
+collapses toward $\sim\$0.44$/shard once the GPU saturates---about \SI{17}{\percent} of the API
+price, a sixfold cut on the routine tier.
+
+\begin{table}[h]
+\centering
+\caption*{\textbf{Table 3.} Routine-tier inference: per-shard cost, API vs self-hosted GPU.}
+\setlength{\tabcolsep}{7pt}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+Shards $\shards$ & GPUs & Local \$/shard & API \$/shard & Cheaper \\
+\midrule
+\num{100}   & 1 & \$10.95 & \$2.61 & API \\
+\num{334}   & 1 & \$3.28  & \$2.61 & API \\
+\num{420}   & 1 & \$2.61  & \$2.61 & break-even \\
+\rowcolor{coolrow}\num{500}   & 1 & \$2.19  & \$2.61 & Local \\
+\rowcolor{coolrow}\num{1000}  & 1 & \$1.09  & \$2.61 & Local \\
+\rowcolor{coolrow}\num{2500}  & 1 & \$0.44  & \$2.61 & Local \\
+\rowcolor{coolrow}\num{12074} & 5 & \$0.45  & \$2.61 & Local \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Why the frontier tier stays rented.} The hard decisions (split, migrate, triage) run on a
+frontier model precisely because quality there is load-bearing, and they are \emph{low} volume
+($\sim\!6$/shard-month). Self-hosting frontier quality means a large open-weight model on a
+multi-GPU node---an $8\times$H100 box lists near \$\num{58400}/month~\cite{oci2026}---against a
+hard-decision API bill of only $\sim\$\num{16800}$/month even at the \num{12074}-shard connector
+scale. The dedicated floor is over three times the entire bill it would replace, and open-weight
+quality may still trail Opus. The economical architecture is therefore two-tier and mirrors the
+human story exactly: \emph{own the commodity high-volume tier, rent the exceptional low-volume one.}
+
+\paragraph{What it changes, and what it doesn't.} Self-hosting does \emph{not} move the agent-versus-DevOps
+crossover of \S\ref{sec:cross}. That crossover sits near \num{60} shards, far below the \num{420}-shard
+inference break-even, so in the contested region one is on the API regardless; the management decision
+is unaffected. What local inference does is \emph{deepen} the agent's lead once the tree is large: the
+blended per-shard agent cost falls from \$4.17 to $\sim\$2.01$ at connector scale, and the full-auto
+price floor drops from \$\num{80305} to \$\num{54310}/month---a \SI{32}{\percent} cut---because the
+single largest variable component, routine inference, has been converted to a nearly-flat asset.
+
+\begin{remark}[Below break-even, non-cost drivers can still decide it]
+Cost is not the only axis. Keeping the management model local holds operational telemetry---shard
+health, tenant patterns, traffic---off a third-party endpoint, which is a data-residency and
+sovereignty argument for the regulated engagements (the VA cohort, Tata, fintech), where the
+compliance multipliers in the sector model already show these tenants paying for assurance. It also
+shortens the control-loop round trip. Any of these can justify a dedicated GPU \emph{below} the
+\num{420}-shard break-even, where it loses on dollars alone. And there is a F1R3FLY-native option the
+generic analysis misses: the model can run \emph{as a tenant on the tree it manages}---co-resident,
+metered in phlogiston, paying rent like any other residual---so the operator becomes self-hosted
+inside the very substrate it operates, rather than a service bolted on beside it.
+\end{remark}
+
+\section{Do you even need the model? Algorithmic control and the three-tier hierarchy}
+\label{sec:algo}
+
+Everything above assumed that automating the tree means an LLM does the deciding. That assumption is
+wrong, and worth correcting. Most shard-tree decisions are \emph{deterministic}: split when
+$\alpha>\alpha^\star$, demote a tenant when its rent fund empties, provision a shard when capacity is
+hit, remediate when a health metric leaves its band. These are threshold tests and B-tree range
+handoffs---exactly the R1--R5 rewrite families of the rent companion---and a conventional control
+plane (operators, reconcilers, policy loops) executes them with no model in the loop. The earlier
+regimes priced \emph{all} $\sim\!\num{726}$ decisions per shard-month through Haiku or Opus; that
+treats the LLM as the control plane rather than as the exception handler above it, and over-prices
+inference by roughly twentyfold.
+
+\paragraph{Tier 0: the algorithmic control plane.} A deterministic controller costs a fixed
+engineering charge to build and maintain ($\sim\$\num{25000}$/month here) and essentially
+\emph{nothing} per shard---the reconcile loop is CPU cycles on nodes you already run. Its fully
+automated floor is therefore \emph{flat}: $\sim\$\num{27000}$/month for a tree of \emph{any} size,
+from ten shards to twelve thousand. That is the true automation floor, and it sits below every LLM
+regime in this note, because it buys no tokens at all.
+
+\paragraph{Tier 1: the model as escalation, priced on the residual.} The LLM's right job is the
+fraction of decisions the rules do not settle---genuinely ambiguous triage, novel failure modes,
+multi-factor policy calls. If a share $\delta\approx\num{0.95}$ of decisions is deterministic, the
+model sees only the residual, and its inference cost falls from \$4.17 to
+$a_{\text{resid}}\approx\$0.20$ per shard-month. The LLM is to the rules what the human is to the
+LLM: each tier is the exception handler of the tier below it.
+
+\paragraph{Tier 2: the human.} Unchanged---the physical and commercial residual of
+\S\ref{sec:hybrid}.
+
+\begin{table}[h]
+\centering
+\caption*{\textbf{Table 4.} Four ways to run the tree. Floors carry no humans; ``feasible best''
+chooses between the two deployable regimes.}
+\setlength{\tabcolsep}{5.5pt}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{@{}rrrrrl@{}}
+\toprule
+$\shards$ & DevOps & Algo full-auto & Algo $+$ human & Three-tier & Feasible best \\
+ & (no auto) & (floor) & (no LLM) & (algo$+$LLM$+$human) & \\
+\midrule
+\num{50}    & \$\num{40000}   & \$\num{27000} & \cellcolor{coolrow}\$\num{45000}  & \$\num{53010}  & Algo $+$ human \\
+\num{150}   & \$\num{100000}  & \$\num{27000} & \cellcolor{coolrow}\$\num{45000}  & \$\num{53030}  & Algo $+$ human \\
+\num{250}   & \$\num{180000}  & \$\num{27000} & \$\num{65000}  & \cellcolor{coolrow}\$\num{53050}  & Three-tier \\
+\num{1000}  & \$\num{680000}  & \$\num{27000} & \$\num{165000} & \cellcolor{coolrow}\$\num{113200} & Three-tier \\
+\num{5000}  & \$\num{3340000} & \$\num{27000} & \$\num{705000} & \cellcolor{coolrow}\$\num{374000} & Three-tier \\
+\num{12074} & \$\num{8060000} & \$\num{27000} & \$\num{1645000}& \cellcolor{coolrow}\$\num{855416} & Three-tier \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What the regimes say.} Among floors, algorithmic full-auto ($\$\num{27000}$ flat)
+undercuts the LLM full-auto floor at every scale---no surprise, since it runs no inference. Among
+\emph{deployable} options, the ranking flips with scale. Below $\sim\!\num{150}$ shards a rules-only
+plane with a single on-call engineer is cheapest: when one human already covers the escalations, the
+LLM tier's platform ($\sim\$\num{8000}$/month) and inference are not worth their keep. Above
+$\sim\!\num{250}$ shards the three-tier system wins, and the gap widens fast: the model roughly
+doubles human reach ($\sigma$ from \num{150} to \num{300}), and at scale that saves \emph{multiple}
+\$\num{20000}/month engineers for a few thousand dollars of platform and pennies of residual
+inference. The crossover is the point where a no-LLM team must hire its second escalation
+engineer. Notably the correctly-scoped three-tier even beats the all-LLM ``hybrid'' of
+\S\ref{sec:cross} ($\$\num{855}$k vs $\$\num{898}$k at connector scale), because deterministic
+decisions no longer pay for tokens.
+
+\paragraph{The honest conclusion.} The cheapest automation is mostly \emph{rules}, with a thin model
+layer on top and a thinner human layer above that. The LLM earns its place precisely in the band of
+decisions that are too ambiguous for a deterministic rule yet not physical---and that band, not the
+whole workload, is what it should be priced on. None of this moves the automation-versus-DevOps
+crossover near \num{60} shards; it lowers the automation floor and corrects the architecture. There
+is a F1R3FLY reading too: the control plane is the reducer's own lifecycle---the splits, demotions,
+and migrations are rewrites the rho machine already performs---so Tier 0 is less a new system than the
+normalisation dynamics given an actuator, with the model invoked only where the rewrite rules leave
+genuine policy slack.
+
+\section{One open operational knob}
+
+The model treats provisioning as an amortised monthly episode. In a tree that is actively splitting,
+provisioning is bursty---a wave of stand-ups follows every density event---and the agent's value is
+highest precisely there, where a human team would be paged into a scramble. The incentive-compatible
+refinement is to let the split-overhead $K$ from the rent companion \emph{also} price the management
+burst: a split that is cheap to coordinate (large $K$, well-separated join graph) is cheap to
+\emph{automate}, while a split that fragments a hot join graph is both consensus-expensive and
+attention-expensive. We flag this coupling---management cost as a function of $K$, not a flat
+per-shard charge---as the natural next iteration, and leave it as a decision rather than settling it
+here.
+
+\bigskip
+\noindent\textit{Pieces assembled: three operating regimes and their cost laws (\S\ref{sec:regimes},
+\S\ref{sec:models}); a transparent token build-up of the agent's per-shard cost (Table 1); the
+crossover at $\sim\!60$ shards with its closed form and its two asymptotes (\S\ref{sec:cross}); the
+case for hybrid and the irreducible human residual (\S\ref{sec:hybrid}); a sensitivity sweep over
+the levers that actually move it (\S\ref{sec:sens}); and the nested local-vs-API inference crossover
+when hardware is dedicated to a self-hosted model (\S\ref{sec:local}); and the pure-algorithmic
+control plane with the model recast as a residual escalation tier in a three-tier hierarchy
+(\S\ref{sec:algo}). Live model: the
+\texttt{Mgmt Assumptions},
+\texttt{Agent Cost}, \texttt{Mgmt Crossover}, \texttt{Local Inference}, and
+\texttt{Algorithmic vs LLM} tabs of \texttt{f1r3fly\_sharding\_economics.xlsx}.}
+
+\begin{thebibliography}{9}
+\addcontentsline{toc}{section}{References}
+
+\bibitem{rentnote}
+F1R3FLY Industries.
+\newblock Rent and shard splitting: a storage-economics companion to occupancy-driven sharding in F1R3FLY.
+\newblock Working note, 2026.
+
+\bibitem{anthropicprice2026}
+Anthropic.
+\newblock Claude API pricing (Haiku 4.5, Sonnet 4.6, Opus 4.8); prompt-caching and batch discounts.
+\newblock \url{https://docs.claude.com/en/docs/about-claude/pricing}, accessed June 2026.
+
+\bibitem{builtin2026}
+Built In.
+\newblock Site Reliability Engineer and DevOps Engineer salary in US, 2026
+(avg.\ total comp \$\num{147000}--\$\num{150000}).
+\newblock \url{https://builtin.com/salaries}, accessed June 2026.
+
+\bibitem{kore2026}
+KORE1.
+\newblock Site Reliability Engineer salary guide 2026 (base \$\num{130000}--\$\num{210000};
+staff/principal \$\num{300000}+ all-in).
+\newblock \url{https://www.kore1.com/sre-salary-guide-2026/}, accessed June 2026.
+
+\bibitem{oci2026}
+Oracle Corporation.
+\newblock Oracle Cloud Infrastructure pricing (compute, block volume, networking).
+\newblock \url{https://www.oracle.com/cloud/price-list/}, accessed June 2026.
+
+\end{thebibliography}
+
+\end{document}
