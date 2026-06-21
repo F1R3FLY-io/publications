@@ -1,0 +1,521 @@
+\documentclass[11pt]{article}
+
+%==================== packages ====================
+\usepackage[T1]{fontenc}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+%==================== brand palette ====================
+\definecolor{navy}{HTML}{1A1A2E}
+\definecolor{sky}{HTML}{3FA9F5}
+\definecolor{sage}{HTML}{8BB999}
+\definecolor{gold}{HTML}{F3D630}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=navy,
+  citecolor=navy,
+  urlcolor=sky,
+}
+
+\titleformat{\section}{\normalfont\large\bfseries\color{navy}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalfont\bfseries\color{navy}}{\thesubsection}{0.6em}{}
+
+%==================== theorem environments ====================
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{notation}[definition]{Notation}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{example}[definition]{Example}
+
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+
+%==================== notation macros ====================
+\newcommand{\Ob}{\mathsf{O}}            % sort of boundaries
+\newcommand{\Ed}{\mathsf{E}}            % sort of elements
+\newcommand{\M}{M}                      % comprehension former
+\newcommand{\unit}{\eta}                % unit / head
+\newcommand{\zero}{\varnothing}         % zero / empty
+\newcommand{\guard}[1]{\langle #1\rangle}
+\newcommand{\eq}{\mathrel{\doteq}}      % guard equality
+\newcommand{\gen}[2]{#1\!\leftarrow\!#2}% generator
+\newcommand{\dl}{\partial_{0}}          % left boundary
+\newcommand{\dr}{\partial_{1}}          % right boundary
+\newcommand{\uu}{\mathsf{u}}            % neutral-element operation
+\newcommand{\kk}{\kappa}                % multiplication
+\newcommand{\Hom}{\mathsf{H}}           % derived hom-comprehension
+\newcommand{\one}{\mathbf{1}}           % terminal sort
+\newcommand{\pt}{\ast}                  % its element
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\co}{\mathbin{\diamond}}    % fibred multiplication
+\newcommand{\unitf}{\mathsf{e}}         % fibred neutral element
+\newcommand{\compr}[2]{\bigl[\,#1 \ \big|\ #2\,\bigr]}
+
+\setlist[enumerate]{itemsep=2pt,topsep=3pt}
+
+%==================== title ====================
+\title{\color{navy}\bfseries Boundaried Monoids via Comprehension\\[2pt]
+\normalsize\normalfont\color{black} A purely equational theory}
+\author{L.\,G.\,Meredith\\[-1pt]\small F1R3FLY.io}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We give a self-contained, purely equational theory $\mathbf{T}$ of what we call
+\emph{boundaried monoids}: a generalisation of monoids in which every element
+carries a left and a right boundary drawn from an auxiliary sort, and the
+product of two elements is defined exactly when the inner boundaries agree.
+The development uses no notion beyond sorts, operations, equations, and
+\emph{comprehension}. Its one structural idea is presentational: rather than
+treat the product as a partial operation hedged by side conditions, we absorb
+its partiality into a \emph{comprehension structure}, so that the product
+becomes a total operation valued in a collection sort. The translation between
+the partial and the total readings is exactly comprehension in the sense of
+Wadler~\cite{wadler}. We axiomatise the comprehension layer (\S\ref{sec:comp}),
+state the principal theory over it (\S\ref{sec:T}), give an equivalent
+dependently sorted presentation, and prove the two equivalent with comprehension
+as the translating device (\S\ref{sec:equiv}). Throughout, the object of study
+is an algebra and nothing more.
+\end{abstract}
+
+%================================================================
+\section{Aim and standing conventions}\label{sec:intro}
+
+This note isolates a single algebraic theory and writes down its equations.
+We deliberately confine ourselves to elementary algebraic vocabulary: a
+\emph{signature} is a family of sorts together with operations between finite
+products of sorts; a \emph{theory} adds equations; a \emph{model} is a
+sort-indexed family of carriers interpreting the operations and satisfying the
+equations. Beyond this we use only one further device, \emph{comprehension},
+which we axiomatise in \S\ref{sec:comp} before it is used.
+
+The structure we axiomatise is a mild generalisation of a monoid. Recall that a
+monoid is a set with an associative binary product and a two-sided neutral
+element. A \emph{boundaried monoid} relaxes totality of the product: each
+element $f$ is assigned a left boundary $\dl f$ and a right boundary $\dr f$ in
+an auxiliary sort $\Ob$, and the product $g\cdot f$ is intended to exist
+precisely when $\dl g=\dr f$. A monoid is the special case in which $\Ob$ has a
+single element, so that every pair is multipliable.
+
+There are two faithful ways to render the partial product. The first keeps the
+product partial and indexes it by boundaries, giving a dependently sorted
+\emph{equational} theory with totally standard operations
+(\S\ref{sec:equiv}). The second keeps a single sort of elements and makes the
+product \emph{total} by valuing it in a collection sort: the product of a
+non-multipliable pair is the empty collection, and the product of a
+multipliable pair is a singleton. The second reading is the one in which the
+partiality is handled by comprehension, and it is the reading we take as
+primary. The bulk of the note shows that the two readings define the same
+theory.
+
+\paragraph{A note on scope.} We make no semantic claims here; interpretations of
+$\mathbf{T}$ are deferred to separate work. We also make no use of any structure
+richer than the comprehension layer of \S\ref{sec:comp}. The reader will
+recognise that layer, under a different packaging, as a familiar gadget; we cite
+its provenance~\cite{wadler,moggi} and otherwise do not rely on that
+packaging.\footnote{The comprehension structure of
+Definition~\ref{def:comp} is an \emph{extension system}: a unit together with a
+Kleisli-style extension subject to three equations. We present it in exactly
+this elementary form so that the present theory remains an algebra, with no
+appeal to functoriality or to ambient morphisms.}
+
+%================================================================
+\section{The comprehension layer}\label{sec:comp}
+
+We work over a fixed many-sorted signature that is closed under finite products:
+it has a terminal sort $\one$ with unique element $\pt$, binary products
+$X\times Y$ with projections and pairing $\langle\,,\rangle$, and the evident
+equations. We write $f\colon X\to Y$ for a derived operation (a term in one free
+variable). All of this is ordinary equational algebra.
+
+\begin{definition}[Comprehension structure]\label{def:comp}
+A \emph{comprehension structure} consists of
+\begin{enumerate}[label=(\roman*)]
+  \item a sort $\M X$ for every sort $X$ (the sort of \emph{collections} of $X$);
+  \item for each sort $X$ a \emph{unit} $\unit_X\colon X\to\M X$;
+  \item for each operation $f\colon X\to\M Y$ an \emph{extension}
+        $f^{\star}\colon \M X\to\M Y$;
+  \item for each sort $X$ a constant $\zero_X\colon\M X$ (the \emph{empty
+        collection});
+  \item an \emph{equality guard}
+        $\guard{-\eq-}\colon \Ob\times\Ob\to\M\one$
+        on the distinguished sort $\Ob$,
+\end{enumerate}
+subject to the equations
+\begin{align}
+  \unit_X^{\star} &= \id_{\M X}, \tag{C1}\\
+  f^{\star}\circ\unit_X &= f, \tag{C2}\\
+  (g^{\star}\circ f)^{\star} &= g^{\star}\circ f^{\star}, \tag{C3}
+\end{align}
+for all $f\colon X\to\M Y$, $g\colon Y\to\M Z$; the \emph{commutativity} law
+\begin{equation}
+  \compr{(x,y)}{\gen{x}{u},\,\gen{y}{v}}
+  \;=\;
+  \compr{(x,y)}{\gen{y}{v},\,\gen{x}{u}}
+  \tag{C4}
+\end{equation}
+whenever $u\colon\M X$ and $v\colon\M Y$ share no free variable; the \emph{zero}
+laws
+\begin{align}
+  f^{\star}\circ\zero_X &= \zero_Y, \tag{C5}\\
+  \compr{t}{\gen{x}{\zero_X},\,\overline{q}} &= \zero, \tag{C6}
+\end{align}
+and the \emph{guard} laws
+\begin{align}
+  \guard{a\eq a} &= \unit_{\one}(\pt), \tag{C7}\\
+  \compr{\varphi(a,b)}{\guard{a\eq b},\,\overline{q}}
+  &= \compr{\varphi(a,a)}{\guard{a\eq b},\,\overline{q}}. \tag{C8}
+\end{align}
+The comprehension notation $\compr{\,\cdot\,}{\,\cdot\,}$ used above is defined in
+Notation~\ref{not:comp}; equations (C4)--(C8) are to be read after that
+expansion.
+\end{definition}
+
+\begin{notation}[Comprehension]\label{not:comp}
+A \emph{qualifier} is either a \emph{generator} $\gen{x}{u}$ (with
+$u\colon\M X$ and $x$ a fresh variable of sort $X$) or a \emph{guard}
+$\guard{a\eq b}$ (with $a,b\colon\Ob$). For a term $t$ and a finite list
+$\overline{q}=q_1,\dots,q_n$ of qualifiers we define a term
+$\compr{t}{\overline{q}}\colon\M Y$ (where $t\colon Y$ in the context bound by
+$\overline{q}$) by recursion on the list:
+\begin{align*}
+  \compr{t}{\,} &\;=\; \unit(t),\\
+  \compr{t}{\gen{x}{u},\,\overline{q}}
+    &\;=\; \bigl(\lambda x.\,\compr{t}{\overline{q}}\bigr)^{\!\star} u,\\
+  \compr{t}{\guard{a\eq b},\,\overline{q}}
+    &\;=\; \bigl(\lambda \pt.\,\compr{t}{\overline{q}}\bigr)^{\!\star}\,
+           \guard{a\eq b}.
+\end{align*}
+Thus generators are extension, the head is the unit, and guards filter. We read
+$\compr{t}{\overline q}$ as ``collect $t$ as the bound variables range over the
+generators, retaining only those bindings that satisfy the guards.''
+\end{notation}
+
+The equations have transparent readings. (C1)--(C3) say that collecting a
+singleton is identity, that a singleton generator binds by substitution, and
+that nested collection may be flattened in either order: they are the laws that
+make comprehension well defined. (C4) says independent generators may be
+reordered. (C5)--(C6) say that nothing is collected over an empty range, from
+either side. (C7) says a reflexive guard is vacuous (it contributes the
+singleton $\unit(\pt)$, which passes through); (C8) says that under a guard
+$\guard{a\eq b}$ one may rewrite $b$ to $a$. We record the two immediate
+consequences we shall need.
+
+\begin{lemma}[Reduction]\label{lem:reduce}
+For all suitable terms,
+\begin{align}
+  \compr{t}{\guard{a\eq a},\,\overline q}
+    &= \compr{t}{\overline q}, \tag{R1}\label{eq:R1}\\
+  \compr{t}{\gen{x}{\unit(s)},\,\overline q}
+    &= \compr{t[s/x]}{\overline q}. \tag{R2}\label{eq:R2}
+\end{align}
+\end{lemma}
+\begin{proof}
+(R1): by Notation~\ref{not:comp} the left side is
+$(\lambda\pt.\,\compr{t}{\overline q})^{\star}\guard{a\eq a}$, which by (C7)
+equals $(\lambda\pt.\,\compr{t}{\overline q})^{\star}(\unit\,\pt)$, and this is
+$\compr{t}{\overline q}$ by (C2). (R2): the left side is
+$(\lambda x.\,\compr{t}{\overline q})^{\star}(\unit\,s)$, which is
+$\compr{t}{\overline q}[s/x]=\compr{t[s/x]}{\overline q}$ by (C2).
+\end{proof}
+
+\begin{notation}[Subsort by comprehension]\label{not:subsort}
+For a sort $X$ and parallel terms $p,q\colon X\to\Ob$ we write
+\[
+  \{\,x\colon X \mid p(x)\eq q(x)\,\}
+\]
+for the carrier whose elements are those $x\colon X$ with $p(x)=q(x)$, with the
+inclusion term and the universal property of an equationally defined subsort.
+Under the comprehension reading this subsort is the support of
+$\compr{x}{\gen{x}{w},\,\guard{p(x)\eq q(x)}}$ for $w$ ranging over $\M X$; the
+guard discards the elements failing the equation, by (C6)--(C8). We use the
+subsort notation freely below as a convenient name for this support.
+\end{notation}
+
+%================================================================
+\section{The theory \texorpdfstring{$\mathbf{T}$}{T} of boundaried monoids}
+\label{sec:T}
+
+We now state the principal theory over a fixed comprehension structure.
+
+\begin{definition}[Signature]\label{def:sig}
+The signature of $\mathbf{T}$ extends that of \S\ref{sec:comp} with
+\begin{enumerate}[label=(\roman*)]
+  \item two sorts $\Ob$ (\emph{boundaries}) and $\Ed$ (\emph{elements}), with
+        $\Ob$ the distinguished sort carrying the guard of
+        Definition~\ref{def:comp};
+  \item \emph{boundary} operations $\dl,\dr\colon\Ed\to\Ob$;
+  \item a \emph{neutral} operation $\uu\colon\Ob\to\Ed$;
+  \item a \emph{multiplication}
+        $\kk\colon\Ed\times\Ed\to\M\Ed$.
+\end{enumerate}
+We read $\kk(g,f)$ as ``the collection of products of $g$ after $f$,'' a total
+operation whose value is empty when $f,g$ are not multipliable and a singleton
+otherwise.
+\end{definition}
+
+\begin{definition}[Derived collections]\label{def:derived}
+Over the signature of Definition~\ref{def:sig} we name three comprehensions.
+\begin{align*}
+  \Hom(a,b) &\;:=\; \{\,f\colon\Ed \mid \dl f\eq a,\ \dr f\eq b\,\}
+            &&\text{(elements with prescribed boundaries),}\\
+  \Ed^{(2)} &\;:=\; \{\,(g,f)\colon\Ed\times\Ed \mid \dl g\eq \dr f\,\}
+            &&\text{(multipliable pairs),}\\
+  \Ed^{(3)} &\;:=\; \{\,(h,g,f) \mid \dl h\eq\dr g,\ \dl g\eq\dr f\,\}
+            &&\text{(multipliable triples).}
+\end{align*}
+Each is a subsort in the sense of Notation~\ref{not:subsort}; none is a new
+primitive. The multiplication $\kk$ is defined on all of $\Ed\times\Ed$, but the
+axioms below force it to be supported on $\Ed^{(2)}$.
+\end{definition}
+
+\begin{definition}[Axioms of $\mathbf{T}$]\label{def:axioms}
+A model of $\mathbf{T}$ is a comprehension structure together with
+interpretations of $\Ob,\Ed,\dl,\dr,\uu,\kk$ satisfying the following equations,
+for all $a\colon\Ob$ and $f,g,h\colon\Ed$.
+
+\medskip
+\noindent\emph{Boundaries of the neutral element.}
+\begin{align}
+  \dl\bigl(\uu(a)\bigr) &= a, \tag{T1}\\
+  \dr\bigl(\uu(a)\bigr) &= a. \tag{T2}
+\end{align}
+
+\noindent\emph{Support and determinacy of the product.}
+\begin{align}
+  \compr{\pt}{\gen{v}{\kk(g,f)}}
+    &= \guard{\dl g\eq\dr f}, \tag{T3}\\
+  \compr{(v,v')}{\gen{v}{\kk(g,f)},\,\gen{v'}{\kk(g,f)}}
+    &= \compr{(v,v)}{\gen{v}{\kk(g,f)}}. \tag{T4}
+\end{align}
+
+\noindent\emph{Boundaries of a product.}
+\begin{align}
+  \compr{\dl v}{\gen{v}{\kk(g,f)}}
+    &= \compr{\dl f}{\gen{v}{\kk(g,f)}}, \tag{T5}\\
+  \compr{\dr v}{\gen{v}{\kk(g,f)}}
+    &= \compr{\dr g}{\gen{v}{\kk(g,f)}}. \tag{T6}
+\end{align}
+
+\noindent\emph{Neutrality.}
+\begin{align}
+  \kk\bigl(\uu(\dr f),\,f\bigr) &= \unit(f), \tag{T7}\\
+  \kk\bigl(f,\,\uu(\dl f)\bigr) &= \unit(f). \tag{T8}
+\end{align}
+
+\noindent\emph{Associativity.}
+\begin{equation}
+  \compr{w}{\gen{v}{\kk(g,f)},\,\gen{w}{\kk(h,v)}}
+  \;=\;
+  \compr{w}{\gen{v}{\kk(h,g)},\,\gen{w}{\kk(v,f)}}. \tag{T9}
+\end{equation}
+\end{definition}
+
+A few words on why these nine equations say what is intended.
+
+(T3) is the \emph{support} law: mapping the collection $\kk(g,f)$ onto the
+terminal sort yields $\guard{\dl g\eq\dr f}$, which is the singleton
+$\unit(\pt)$ when $g,f$ are multipliable and is empty otherwise (by (C7) and the
+discussion of Notation~\ref{not:subsort}). Hence $\kk(g,f)$ is non-empty exactly
+on $\Ed^{(2)}$.
+
+(T4) is \emph{determinacy}: any two elements drawn from $\kk(g,f)$ coincide, so
+$\kk(g,f)$ has at most one element. With (T3) this makes $\kk(g,f)$ a singleton
+on $\Ed^{(2)}$ and empty off it. Partiality has been wholly absorbed into the
+collection sort; $\kk$ itself is total.
+
+(T5)--(T6) transport boundaries across a product: wherever a product exists, its
+left boundary is that of $f$ and its right boundary is that of $g$. Stating
+these by mapping over $\kk(g,f)$ keeps them equational and vacuously true off
+$\Ed^{(2)}$.
+
+(T7)--(T8) are the two neutral laws. The pair on the left of (T7) is multipliable
+since $\dl(\uu(\dr f))=\dr f$ by (T1), so the guard in (T3) passes and the law
+asserts that the product is the singleton $\unit(f)$; symmetrically for (T8).
+
+(T9) is associativity. Both sides are double comprehensions: the left forms
+$g$ after $f$, then $h$ after that; the right forms $h$ after $g$, then that
+after $f$. By (T3) each side is non-empty exactly when
+$\dl g\eq\dr f$ and $\dl h\eq\dr g$, the common condition defining
+$\Ed^{(3)}$, and on that subsort each is a singleton; the equation asserts the
+two singletons agree. Note that the boundary bookkeeping that ordinarily
+accompanies associativity is here discharged automatically by the guards inside
+$\kk$, via (T3) and (T5)--(T6).
+
+\begin{remark}[Monoids as a special case]
+If $\Ob\cong\one$ then $\dl,\dr$ are constant, every pair is multipliable, (T3)
+makes $\kk(g,f)$ a singleton for all $g,f$, and (T7)--(T9) reduce to the
+ordinary unit and associativity laws of a monoid with unit $\uu(\pt)$. Thus
+$\mathbf{T}$ specialises to the equational theory of monoids.
+\end{remark}
+
+\begin{lemma}[Single-valued product]\label{lem:single}
+In any model of $\mathbf{T}$ there is, for each multipliable pair
+$(g,f)\in\Ed^{(2)}$, a unique element $g\bullet f\colon\Ed$ with
+$\kk(g,f)=\unit(g\bullet f)$, and it satisfies $\dl(g\bullet f)=\dl f$,
+$\dr(g\bullet f)=\dr g$.
+\end{lemma}
+\begin{proof}
+On $\Ed^{(2)}$ the guard $\guard{\dl g\eq\dr f}$ equals $\unit(\pt)$ by (C7), so
+(T3) gives $\compr{\pt}{\gen{v}{\kk(g,f)}}=\unit(\pt)$: the collection
+$\kk(g,f)$ is non-empty. By (T4) it is a subsingleton. A non-empty subsingleton
+is a singleton $\unit(g\bullet f)$ for a unique $g\bullet f$; uniqueness is by
+(C2). The boundary identities follow from (T5)--(T6) and (R2) applied to
+$\kk(g,f)=\unit(g\bullet f)$.
+\end{proof}
+
+%================================================================
+\section{The fibred presentation, and equivalence}\label{sec:equiv}
+
+We now give the second, dependently sorted reading and show it defines the same
+theory. Here the product is honestly total and single-valued, and no zero or
+guard is needed; the price is a sort that depends on two parameters.
+
+\begin{definition}[The fibred theory $\mathbf{T}^{\flat}$]\label{def:flat}
+The theory $\mathbf{T}^{\flat}$ has
+\begin{enumerate}[label=(\roman*)]
+  \item a sort $\Ob$, and for each $a,b\colon\Ob$ a sort $\Hom(a,b)$;
+  \item neutral elements $\unitf_a\colon\Hom(a,a)$ for each $a\colon\Ob$;
+  \item products
+        $\co_{a,b,c}\colon\Hom(b,c)\times\Hom(a,b)\to\Hom(a,c)$
+        for each $a,b,c\colon\Ob$;
+\end{enumerate}
+subject to the equations, for $f\colon\Hom(a,b)$, $g\colon\Hom(b,c)$,
+$h\colon\Hom(c,d)$,
+\begin{align}
+  \unitf_b \co f &= f, \tag{F1}\\
+  f \co \unitf_a &= f, \tag{F2}\\
+  h \co (g\co f) &= (h\co g)\co f. \tag{F3}
+\end{align}
+This is an ordinary equational theory, with total single-valued operations and
+three equations; it uses no comprehension structure.
+\end{definition}
+
+\begin{proposition}[Equivalence]\label{prop:equiv}
+$\mathbf{T}$ and $\mathbf{T}^{\flat}$ are definitionally equivalent: there are
+mutually inverse interpretations of each theory in the other, definable using
+the comprehension structure, that are the identity on $\Ob$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+\emph{From $\mathbf{T}$ to $\mathbf{T}^{\flat}$.} Keep $\Ob$. Define
+$\Hom(a,b)$ by the comprehension of Definition~\ref{def:derived}. Put
+$\unitf_a:=\uu(a)$, which lies in $\Hom(a,a)$ by (T1)--(T2). For
+$g\in\Hom(b,c)$ and $f\in\Hom(a,b)$ the pair $(g,f)$ is multipliable, so
+Lemma~\ref{lem:single} supplies a unique $g\bullet f$ with
+$\kk(g,f)=\unit(g\bullet f)$, lying in $\Hom(a,c)$ by the boundary identities;
+set $g\co f:=g\bullet f$. Equations (F1)--(F2) are (T7)--(T8) with the unit
+stripped by (C2). For (F3): apply (R2) twice inside each side of (T9),
+replacing $\kk(g,f)$ by $\unit(g\bullet f)$ and then $\kk(h,g\bullet f)$ by
+$\unit(h\bullet(g\bullet f))$ on the left, and symmetrically on the right; (T9)
+then reads $\unit\bigl(h\bullet(g\bullet f)\bigr)=\unit\bigl((h\bullet g)\bullet
+f\bigr)$, whence (F3) by (C2).
+
+\emph{From $\mathbf{T}^{\flat}$ to $\mathbf{T}$.} Keep $\Ob$. Define the sort of
+elements as the comprehension (disjoint collection)
+\[
+  \Ed \;:=\; \{\,(a,b,f) \mid a,b\colon\Ob,\ f\colon\Hom(a,b)\,\},
+\]
+with $\dl(a,b,f):=a$, $\dr(a,b,f):=b$, and $\uu(a):=(a,a,\unitf_a)$. Define the
+multiplication as the guarded singleton
+\[
+  \kk\bigl((b',c,g),(a,b,f)\bigr)
+   \;:=\;
+   \compr{\,(a,c,\;g\co f)\,}{\guard{b'\eq b}},
+\]
+which by (C7) is $\unit(a,c,g\co f)$ when $b'=b$ and is $\zero$ otherwise (the
+$g\co f$ on the right is well typed precisely under the guard, after rewriting
+$b'$ to $b$ by (C8)). One checks the axioms directly: (T3) and (T4) hold because
+the value is a guarded singleton; (T5)--(T6) because the boundaries of
+$(a,c,g\co f)$ are $a$ and $c$; (T7)--(T8) from (F1)--(F2); and (T9) from (F3),
+the two guards on each side combining to the single condition defining
+$\Ed^{(3)}$.
+
+\emph{Mutual inverse.} Starting from $\mathbf{T}$, forming $\mathbf{T}^{\flat}$
+and then $\mathbf{T}$ again returns $\Ed$ up to the evident identification
+$f\mapsto(\dl f,\dr f,f)$, under which $\dl,\dr,\uu,\kk$ are preserved on the
+nose by Lemma~\ref{lem:single}. Starting from $\mathbf{T}^{\flat}$, the round
+trip returns $\Hom(a,b)$ as the comprehension
+$\{(a',b',f)\mid a'\eq a, b'\eq b\}$, naturally identified with $\Hom(a,b)$ by
+(C8). Both identifications respect all operations, so the interpretations are
+mutually inverse. The only non-equational devices used in either direction are
+comprehensions, which is the asserted translating role of comprehension.
+\end{proof}
+
+\begin{corollary}
+$\mathbf{T}$ is conservative over the comprehension layer of
+\S\ref{sec:comp}: any equation between terms not mentioning $\dl,\dr,\uu,\kk$
+that holds in $\mathbf{T}$ already holds in the comprehension layer. In
+particular adding the boundaried-monoid operations introduces no new
+collection identities.
+\end{corollary}
+\begin{proof}
+By Proposition~\ref{prop:equiv} it suffices to argue for $\mathbf{T}^{\flat}$,
+whose operations are disjoint in sort from those of the comprehension layer and
+whose axioms (F1)--(F3) involve no comprehension former; hence they cannot
+entail a new identity among comprehension terms.
+\end{proof}
+
+%================================================================
+\section{Remarks and scope}\label{sec:remarks}
+
+\paragraph{Free models and chains.}
+The free boundaried monoid on a family of generating elements with prescribed
+boundaries has, as its elements over a pair $(a,b)$, the finite multipliable
+chains from $a$ to $b$, with the empty chain at each $a$ as neutral element and
+concatenation as product. The passage from generators to chains is itself a
+comprehension: a chain is collected by iterating the multipliability guard along
+its links, exactly the list-forming instance of the comprehension calculus of
+\S\ref{sec:comp}. Thus both the carving of multipliable pairs and the
+generation of free elements are handled by the same device.
+
+\paragraph{Determinacy is optional.}
+Dropping (T4) yields a strictly weaker theory in which $\kk(g,f)$ may be a
+genuine collection rather than a subsingleton: a ``multivalued'' boundaried
+monoid, in which several products of a multipliable pair coexist. The remaining
+axioms still govern boundaries, support, neutrality, and associativity. We
+record this only to note that (T4) is the single axiom responsible for
+single-valuedness; it is the natural knob to turn when one later wishes to
+relax it.
+
+\paragraph{What the comprehension structure may vary.}
+Nothing in \S\ref{sec:T}--\S\ref{sec:equiv} fixes \emph{which} comprehension
+structure underlies $\M$, beyond the equations (C1)--(C8). Varying that
+structure---while keeping the equations (T1)--(T9) verbatim---yields a family of
+theories sharing the present axiomatics. The systematic study of that family,
+and of the interpretations it admits, is deferred; here we have only fixed the
+equations and shown the partial and total presentations to be one theory.
+
+\paragraph{Summary.}
+The theory $\mathbf{T}$ of Definition~\ref{def:axioms} is a purely equational,
+finitely axiomatised algebra. Its single design choice is to absorb the
+partiality of a boundaried product into a comprehension structure, making the
+product a total operation valued in a collection sort. Proposition~\ref{prop:equiv}
+shows this total presentation and the dependently sorted partial presentation
+to be definitionally equivalent, with comprehension as the explicit translation
+between them.
+
+%================================================================
+\begin{thebibliography}{9}
+\bibitem{wadler}
+P.~Wadler.
+\emph{Comprehending monads.}
+Mathematical Structures in Computer Science \textbf{2}(4):461--493, 1992.
+\bibitem{moggi}
+E.~Moggi.
+\emph{Notions of computation and monads.}
+Information and Computation \textbf{93}(1):55--92, 1991.
+\end{thebibliography}
+
+\end{document}
