@@ -1,0 +1,886 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,stmaryrd}
+\usepackage{mathpartir}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue}
+
+% ---- colour discipline (red copy vs black copy) -------------------------
+\definecolor{redcopy}{rgb}{0.78,0.07,0.07}
+\newcommand{\rd}[1]{\textcolor{redcopy}{#1}}
+
+% ---- four sorts --------------------------------------------------------
+\newcommand{\RS}{\rd{\mathbf{S}}}              % red set
+\newcommand{\RA}{\rd{\mathbf{A}}}              % red atom
+\newcommand{\BS}{\mathbf{S}}                   % black set
+\newcommand{\BA}{\mathbf{A}}                   % black atom
+
+% ---- structural maps ----------------------------------------------------
+\newcommand{\swp}{\mathsf{s}}                  % colour swap (involution)
+\newcommand{\kt}{\kappa}                       % red knot  : BlackSet -> RedAtom
+\newcommand{\ktb}{\bar\kappa}                  % black knot : RedSet  -> BlackAtom
+
+% ---- process syntax -----------------------------------------------------
+\newcommand{\Zero}{\mathbf{0}}
+\newcommand{\Par}{\mathbin{\mid}}
+\newcommand{\inp}[3]{\mathsf{for}(#1 \leftarrow #2)\,#3}
+\newcommand{\out}[2]{#1\mathbin{!}(#2)}
+\newcommand{\drp}[1]{{\ast}#1}
+\newcommand{\quo}[1]{@#1}
+\newcommand{\abs}[2]{(#1)\,#2}                  % abstraction (y)P
+\newcommand{\conc}[1]{[#1]}                     % concretion [Q]
+\newcommand{\nset}[1]{[\mathcal{N}]#1}
+
+% ---- semantic apparatus -------------------------------------------------
+\newcommand{\Proc}{\mathsf{Proc}}
+\newcommand{\Name}{\mathsf{Name}}
+\newcommand{\Set}{\mathrm{Set}}
+\newcommand{\Pfin}{\mathcal{P}_{\mathrm{fin}}}
+\newcommand{\B}{\mathsf{B}}
+\newcommand{\sem}[1]{\llparenthesis #1\rrparenthesis}   % behavioural denotation
+\newcommand{\lts}[1]{\xrightarrow{\,#1\,}}
+\newcommand{\Sym}{\mathrm{Sym}}
+\newcommand{\supp}{\mathrm{supp}}
+\newcommand{\bis}{\sim}
+\newcommand{\fresh}{\mathbin{\#}}
+\newcommand{\scong}{\equiv}
+\newcommand{\nameq}{\equiv_{\mathcal N}}
+\newcommand{\rpar}{\mathbin{\|}}               % semantic parallel
+\newcommand{\react}{\rightarrowtail}           % reaction
+\newcommand{\hole}{[\,\cdot\,]}                % context hole
+\newcommand{\DK}{\partial T_{K}}               % Fire context-label set
+\newcommand{\plug}[2]{#1[#2]}                  % plug
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{obligation}{Obligation}
+
+\title{\bf Quoting is Colour-Swap:\\ a model of the rho calculus in the knotted universe}
+\author{Lucius Gregory Meredith\\[2pt]
+\small CEO, F1R3FLY.io, and Chief Science Officer, F1R3FLY Industries\\
+\small \texttt{lgreg.meredith@gmail.com}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The knotted universe of \emph{A Knotted Universe: a new notion of reflective set
+theories} closes with a conjecture: that the reflective higher-order (rho)
+calculus has a natural set-theoretic model there, with the quote $\quo{\,}$ read
+as sealing a process into an atom of the dual colour and the dereference
+$\drp{\,}$ as unsealing it. We make the conjecture good, and in a form that puts
+the colour barrier itself to work. We \emph{stratify} the universe into four
+sorts --- red sets and red atoms, black sets and black atoms --- linked by the two
+knots and by a single polymorphic involution, the colour-swap $\swp$. The
+calculus's reflection operators are then \emph{derived}: $\quo{\,}=\kt\circ\swp$
+and $\drp{\,}=\swp\circ\kt^{-1}$, so that $\drp{\quo P}\scong P$ becomes
+$\swp\circ\swp=\mathrm{id}$ --- the reflection law is the involutivity of the
+swap, not an axiom about the model. We give the dynamics following Milner's
+guidance for the polyadic $\pi$-calculus: a process denotes the set of its
+\emph{commitments}, input committing to an abstraction $\abs y P$ and output to a
+concretion $\conc Q$, with communication the application $\abs y P\cdot\conc M =
+P\{\quo M/y\}$ --- and it is exactly here, in the reaction rule, that the swap
+fires, sealing the sent process into the received name. The denotation lands in
+the final coalgebra of a behaviour functor over the knotted nominal universe,
+where the colour-blind non-well-foundedness supplies recursion for free and
+finality makes bisimilar processes equal. Following the GSLT discipline we label
+transitions not by primitive actions but by \emph{contexts} --- the minimal
+environments enabling a reaction, after Leifer and Milner --- and express
+bisimulation over these context labels; the labels are the program/environment
+cuts, simultaneously the indices of the OSLF-generated modal logic. We prove a
+\emph{full abstraction} theorem, $\sem P=\sem Q$ iff $P\bis Q$, by identifying
+context bisimilarity with the kernel of the unique morphism to the final coalgebra;
+because the labels are contexts, the resulting equivalence is a congruence by
+construction, so full abstraction holds for a congruence with no closure step. The
+risk ledger of the source paper transfers: finite processes cost no infinite risk;
+recursion --- which in rho enters through reflection, not a primitive replication
+--- costs one $\omega$, black infinity, and not one primitive name. Aczel's CCS
+model is recovered as the equivariant, colour-respecting fragment.
+\end{abstract}
+
+\section{Introduction}
+
+Aczel modelled Milner's CCS inside non-well-founded set theory \cite{aczel}: a
+process $P$ is identified with the set of its labelled transitions
+$\{(a,P'):P\lts a P'\}$, a looping process is a non-well-founded set, bisimilar
+processes are \emph{equal}, and the anti-foundation axiom's solution lemma
+individuates processes as the unique solutions of their behavioural equations.
+The construction is canonical, but it buys two things by fiat: an external,
+unstructured supply of action names $a$, and the non-well-foundedness itself.
+
+The reflective higher-order calculus --- the rho calculus \cite{rho} --- differs
+from CCS and the $\pi$-calculus precisely where Aczel spends his first postulate.
+Rho has \emph{no} primitive names. A name is a quoted process: the quote
+$\quo{\,}$ turns a process into a name, the dereference $\drp{\,}$ turns a name
+back into the process it quotes, and the two compose to the identity,
+$\drp{\quo P}\scong P$. There is correspondingly no restriction operator $\nu$ and
+no scope extrusion: fresh names are \emph{computed}, by quoting.
+
+The knotted universe of \cite{knot} was built from the empty set alone, as two
+mutually recursive copies of set theory --- a red copy $\Set[X]$ and a black copy
+$\Set[\bar X]$ --- tied by $X=\Set[\bar X]$, $\bar X=\Set[X]$, so that each
+colour's \emph{atoms} are the other colour's \emph{sets}. Section~9.3 of
+\cite{knot} conjectures this universe is the natural home for an Aczel-style model
+of rho, with $\quo{\,}$ sealing a process into an atom of the opposite colour and
+$\drp{\,}$ unsealing it. We carry the conjecture out. Three design decisions shape
+the development.
+
+\paragraph{Quoting is the colour-swap, read through a stratification (Section~\ref{sec:swap}).}
+Rather than collapse ``red atom'' and ``black set'' into one sort, as the bare
+knot does, we keep four sorts and make the colour-moving maps first class. A
+single polymorphic involution $\swp$, the colour-swap, exchanges red and black
+\emph{while preserving the set/atom distinction}; the two knots $\kt,\ktb$ supply
+the set/atom coercions. The calculus's $\quo{\,}$ and $\drp{\,}$ are then
+\emph{composites} of these --- $\quo{\,}=\kt\circ\swp$, $\drp{\,}=\swp\circ\kt^{-1}$
+--- and the reflection law is $\swp\circ\swp=\mathrm{id}$. This is at once more
+honest (the colour crossing is explicit, not hidden in a definitional identity)
+and exactly the graded, colour-tracking discipline \cite{knot}, \S6.5 asks for:
+the four sorts are the grading, and $\swp$ is the reflective move.
+
+\paragraph{The dynamics follow Milner (Section~\ref{sec:denotation}).}
+After Milner's polyadic $\pi$ tutorial \cite{polyadic}, a process denotes the set
+of its immediate \emph{commitments}; input commits to an \emph{abstraction}
+$\abs y P$ and output to a \emph{concretion} $\conc Q$, and communication is the
+application $\abs y P\cdot\conc M = P\{\quo M/y\}$. The reaction rule is where the
+swap of Section~\ref{sec:swap} does its dynamical work: it seals the sent process
+$M$ into the name $\quo M$ the receiver binds. Parallel composition is not bare
+union --- that would wrongly identify $\out a 0\Par\out a 0$ with $\out a 0$ ---
+but the corecursive expansion $\rpar$ that keeps each component's surviving
+context in the residuals.
+
+\paragraph{Transitions are labelled by contexts (Sections~\ref{sec:lts},~\ref{sec:fa}).}
+To stay consistent with the GSLT programme we do not label transitions by primitive
+actions but by \emph{contexts}: $P\lts F P'$ means $F$ is a minimal environment ---
+an idem-pushout, after Leifer and Milner \cite{leifermilner,sewell}, adapted to
+GSLTs \cite{meredithwells} --- in which $P$ completes a reaction to $P'$. The label
+is the program/environment cut at which $P$ meets its world, and it is at once the
+Firing label of the transition system, the Witnessing index of an OSLF-generated
+Hennessy--Milner modality $\langle F\rangle\varphi$, and the Placing of the
+interaction in $P$'s term structure --- three views of one $\partial T$. Expressing
+bisimulation over context labels has a structural dividend: the equivalence is a
+congruence by construction, so the full-abstraction theorem holds for a congruence
+with none of the closure-under-substitution care an action-labelled account
+requires.
+
+\paragraph{Recursion is free (Sections~\ref{sec:functor},~\ref{sec:fa}).}
+The denotation lands in the final coalgebra of a behaviour functor over the knotted
+nominal universe; the colour-blind non-well-foundedness of \cite{knot}, \S7
+supplies the recursion (which in rho is reached through reflection, with no
+primitive replication operator), and finality makes bisimilar processes equal. We
+prove full abstraction, $\sem P=\sem Q\iff P\bis Q$, identifying context
+bisimilarity with the kernel of the unique morphism to the final coalgebra, and
+read it back through OSLF adequacy.
+
+We work throughout with the modern presentation: $\quo P$ for quoting, $\drp x$
+for dereference, $\inp y x P$ for input.
+
+\section{The rho calculus}\label{sec:rho}
+
+\subsection{Syntax}
+The two-sorted grammar of processes $P$ and names $x$:
+\[
+  P,Q \;::=\; \Zero \;\mid\; P \Par Q \;\mid\; \inp y x P \;\mid\; \out x Q
+            \;\mid\; \drp x,
+  \qquad\qquad
+  x,y \;::=\; \quo P .
+\]
+$\Zero$ is the stopped process; $P\Par Q$ parallel composition; $\inp y x P$ the
+input receiving on channel $x$, binding the received name to $y$ in $P$;
+$\out x Q$ the asynchronous output sending $Q$ on $x$; and $\drp x$ the
+dereference. A name is solely a quoted process: no primitive names, and no
+restriction $\nu$. In $\inp y x P$ the name $y$ is bound in $P$. Capture-avoiding
+substitution $P\{x/y\}$ of a name for a free name reaches inside quotes.
+
+There is no primitive replication or recursion. Both are nonetheless available, by
+reflection: a recursive process is written by quoting its own continuation and
+dereferencing it, e.g.\ a server
+$D \scong \inp y x (\drp y \Par \out x y)\Par\out x{\quo{(\cdots)}}$ reinstalls
+itself after each interaction. Infinite behaviour from a finite term is therefore
+present already in the core calculus --- which is why the model needs the
+non-well-founded reading even with no $\,!\,$ in the grammar.
+
+\subsection{Structural congruence and name equivalence}
+$\scong$ is the least congruence closed under $\alpha$-equivalence and
+\[
+  (P\Par Q)\Par R \scong P\Par(Q\Par R),\quad
+  P\Par Q \scong Q\Par P,\quad
+  P\Par\Zero \scong P,\quad
+  \drp{\quo P}\scong P .
+\]
+Name equivalence is induced by dereference:
+$\quo P \nameq \quo Q :\Longleftrightarrow \drp{\quo P}\scong\drp{\quo Q}
+ \Longleftrightarrow P\scong Q$.
+
+\subsection{Reaction and the context-labelled transition system}\label{sec:lts}
+The base interaction is communication, with the structural propagation rules:
+\begin{mathpar}
+  \inferrule*[right=\textsc{Comm}]{x \nameq z}
+            {\inp y x P \,\Par\, \out z Q \;\longrightarrow\; P\{\quo Q / y\}}
+  \and
+  \inferrule*[right=\textsc{Par}]{P\longrightarrow P'}{P\Par R\longrightarrow P'\Par R}
+  \and
+  \inferrule*[right=\textsc{Struct}]{P\scong P' \\ P'\longrightarrow Q' \\ Q'\scong Q}
+            {P\longrightarrow Q}
+\end{mathpar}
+Rho is an interactive GSLT whose single base constructor is parallel composition:
+$K=\Par$ is the head of the left-hand side of the one hypothesis-free rule,
+\textsc{Comm}, and the cut it induces is \emph{relative} --- each parallel
+component is, from the other's vantage, the environment.
+
+To define bisimulation we follow the GSLT discipline and label transitions by
+\emph{contexts} rather than by primitive actions, after the minimal-context
+(relative-pushout) construction of Leifer and Milner \cite{leifermilner,sewell}, as
+adapted to GSLTs \cite{meredithwells}. A \emph{context} $F$ is a process with one
+hole $\hole$; $\plug F P$ is the result of plugging $P$. Communication never fires
+under a prefix, so the reactive contexts are, modulo $\scong$, the parallel
+contexts $\hole\Par R$: the cut always lies at a parallel composition, exactly the
+program/environment cut.
+
+\begin{definition}[Context-labelled transitions]\label{def:ctx-lts}
+$P\lts F P'$ holds when $F$ is a context with $\plug F P\longrightarrow P'$ by a
+single \textsc{Comm}, and $F$ is \emph{minimal} --- an idem-pushout, supplying just
+the missing half of the redex and no more. Concretely, modulo $\scong$:
+\begin{itemize}[nosep]
+  \item \emph{(offer input)} if $P\scong\inp y x{P_0}\Par P_1$ then
+        $P\lts{\ \hole\,\Par\,\out x Q\ } P_0\{\quo Q/y\}\Par P_1$, one transition
+        per message $Q$;
+  \item \emph{(offer output)} if $P\scong\out x Q\Par P_1$ then
+        $P\lts{\ \hole\,\Par\,\inp y x R\ } P_1\Par R\{\quo Q/y\}$, one per input
+        context $\inp y x R$;
+  \item \emph{(internal redex)} if $P\scong\inp y x{P_0}\Par\out x Q\Par P_1$ then
+        $P\lts{\ \hole\ } P_0\{\quo Q/y\}\Par P_1$.
+\end{itemize}
+The label records what environment $P$ needs to interact; the identity context
+$\hole$ labels the reactions $P$ performs alone (the silent moves). The seal
+$\quo{\,}=\kt\circ\swp$ acts in each substitution: communication delivers the
+\emph{name} $\quo Q$ of the sent process, never the process itself.
+\end{definition}
+
+\begin{remark}[The label set is $\partial T$, in its three views]\label{rem:dT}
+The labels are the Fire-sub-bundle $\DK$ of the splitting space $\partial T\times T$:
+the splittings $(F,t)$ whose subterm $t$ completes a \textsc{Comm} redex. This one
+set is read three ways \cite{meredithwells}: as the label set of the transition
+system (\emph{Firing}); as the index set of the OSLF-generated Hennessy--Milner
+modalities $\langle F\rangle\varphi$ --- ``some $F$-labelled transition reaches a
+state satisfying $\varphi$'' (\emph{Witnessing}); and as the program/environment
+cuts, i.e.\ the locations at which $P$ meets its environment (\emph{Placing}). We
+will use the first to define bisimulation and the second to characterise it.
+\end{remark}
+
+\begin{definition}[Context bisimulation]\label{def:bis}
+A symmetric relation $\mathcal R$ on processes is a \emph{context bisimulation} if
+$P\mathrel{\mathcal R}Q$ implies: whenever $P\lts F P'$ there is $Q\lts F Q'$ with
+$P'\mathrel{\mathcal R}Q'$ (and symmetrically). Context bisimilarity $\bis$ is the
+largest context bisimulation; it contains $\scong$.
+\end{definition}
+
+\begin{proposition}[Congruence, by construction]\label{prop:cong}
+If the GSLT minimal-context construction supplies relative pushouts for rho's
+contexts \cite{leifermilner,sewell,meredithwells}, then context bisimilarity is a
+congruence: $P\bis Q$ implies $\plug F P\bis\plug F Q$ for every context $F$.
+\end{proposition}
+\begin{proof}[Proof sketch]
+This is the Leifer--Milner theorem: when reactions are presented as idem-pushout
+labels over a category of contexts possessing relative pushouts, the derived
+bisimilarity is a congruence, because the bisimulation game already quantifies over
+the discriminating power of every context. The hypothesis --- that rho's contexts
+have the requisite relative pushouts --- is the content of the GSLT minimal-context
+construction \cite{meredithwells}, and is recorded as Obligation~\ref{ob:rpo}.
+\end{proof}
+
+This is the structural reason the GSLT programme labels by contexts: congruence is
+\emph{built into} the equivalence rather than recovered afterwards. It settles, at
+the level of the definition, the point that an action-labelled presentation must
+negotiate by closing under name instantiation (compare Section~\ref{sec:fa}).
+
+\begin{remark}[Commitments are the finite presentation]\label{rem:commit}
+The offer-input clause of Definition~\ref{def:ctx-lts} is a family
+$\{\,P\lts{\hole\Par\out x Q}P_0\{\quo Q/y\}\Par P_1 : Q\in\Proc\,\}$ indexed by all
+messages. The family factors through a single \emph{abstraction} $\abs y{(P_0\Par P_1)}$
+(with $y\fresh P_1$): plugging the message $\quo Q$ into the abstraction gives the
+residual. Likewise the offer-output family factors through a \emph{concretion}.
+These abstraction/concretion packagings, in Milner's sense \cite{polyadic}, are the
+finite presentation of the class-indexed context-transition families; we use them
+for the denotation of Section~\ref{sec:denotation}, with the understanding that the
+labels they abbreviate are the contexts of Definition~\ref{def:ctx-lts}.
+\end{remark}
+
+\section{Quoting is the colour-swap: a stratified reading}\label{sec:swap}
+
+\subsection{Four sorts and one involution}
+The construction of \cite{knot} takes two copies of one signature-generated set
+theory, red $\Set[X]$ and black $\Set[\bar X]$, and ties them by
+$X=\Set[\bar X]$, $\bar X=\Set[X]$: each colour's atoms are the other's sets. The
+source paper reads these ties as identities, collapsing ``red atom'' with ``black
+set''. For the rho model it is cleaner --- and, as we will see, exactly the graded
+discipline \cite{knot}, \S6.5 calls for --- to keep the sorts distinct and make
+the colour-moving maps first class. We name four sorts,
+\[
+  \RS\ \text{(red sets)},\quad \RA\ \text{(red atoms)},\qquad
+  \BS\ \text{(black sets)},\quad \BA\ \text{(black atoms)},
+\]
+and three families of maps.
+
+\paragraph{The knots, as coercions.} The two recursive knots become two
+isomorphisms,
+\[
+  \kt \colon \BS \xrightarrow{\ \cong\ } \RA
+  \qquad(\text{black sets are red atoms; } X=\Set[\bar X]),
+\]
+\[
+  \ktb \colon \RS \xrightarrow{\ \cong\ } \BA
+  \qquad(\text{red sets are black atoms; } \bar X=\Set[X]).
+\]
+Where \cite{knot} writes $X=\Set[\bar X]$ as an equality we write $\kt$ as a
+coercion: a black set, presented \emph{as} a red atom, is red-opaque
+(\cite{knot}, Remark~2); $\kt$ is the act of so presenting it.
+
+\paragraph{The swap, an involution.} The two copies are copies of one theory, so
+the construction is symmetric under exchanging the colours --- the symmetry
+\cite{knot} invokes for its Corollary~2. We make it a map: a single polymorphic,
+\emph{sort-preserving} involution
+\[
+  \swp \colon \RS\cong\BS,\qquad \swp\colon\RA\cong\BA,
+  \qquad \swp\circ\swp=\mathrm{id},
+\]
+repainting red to black and back, structure for structure ($\swp$ carries
+$\rd\emptyset$ to $\emptyset$, $\rd\cup$ to $\cup$, and so on). The swap commutes
+with the knots: the square
+\[
+  \swp\circ\kt \;=\; \ktb\circ\swp
+  \qquad(\text{both } \BS \to \BA)
+\]
+holds, expressing that repainting a black-set-as-red-atom agrees with repainting
+then re-presenting. This coherence is what lets one colour's reflection generate
+the other's.
+
+\subsection{The calculus's reflection, derived}
+Take processes to be red sets and names to be red atoms. Define
+\[
+  \boxed{\;
+    \quo{\,} \;:=\; \kt\circ\swp \;\colon\; \RS \to \RA,
+    \qquad
+    \drp{\,} \;:=\; \swp\circ\kt^{-1} \;\colon\; \RA \to \RS.
+  \;}
+\]
+Thus $\quo P$ first repaints the red process $P$ black ($\swp$), then presents the
+result as a red atom ($\kt$): it ``seals $P$ into an atom of the opposite colour''
+exactly as \cite{knot}, \S9.3 proposes, the seal being the red-opacity of $\kt$,
+the colour crossing being $\swp$. The dereference $\drp x$ un-presents
+($\kt^{-1}$) and repaints back ($\swp$).
+
+\begin{proposition}[Reflection is involutivity of the swap]\label{prop:reflection}
+For every process $P$ and name $x$,
+\[
+  \drp{\quo P}
+   = \swp\,\kt^{-1}\,\kt\,\swp\,(P)
+   = \swp\,\swp\,(P) = P,
+  \qquad
+  \quo{\drp x}
+   = \kt\,\swp\,\swp\,\kt^{-1}(x)
+   = x.
+\]
+Hence the model validates $\drp{\quo P}\scong P$ and $\quo{\drp x}\nameq x$, not by
+imposing an equation but as the assertion that the colour-swap is an involution.
+\end{proposition}
+
+\begin{proposition}[Names implemented by swaps; the dual calculus]\label{prop:dual}
+Define the black calculus's reflection by $\quo{\,}_{\!\BS}:=\ktb\circ\swp\colon
+\BS\to\BA$ and $\drp{\,}_{\!\BS}:=\swp\circ\ktb^{-1}$. Then by the coherence
+$\swp\kt=\ktb\swp$,
+\[
+  \quo{\,}_{\!\BS} \;=\; \swp\circ\quo{\,}\circ\swp,
+\]
+so the two colours' quotes are swap-conjugate: one reflection determines the
+other. The black calculus has black sets as processes and red sets as names; by
+\cite{knot}, Corollary~2 the two interlock, each calculus's names being the
+other's processes. A single reflective universe carries two dual rho calculi at
+once.
+\end{proposition}
+
+\begin{remark}[The stratification is the grading]\label{rem:grading}
+\cite{knot}, \S6.5 calls for a graded modality separating colour-respecting
+(equivariant) computation from reflective computation, the price of breaking a
+name's opacity. The four sorts are that grading. A computation that stays in
+$\{\RS,\RA\}$ and uses only $\quo{\,},\drp{\,}$ relabels red processes and names
+without ever observing black structure: this is the equivariant fragment, ordinary
+nominal/$\pi$-style names with every guarantee intact. Applying $\swp$ to compute
+with black set-operations on a name's interior is the reflective surplus, and the
+type --- which sort one is in --- records it. Decidable structural identity of
+names (\cite{knot}, \S6.5) is here the decidability of equality in $\RA$, settled
+out of red's sight by black equality of the swapped processes.
+\end{remark}
+
+\section{The behaviour functor and the process universe}\label{sec:functor}
+
+The knotted universe is a model of nominal sets (\cite{knot}, \S6.1): the model
+$M$ of its Theorem~1 carries the $\Sym(\mathcal A)$-action with every element
+finitely supported and supports the name-abstraction
+$\nset X=(\Name\times X)/{\sim}$ with $\supp(\abs a x)=\supp(x)\setminus\{a\}$
+(\cite{knot}, \S6.2). Write $\mathcal U$ for this nominal universe of red sets and
+identify $\Name=\RA$ with $\Proc=\RS$ along the reflection of
+Section~\ref{sec:swap}.
+
+\begin{definition}[Behaviour functor]\label{def:functor}
+Let $\B\colon\mathcal U\to\mathcal U$,
+\[
+  \B(R) \;=\; \mathcal P\!\big(\,\DK\times R\,\big),
+\]
+the (powerset of) context-label/residual pairs of Definition~\ref{def:ctx-lts},
+with $\DK$ the Fire context-labels (Remark~\ref{rem:dT}). Because the input and
+output labels carry an unrestricted message or continuation, $\DK$ is
+class-indexed and $\B$ is taken with the full powerclass $\mathcal P$ rather than
+$\Pfin$; its final coalgebra accordingly lives in the class-sized framework of
+\cite{knot}, \S8.1, where it coincides with the colour-blind non-well-founded
+universe of \cite{knot}, \S7. The \emph{commitment refinement} $\B^{\flat}(R)=
+\Pfin\big(\Name\times\nset R\ \uplus\ \Name\times\Name\times R\ \uplus\ R\big)$
+(input abstractions, output concretions, silent moves) presents the same
+bisimilarity finitely (Remark~\ref{rem:commit}), assembled from constants,
+products, coproducts, finite powerset, and the abstraction functor $\nset{(-)}$,
+each preserving finite support and weak pullbacks; we use $\B^{\flat}$ when finite
+branching matters.
+\end{definition}
+
+A $\B$-coalgebra $(R,\beta)$ equips every $r$ with its set of context-labelled
+transitions --- the data of Section~\ref{sec:lts}. A coalgebra morphism is a
+finitely-supported map commuting with the structure maps: a functional context
+bisimulation.
+
+\begin{definition}[The process universe]\label{def:proc}
+$\Proc:=\nu\B$, the final $\B$-coalgebra in $\mathcal U$, with structure map
+$\langle\mathsf{out},\mathsf{in},\tau\rangle\colon\Proc\to\B(\Proc)$, and
+$\Name:=\swp(\Proc)$ presented as $\RA$ via $\kt$.
+\end{definition}
+
+Unfolded, an element of $\nu\B$ over a state is the set of that state's
+transitions, the set of its residuals' transitions, and so on: the Aczel reading
+$\{(a,P'):P\lts a P'\}$ with $\Name$-valued labels and an abstraction summand for
+input. A loop is non-well-founded descent under the colour-blind $\in_\star$ of
+\cite{knot}, \S7.2 --- a red process contains a black name whose red unfolding
+contains a red process, without end. The construction's global
+non-well-foundedness \emph{is} the recursion of process behaviour, available for
+free where Aczel postulates it.
+
+\section{A Milner-style denotation}\label{sec:denotation}
+
+We now give $\sem{-}$ compositionally, following \cite{polyadic}. After Milner, a
+guarded process commits to an \emph{action} carrying an \emph{agent}: an input
+carries an \emph{abstraction} $\abs y P$ (it expects a name), an output a
+\emph{concretion} $\conc Q$ (it offers one). Communication is application.
+
+\begin{definition}[Commitment denotation]\label{def:milner}
+Define $\sem{-}$ on processes by
+\[
+  \sem{\Zero}=\varnothing,\qquad
+  \sem{\inp y x P}=\big\{\,\langle \sem{x}^{?},\ \abs y{\sem P}\rangle\,\big\},\qquad
+  \sem{\out x Q}=\big\{\,\langle \sem{x}^{!},\ \conc{\sem Q}\rangle\,\big\},
+\]
+\[
+  \sem{\drp x}=\drp{\sem x}=\swp(\kt^{-1}\sem x),\qquad
+  \sem{P\Par Q}=\sem P \rpar \sem Q,
+\]
+and on names $\sem{\quo P}=\quo{\sem P}=\kt(\swp\,\sem P)\in\RA$. The tags
+$\sem x^{?}$ and $\sem x^{!}$ abbreviate the context labels $\hole\Par\out x{(-)}$
+and $\hole\Par\inp{(-)}x{(-)}$ of Definition~\ref{def:ctx-lts}, in their
+finite commitment presentation (Remark~\ref{rem:commit}): the abstraction
+$\abs y{\sem P}\in\nset{\nu\B}$ binds the received name, packaging the
+class-indexed family of input context-transitions, and the concretion
+$\conc{\sem Q}$ carries the message $\sem Q\in\nu\B$. Each guarded prefix denotes a
+\emph{singleton} commitment, one cut at which $P$ meets its environment.
+\end{definition}
+
+\begin{definition}[Reaction; the swap fires]\label{def:react}
+On commitments, application is
+\[
+  \abs y R \cdot \conc M \;=\; R\{\,\quo M\,/\,y\,\}
+                        \;=\; R\{\,\kt(\swp\,M)\,/\,y\,\},
+\]
+and reaction between dual commitments on equivalent names is
+\[
+  \inferrule*[right=\textsc{React}]
+    {\langle a^{?},\abs y R\rangle\in\sem P \\
+     \langle a'^{!},\conc M\rangle\in\sem Q \\ a\nameq a'}
+    {\sem{P}\Par\sem{Q} \ \react\ R\{\quo M/y\}\,\rpar\,(\text{residuals})} .
+\]
+The message $M$, a red set (a process), is sealed by $\quo{\,}=\kt\circ\swp$ into
+the name $\quo M$ bound by the receiver: \emph{communication is precisely where the
+colour-swap of Section~\ref{sec:swap} fires}. This is the set-theoretic content of
+rho's \textsc{Comm}: the receiver learns not the process sent but its name.
+\end{definition}
+
+\begin{definition}[Semantic parallel]\label{def:rpar}
+$\rpar\colon\nu\B\times\nu\B\to\nu\B$ is defined corecursively (by finality) as the
+expansion
+\[
+  \begin{aligned}
+  R\rpar R' \;=\;
+   &\{\langle\alpha,\,T\rpar R'\rangle : \langle\alpha,T\rangle\in R\}
+   \ \cup\
+   \{\langle\alpha,\,R\rpar T'\rangle : \langle\alpha,T'\rangle\in R'\} \\
+   &\cup\
+   \{\langle\tau,\,U\rpar U'\rangle :
+      \langle a^{?},\abs y U\rangle\in R,\ \langle a'^{!},\conc M\rangle\in R',\
+      a\nameq a',\ U=\text{(redex residual)}\}
+  \end{aligned}
+\]
+together with the symmetric $\tau$-set (a $\,?$-commitment of $R'$ with a
+$\,!$-concretion of $R$). Here the silent reactions apply \textsc{React}
+(Definition~\ref{def:react}), so $U$ is $\,U_0\{\quo M/y\}$ for the abstraction
+body $U_0$. On immediate commitments $\rpar$ restricts to union, recovering the Milner intuition $\sem{P\Par Q}\supseteq\sem P\cup\sem Q$;
+but the residuals carry the surviving context $T\rpar R'$, so $\rpar$ is not bare
+union. This is what keeps $\out a 0\Par\out a 0\not\bis\out a 0$: the first, after
+one $\out a{}$, retains the second output, where bare union would discard it.
+\end{definition}
+
+\begin{proposition}[The two denotations agree]\label{prop:agree}
+The compositional $\sem{-}$ of Definitions~\ref{def:milner}--\ref{def:rpar}
+coincides with the unique $\B^{\flat}$-coalgebra morphism from the syntactic
+coalgebra $(\mathcal T/{\scong},\partial)$ of Section~\ref{sec:lts} into
+$\nu{\B^{\flat}}$, where $\partial$ records each state's context-transitions in
+their commitment presentation (Remark~\ref{rem:commit}).
+\end{proposition}
+\begin{proof}[Proof sketch]
+Both are $\B^{\flat}$-coalgebra morphisms out of $(\mathcal T/{\scong},\partial)$:
+the clauses of Definition~\ref{def:milner} read off exactly the commitments
+$\partial$ assigns (singleton for each prefix, $\varnothing$ for $\Zero$), and
+$\rpar$ is the corecursive map realising \textsc{Par} and \textsc{Comm}/\textsc{React}.
+By finality the morphism is unique, so the two agree.
+\end{proof}
+
+\begin{theorem}[Adequacy and the reflection law]\label{thm:adequacy}
+For all processes $P,Q$ and names $x$:
+\begin{enumerate}[label=\textup{(\roman*)},nosep]
+  \item $\sem{\quo P}=\quo{\sem P}$, $\sem{\drp x}=\drp x$, and
+        $\sem{\drp{\quo P}}=\sem P$: the reflection law holds in the model,
+        as $\swp\circ\swp=\mathrm{id}$ (Proposition~\ref{prop:reflection});
+  \item $\sem{-}$ is a homomorphism: $\sem\Zero=\varnothing$,
+        $\sem{P\Par Q}=\sem P\rpar\sem Q$, and the prefix clauses of
+        Definition~\ref{def:milner}; in particular $P\scong Q\Rightarrow\sem P=\sem Q$,
+        the commutative-monoid laws and reflection being special cases.
+\end{enumerate}
+\end{theorem}
+
+\section{Full abstraction}\label{sec:fa}
+
+We prove that $\sem{-}$ identifies exactly the context-bisimilar processes. The
+argument is the standard coalgebraic one over the commitment refinement
+$\B^{\flat}$, which finitely presents context bisimilarity; we then read the result
+back through OSLF adequacy and note that, unlike the action-labelled case,
+congruence is already in hand.
+
+\begin{lemma}[Context $=$ coalgebraic bisimilarity]\label{lem:oc}
+Context bisimilarity (Definition~\ref{def:bis}) coincides with $\B^{\flat}$-coalgebraic
+bisimilarity. For the relational lifting $\overline{\B^{\flat}}$, a relation
+$\mathcal R$ on $\mathcal T/{\scong}$ is a coalgebra bisimulation iff it is a
+context bisimulation.
+\end{lemma}
+\begin{proof}[Proof sketch]
+By Remark~\ref{rem:commit} the commitment presentation packages each class-indexed
+context-transition family as a single abstraction or concretion, with no loss of
+discriminating information: two states pass the same context labels iff their
+commitment sets match. $\overline{\B^{\flat}}$ relates behaviours when their
+output and silent summands match with $\mathcal R$-related residuals and their
+input summands match in $\nset{\mathcal R}$; unfolding $\nset{\mathcal R}$ by its
+defining equivalence ($\abs y R\mathrel{\nset{\mathcal R}}\abs y{R'}$ iff
+$R\{a/y\}\mathrel{\mathcal R}R'\{a/y\}$ for all names $a$) reproduces the matching
+of the offer-input context family, and the concretion case the offer-output family.
+Hence the two notions of bisimulation coincide.
+\end{proof}
+
+\begin{lemma}[$\B^{\flat}$ is well behaved]\label{lem:wp}
+$\B^{\flat}$ preserves weak pullbacks. Hence on any $\B^{\flat}$-coalgebra
+$(C,\gamma)$, coalgebraic bisimilarity is the kernel of the unique morphism
+$!_C\colon C\to\nu{\B^{\flat}}$: $c\mathrel{\sim_{\B^{\flat}}}d \iff
+{!_C}(c)={!_C}(d)$.
+\end{lemma}
+\begin{proof}[Proof sketch]
+$\Pfin$, products, coproducts and constants preserve weak pullbacks, and so does
+the nominal abstraction functor $\nset{(-)}$ (its quotient by the freshness
+equivalence is by a functional, hence pullback-stable, relation); weak-pullback
+preservation is closed under these constructions, so $\B^{\flat}$ preserves them.
+For a weak-pullback-preserving functor with a final coalgebra, behavioural
+equivalence (the kernel of $!_C$) coincides with coalgebraic bisimilarity --- the
+standard fact of universal coalgebra \cite{rutten}. Existence of $\nu{\B^{\flat}}$,
+and its agreement with the class-sized $\nu\B$ on equality, is
+Obligation~\ref{ob:exists}.
+\end{proof}
+
+\begin{theorem}[Full abstraction for context bisimilarity]\label{thm:fa}
+For all rho processes $P,Q$,
+\[
+  \sem P=\sem Q \quad\Longleftrightarrow\quad P\bis Q .
+\]
+Moreover, since $\bis$ is a congruence (Proposition~\ref{prop:cong}), this is full
+abstraction with respect to a congruence: $\sem{-}$ identifies $P$ and $Q$ exactly
+when no context can tell them apart.
+\end{theorem}
+\begin{proof}
+By Proposition~\ref{prop:agree}, $\sem{-}$ is the unique morphism
+$!\colon(\mathcal T/{\scong},\partial)\to\nu{\B^{\flat}}$, so $\sem P=\sem Q$ iff
+${!}(P)={!}(Q)$. By Lemma~\ref{lem:wp} on the syntactic coalgebra, ${!}(P)={!}(Q)$
+iff $P,Q$ are coalgebraically bisimilar; by Lemma~\ref{lem:oc} that is context
+bisimilarity $\bis$. Chaining, $\sem P=\sem Q\iff P\bis Q$. Congruence is
+Proposition~\ref{prop:cong}.
+\end{proof}
+
+\begin{corollary}[Adequacy through OSLF]\label{cor:oslf}
+Let $\mathcal L$ be the Hennessy--Milner logic the OSLF construction generates from
+the context-labelled transition system, with modalities $\langle F\rangle\varphi$
+indexed by the labels $\DK$ (Remark~\ref{rem:dT}). By OSLF adequacy
+\cite{meredithwells}, $P\bis Q$ iff $P$ and $Q$ satisfy the same formulae of
+$\mathcal L$. Combining with Theorem~\ref{thm:fa},
+\[
+  \sem P=\sem Q
+  \ \Longleftrightarrow\
+  P\bis Q
+  \ \Longleftrightarrow\
+  \forall\varphi\in\mathcal L.\ (P\models\varphi\Leftrightarrow Q\models\varphi).
+\]
+Equality in the model, context bisimilarity, and modal indistinguishability are one
+relation seen three ways --- the Firing, Placing, and Witnessing readings of the
+single label set $\DK$.
+\end{corollary}
+
+\begin{corollary}[Internal full abstraction; Aczel as a fragment]\label{cor:internal}
+On $\nu{\B^{\flat}}=\Proc$ itself, two elements are context-bisimilar iff equal:
+behavioural equivalence is the equality of the model. Aczel's strong extensionality
+for CCS is recovered as the special case where the labels $\DK$ degenerate to an
+opaque set of action names over which no further context structure is observed ---
+the equivariant fragment of Section~\ref{sec:ledger}.
+\end{corollary}
+
+\paragraph{What the context labels bought.} An action-labelled presentation would
+here have to negotiate congruence as an afterthought: strong bisimilarity in
+name-passing calculi may fail to be preserved by input prefix unless one closes
+under name instantiation, replacing $\bis$ by the largest bisimulation-congruence
+$\bis^{c}$. Labelling by contexts removes the negotiation. The bisimulation game of
+Definition~\ref{def:bis} already ranges over every environment, so
+Proposition~\ref{prop:cong} delivers congruence directly (granted the relative
+pushouts of Obligation~\ref{ob:rpo}), and Theorem~\ref{thm:fa} is full abstraction
+for a congruence with no closure step. Rho's structure makes the relative-pushout
+hypothesis especially plausible: there is no $\nu$, so no scope-extrusion
+interaction with the cut, and a name is structured data, so name-for-name
+substitution is set-theoretic substitution under $\kt\circ\swp$ with no fresh-name
+side conditions.
+
+\section{The risk ledger}\label{sec:ledger}
+
+The accounting of \cite{knot} transfers, and locates where rho's recursion is paid
+for.
+
+\paragraph{Finite processes: the hereditarily-finite core, no infinite risk.}
+A process with a finite synchronisation tree is a hereditarily-finite red set with
+finitely many black-set atoms (its free names), living in the finitary core of
+\cite{knot}, \S5.5, where the final coalgebra of the finite-powerset functor is
+literal and exists at set size. Foundation and finite support are theorems, not
+axioms; the commitment is the black empty set and one successor, no more.
+
+\paragraph{Recursion: one $\omega$, black infinity, no primitive names.}
+Recursion enters rho through reflection (Section~\ref{sec:rho}): a finite term can
+loop by quoting and dereferencing its own continuation. Such a process is a
+non-well-founded inhabitant of $\nu\B$, available only in the infinitary reading,
+which by \cite{knot}, \S5.6 and \S8.1 costs exactly one $\omega$ --- black
+infinity --- and lives, for the full powerset, in the class-sized final-coalgebra
+framework. As with the completed datatype $\Lambda$ of \cite{knot}, \S6.2, each
+finite-state recursive process is set-sized while the universe of all processes is
+the one-$\omega$ object. No primitive name is ever reintroduced; names remain black
+sets built from $\emptyset$.
+
+\paragraph{Aczel's CCS model as the equivariant shadow.}
+Stay within one colour, never apply $\swp$ to a name's interior, treat names as
+opaque swap-only atoms (the equivariant fragment, \cite{knot}, \S6.5). The input
+summand's abstraction degenerates, $\B$ reduces to $\B_0(R)=\Pfin(\mathrm{Act}\times R)$,
+and $\nu{\B_0}$ is Aczel's CCS model (Corollary~\ref{cor:internal}). Aczel's
+construction is the colour-respecting fragment; the rho surplus --- structured,
+computed, content-addressed names, and the licence to cross the colour barrier
+with $\drp{\,}$ --- is the reflective remainder, graded by the four sorts of
+Section~\ref{sec:swap}.
+
+\section{Toward a rigorous construction}\label{sec:obligations}
+
+In the manner of \cite{knot}, \S8, the obligations a fully rigorous development
+would discharge. For the finitary core each reduces to a statement about
+hereditarily-finite sets, and several are corollaries of the model built.
+
+\begin{obligation}[Existence of the final coalgebra, and $\nu\B^{\flat}\!\bis\nu\B$]\label{ob:exists}
+Exhibit the final coalgebras via the two-sorted endofunctor
+$H(R,B)=(B+\mathcal P_s R,\,R+\mathcal P_s B)$ of \cite{knot}, \S8.1, taken at the
+\emph{final} coalgebra (greatest fixed point). For the commitment refinement
+$\B^{\flat}$, finite branching makes it accessible and $\nu{\B^{\flat}}$ exists in
+the nominal universe, at set size on the finitary core (the limit of the terminal
+$\omega^{\mathrm{op}}$-chain). For the full context functor
+$\B=\mathcal P(\DK\times-)$, the final coalgebra is the class-sized, colour-blind
+non-well-founded universe of \cite{knot}, \S7. Show the two carry the same equality
+--- that the commitment packaging of Remark~\ref{rem:commit} is a behavioural
+equivalence --- so bisimilarity computed in $\nu{\B^{\flat}}$ is context
+bisimilarity in $\nu\B$.
+\end{obligation}
+
+\begin{obligation}[The stratified signature and its coherence]\label{ob:strat}
+Fix the four-sorted signature of Section~\ref{sec:swap} --- the sorts
+$\RS,\RA,\BS,\BA$, the knots $\kt,\ktb$, the swap $\swp$ --- as an extension of the
+$\Set[X]$ signature of \cite{knot}, and verify the equational theory: $\swp$ an
+involution and a homomorphism for all set operations, $\swp\kt=\ktb\swp$, and
+$\kt,\ktb$ isomorphisms. Then $\quo{\,},\drp{\,}$ are derived and
+Proposition~\ref{prop:reflection} is a calculation. The collapse of \cite{knot}
+--- $\kt,\ktb$ literal identities --- is recovered as a quotient of this theory,
+and one checks the reflection law survives the quotient.
+\end{obligation}
+
+\begin{obligation}[Relative pushouts for rho's contexts]\label{ob:rpo}
+Discharge the hypothesis of Proposition~\ref{prop:cong}: that the category of rho
+contexts, with plugging as composition, possesses relative pushouts, so the
+idem-pushout labels of Definition~\ref{def:ctx-lts} are well defined and the
+Leifer--Milner congruence theorem applies. This is the GSLT minimal-context
+construction \cite{meredithwells}; the cut lying always at a parallel composition
+(no reaction under a prefix), and names being quoted structure rather than
+$\nu$-bound, are the features that should make the relative pushouts exist and be
+computable. With this discharged, $\bis$ is a congruence outright, and the
+action-labelled closure-under-substitution question does not arise.
+\end{obligation}
+
+\begin{obligation}[Context correspondence and OSLF adequacy]\label{ob:oc}
+Promote Lemma~\ref{lem:oc} to a theorem: define the relational lifting
+$\overline{\B^{\flat}}$ precisely, including the abstraction summand, and prove
+context bisimilarity equals $\overline{\B^{\flat}}$-bisimilarity. Relate $\bis$ to
+reduction-barbed congruence so that Theorem~\ref{thm:fa} is full abstraction for
+the intended equivalence; rho's lack of $\nu$ removes the closure under restriction
+this normally requires. Finally, instantiate the OSLF construction on the
+context-labelled system and prove the adequacy used in Corollary~\ref{cor:oslf}, so
+that the modalities $\langle F\rangle\varphi$ indexed by $\DK$ characterise $\bis$.
+\end{obligation}
+
+\begin{obligation}[Substitution and the swap-firing reaction]\label{ob:subst}
+Prove $\sem{P\{\quo M/y\}}=\sem P\{\quo{\sem M}/y\}$, i.e.\ that $\sem{-}$ is a map
+of nominal algebras for substitution and that the application of
+Definition~\ref{def:react} computes it, with the seal $\kt\circ\swp$ applied to the
+message. This is the lemma underwriting \textsc{React} and clause (ii) of
+Theorem~\ref{thm:adequacy} for input, carried by the abstraction functor's
+evaluation $\nset R\times\Name\to R$.
+\end{obligation}
+
+\begin{obligation}[Barbed-congruence calibration]\label{ob:cong}
+With congruence secured by Obligation~\ref{ob:rpo}, calibrate which behavioural
+equivalence the model realises: confirm that context bisimilarity $\bis$ coincides
+with strong barbed congruence for rho, so that Theorem~\ref{thm:fa} is full
+abstraction for the equivalence practitioners use. Rho's structured, $\nu$-free
+names are again the reason to expect the calibration to be tight where in $\pi$ it
+is delicate.
+\end{obligation}
+
+\begin{obligation}[Placing the construction]\label{ob:place}
+Locate the model among Aczel's CCS model \cite{aczel} (the equivariant fragment),
+the presheaf and nominal coalgebraic models of name-passing
+(Fiore--Turi \cite{fioreturi}, Stark \cite{stark}), of which this is the
+reflective, $\nu$-free instance with $\Name\cong\Proc$, and the bialgebraic
+semantics of Turi--Plotkin \cite{turiplotkin}, into whose abstract-GSOS format the
+rho rules fit. The defining feature absent from all three --- $\Name\cong\Proc$ via
+$\swp$ --- is the second knot.
+\end{obligation}
+
+\section{Conclusion}
+
+Rho's defining move --- names are quoted processes, $\drp{\quo P}\scong P$ --- is
+the colour-swap of the knotted universe, read through a stratification into four
+sorts: $\quo{\,}=\kt\circ\swp$, $\drp{\,}=\swp\circ\kt^{-1}$, and the reflection
+law is the involutivity $\swp\circ\swp=\mathrm{id}$, true by construction. The
+dynamics follow Milner: a process is its set of commitments, input an abstraction
+and output a concretion, communication their application --- and the application is
+where the swap fires, sealing the sent process into the received name. The
+denotation lands in the final coalgebra of a behaviour functor over the knotted
+nominal universe, where the colour-blind non-well-foundedness supplies recursion
+for free and finality makes bisimilar processes equal. Following the GSLT
+discipline we labelled transitions by contexts --- the minimal environments in
+which a process completes a reaction, which are at once the program/environment
+cuts, the OSLF modality indices, and the locations in term structure --- and
+expressed bisimulation over them; on that base we proved full abstraction,
+$\sem P=\sem Q\iff P\bis Q$. The context labelling pays a structural dividend the
+action-labelled account could not: the equivalence is a congruence by construction,
+so full abstraction holds for a congruence with no closure step, granted only that
+rho's contexts admit relative pushouts --- a hypothesis its $\nu$-free, quoted-name
+structure makes especially plausible. The risk ledger is the source paper's: finite
+processes cost nothing beyond the empty set, recursion costs one $\omega$, and not
+one primitive name is ever spent. Aczel's model sits inside this one as its
+equivariant shadow; the surplus is reflection, and reflection is the swap.
+
+\subsection*{Acknowledgements}
+This note develops Section~9.3 of \emph{A Knotted Universe}, with the stratified
+reading of the colour barrier, the Milner-style commitment semantics over
+context-labelled transitions, and the full-abstraction theorem as its additions.
+
+\begin{thebibliography}{99}
+
+\bibitem{aczel} Peter Aczel. \emph{Non-Well-Founded Sets}, volume 14 of CSLI
+Lecture Notes. CSLI Publications, Stanford, CA, 1988.
+
+\bibitem{knot} L. G. Meredith. A Knotted Universe: a new notion of reflective set
+theories. Manuscript, 2026.
+
+\bibitem{rho} L. Gregory Meredith and Matthias Radestock. A reflective
+higher-order calculus. \emph{Electr.\ Notes Theor.\ Comput.\ Sci.},
+141(5):49--67, 2005.
+
+\bibitem{polyadic} Robin Milner. The Polyadic $\pi$-Calculus: A Tutorial. In
+F.\,L. Bauer, W. Brauer, and H. Schwichtenberg, editors, \emph{Logic and Algebra
+of Specification}, volume 94 of NATO ASI Series F, pages 203--246. Springer, 1993.
+(Also Technical Report ECS-LFCS-91-180, University of Edinburgh, 1991.)
+
+\bibitem{leifermilner} James J. Leifer and Robin Milner. Deriving bisimulation
+congruences for reactive systems. In \emph{CONCUR 2000}, volume 1877 of Lecture
+Notes in Computer Science, pages 243--258. Springer, 2000.
+
+\bibitem{sewell} Peter Sewell. From rewrite rules to bisimulation congruences.
+\emph{Theoret.\ Comput.\ Sci.}, 274(1--2):183--230, 2002.
+
+\bibitem{meredithwells} L. G. Meredith, Christian Wells, et al. Minimal-context
+transition systems and the observer-specified logic functor for graph-structured
+lambda theories. Manuscript, forthcoming.
+
+\bibitem{gp} Murdoch Gabbay and Andrew M. Pitts. A new approach to abstract syntax
+with variable binding. \emph{Formal Asp.\ Comput.}, 13(3--5):341--363, 2002.
+
+\bibitem{pitts} Andrew M. Pitts. \emph{Nominal Sets: Names and Symmetry in
+Computer Science}, volume 57 of Cambridge Tracts in Theoretical Computer Science.
+Cambridge University Press, 2013.
+
+\bibitem{rutten} J.\,J.\,M.\,M. Rutten. Universal coalgebra: a theory of systems.
+\emph{Theoret.\ Comput.\ Sci.}, 249(1):3--80, 2000.
+
+\bibitem{milner} Robin Milner. \emph{Communication and Concurrency}. Prentice
+Hall, 1989.
+
+\bibitem{sw} Davide Sangiorgi and David Walker. \emph{The $\pi$-Calculus: A Theory
+of Mobile Processes}. Cambridge University Press, 2001.
+
+\bibitem{fioreturi} Marcelo Fiore and Daniele Turi. Semantics of name and value
+passing. In \emph{16th Annual IEEE Symposium on Logic in Computer Science (LICS
+2001)}, pages 93--104. IEEE, 2001.
+
+\bibitem{stark} Ian Stark. A fully abstract domain model for the $\pi$-calculus.
+In \emph{11th Annual IEEE Symposium on Logic in Computer Science (LICS 1996)},
+pages 36--42. IEEE, 1996.
+
+\bibitem{turiplotkin} Daniele Turi and Gordon Plotkin. Towards a mathematical
+operational semantics. In \emph{12th Annual IEEE Symposium on Logic in Computer
+Science (LICS 1997)}, pages 280--291. IEEE, 1997.
+
+\bibitem{jmm} André Joyal and Ieke Moerdijk. \emph{Algebraic Set Theory}, volume
+220 of London Mathematical Society Lecture Note Series. Cambridge University
+Press, 1995.
+
+\end{thebibliography}
+
+\end{document}
