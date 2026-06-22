@@ -1,0 +1,583 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{stmaryrd}
+\usepackage[expansion=false]{microtype}
+\usepackage[hidelinks]{hyperref}
+
+%% ---- theorem environments --------------------------------------------
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+\newtheorem{obligation}{Obligation}
+
+%% ---- macros ----------------------------------------------------------
+\newcommand{\den}[1]{\llbracket #1 \rrbracket}
+\newcommand{\Name}{\mathrm{Name}}
+\newcommand{\Proc}{\mathrm{Proc}}
+\newcommand{\Mfin}{M_{\mathrm{fin}}}
+\newcommand{\Pfin}{\mathcal{P}_{\mathrm{fin}}}
+\newcommand{\rfor}[2]{\mathsf{for}(#1\!\leftarrow\!#2)\,}
+\newcommand{\rout}[2]{#1\,!(#2)}
+\newcommand{\comp}{\mathrel{\asymp}}            % comparable in the prefix order
+\newcommand{\loc}{\mathrel{\rhd}}               % "located at": w |> Q
+\newcommand{\quo}{@}
+\newcommand{\der}{{\ast}}
+\newcommand{\rr}{\rightharpoonup}
+\newcommand{\zip}{\mathbin{\bowtie}}
+\newcommand{\cut}{\chi}
+\newcommand{\React}{\rho}
+\newcommand{\Sig}{\Sigma}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\bisr}{\sim_{r}}
+\newcommand{\bis}{\sim}
+\DeclareMathOperator{\supp}{supp}
+
+\title{\textbf{Paths are Subspaces}\\[2pt]
+\large a cut-triggered polymorphism of RSpace over path-keys,\\ and its distributive law}
+\author{Lucius Gregory Meredith\\
+\small CEO, F1R3FLY.io, and Chief Science Officer, F1R3FLY Industries\\
+\small\texttt{lgreg.meredith@gmail.com}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The RSpace denotation of the rho calculus in the knotted universe factors into two independent
+pieces: a reflection structure on the \emph{values} (the colour-swap $s$, with $\quo=\kappa\circ s$
+and $\der=s\circ\kappa^{-1}$) and a store monoid on the \emph{keys}
+($\Name\rr\Mfin(-)$ under key-wise $\uplus$). Anything done to the key object therefore leaves the
+reflection law untouched, so RSpace is polymorphic in its key type at no cost on the reflection side.
+We take the keys to be \emph{paths}, $K=\Name^{\ast}$, the free monoid on names, whose store is a
+trie. The prefix order on paths supplies a notion of one channel lying in the \emph{subspace} of
+another, and we read communication accordingly: a consume at $\mathrm{path}_1$ and a produce at
+$\mathrm{path}_2$ react when the paths are comparable, not merely equal. We insist throughout on a
+single discipline --- \emph{no implicit interaction}: the store never reacts with itself; a reaction
+is triggered only by a cut, an explicit $\mid$ co-locating a consume and a produce, exactly as in
+the source calculus. What comparability changes is not \emph{when} a redex exists but \emph{what} a
+given cut matches and \emph{what residual} it leaves; and because the residual of a deep cut is again
+a single cut, one interaction can cause nested interactions. We give COMM in this generality as a
+pair of dual rules, exhibit the cascade as the reflection law $s\circ s=\mathrm{id}$ unsealing a
+located sub-RSpace, and write the dynamics as an explicit distributive law of the cut over the store
+monad, a bialgebra in the Turi--Plotkin sense, in which the unit axiom \emph{is} the
+no-implicit-interaction principle. We then check the ledger: congruence by construction, the exact
+monoid homomorphism, OSLF adequacy and full abstraction, and the source paper's risk accounting all
+survive, with comparability the only new ingredient in the zip. Where the paths share prefixes ---
+which, because names are quoted processes, is whenever channels share subterm structure --- the trie
+is a radix-compressed, structurally shared, Merkle-addressable store, and we record where each
+compression pays off.
+\end{abstract}
+
+\section{Introduction}
+
+The companion note \cite{KnotRho} models the reflective higher-order (rho) calculus
+\cite{MR05} inside the knotted universe of \cite{Knot}, with the quote $\quo$ reading as the
+colour-swap that seals a process into an atom of the opposite colour and the dereference $\der$ as
+unsealing it. The dynamics there factor through an abstraction, \emph{RSpace}: parallel composition
+is interpreted as keyed multiset union, so the denotation $\den{-}$ is a monoid homomorphism and the
+parallel laws of structural congruence become literal equalities of tables, hashtables from channels
+to polarity-homogeneous bags of produces and consumes; communication is eager reaction, the zip of
+dual bags at a key, and RSpace is the store monad together with this zip, a bialgebra --- the precise
+content of ``strictly more than a monad''.
+
+The keys of that store are names, and in rho a name is a quoted process; the keys therefore have
+structure. This note studies one polymorphic interpretation of RSpace obtained by varying that
+structure. We make the key object a \emph{path}: $K=\Name^{\ast}$, the free monoid on names, each key
+a route through a trie to a sub-RSpace. The interaction algebra of RSpace acts on entire RSpaces, so
+once keys carry a path order one may ask reaction to fire not only at equal keys but at
+\emph{comparable} ones --- a consume in the subspace addressed by a prefix of the produce's path, or
+\emph{vice versa}.
+
+One design decision governs the development.
+
+\paragraph{No implicit interaction.}
+The store is inert. It never reacts with itself, and there is no ambient broadcast in which a stored
+produce finds every comparable consume in the trie. A reaction is triggered only by a \emph{cut}: an
+explicit parallel composition $\mid$ that co-locates a consume and a produce, exactly as $K=\mid$ is
+the single base constructor heading the left-hand side of COMM in the source calculus. What the path
+order buys is not new triggers but a richer \emph{matching} at an existing trigger:
+$\rfor{y}{\mathrm{path}_1}P \mid \rout{\mathrm{path}_2}{Q}$ is a local cut even when
+$\mathrm{path}_1$ and $\mathrm{path}_2$ are not equal on the nose, and the comparability of the two
+paths decides what is delivered and what residual remains. Because the residual of a deep cut is
+again a single cut, an interaction can \emph{cascade}: it can manufacture nested interactions, each
+of which is itself a cut, with nothing implicit in between.
+
+This decision is what keeps the construction conservative. We show below that it leaves the locality
+of the cut --- the reactive contexts are still $[\,\cdot\,]\mid R$ --- and hence the
+congruence-by-construction argument, the exact homomorphism, OSLF adequacy, and the risk ledger of
+\cite{KnotRho} all intact; the only genuinely new object is the comparability-aware zip, which we
+write out as a distributive law of the cut over the store monad. We assume throughout the modern
+presentation of \cite{KnotRho}: $\quo P$ for quoting, $\der x$ for dereference, $\rfor{y}{x}P$ for
+input, $\rout{x}{Q}$ for output, $\equiv$ for structural congruence, $\bis$ for context bisimilarity,
+$\bisr$ for resource bisimilarity, and $\den{-}\colon\Proc\to T(\Proc)$ for the RSpace denotation
+into tables $T(R)=\Name\rr\bigl(\Mfin(R)\uplus\Mfin([N]R)\bigr)$.
+
+\section{RSpace, parametric in the key object}\label{sec:param}
+
+\subsection{The factoring lever}
+
+Write RSpace's table functor with its key object exposed as a parameter:
+\[
+  T_{K}(R)\;=\;K\;\rr\;\bigl(\Mfin(R)\;\uplus\;\Mfin([N]R)\bigr),
+\]
+a finite partial map from keys to polarity-homogeneous bags of payloads --- a key holds either a
+multiset of output payloads (produces, data) or a multiset of input continuations (consumes,
+abstractions $(y)P$), never a mixture. The source paper is the instance $K=\Name\cong\Proc$, the
+keys quoted processes. The construction splits cleanly:
+
+\begin{remark}[The reflection/store factoring]\label{rem:factor}
+RSpace is two independent structures glued at the table. The first is a reflection on the
+\emph{values}: the colour-swap $s\colon\mathcal S\cong\overline{\mathcal S}$, $s\circ s=\mathrm{id}$,
+with $\quo=\kappa\circ s$ and $\der=s\circ\kappa^{-1}$, validating $\der\quo P\equiv P$ as the
+involutivity of $s$. The second is a store monoid on the \emph{keys}: $K\rr\Mfin(-)$ with
+multiplication $\uplus$, the free commutative monoid lifted key-wise. The reflection law concerns
+names, not the store monoid, and is undisturbed by any choice of $K$; the store laws concern keys,
+not values, and are undisturbed by any choice of value-reflection. Consequently every key-object
+polymorphism of RSpace validates Proposition (reflection) and clause~(i) of the adequacy theorem of
+\cite{KnotRho} \emph{verbatim}, for free. The entire content of changing $K$ lives in the
+store-and-zip factor.
+\end{remark}
+
+\subsection{What a key object must supply}
+
+The minimal interface to instantiate $T_{K}$ as a store is decidable equality on $K$: enough to
+detect that a key carries both polarities, i.e.\ to recognise a redex. To do \emph{path} reaction one
+asks for more --- the free monoid $(\Name^{\ast},\cdot,\eps)$ and its prefix order. To retain the
+congruence-by-construction of \cite{KnotRho} one asks, finally, that the category of $K$-contexts
+possess the relative pushouts of Leifer--Milner \cite{LM00,Sewell02}, adapted to GSLTs \cite{GSLT};
+\S\ref{sec:transfer} shows the no-implicit-interaction discipline is exactly what makes this
+no harder for paths than for bare names.
+
+\section{Paths and the trie}\label{sec:trie}
+
+\subsection{The path key object}
+
+Fix $K=\Name^{\ast}$, finite sequences of names, with $\eps$ the empty path, $\cdot$ concatenation,
+$p\sqsubseteq q$ the prefix order ($q=p\cdot w$ for some suffix $w$), and $p\wedge q$ the
+longest common prefix, which exists for all $p,q$ because the prefix order is a tree order. Write
+\[
+  p\comp q \;:\Longleftrightarrow\; p\sqsubseteq q \ \text{ or }\ q\sqsubseteq p
+\]
+for \emph{comparability}: one path lies on the route to the other. (We reserve $\#$ for the freshness
+of \cite{KnotRho}.) The monoid acts on tables by descent: for $p\in K$ and a table $u$, the
+\emph{graft} $p\cdot u$ is the table with $(p\cdot u)(p\cdot k)=u(k)$ and undefined off
+$p\cdot K$, and the \emph{residual} $u/p$ is the sub-table rooted at $p$, $(u/p)(k)=u(p\cdot k)$. A
+located output is sugar: $w\loc Q$ is the process with
+\[
+  \den{w\loc Q}\;=\;\bigl[\,w\mapsto\{\!|\,\den Q\,|\!\}^{+}\,\bigr],
+  \qquad \eps\loc Q\equiv Q,
+\]
+i.e.\ $Q$ planted at sub-path $w$; since names are quoted processes, $\quo(w\loc Q)$ is an honest
+name. Dually $\eps$ is a transparent rendezvous: an input or output on the empty path is on the node
+itself.
+
+\subsection{The store is a trie, and the trie compresses}
+
+Modulo $\equiv$ the parallel fragment is the free commutative monoid, and interpreting $\mid$ as
+key-wise $\uplus$ over the index $\Name^{\ast}$ keeps $\den{-}$ a monoid homomorphism on the nose
+exactly as before. The store $\Name^{\ast}\rr\Mfin(-)$ is, with prefix sharing, a trie:
+\[
+  \mathrm{Trie}(V)\;\cong\;\bigl(\Name^{\ast}\rr V\bigr),
+  \qquad
+  \mathrm{Trie}(V)\;\cong\;V\times\bigl(\Name\rr\mathrm{Trie}(V)\bigr),
+\]
+the isomorphism on the left being precisely the statement that prefix sharing is sound: a trie is the
+representation of a path-indexed map in which common prefixes are stored once. The recursive
+presentation on the right makes every internal node itself a full RSpace --- its own bag plus its
+children --- which is what licenses ``interaction acts on entire RSpaces'' for nested stores.
+
+\begin{remark}[Four readings]
+The path structure admits, in increasing order of how much of the monoid the reaction sees:
+\emph{(0)} paths as opaque compound names --- reaction at equal full paths, the trie a storage
+representation only, every theorem of \cite{KnotRho} transferring verbatim; \emph{(1)} the nested
+trie store with exact-key reaction --- same behavioural and resource equivalences, but the recursion
+now exposed in the type and $\uplus$ realised as recursive trie-merge; \emph{(2)} subspace reaction
+--- a cut whose paths are comparable matches across the prefix order; and \emph{(3)} meet reaction
+--- a cut rendezvous at $p\wedge q$ even for incomparable siblings. Readings 0 and 1 are
+representational. Readings 2 and 3 change the matching, and are the subject of
+\S\ref{sec:subspace}--\S\ref{sec:dist}. We develop the subspace reading in full and treat the meet
+reading as its symmetric extension.
+\end{remark}
+
+\section{Cut-triggered subspace reaction}\label{sec:subspace}
+
+\subsection{COMM in the subspace, as a pair of dual rules}
+
+Communication is triggered by a cut and nothing else. When the two paths of a cut are comparable, the
+single COMM rule of the source calculus,
+\[
+  \frac{x\equiv_{N}z}{\rfor{y}{x}P \mid \rout{z}{Q} \longrightarrow P\{\quo Q/y\}}\;\textsc{Comm},
+\]
+splits according to which side is the deeper. Let the input be on $\mathrm{path}_1$ and the output on
+$\mathrm{path}_2$.
+
+\begin{definition}[Subspace COMM]\label{def:subcomm}
+There are two dual reactions, each a local cut.
+\begin{itemize}
+\item[\textsc{(Out-deep)}] If $\mathrm{path}_1\sqsubseteq\mathrm{path}_2$, write
+  $\mathrm{path}_2=\mathrm{path}_1\cdot w$. The output lies in the subspace named by the input; the
+  input receives the still-located sub-RSpace, sealed:
+  \[
+    \rfor{y}{\mathrm{path}_1}P \mid \rout{\mathrm{path}_2}{Q}
+    \;\longrightarrow\;
+    P\{\,\quo(w\loc Q)\,/\,y\,\}.
+  \]
+\item[\textsc{(In-deep)}] If $\mathrm{path}_2\sqsubseteq\mathrm{path}_1$, write
+  $\mathrm{path}_1=\mathrm{path}_2\cdot w$. The output arrives at the shallower channel and the input,
+  waiting deeper, must descend $w$ into the payload; the cut \emph{unpacks} into a fresh, deeper cut:
+  \[
+    \rfor{y}{\mathrm{path}_1}P \mid \rout{\mathrm{path}_2}{Q}
+    \;\longrightarrow\;
+    \rfor{y}{w}P \mid Q.
+  \]
+\end{itemize}
+Both collapse to \textsc{Comm} at $w=\eps$: \textsc{(Out-deep)} gives $P\{\quo Q/y\}$ since
+$\eps\loc Q\equiv Q$, and \textsc{(In-deep)} gives $\rfor{y}{\eps}P\mid Q\longrightarrow P\{\quo Q/y\}$
+by the transparency of the root rendezvous. The propagation rules \textsc{Par}, \textsc{Struct} are
+unchanged.
+\end{definition}
+
+The right-hand side of \textsc{(In-deep)} is again a single parallel composition, a local cut, not a
+probe of the store. This is the precise sense of ``an interaction can cause nested interactions'':
+one cut produces a residual that is itself a redex, fired by the same rules, with nothing ambient in
+between. Whether it cascades depends on $Q$: if $Q$ outputs on a channel comparable to $w$ the new
+cut fires; otherwise it is a pending input, correctly stuck.
+
+\subsection{Reflection is the cascade engine}
+
+The seal of \textsc{(Out-deep)} is where reflection does double duty.
+
+\begin{proposition}[Cascade via $s\circ s=\mathrm{id}$]\label{prop:cascade}
+In \textsc{(Out-deep)} the receiver binds the name $\quo(w\loc Q)=\kappa\,s(w\loc Q)$, the located
+sub-RSpace sealed by the swap. Wherever the continuation $P$ dereferences it, $\der$ unseals it,
+\[
+  \der\,\quo(w\loc Q)\;=\;s\,\kappa^{-1}\kappa\,s\,(w\loc Q)\;=\;s\,s\,(w\loc Q)\;=\;w\loc Q,
+\]
+splicing the located output back into the body of $P$, where it may cut with $P$'s own consumes one
+level deeper. The colour-swap therefore fires twice per cascade step: once as the seal
+$\quo=\kappa\circ s$ packaging the residual sub-RSpace into the delivered name, once under
+$\der=s\circ\kappa^{-1}$ unsealing it for the next reaction.
+\end{proposition}
+
+The cascade is thus not a new nonlocal mechanism but the reflection-through-reflection recursion the
+source calculus already relies on for recursion without a primitive replication operator (the server
+$D\equiv\rfor{y}{x}(\der y\mid\rout{x}{y})\mid\rout{x}{\quo(\cdots)}$ of \cite{KnotRho}), now also
+threading the trie.
+
+\section{The distributive law}\label{sec:dist}
+
+We now present the dynamics of Definition~\ref{def:subcomm} as a distributive law of the cut over the
+store monad, in the bialgebra format of Turi--Plotkin \cite{TP97}. Two facts orient the construction:
+the store monad is untouched (still $\Name^{\ast}\rr\Mfin(-)$ with $\uplus$), and the no-implicit-interaction
+principle is, formally, the \emph{unit} axiom of the law.
+
+\subsection{The store monad and the pre-tables}
+
+Let $(T,\eta,\mu)$ be the store monad, $\mu=\uplus$, $\eta$ the singleton placement, on the value
+functor of \S\ref{sec:param}. During reaction a key may transiently carry both polarities, so we work
+on \emph{pre-tables}
+\[
+  \overline T(R)\;=\;K\;\rr\;W(R),
+  \qquad
+  W(R)\;=\;\Mfin(R)\times\Mfin([N]R),
+\]
+a key holding a produce-bag $B^{+}$ and a consume-bag $B^{-}$; a table is the polarity-homogeneous
+sub-object (one bag empty at every key). The cut installs both by key-wise union: $\den{P\mid Q}=
+\den P\uplus\den Q$, with $\uplus$ pure (no firing) so that $\den{-}$ stays a function and reaction is
+the separate dynamics.
+
+\subsection{The fire of one matched pair}
+
+A \emph{consume item} is $(p,(y)P)$ and a \emph{produce item} is $(q,Q)$; they form a redex iff
+$p\comp q$. Firing a matched pair returns the denotation of the corresponding rule's right-hand side,
+to be merged back by $\uplus$.
+
+\begin{definition}[Fire]\label{def:fire}
+For $p\comp q$ set $w$ by $q=p\cdot w$ (when $p\sqsubseteq q$) or $p=q\cdot w$ (when $q\sqsubseteq p$),
+and define
+\[
+  \mathrm{fire}\bigl((p,(y)P),(q,Q)\bigr)\;=\;
+  \begin{cases}
+    \den{P\{\,\quo(w\loc Q)/y\,\}} & p\sqsubseteq q \quad(\textsc{Out-deep}),\\[4pt]
+    \den{\rfor{y}{w}P}\;\uplus\;\den{Q} & q\sqsubseteq p \quad(\textsc{In-deep}).
+  \end{cases}
+\]
+At $p=q$ both lines equal $\den{P\{\quo Q/y\}}$, the source paper's COMM. The \textsc{In-deep} line is
+a fresh cut: $\den{\rfor{y}{w}P}=[\,w\mapsto\{\!|(y)\den P|\!\}^{-}]$ unioned with $\den Q$, eager
+reaction continuing within.
+\end{definition}
+
+\subsection{The cut term and the law}
+
+Reaction enters only through juxtaposition. Given pre-tables $s,t$, the cut formed by composing them
+is the eager one-pass cross-reaction of all comparable opposite-polarity pairs with one side from
+each operand.
+
+\begin{definition}[Cut term]\label{def:cutterm}
+\[
+  \cut(s,t)\;=\;
+  \biguplus
+  \Bigl\{\,
+    \mathrm{fire}(c,d)\;:\;
+    c\ \text{a consume item of }s,\ d\ \text{a produce item of }t,\ c\comp d
+  \Bigr\}
+  \ \uplus\ (s\leftrightarrow t),
+\]
+where $(s\leftrightarrow t)$ is the symmetric term (consumes of $t$ against produces of $s$), and at
+each key the matched pairs are zipped along chosen list orderings, the surplus of the longer bag
+remaining --- the located analogue of the zip of \cite{KnotRho}, its pairing nondeterminism the
+source calculus's choice of which send meets which receive, now ranging over comparable rather than
+equal keys.
+\end{definition}
+
+Let $\React\colon\overline T\to\overline T$ denote eager reaction to a (subspace-)polarity-homogeneous
+normal form: fire every comparable opposite-polarity pair, including those created by merged products,
+until none remains. The bialgebra content is two equations.
+
+\begin{definition}[Distributive law of the cut over the store]\label{def:dist}
+Let $\Sig$ be the signature functor whose binary component is the cut $\mid$. A distributive law
+\[
+  \lambda\;\colon\;\Sig\,T\;\Longrightarrow\;T\,\Sig
+\]
+of $\Sig$ over the monad $(T,\eta,\mu)$ is a natural transformation satisfying
+\[
+  \text{\emph{(D1, unit)}}\quad \lambda\circ\Sig\eta=\eta\Sig,
+  \qquad
+  \text{\emph{(D2, mult.)}}\quad \lambda\circ\Sig\mu=\mu\Sig\circ T\lambda\circ\lambda T.
+\]
+On the cut component $\lambda$ is realised by $\uplus$-with-cross-reaction: on a pair of stores
+$(s,t)$ it returns their key-wise union enriched by the cut term, $s\uplus t\uplus\cut(s,t)$, with the
+located residuals of Definition~\ref{def:fire} reinstalled and reaction iterated to the normal form.
+\end{definition}
+
+\begin{proposition}[The unit axiom is no-implicit-interaction]\label{prop:unit}
+$\cut(s,\varnothing)=\varnothing=\cut(\varnothing,t)$, hence $\lambda$ on a cut against the empty
+store is the bare injection: $\React(s\uplus\varnothing)=\React(s)$. Equivalently \emph{(D1)}: cutting
+against a unit store causes no reaction. A reaction requires a cut that actually co-locates opposite
+polarities; the store never reacts with itself.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+$\cut(s,t)$ ranges over pairs $(c,d)$ with $c$ from one operand and $d$ from the other; with one
+operand empty there are no such pairs, so the cut term is empty and $\lambda$ reduces to
+$\uplus$, whose unit is $\varnothing$. This is precisely the statement that $\Sig\eta$ followed by
+$\lambda$ equals $\eta\Sig$: composing a process with the inert unit and then ``reacting'' is the same
+as not reacting.
+\end{proof}
+
+\begin{proposition}[Multiplication, up to resource bisimilarity]\label{prop:mult}
+For pre-tables $s,t$,
+\[
+  \React(s\uplus t)\;\bisr\;\React\bigl(\React(s)\uplus\React(t)\uplus\cut(s,t)\bigr).
+\]
+The right-hand side is the \emph{(D2)} pattern: react the operands, merge, and add exactly the
+cross-cuts the union created; the cross-cuts are the only reactions not already internal to $s$ or
+$t$, and they are exactly the comparable opposite-polarity pairs straddling the cut. Iterating
+$\React$ closes the cascade.
+\end{proposition}
+
+\begin{remark}[What kind of object this is]
+The law does not change the monad: $\uplus$ is verbatim the store multiplication, and
+Proposition~13 of \cite{KnotRho} (the exact homomorphism, the parallel laws as literal table
+equalities) holds unchanged because $\uplus$ never fires. RSpace remains ``store monad $+$ zip''; the
+zip is merely comparability-aware. The reflection law is likewise untouched, by
+Remark~\ref{rem:factor}. The cascade is the inductive closure of $\lambda$ over its own
+\textsc{In-deep} residuals; it terminates whenever the source process is finite, because each fire
+strictly consumes a matched pair, and the only route to nontermination is reflection looping --- the
+single $\omega$ of \S\ref{sec:transfer}, not a new infinity.
+\end{remark}
+
+\subsection{The meet variant}
+
+The pure-meet reading fires at $p\wedge q$ even for incomparable siblings, $p=m\cdot u$ and
+$q=m\cdot v$ with $u,v$ both nonempty, $m=p\wedge q$. It remains cut-triggered. It carries one genuine
+degree of freedom the subspace reading does not: with neither path containing the other one must fix a
+convention for both residual suffixes, the natural symmetric move delivering each side's residual into
+the other and relocating the continuation under $m$. This is where the richest cascades live, and
+where one owes an explicit relocation operator; the subspace reading keeps a clean
+container/contained relationship and is the conservative one to develop first.
+
+\section{What transfers}\label{sec:transfer}
+
+We record, against the apparatus of \cite{KnotRho}, what the subspace dynamics preserves. The thread
+throughout is locality: because reaction is cut-triggered, the reactive contexts do not change.
+
+\paragraph{Congruence, by construction.}
+The reactive contexts are still $[\,\cdot\,]\mid R$ --- a cut always lies at a parallel composition,
+including the manufactured right-hand cut of \textsc{(In-deep)} --- so the category of contexts and
+its idem-pushouts never see the matching predicate. The relative-pushout hypothesis (Leifer--Milner
+\cite{LM00,Sewell02}, GSLT minimal-context \cite{GSLT}) is no harder than for bare names, and context
+bisimilarity is a congruence by construction: $P\bis Q\Rightarrow F[P]\bis F[Q]$. The
+action-labelled closure-under-substitution question does not arise.
+
+\paragraph{The label set, three views.}
+The labels are still the parallel cuts $\partial T_{K}$; the OSLF-generated Hennessy--Milner
+modalities $\langle F\rangle\varphi$ are still indexed by the families
+$[\,\cdot\,]\mid\rout{\mathrm{path}_2}{Q}$, now with $\mathrm{path}_2$ ranging over the comparables of
+the input path --- a larger, but still context-shaped, family. Firing, Witnessing and Placing remain
+three readings of one label set, and OSLF adequacy gives
+$P\bis Q\Leftrightarrow\forall\varphi.(P\models\varphi\Leftrightarrow Q\models\varphi)$.
+
+\paragraph{The homomorphism and the bialgebra shape.}
+$\uplus$ is untouched, so the exact monoid homomorphism survives and the parallel laws are literal
+table equalities; reaction is a richer zip over the same store monad, the ``store monad $+$ zip''
+bialgebra of \cite{KnotRho} with comparability-matching and located residuals the only changes. The
+polarity-homogeneity invariant of reduced tables generalises to its subspace form --- no two
+\emph{comparable} keys carry opposite polarities --- and no-implicit-interaction is exactly the claim
+that eager reaction maintains this invariant: every opposite-polarity comparable pair was introduced
+by a $\mid$, so firing it is sound and traceable to a cut.
+
+\paragraph{Full abstraction and the risk ledger.}
+The factoring of \cite{KnotRho} onto $\nu B$ persists: resource bisimilarity (counting located
+copies) refines context bisimilarity, with the projection $\pi$ forgetting multiplicity and keys.
+Full abstraction $\den{P}_{B}=\den{Q}_{B}\Leftrightarrow P\bis Q$ holds for a congruence with no
+closure step. And the risk ledger is undisturbed: each cut is finite, a cascade from finite terms is
+finite, and the only source of nontermination is reflection looping, the same single $\omega$ ---
+black infinity, an $\omega$-fold multiplicity --- the source paper already charges. The path machinery
+spends no new infinity; it routes the existing reflective recursion through the trie.
+
+\section{Where the trie compresses}\label{sec:compress}
+
+Four mechanisms, in increasing order of how much they touch the semantics rather than the
+representation.
+
+\emph{Radix (Patricia) collapse} \cite{Morrison68}. Stores are sparse, so the trie is mostly chains
+of single-child nodes; collapsing each chain into one edge labelled by a path segment takes the depth
+from one node per name to one node per branch point. A storage win, available in every reading.
+
+\emph{Structural sub-trie sharing (hash-consing, copy-on-write).} Eager normal forms are
+subspace-polarity-homogeneous: a reduced sub-trie is inert, with no pending redex, hence shareable by
+reference and duplicated lazily only when one side reacts. This is where the recursive trie-merge of
+Reading~1 pays, and it is the operational face of the resource layer: copy-on-write is ``do not
+materialise a multiplicity until it is observed.''
+
+\emph{Merkle addressing.} Tag each node with the hash of its children and sub-RSpaces become
+content-addressed. Resource bisimilarity (a key-by-key, multiplicity-matched comparison of tables)
+then short-circuits equal subtrees in $O(1)$ --- equal root hash means $\bisr$-equal sub-store, no
+descent --- and content addressing is native, not bolted on, because $\Name=\quo\Proc$: the key
+already \emph{is} a hash of a quoted process.
+
+\emph{The path is the structure of the name.} Since names are quoted processes, the natural path is
+not an arbitrary string but the spine of the quoted process itself --- its parallel decomposition,
+its descent through the term. Then content-addressed channels that share \emph{subterms} share
+\emph{trie structure}, automatically, by the structure of the quote; and large quoted-process names,
+the case where opaque keys waste the most, are exactly where the de-duplication is greatest. This is
+the denotational reading of what the on-chain RSpace history store already computes when it persists
+to a Merkle radix trie keyed by hashes of channels: Readings~1--3 are the semantics that
+implementation has been evaluating all along.
+
+\section{Obligations}
+
+In the manner of \cite{KnotRho}, \S 8, the points a fully rigorous development would discharge.
+
+\begin{obligation}[The distributive law]
+Verify \emph{(D1)} and \emph{(D2)} for $\lambda$ of Definition~\ref{def:dist} in the Turi--Plotkin
+format \cite{TP97}, with $\den{-}$ the induced bialgebra morphism. \emph{(D1)} is
+Proposition~\ref{prop:unit}; \emph{(D2)} is the coherence of cut formation across nested unions, of
+which Proposition~\ref{prop:mult} states the $\bisr$-form. Confirm that the located residuals of
+Definition~\ref{def:fire} make $\lambda$ natural in $R$.
+\end{obligation}
+
+\begin{obligation}[Eager confluence up to $\bisr$]
+A shallow consume may be comparable to several deeper produces (fan-out) and a deep input unpacks into
+a payload (descent), so eager reaction must be shown confluent up to resource bisimilarity with the
+new residuals: all maximal reaction sequences reach $\bisr$-equal normal forms, independent of the
+pairing nondeterminism of Definition~\ref{def:cutterm} and the fan-out order.
+\end{obligation}
+
+\begin{obligation}[Substitution and relocation]
+Prove $\den{P\{\quo(w\loc M)/y\}}=\den{P}\{\quo(w\loc\den M)/y\}$, the located generalisation of the
+substitution lemma of \cite{KnotRho}, carried by the abstraction functor's evaluation
+$[N]R\times\Name\to R$, with the seal $\kappa\circ s$ applied to the message. For the meet variant,
+establish the relocation operator that delivers each incomparable residual into the other and pin down
+whether it is primitive or derivable.
+\end{obligation}
+
+\begin{obligation}[Relative pushouts for path-contexts]
+Discharge the locality claim of \S\ref{sec:transfer}: the category of rho contexts over path-keys,
+with plugging as composition, possesses relative pushouts, so the idem-pushout labels are well defined
+and the Leifer--Milner congruence theorem applies. The cut lying always at a parallel composition
+(including the \textsc{In-deep} residual) and names being quoted structure rather than $\nu$-bound are
+the features that should make the relative pushouts exist and be computable.
+\end{obligation}
+
+\begin{obligation}[Subspace-homogeneous normal forms]
+Show eager reaction maintains the subspace-polarity-homogeneity invariant --- no two comparable keys
+carry opposite polarities in a normal form --- and that this is equivalent to no-implicit-interaction:
+every comparable opposite-polarity pair is traceable to a cut.
+\end{obligation}
+
+\begin{obligation}[The trie store in the knotted universe]
+Encode the trie inside the knotted universe so that recursion is accommodated and the swap $s$ and
+knots $\kappa,\bar\kappa$ respect the path structure and the count arithmetic, multiplicity-$\omega$
+being exactly the black infinity of \S\ref{sec:transfer}; confirm $T_{\Name^{\ast}}$ preserves weak
+pullbacks (the index-set change to $\Name^{\ast}$ leaves the refinement-monoid argument of
+\cite{GS01} intact, the $\mathbb N\cup\{\omega\}$ completion to be re-checked).
+\end{obligation}
+
+\section{Conclusion}
+
+Reading RSpace's keys as paths makes the store a trie and the prefix order a notion of one channel
+lying in another's subspace. Insisting that reaction stay cut-triggered --- the store never reacts
+with itself, an interaction requires a $\mid$, and an interaction may manufacture nested interactions
+--- turns the subspace reading into a conservative extension: COMM splits into the dual
+\textsc{Out-deep}/\textsc{In-deep} rules, the cascade is the reflection law $s\circ s=\mathrm{id}$
+unsealing a located sub-RSpace, and the dynamics is a distributive law of the cut over the unchanged
+store monad whose unit axiom is precisely the no-implicit-interaction principle. The cost is paid on
+the confluence side, where it is the same genus of rewrite obligation the eager semantics already
+carries; the congruence side, the exact homomorphism, OSLF adequacy and full abstraction, and the
+risk ledger are all preserved. And because names are quoted processes, the path can be the structure
+of the name, so the trie is not only a storage compression but the denotational content of the Merkle
+radix store the implementation already runs.
+
+\paragraph{Future work.} The meet variant and its relocation operator; the lazy reaction strategy,
+treating a comparable opposite-polarity pair as a standing redex rather than reducing eagerly; and the
+join-pattern axis --- paths grade the store by the free monoid $\Name^{\ast}$ under concatenation,
+whereas join patterns grade it by tupling $\Name^{n}$, and the two gradings compose.
+
+\begin{thebibliography}{99}
+
+\bibitem{KnotRho} L. G. Meredith. \emph{Quoting is Colour-Swap: a model of the rho calculus in the
+knotted universe.} Manuscript, 2026.
+
+\bibitem{Knot} L. G. Meredith. \emph{A Knotted Universe: a new notion of reflective set theories.}
+Manuscript, 2026.
+
+\bibitem{MR05} L. Gregory Meredith and Matthias Radestock. A reflective higher-order calculus.
+\emph{Electr. Notes Theor. Comput. Sci.}, 141(5):49--67, 2005.
+
+\bibitem{GSLT} L. G. Meredith, Christian Wells, et al. \emph{Minimal-context transition systems and
+the observer-specified logic functor for graph-structured lambda theories.} Manuscript, forthcoming.
+
+\bibitem{LM00} James J. Leifer and Robin Milner. Deriving bisimulation congruences for reactive
+systems. In \emph{CONCUR 2000}, LNCS 1877, pages 243--258. Springer, 2000.
+
+\bibitem{Sewell02} Peter Sewell. From rewrite rules to bisimulation congruences. \emph{Theoret.
+Comput. Sci.}, 274(1--2):183--230, 2002.
+
+\bibitem{TP97} Daniele Turi and Gordon Plotkin. Towards a mathematical operational semantics. In
+\emph{12th Annual IEEE Symposium on Logic in Computer Science (LICS 1997)}, pages 280--291. IEEE,
+1997.
+
+\bibitem{GS01} H. Peter Gumm and Tobias Schr\"oder. Monoid-labeled transition systems. \emph{Electron.
+Notes Theor. Comput. Sci.}, 44(1):185--204, 2001.
+
+\bibitem{Morrison68} Donald R. Morrison. PATRICIA --- Practical Algorithm To Retrieve Information
+Coded In Alphanumeric. \emph{J. ACM}, 15(4):514--534, 1968.
+
+\bibitem{Milner93} Robin Milner. The Polyadic $\pi$-Calculus: A Tutorial. In \emph{Logic and Algebra
+of Specification}, NATO ASI Series F 94, pages 203--246. Springer, 1993.
+
+\bibitem{Rutten00} J. J. M. M. Rutten. Universal coalgebra: a theory of systems. \emph{Theoret.
+Comput. Sci.}, 249(1):3--80, 2000.
+
+\end{thebibliography}
+
+\end{document}
