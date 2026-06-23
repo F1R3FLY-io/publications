@@ -1,0 +1,710 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage{microtype}
+\usepackage[T1]{fontenc}
+\usepackage{palatino}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+% ---- theorem environments ----
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{principle}{Principle}
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{question}{Question}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newtheorem*{obligation*}{Obligation}
+\newtheorem{obligation}{Obligation}
+
+% ---- process-calculus notation ----
+\newcommand{\quoteP}{@}                       % quote
+\newcommand{\deref}{{*}}                       % dereference
+\newcommand{\inn}[3]{\mathrm{for}(#1 \leftarrow #2)\,#3}
+\newcommand{\out}[2]{#1\,!\,(#2)}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\rcong}{\equiv}
+\newcommand{\bisim}{\sim}
+\newcommand{\rbisim}{\sim_{r}}
+\newcommand{\reduces}{\longrightarrow}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\bagunion}{\uplus}
+\newcommand{\Mfin}{M_{\mathrm{fin}}}
+\newcommand{\Name}{\mathrm{Name}}
+\newcommand{\Proc}{\mathrm{Proc}}
+\newcommand{\dgr}{\mathbf{d}}
+\newcommand{\Cut}{\mid}
+
+\title{\bfseries Not Every Cut Is an Aperture\\[2pt]
+\large Choice as a computational resource, confluent interiors,\\
+and the seams along which agents interfere}
+
+\author{Lucius Gregory Meredith\\
+\small CEO, F1R3FLY.io, and Chief Science Officer, F1R3FLY Industries\\
+\small \texttt{lgreg.meredith@gmail.com}}
+
+\date{2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The mobile process calculi (MPCs) furnish a vocabulary in which several
+ontological questions about computational agency become sharp. Working
+within that vocabulary --- and treating the RSpace semantics of the
+reflective higher-order calculus as a \emph{motivating example} rather than
+as a model of any physical mechanism --- we examine when one computational
+agent can interfere with another. Our organising observation is that the
+nondeterminism of an interaction is a property of the \emph{cut} at which two
+processes meet, not of either process taken alone, and that the resolution of
+that nondeterminism is a computational resource: a choice function for the
+family of admissible pairings, graded in strength by exactly the infinitude
+the source calculus's risk ledger already charges. An agent of higher
+computational capacity can influence a weaker one only by writing into such a
+resource where it is left open --- but not every cut leaves it open. We
+isolate the \emph{macro-component}: a sub-term whose internal interaction is
+confluent up to resource bisimilarity, so that however much its interior
+branches, no internal cut is observable as choice; its only apertures lie at
+its boundary. Eric Smith's account of the biosphere --- the agents that
+consume energy from outside as the true interface to the rest of the universe,
+the agents that consume one another as a rigid interior --- is, in this
+vocabulary, exactly such a factorisation. Linearity is too strong a criterion
+for the rigid interior; confluence is the right one, and the $\lambda$-calculus,
+operationally awash in branching yet famously determinate, is the paradigm.
+We close on the one structural question on which the stability of the whole
+picture turns: whether confluence up to resource bisimilarity is preserved
+under subspace descent --- equivalently, whether boundary interference can
+crack open a previously rigid interior, which would be the formal content of
+\emph{perturbation}.
+\end{abstract}
+
+\section{Introduction}
+
+This note is a conceptual essay carried by a notation. It is about agency,
+interference, and the boundaries between computational entities of unequal
+capacity; and its method is to borrow the syntax and semantics of the mobile
+process calculi (MPCs) --- the $\pi$-calculus and, specifically, the reflective
+higher-order (rho) calculus \cite{rho} --- not as a physical model but as an
+\emph{ontological vocabulary}: a language precise enough to name the categories
+at play and to say which distinctions are real and which are artefacts of how we
+choose to describe.
+
+Two disclaimers fix the register. First, the RSpace denotation of the rho
+calculus \cite{qcs,paths} appears throughout as a \emph{motivating example}. We
+are not positing that RSpace, its keyed multiset store, or its ``forgiving zip''
+bears any resemblance to a physical mechanism. We invoke it because it makes one
+thing vivid --- that the indeterminacy of which sender meets which receiver is
+localised at a cut and is, formally, a choice --- and because that one thing is
+enough to seed the rest. Second, where we reach for biology we lean on Smith and
+Morowitz's \emph{The Origin and Nature of Life on Earth} \cite{smith}, whose
+reading of the biosphere as a planetary process with a definite interface to the
+rest of the universe is, we will argue, illuminated by --- and illuminating of
+--- the MPC vocabulary. The claim is not that life \emph{is} a process term. The
+claim is that the categories Smith draws (the agent that eats outside energy; the
+agent that eats other agents; the biosphere-as-agent versus the bee-as-agent) are
+categories the MPC vocabulary already has names for, and that putting the two
+side by side sharpens both.
+
+The thesis the note exists to state is a single sentence, and it is about cuts.
+In the MPCs, two agents always sit on either side of a parallel composition; the
+composition is the locus of their interaction, the \emph{cut}. One is tempted to
+read every such cut as an opening --- a place where what one agent does is
+underdetermined and therefore a place where another agent can reach in. The
+temptation is wrong, and correcting it is the work of the note:
+
+\begin{principle}[Not every cut is an aperture]\label{prin:main}
+Agents flank every cut. But only some cuts leave the interaction's
+nondeterminism \emph{open and observable}, and only at those cuts can an agent
+of higher computational capacity influence the behaviour of a lower one.
+The cuts that do are the \emph{apertures}; the cuts that do not are sealed by
+the determinacy --- not necessarily the linearity, but the confluence --- of
+the agents that meet there.
+\end{principle}
+
+\noindent
+The body develops, in order: choice as a resource (\S\ref{sec:choice}); the
+correction that locates the aperture at the cut rather than in the agent
+(\S\ref{sec:aperture}); the resulting picture of a flat ``jumble'' of unequal
+agents versus a tower of oracles, and the conditions under which the jumble is
+coherent (\S\ref{sec:jumble}); Smith's biosphere as a factorisation in the
+vocabulary (\S\ref{sec:smith}); the macro-component, with confluence (not
+linearity) as the criterion for a rigid interior, and the $\lambda$-calculus as
+the witness (\S\ref{sec:macro}); the coincidence of three frontiers and what it
+buys (\S\ref{sec:frontier}); and the one open structural question on which the
+stability of the whole construction rests (\S\ref{sec:crux}).
+
+\paragraph{The MPC vocabulary, briefly.}
+We assume the modern presentation of \cite{qcs}. Processes and names are given
+by
+\[
+P,Q ::= \nil \mid P \Cut Q \mid \inn{y}{x}{P} \mid \out{x}{Q} \mid \deref x,
+\qquad x,y ::= \quoteP P,
+\]
+with $\nil$ the stopped process, $P\Cut Q$ parallel composition (the cut),
+$\inn{y}{x}{P}$ input on channel $x$ binding $y$, $\out{x}{Q}$ asynchronous
+output, $\deref x$ dereference, and a name solely a quoted process $\quoteP P$
+(no primitive names, no restriction $\nu$). Structural congruence $\rcong$ makes
+$(\,\Cut\,,\nil)$ a commutative monoid and validates the reflection law
+$\deref\quoteP P \rcong P$. The base reaction is communication at a cut,
+\[
+\inn{y}{x}{P} \Cut \out{z}{Q} \reduces P\{\quoteP Q / y\}
+\qquad (x \equiv_N z),
+\]
+and the two equivalences we use are context bisimilarity $\bisim$ (the
+behavioural equivalence, a congruence by construction when transitions are
+labelled by contexts \cite{leifermilner,sewell,oslf}) and resource
+bisimilarity $\rbisim$ (the finer relation that counts parallel copies). The
+RSpace denotation $\sem{-}\colon \Proc \to T(\Proc)$ interprets $\Cut$ as
+keyed multiset union $\bagunion$, so $\sem{-}$ is a monoid homomorphism and
+communication is the ``zip'' of dual bags at a key, with the surplus left as
+residue \cite{qcs}. None of what follows depends on the set-theoretic model of
+\cite{qcs,paths}; it depends only on the shape of the vocabulary.
+
+\section{Choice as a computational resource}\label{sec:choice}
+
+Begin with the one feature of the RSpace example we will actually use. When a
+channel carries both a bag of consumes $\{\!|(y_1)P_1,\dots,(y_n)P_n|\!\}$ and a
+bag of produces $\{\!|Q_1,\dots,Q_m|\!\}$, communication chooses an underlying
+list of each and zips them, keeping unmatched payloads as surplus. The choice of
+list orderings is the nondeterminism of the calculus --- which send meets which
+receive --- now localised at the key. The denotation itself remains a function;
+reaction is the separate dynamics; and the indeterminacy is exactly the choice of
+pairing.
+
+That is not a metaphor for choice. It \emph{is} a choice function, for a specific
+family. Index by the cuts that carry mixed polarity (or, for a run, by the
+reaction events); at each such index the fibre is the set of admissible pairings,
+inhabited precisely when a redex is present. A completed schedule is a section of
+this family --- an element of the product of the fibres --- and the assertion that
+such a section exists is an instance of the axiom of choice. The scheduler is the
+choice function for the pairing family, not by analogy but by construction. This
+gives the practical reframing we want: \emph{choice is a computational resource},
+the resource of nondeterminism, and different ways of supplying it import
+different amounts of computational power.
+
+\paragraph{The resource is graded by the same $\omega$ the risk ledger charges.}
+The strength of the choice principle one must invoke is not uniform; it tracks
+the infinitude of the family.
+
+\begin{itemize}[leftmargin=1.4em]
+\item \emph{Finite bags, finite run.} The index set is finite, the product is
+inhabited with no choice axiom at all (constructively, in $\mathrm{IZF}$). More
+than that: a bag is a parallel composition of finitely many prefixes, so it
+arrives \emph{presented} as a list-up-to-permutation. The term hands you the
+enumeration; picking a linearisation is constructively free. The term is its own
+choice structure.
+
+\item \emph{One $\omega$.} Replication and reflection install an $\omega$-fold
+bag, or a non-terminating run yields an $\omega$-sequence of events. Now one needs
+countable choice for the static store, or --- for a run whose pairings depend on
+the residuals of the previous step --- \emph{Dependent Choice}. The cascade of a
+deep cut unpacking into a deeper cut \cite{paths} is exactly a dependent-choice
+sequence. This is the single $\omega$ --- the ``black infinity'' --- the risk
+ledger of \cite{qcs} already spends; choice-as-resource and the $\omega$-meter
+are the same gauge.
+
+\item \emph{Class-sized.} Full $\mathrm{AC}$, and only here.
+\end{itemize}
+
+\noindent
+So the slogan ``choice is not non-constructive'' is exactly true in the finite
+fragment and \emph{relocated, not dissolved}, above it. The constructive escape
+at $\omega$ is to never form the completed schedule: take each pairing locally, on
+demand, as a decidable step, replacing the choice \emph{function} (whose bare
+existence needs $\mathrm{DC}$ or $\mathrm{AC}$) with a choice \emph{process}. That
+is what lazy, on-demand reaction does operationally; it keeps choice potential
+rather than actual. The honest reading is of a piece with the rest of the
+programme: recursion relocated from anti-foundation into reflection, congruence
+from an afterthought into the context labels, and now choice from a metatheoretic
+existence axiom into an operationally consumed resource.
+
+\paragraph{A lattice, not a tower.}
+The natural home for ``choice as a resource'' already exists: the Weihrauch
+lattice of Brattka, Gherardi and Pauly \cite{weihrauch}, whose objects are
+choice principles ordered by uniform reducibility, with demonic binary choice
+appearing as the lesser-limited-principle-of-omniscience and composition
+$\star$ modelling ``use one resource, then another.'' The decisive structural
+fact, for our purposes, is that the Weihrauch degrees form a \emph{lattice} with
+rich algebra, not a linear hierarchy. We will return to this: the intuition that
+a universe of computational agents is ``of all stripes, not neatly sorted by a
+tower of oracles'' is, formally, the statement that the relevant degree structure
+is a lattice and not an ordinal chain.
+
+\section{The aperture is a property of the cut}\label{sec:aperture}
+
+It is tempting to summarise \S\ref{sec:choice} by saying that an agent's
+\emph{nondeterminism budget} is its interface to the rest of the universe: a
+fully deterministic process is sealed, with every slot filled by its own
+transition function and nowhere for anything external to write; a
+nondeterministic agent is open precisely at its choice points. There is a true
+idea here --- under-determination is the aperture --- but the locus is wrong, and
+the parallel-composition algebra is what makes it wrong.
+
+Nondeterminism is not preserved by $\Cut$ in either direction. A whole that is
+deterministic can decompose into parts each wildly underdetermined at its
+\emph{internal} cuts; and parts each internally rigid can compose into a whole
+whose only indeterminacy is at the boundary between them. The aperture is
+therefore a property of the \emph{cut}, not of either agent at it, and --- this is
+the consequence that matters --- \emph{which} cut one privileges as ``the agent
+boundary'' is a modelling choice. Different observers draw it at different depths
+of the same term, and the interior lights up or goes dark accordingly.
+
+\begin{remark}[Under-determination versus boundary]\label{rmk:seam}
+Apertures coincide with under-determination: a cut is an aperture exactly when the
+resolution of its pairing nondeterminism is \emph{observable}, i.e.\ when distinct
+admissible pairings yield residuals in distinct $\rbisim$-classes (equivalently,
+distinct $\bisim$-classes, after the projection that forgets multiplicity). But
+the seam at which under-determination sits need not respect any particular
+delineation of agents. A seam may lie far above, or far below, the boundary an
+observer would draw; its effects may be felt at cuts the observer counts as
+internal. This is why ``the agent's budget is its interface'' fails: the budget is
+real, but it belongs to the cut, and the cut may straddle whatever boundary one
+had in mind.
+\end{remark}
+
+In the path reading of \cite{paths}, where keys are routes through a trie and the
+prefix order gives one channel a subspace of another, the modelling freedom
+becomes literal: \emph{a choice of agent boundary is a choice of prefix}, and the
+trie is the lattice of possible boundaries. A coarse boundary is a short prefix,
+near the root, folding everything below into one sub-store and exposing only a
+shallow aperture; a fine boundary is a long prefix, exposing apertures at every
+internal branch. These are not rival claims about where the boundary ``really''
+is. They are different truncation depths on one structure, ordered by the prefix
+order, which is precisely the order ``coarser agent / finer agent.'' The In-deep
+rule of \cite{paths} --- a reaction at a shallow cut unpacking a cut that lives
+deeper than the boundary-drawer was tracking --- is what it looks like when the
+same dynamics is read at two depths at once.
+
+\section{Stratification versus the jumble}\label{sec:jumble}
+
+The natural ontology suggested by ``choice imports computational power'' is a
+\emph{tower of oracles}: agents stratified by degree, the stronger able to reach
+down into the weaker. We want to register a different intuition and then say
+exactly what saves it. A universe made of computational phenomena may be not a
+neat tower but a \emph{jumble} --- agents of all stripes and capabilities
+interacting, as we see in the physical world, with the stratification only a
+framework that aids understanding, not the structure of the world. If that is the
+case, agents with strong oracles could interfere with the ``choices'' of agents
+less computationally endowed, but they do so as participants in a flat field, not
+as occupants of a higher floor.
+
+\paragraph{Both pictures at once: a (bi)fibration.}
+The two readings need not compete. Let a total category $\mathcal{E}$ be the
+jumble --- every agent of every degree, with the cut-mediated maps between them ---
+and let a projection to the degrees (Turing, Weihrauch, or an ordinal index) be
+the stratification. Reindexing along $\dgr' \le \dgr$ --- the cartesian, fibration
+direction --- takes a degree-$\dgr$ computation to its degree-$\dgr'$ shadow, the
+view a weaker observer keeps after forgetting the oracle. That is the
+``stratification as aid to understanding'' move made precise: \emph{the tower is a
+cleavage, a chosen gauge for describing a frame-independent jumble}. Interference
+is the other direction, and for it one wants the reindexing functors to carry
+Lawvere adjoints $\exists_f \dashv f^{*} \dashv \forall_f$. We record, as a
+conjecture rather than a theorem, the fit that motivates the formalisation:
+
+\begin{conjecture}[Angelic/demonic as adjoints]\label{conj:adjoint}
+Angelic resolution (the cooperative scheduler that \emph{finds} a good pairing)
+and demonic resolution (the adversarial scheduler that must survive \emph{every}
+pairing) are, respectively, the left and right Lawvere adjoints
+$\exists_f \dashv f^{*} \dashv \forall_f$ to reindexing along the
+degree/prefix order. If so, the scheduler ladder --- canonical, demonic-finite,
+angelic, fair-merge, relativised, transfinite --- is the adjoint structure of one
+fibration rather than a list of cases.
+\end{conjecture}
+
+\noindent
+The load-bearing check is whether the fibres carry the limits and colimits to
+support both adjoints; that is where a formalisation should begin.
+
+\paragraph{What keeps the jumble from collapsing.}
+A flat ontology of \emph{unequal} agents is only coherent if a single strong agent
+cannot simply dominate. Two design decisions of the source vocabulary are exactly
+the consistency conditions. \emph{No implicit interaction} \cite{paths}: the store
+never reacts with itself; a reaction is triggered only by a cut that actually
+co-locates opposite polarities. Drop it, and a single halting-oracle agent on a
+universal channel homogenises the field to the top degree --- the jumble dies.
+\emph{Locality of the cut}: interference can be written only where a channel is
+shared, and, in the path reading, only into the subspace below a held prefix.
+Position in the trie and degree \emph{together} set the reach of interference. Add
+a cost discipline (the phlogiston of the source programme) and reach becomes finite
+per unit resource. Locality plus cost is what keeps a multi-degree universe a
+jumble rather than a hierarchy that flattens upward. We state this as a slogan,
+because it is the most decision-relevant thing the vocabulary offers: \emph{no
+implicit interaction and the risk ledger are not bookkeeping; they are the
+consistency conditions for a flat ontology of unequal computational agents.}
+
+\section{Smith's biosphere as a factorisation}\label{sec:smith}
+
+Smith and Morowitz \cite{smith} read terrestrial life as a planetary process and
+ask after its interface to the rest of the universe. In their account the agents
+that matter at that interface are the ones that consume energy from \emph{outside}
+the biosphere --- sunlight, the chemical disequilibria of hydrothermal vents ---
+while a great interior of agents consume \emph{one another}, trading already-captured
+energy. The energy-eaters are, on this reading, the actual boundary between
+(terrestrial) life and the cosmos: at the level of the interface, the agentic
+boundary makes the entire biosphere one agent. Yet humans, themselves life forms,
+recognise a far finer delineation --- bees distinct from birds, this bee distinct
+from that one.
+
+The MPC vocabulary names these categories cleanly. Write, schematically,
+\[
+\textsf{Biosphere}
+\;\rcong\;
+\textsf{EnergyEaters} \;\Cut\; \textsf{AgentEaters},
+\qquad
+\textsf{Universe}
+\;\rcong\;
+\textsf{Biosphere} \;\Cut\; \textsf{RestOfUniverse}.
+\]
+The seam to the cosmos is the cut $\textsf{Biosphere} \Cut
+\textsf{RestOfUniverse}$, and \textsf{EnergyEaters} is the sub-term whose
+business is precisely that cut --- the place where outside energy, untyped to any
+particular molecule (the sun does not address its photons to a chosen chlorophyll),
+enters as an underdetermined produce. Meanwhile \textsf{AgentEaters}, taken as a
+whole, may be entirely determinate. Crucially, this is so even though its internal
+interactions are extremely constraint-sensitive: the bee consumes the pollen, not
+the worm the bird eats; enzymes are spectacularly type-constrained, one substrate
+per active site. The interior adheres to a thicket of conformance constraints and
+yet has \emph{no races} --- the constraints do not select among matches, they
+ensure there is only one match to select.
+
+This is the factorisation Principle~\ref{prin:main} is about, and it inverts the
+discrimination/choice relationship one might expect.
+
+\begin{remark}[Two senses of ``agent'']\label{rmk:twoagents}
+The bees are real agents to each other and to us --- distinct nodes, distinct
+types, distinct rigid roles. But they need not be \emph{sites of choice}. Their
+distinctness is type-distinctness, not aperture-distinctness. The only
+underdetermined thing in a bee's life may be which boundary reaction, upstream,
+gates the arrival of its pollen; given that arrival, everything is forced.
+Discrimination among agents and location of nondeterminism have come apart. An
+agent in the \emph{discrimination} sense (a typed, individuated role) is not, in
+general, an agent in the \emph{choice} sense (a cut with a live race). Smith's
+factorisation is the construction that separates the two: the finer, bee-level
+description sees \emph{more agents} but, if the interior is rigid, the \emph{same
+apertures} --- all sitting at the macro-boundary.
+\end{remark}
+
+\noindent
+And it makes the seam-versus-boundary point of Remark~\ref{rmk:seam} concrete and
+biological. The seam to the cosmos sits at the energy cut; its effects are felt at
+the predation cuts, deep inside; and at that depth the agents may experience an
+externally sourced bias as their own internal, determinate dynamics. No agent at
+the predation level can, from inside its own capacity, distinguish ``my internal
+choice resolved thus'' from ``the external write propagated down to here'' ---
+\emph{provided} the interior is rigid enough to transmit the boundary decision
+without adding choices of its own. When that proviso holds, the seam genuinely
+violates the agent boundaries an observer would draw: it enters at one level and is
+metabolised, at another, into what looks locally like determinism. Making the
+proviso precise is the next section's task.
+
+\section{The macro-component: confluence, not linearity}\label{sec:macro}
+
+We want a name for the object Smith's interior instantiates: a sub-term all of
+whose internal cuts are sealed, with apertures only at its boundary. The first
+guess is that the interior is sealed by \emph{rigidity} --- that at every internal
+key the consume-bag and produce-bag admit a \emph{unique} compatible pairing, so
+that the forgiving zip is a function and there is no race to resolve. Determinism
+not by scheduling but by there being nothing to schedule. Syntactically this is a
+\emph{linearity} condition: every internal channel is used at multiplicity one per
+polarity, each consume a linear hypothesis discharged by exactly one produce, the
+boundary the residue of the non-linear, contended channels. On this reading
+\textsf{EnergyEaters} are exactly the non-linear channels --- the ones contended by
+many consumers, the sun feeding everyone --- and the factorisation is
+\emph{linear interior, non-linear boundary}.
+
+Linearity is, however, too strong. It is a syntactic sufficient condition for what
+we actually care about, which is that the interior have no \emph{observable} choice.
+The semantic statement of exactly that, and nothing more, is confluence.
+
+\begin{definition}[Rigid sub-term / macro-component]\label{def:macro}
+A sub-term is \emph{rigid} (internally) if its internal reaction is confluent up to
+resource bisimilarity: every internal pairing-race reconverges, so all maximal
+internal reaction sequences reach $\rbisim$-equal normal forms. A
+\emph{macro-component} is a maximal rigid sub-term: every internal cut is a
+non-aperture (confluent up to $\rbisim$), and its boundary cuts --- where
+confluence fails --- are its apertures. The set of cuts at which internal
+confluence fails is the \emph{rigidity frontier}.
+\end{definition}
+
+\noindent
+Confluence permits the branching that linearity forbids. The bee may have several
+internally admissible pairings; if they all flow to $\rbisim$-equal normal forms,
+the bee is still not a site of observable choice, which is all the factorisation
+needs. Metabolism is full of internal branching --- parallel pathways, redundant
+enzymes, order-independent cascades --- that converges on the same steady state:
+confluent, not linear. So the right slogan is \emph{the interior is
+$\lambda$-like, not linear-like}.
+
+\paragraph{$\lambda$ is really deterministic.}
+The $\lambda$-calculus is the load-bearing witness, not an aside. Operationally it
+is radically nondeterministic: a term with many redexes has many reduction
+sequences, every interleaving a distinct branch. And it is \emph{the} paradigm of
+determinism --- because Church--Rosser says the branching is fictional: one normal
+form, reached however you like. The choice of redex is real and it is free in the
+sense of \S\ref{sec:choice}, semantically free, spent but unobservable, eliminated
+by the quotient to the normal form. $\beta$-reduction is the cleanest instance in
+all of computing of a process saturated with races whose races do not matter, and
+it is deterministic for precisely the reason Definition~\ref{def:macro} asks of an
+interior: confluence, not absence of branching. A \emph{closed} $\lambda$-term ---
+no free variables --- is then a sealed macro-component at every scale, nothing to
+interfere with because there is no contended channel for anything to write to. An
+\emph{open} term is the agent with an aperture: its free variables are its boundary
+channels, the spots where a context (a higher agent) can substitute and change the
+result. In the MPC vocabulary the free variable is the unmatched consume, the
+dangling polarity --- the same object, the port where the universe reaches in.
+
+\begin{proposition}[Degree is carried by the boundary]\label{prop:degree}
+A confluent (up to $\rbisim$) interior contributes no choice resource: it carries
+no Weihrauch content, no observable bits of nondeterminism, however baroque its
+branching, because the resource was defined (\S\ref{sec:choice}) as observable
+choice and confluence makes choice unobservable. Hence, modulo the obligations
+below, the resource degree of a macro-component is carried entirely by its
+boundary:
+\[
+\deg(\text{macro-component}) \;=\; \deg(\text{boundary}),
+\]
+the interior being degree-transparent. A linear-interior criterion would
+under-count here, miscalling some genuinely confluent interiors ``boundary''
+because they branch; the confluence criterion is what makes the equation clean.
+\end{proposition}
+
+\section{Three frontiers, one locus}\label{sec:frontier}
+
+The reward of taking confluence as the criterion is that the boundary of the
+macro-component coincides with two frontiers we already had names for.
+
+\begin{proposition}[Frontier coincidence]\label{prop:frontier}
+The following three loci coincide, for a macro-component in the sense of
+Definition~\ref{def:macro}:
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em]
+\item the \emph{rigidity frontier} --- the cuts where internal confluence up to
+$\rbisim$ fails;
+\item the \emph{detectable-interference frontier} --- the cuts where a biased
+pairing yields a different $\rbisim$-class, so that an external agent's write
+leaves an observable mark rather than being absorbed into a $\rbisim$-equal
+outcome;
+\item the \emph{confluence obligation frontier} --- the cuts at which the
+eager-confluence-up-to-$\rbisim$ obligation of the path semantics
+(\cite{paths}, Obligation~2) is non-trivial.
+\end{enumerate}
+\end{proposition}
+
+\noindent
+The coincidence is a consistency check on the vocabulary: the place where the
+interior stops being able to hide its schedule is the place where external
+interference starts being able to leave a mark, which is the place where the
+formal confluence obligation bites. One frontier, three readings ---
+confluence-failure from inside, interference-visibility from outside, proof
+obligation from the meta-theory. That a single locus answers to all three is the
+kind of agreement that suggests the apparatus is carving at a joint.
+
+It also tells us when interference is a \emph{measurement}. Where internal reaction
+is confluent up to $\rbisim$, a biased pairing picks the trajectory but not the
+destination; the weak agent is steered to a $\rbisim$-equal normal form and cannot
+tell. Where confluence fails, the bias becomes a different observable outcome.
+Detectable interference is interference at a non-confluent cut --- an interaction
+that resolves an otherwise-unobservable choice into an observable distinction,
+which is close to the definition of a measurement. We note, without leaning on it,
+that the way a weak agent could in principle detect a stronger one is
+information-theoretic and contextual: its ``free'' choices would look random
+relative to its own capacity yet be compressible relative to the higher degree,
+carrying more mutual information with the oracle than chance allows --- local
+sections admitting no degree-uniform global section, in the
+sheaf-theoretic sense of contextuality \cite{abramsky}. The probabilistic face is
+cleaner: a flat jumble is one joint distribution, an agent's view a marginal, and a
+strong agent biasing a weak one's choices is conditioning that marginal on oracle
+information the weak agent cannot access. We flag these as directions, not results.
+
+\section{The crux: is rigidity stable under descent?}\label{sec:crux}
+
+Everything above treats ``deterministic interior, nondeterministic boundary'' as a
+static property of a term. Whether it is also \emph{stable under the dynamics} is a
+single structural question, and it is the question on which the picture stands or
+falls.
+
+The danger is specific. Confluence up to $\rbisim$ is not compositional the way
+linearity is: two confluent components composed at a boundary need not have a
+confluent union --- that is the whole content of the boundary being where races
+live. The subtler problem is the cascade. In the path semantics a deep cut
+(In-deep) unpacks into a \emph{fresh, deeper} cut \cite{paths}; the confluence of
+that manufactured cut is a new obligation not discharged by the confluence of the
+parts. So the rigid-interior property defined by confluence is not obviously closed
+under the very reaction --- subspace descent --- that propagates a boundary
+decision inward.
+
+\begin{question}[Stability of rigidity]\label{q:crux}
+Is confluence up to resource bisimilarity preserved under subspace descent (the
+In-deep cascade)? Equivalently: if a macro-component's boundary aperture fires and
+the decision cascades inward, does the interior remain rigid?
+\end{question}
+
+\noindent
+This is Obligation~2 of \cite{paths} wearing the clothes of the agent
+factorisation, and the two possible answers are both informative.
+
+\emph{If rigidity is stable.} The factorisation is robust: a boundary race fires,
+the decision descends as a \emph{forced} cascade through an interior that has no
+opinion of its own (only whether its unique-up-to-$\rbisim$ match is present), and
+the macro-component survives as a structure that can be reasoned about across the
+dynamics. ``Deterministic interior, nondeterministic boundary'' is then a genuine
+structure theorem, and the degree equation of Proposition~\ref{prop:degree} holds
+not just statically but along reductions. This is the outcome Smith's biology
+quietly assumes: the predation web metabolises the day's sunlight into ordinary,
+determinate dynamics.
+
+\emph{If rigidity fails to be stable.} Then boundary interference can \emph{crack
+open} a previously rigid interior --- turn a confluent agent into a branching one
+by descending into it. We resist reading this as a mere defect. It is, plausibly,
+the formal content of \emph{perturbation}: the higher agent does not merely bias the
+interior's schedule among $\rbisim$-equal outcomes, it changes the interior's very
+determinacy, opening apertures where there were none. On this reading a sufficiently
+strong agent does not only steer a weaker one within its existing freedom; it can
+\emph{manufacture} new freedom in the weaker one and then steer that. Which of these
+two phenomena the vocabulary actually supports is decided by the answer to
+Question~\ref{q:crux}, and the answer is checkable. It is the first thing a
+formalisation should resolve, because it is the difference between a static fact
+about terms and a dynamic, perturbable feature of them --- and, in the ontological
+register of this note, the difference between a universe whose agents have fixed
+capacities and one in which capacity itself is something agents do to each other.
+
+\section{Obligations}
+
+In the manner of \cite{qcs,paths}, the points a rigorous development would
+discharge. Several are restatements, in the agent vocabulary, of obligations
+already on the books there; that overlap is the point --- the conceptual claims of
+this note reduce to structural claims about the source calculus.
+
+\begin{obligation}[Choice as a graded resource]
+Make precise the family-of-pairings whose section is the schedule, and prove the
+grading of \S\ref{sec:choice}: finite runs need no choice; the single $\omega$ of
+the risk ledger is exactly the step from no-choice to countable/dependent choice;
+the In-deep cascade is a $\mathrm{DC}$ sequence; class-size forces full
+$\mathrm{AC}$. Identify which schedulers are confluent up to $\rbisim$
+(constructive, no oracle) and which are not (the imported oracle), and locate the
+boundary at demonic-finite versus angelic-or-infinite.
+\end{obligation}
+
+\begin{obligation}[The adjoint structure]
+Test Conjecture~\ref{conj:adjoint}: exhibit the (bi)fibration of agents over
+degrees, and determine whether angelic and demonic resolution are the Lawvere
+adjoints to reindexing. The decisive sub-question is whether the GSLT fibres carry
+the limits and colimits both adjoints require.
+\end{obligation}
+
+\begin{obligation}[Macro-components are well defined]
+Show that ``maximal rigid sub-term'' (Definition~\ref{def:macro}) is well defined:
+that the rigidity frontier exists and is computable from term-plus-typing, and that
+the three frontiers of Proposition~\ref{prop:frontier} coincide. Establish
+Proposition~\ref{prop:degree} --- degree carried by the boundary --- rigorously,
+including the claim that a confluent interior is resource-degree-transparent.
+\end{obligation}
+
+\begin{obligation}[Linearity implies, but is not implied by, rigidity]
+Confirm that linear (multiplicity-one-per-polarity) internal typing implies
+internal confluence up to $\rbisim$, and exhibit confluent-but-non-linear interiors
+(redundant-pathway metabolism is the intended class) to show the implication is
+strict --- so that confluence is the correct, weaker criterion.
+\end{obligation}
+
+\begin{obligation}[Stability of rigidity under descent --- the crux]
+Resolve Question~\ref{q:crux}: decide whether confluence up to $\rbisim$ is
+preserved by the In-deep cascade. If yes, prove the structure theorem
+(deterministic interior / nondeterministic boundary, stable along reductions). If
+no, characterise the perturbation --- the conditions under which a boundary write
+opens new interior apertures --- as a property of the sub-trie.
+\end{obligation}
+
+\section{Conclusion}
+
+We have used the mobile process calculi as a vocabulary, not a model. In that
+vocabulary the indeterminacy of an interaction is a choice function for a definite
+family, hence a computational resource, graded in strength by exactly the
+infinitude the source calculus's risk ledger already charges; and an agent of
+higher capacity can influence a weaker one only by writing into that resource where
+it is left open. The correction the note turns on is that the opening is a property
+of the \emph{cut}, not of either agent, so that ``which cut is the boundary'' is a
+choice of description --- a choice of prefix, in the path reading --- and the same
+seam may be an interface at one level and invisible internal dynamics at another.
+Smith and Morowitz's biosphere, with its energy-eating interface and its
+agent-eating interior, is exactly such a factorisation, and it sharpens into a
+definite object: the macro-component, a sub-term whose interior is confluent up to
+resource bisimilarity --- rigid not by linearity but in the way the
+$\lambda$-calculus is deterministic, awash in branching that does not matter --- with
+its apertures swept to a boundary that is simultaneously the rigidity frontier, the
+detectable-interference frontier, and the source calculus's confluence obligation.
+Two senses of agent come apart there: the individuated, typed role and the live
+site of choice need not coincide, and Smith's interior shows they routinely do not.
+
+The thesis is Principle~\ref{prin:main}: not every cut is an aperture. Agents flank
+every cut; only some cuts leave the nondeterminism open and observable; only at
+those can a stronger agent reach in. Whether that picture is static or dynamic ---
+whether a boundary write merely steers a rigid interior or can crack it open and
+manufacture new freedom within it --- is the single structural question of
+Section~\ref{sec:crux}, and it is the same confluence-under-descent obligation the
+path semantics already carries. We do not claim the universe is a process term. We
+claim that when one asks where agents are, which of them can disturb which, and
+along what seams, the MPC vocabulary names the categories well enough that the
+questions become answerable --- and that the most consequential of them reduces to
+a confluence lemma one can actually try to prove.
+
+\paragraph{Acknowledgements.}
+This note develops a line of discussion growing out of \cite{qcs,paths} and their
+RSpace denotation, and out of Smith and Morowitz's reading of the biosphere
+\cite{smith}; the conceptual claims here are deliberately routed back to structural
+obligations on the source calculus, where they can be settled.
+
+\begin{thebibliography}{99}
+
+\bibitem{qcs} L.~G. Meredith. \emph{Quoting is Colour-Swap: a model of the rho
+calculus in the knotted universe}. Manuscript, 2026.
+
+\bibitem{paths} L.~G. Meredith. \emph{Paths are Subspaces: a cut-triggered
+polymorphism of RSpace over path-keys, and its distributive law}. Manuscript, 2026.
+
+\bibitem{knot} L.~G. Meredith. \emph{A Knotted Universe: a new notion of reflective
+set theories}. Manuscript, 2026.
+
+\bibitem{rho} L.~Gregory Meredith and Matthias Radestock. A reflective higher-order
+calculus. \emph{Electr.\ Notes Theor.\ Comput.\ Sci.}, 141(5):49--67, 2005.
+
+\bibitem{smith} Eric Smith and Harold J. Morowitz. \emph{The Origin and Nature of
+Life on Earth: The Emergence of the Fourth Geosphere}. Cambridge University Press,
+2016.
+
+\bibitem{leifermilner} James J. Leifer and Robin Milner. Deriving bisimulation
+congruences for reactive systems. In \emph{CONCUR 2000}, LNCS 1877, pages
+243--258. Springer, 2000.
+
+\bibitem{sewell} Peter Sewell. From rewrite rules to bisimulation congruences.
+\emph{Theoret.\ Comput.\ Sci.}, 274(1--2):183--230, 2002.
+
+\bibitem{oslf} L.~G. Meredith, Christian Wells, et al. Minimal-context transition
+systems and the observer-specified logic functor for graph-structured lambda
+theories. Manuscript, forthcoming.
+
+\bibitem{turiplotkin} Daniele Turi and Gordon Plotkin. Towards a mathematical
+operational semantics. In \emph{LICS 1997}, pages 280--291. IEEE, 1997.
+
+\bibitem{rutten} J.~J.~M.~M. Rutten. Universal coalgebra: a theory of systems.
+\emph{Theoret.\ Comput.\ Sci.}, 249(1):3--80, 2000.
+
+\bibitem{weihrauch} Vasco Brattka, Guido Gherardi, and Arno Pauly. Weihrauch
+complexity in computable analysis. In V. Brattka and P. Hertling, editors,
+\emph{Handbook of Computability and Complexity in Analysis}, pages 367--417.
+Springer, 2021.
+
+\bibitem{abramsky} Samson Abramsky and Adam Brandenburger. The sheaf-theoretic
+structure of non-locality and contextuality. \emph{New J.\ Phys.}, 13:113036, 2011.
+
+\bibitem{aczel} Peter Aczel. \emph{Non-Well-Founded Sets}, volume 14 of
+\emph{CSLI Lecture Notes}. CSLI Publications, Stanford, CA, 1988.
+
+\end{thebibliography}
+
+\end{document}
