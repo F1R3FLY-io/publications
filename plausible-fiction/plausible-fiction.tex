@@ -129,7 +129,11 @@ document specifies the system in two layers on top of MeTTaIL (rholang~1.4): (i)
 \lstinline[language=mettail,basicstyle=\ttfamily\small]|language!| definition, whose terms ride on
 rho channels; and (ii)~a coordination protocol written in MeTTaIL's built-in embedded rholang that
 manages the full PF lifecycle: publish, match, broker, ground, run, monitor, and either promote to a
-\emph{template} on success or \emph{retire} (hide or advertise) on failure. We give code
+\emph{template} on success or \emph{retire} (hide or advertise) on failure. Because a PF can branch
+on outcomes, its open holes are not a flat list but a \emph{conditional demand tree} (CDT) --- a
+finite dependent polynomial fibering the holes owed over the outcomes not yet observed; we make
+\lstinline[language=mettail,basicstyle=\ttfamily\small]|holes(.)| return this object and show how the
+coordinator arms its immediate frontier while subscribing to its branch edges. We give code
 illustrations throughout, a lifecycle state machine, a numbered requirements catalogue, a worked
 end-to-end example, and an honest accounting of what is established versus conjectural.
 \end{abstract}
@@ -183,7 +187,10 @@ This is our refinement of Spivak's model, and it drives the whole lifecycle.
 \begin{description}[leftmargin=0pt,style=nextline,itemsep=4pt]
   \item[Agent holes $\hole{h}{T}$.] Filled by \emph{another PF supplied by another participant}.
   These are market demands. They are the only holes that the lifecycle advertises, brokers, and waits
-  on. \grounded\ counts \emph{only} agent holes.
+  on. \grounded\ counts \emph{only} agent holes. An agent hole \emph{resolves} in one of two ways,
+  which affects only \emph{when}, not \emph{how}, it enters the market (\S\ref{sec:branch}):
+  \emph{filler-resolved} (the default --- a market plug supplies it), or \emph{outcome-resolved}
+  (an \emph{observation} hole whose value is revealed only by running a step, via attestation).
   \item[Computation holes.] Filled by \emph{standard computation}: $\beta$/$\eta$-reduction,
   normalization, and elaboration of implicit arguments (ordinary metavariables solved by
   unification). These never become market demands; they are discharged by the evaluator/elaborator.
@@ -192,6 +199,40 @@ Concretely: a redex such as $(\lambda(x{:}A).b)\,a$ is a computation hole --- it
 $\beta$. An implicit argument that the elaborator can infer is a computation hole. A slot for ``a
 licensed electrician who will wire the venue'' is an agent hole --- no amount of computation produces
 the electrician; \emph{another participant} must offer one.
+
+\subsection{Branch-dependent holes and the demand polynomial}\label{sec:branch}
+A PF does not merely \emph{have} holes; it \emph{branches}, and which holes are owed can depend on an
+outcome that has not landed yet. Spivak's minimal case: Alice books a venue before she knows whether
+it will be indoor or outdoor; an outdoor booking owes a rain contingency (a tent), an indoor one must
+\emph{not}.
+\[
+  \texttt{case}\ v\ \texttt{of}\ \{\ \mathsf{Indoor}\ v_{\mathrm{in}} \Rightarrow \mathit{book}\,v_{\mathrm{in}}\,c \mid
+     \mathsf{Outdoor}\ v_{\mathrm{out}} \Rightarrow \hole{h_{\mathrm{Tent}}}{\mathsf{Tent}(v_{\mathrm{out}})};\ \mathit{book}\,v_{\mathrm{out}}\,c\,t\ \}
+\]
+Here $h_{\mathrm{Cater}}$ is owed on \emph{every} branch, while $h_{\mathrm{Tent}}$ is owed
+\emph{iff} the venue $v$ resolves $\mathsf{Outdoor}$ --- and its type $\mathsf{Tent}(v_{\mathrm{out}})$
+\emph{depends on the outcome's payload}. So the open-hole set is a \emph{function of $v$}, and $v$ is
+not yet present when we ask for the holes.
+
+A flat \lstinline[language=mettail,basicstyle=\ttfamily\small]|List of [h, ty]| cannot represent this:
+it is wrong on one branch (it either spuriously demands a tent indoors, or omits the tent contingency
+outdoors). The two naive escapes both lose something essential:
+\begin{description}[leftmargin=0pt,style=nextline,itemsep=2pt]
+  \item[Eager (hoist $h_{\mathrm{Tent}}$ up front).] A tent is then demanded, brokered, and waited on
+  even for indoor venues --- an obligation that should not exist.
+  \item[Lazy (let the venue filler introduce $h_{\mathrm{Tent}}$ on republish).] Operationally fine,
+  but then \emph{no PFLam term ever says ``outdoor owes a tent''}: the contingency exists only after a
+  filler commits, so the outdoor branch cannot be reasoned about, priced, or checked before grounding.
+\end{description}
+The branch is already \emph{in the term}, so we take neither escape. We make
+\lstinline[language=mettail,basicstyle=\ttfamily\small]|holes(.)| return a \emph{conditional demand
+tree} (CDT): a finite tree whose nodes carry a \emph{frontier} of holes armed immediately and in
+parallel, and whose edges are \emph{outcomes of a scrutinee} under which a sub-CDT continues. This is a
+\emph{dependent polynomial} (an interaction structure): positions are outcome-states, the directions at
+a position are the holes owed there. $h_{\mathrm{Cater}}$ lands in the root frontier; $h_{\mathrm{Tent}}$
+lives in the fiber over $v=\mathsf{Outdoor}$, with its type binding $v_{\mathrm{out}}$.
+Section~\ref{sec:cdt} makes this precise and shows it is computed --- not annotated --- from the term
+Alice already wrote.
 
 \subsection{The market is the search procedure}\label{sec:marketsearch}
 A subtle but load-bearing observation. ``Types mediate matching'' means a candidate filler $q$ fits a
@@ -213,9 +254,9 @@ Three strata (Figure~\ref{fig:arch}):
   \lstinline[language=mettail,basicstyle=\ttfamily\small]|language!|. Pure, total operations:
   bidirectional typing, $\Holes(\cdot)$, $\grounded(\cdot)$, and $\plug$.
   \item \textbf{Bridge} (\S\ref{sec:bridge}): a small set of rho-callable predicates/operators ---
-  \code{pf |= ty}, \code{grounded(pf)}, \code{plug(pf,h,q)}, \code{holes(pf)} --- that lift
-  \texttt{PFLam} operations into embedded rholang as \texttt{Bool}/payload folds. This is the only
-  place the two layers touch.
+  \code{pf |= ty}, \code{grounded(pf)}, \code{plug(pf,h,q)}, \code{holes(pf)} (now returning a CDT),
+  and \code{resolve(pf,s)} --- that lift \texttt{PFLam} operations into embedded rholang as
+  \texttt{Bool}/payload/\texttt{Name} folds. This is the only place the two layers touch.
   \item \textbf{Coordination} (\S\ref{sec:coord}): embedded rholang protocols implementing the
   lifecycle over per-user channel namespaces.
 \end{enumerate}
@@ -232,8 +273,8 @@ Three strata (Figure~\ref{fig:arch}):
   \node[layer,below=of coord] (bridge) {\textbf{Bridge — rho-callable folds}\\[2pt]
     \texttt{pf |= ty}\quad\texttt{grounded(pf)}\quad\texttt{plug(pf,h,q)}\quad\texttt{holes(pf)}};
   \node[layer,below=of bridge] (obj) {\textbf{Object language \texttt{PFLam} — \texttt{language!}}\\[2pt]
-    dependent $\Pi/\Sigma/\mathsf{Type}$ $\cdot$ typed holes $\cdot$ bidirectional checker
-    $\cdot$ $\Holes$ $\cdot$ $\grounded$ $\cdot$ $\plug$};
+    dependent $\Pi/\Sigma/\mathsf{Type}$ $\cdot$ finite variants + \texttt{case} $\cdot$ typed holes
+    $\cdot$ bidirectional checker $\cdot$ \texttt{holes}$\to$CDT $\cdot$ $\grounded$ $\cdot$ $\plug$};
   \draw[-{Stealth[length=6pt]},accent,thick] (coord) -- (bridge)
      node[midway,right=2pt,font=\scriptsize]{calls};
   \draw[-{Stealth[length=6pt]},accent,thick] (bridge) -- (obj)
@@ -252,7 +293,9 @@ the sole coupling point.}
 % ===========================================================================
 We give \texttt{PFLam} as a Pure-Type-System--style dependent calculus with a single sort
 $\Term$, a cumulative universe hierarchy, dependent function ($\Pi$) and pair ($\Sigma$) types
-(records-as-$\Sigma$ model goods/services), and the distinguished \rul{Hole} constructor. The surface
+(records-as-$\Sigma$ model goods/services), finite dependent \emph{variants} with their eliminator
+(\texttt{case}, for outcomes and branching --- the Option~A addition), and the distinguished
+\rul{Hole} constructor (with \rul{Obs} for outcome-resolved holes). The surface
 syntax is ASCII to match MeTTaIL's existing examples (\lstinline[language=mettail,basicstyle=\ttfamily\small]|lam x.x|, \lstinline[language=mettail,basicstyle=\ttfamily\small]|(f, x)|).
 
 \subsection{Hole interfaces are telescopes}\label{sec:teleholes}
@@ -274,7 +317,11 @@ language! {
         Term                       // dependent: terms and types share one sort
         ![String] as HoleId        // agent-hole identifiers (market-visible)
         ![String] as MetaId        // computation-hole / elaboration metavars
+        ![String] as Tag           // variant labels (outcome constructors)
         ![u64]    as Lvl           // universe levels
+        VariantAlts                // sequence of  (Tag : Term)   alternatives
+        CaseBranch                 // one  (Tag x => body)  arm
+        CaseBranches               // sequence of CaseBranch
     },
 
     terms {
@@ -295,24 +342,45 @@ language! {
         Fst  . p:Term                     |- "fst" p             : Term;
         Snd  . p:Term                     |- "snd" p             : Term;
 
+        // ---- finite (dependent) variants: model outcomes / branching -----
+        // A finite labelled sum  < l_1 : A_1 | ... | l_n : A_n >  (Spivak's O_venue).
+        Variant . alts:VariantAlts        |- "<" alts ">"        : Term;
+        Alt     . lbl:Tag, ty:Term        |- lbl ":" ty          : VariantAlts;  // seq-folded
+        Inj     . lbl:Tag, val:Term       |- "inj" lbl val       : Term;
+        // Dependent eliminator: motive mot, one arm per label; the arm binds the payload.
+        Case    . scrut:Term, mot:Term, brs:CaseBranches
+                |- "case" scrut "of" "{" brs "}"                 : Term;
+        CaseBr  . lbl:Tag, ^x.body:[Term -> Term]
+                |- lbl " " x "=>" body                           : CaseBranch;
+
         // ---- THE distinguishing constructors -----------------------------
-        // Agent hole: filled by another PF from another participant.
+        // Agent hole (filler-resolved): supplied by another participant's PF.
         // ty is the Pi-closed interface  Pi Gamma_h . T_h  (see sec. 4.1).
         Hole . h:HoleId, ty:Term          |- "?" h ":" ty        : Term;
+
+        // Observation hole (outcome-resolved): an agent hole whose value is
+        // revealed by RUNNING a step (attestation), not by a market plug. It is
+        // a legitimate case-scrutinee and a CDT branch point (sec. 4.4, 6.x).
+        Obs  . h:HoleId, ty:Term          |- "observe" h ":" ty  : Term;
 
         // Computation hole: an elaboration metavariable, solved by unification.
         // NEVER advertised to the market; discharged by the elaborator.
         Meta . m:MetaId, ty:Term          |- "%" m ":" ty        : Term;
 
         // ---- pure operations exposed to the bridge -----------------------
-        // grounded(p): no AGENT holes remain (Meta holes are allowed).
+        // grounded(p): the REALIZED path carries no agent holes. Reduction now
+        // includes case-reduction (CaseRw), so once a scrutinee hole resolves
+        // its branch is taken and only that branch's holes remain (sec. 4.4).
         Grounded . p:Term  |- "grounded" "(" p ")" : Term ![{
             crate::pflam::no_agent_holes(&p)        // -> Term::BoolLit(_)
         }] fold;
 
-        // holes(p): the open agent holes as a list of <h, ty> pairs.
+        // holes(p): the open agent demands as a CONDITIONAL DEMAND TREE (sec 4.4)
+        // -- a finite dependent polynomial: a now-frontier of holes armed in
+        // parallel, plus outcome-indexed edges over unresolved scrutinees.
+        // NOT a flat list: the owed-set is a function of outcomes not yet seen.
         HolesOf  . p:Term  |- "holes" "(" p ")"    : Term ![{
-            crate::pflam::agent_holes(&p)           // -> list of pairs
+            crate::pflam::demand_tree(&p)           // -> CDT (see grammar, sec 4.4)
         }] fold;
 
         // plug(p, h, q): fill agent hole h in p with filler q (capture-avoiding;
@@ -330,6 +398,8 @@ language! {
         Eta  . |- (lam (x : A) . (f x)) = f ;          // x not free in f
         SigB1 . |- (fst < a , b >) = a ;
         SigB2 . |- (snd < a , b >) = b ;
+        // variant beta: case of a known injection selects and substitutes its arm.
+        CaseB . |- (case (inj l a) mot { ... ; l x => body ; ... }) = (subst body x a) ;
     },
 
     rewrites {
@@ -337,9 +407,15 @@ language! {
         BetaRw . |- ( (lam (x : A) . b) a ) ~> (subst b x a) ;
         Fst1   . |- (fst < a , b >) ~> a ;
         Snd1   . |- (snd < a , b >) ~> b ;
-        // plug reduces structurally once its filler is present
+        // CASE on a KNOWN injection reduces (computation). On a NEUTRAL scrutinee
+        // -- one stuck on an unresolved Hole/Obs -- it does NOT reduce: it is a
+        // branch point of the demand tree (sec. 4.4).
+        CaseRw . |- (case (inj l a) mot brs) ~> (selectArm brs l a) ;
+        // plug reduces structurally once its filler is present; if it resolves a
+        // scrutinee, the enclosing CaseRw then fires, realizing a branch.
         PlugRw . |- (plug p h q) ~> (subst_hole p h q) ;
-        // congruences (elided): AppCongL/R, PiCong, LamCong, SigCong, PairCong, ...
+        // congruences (elided): AppCongL/R, PiCong, LamCong, SigCong, PairCong,
+        //                       CaseCongScrut, CaseCongArm, ...
     },
 
     logic {
@@ -388,18 +464,111 @@ the chosen normalizing fragment; the search for $q$ is \emph{not} performed here
 \]
 the capture-avoiding replacement of every $\hole{h}{T_h}$ in $p$ by $q$ (with $q$ applied to the local
 telescope $\tele_h$ per \S\ref{sec:teleholes}). \emph{Crucially, $q$ may itself contain agent holes.}
-Then
+On the \emph{flat} fragment (no branching) this gives the hole-set recurrence
+\(
+  \Holes(p \plug_h q) = (\Holes(p)\setminus\{h\}) \cup \Holes(q),
+\)
+the recursive engine of the marketplace: filling a hole can introduce new holes, deferred to new
+participants. With branching this becomes a splice on the demand \emph{tree} rather than the set, and
+if $h$ was a \emph{scrutinee} its plug fires \rul{CaseRw}, realizing a branch and pruning the others
+(\S\ref{sec:cdt}). $\grounded(p)$ holds iff the demand tree of the realized path is empty.
+
+\subsection{The demand polynomial: \texttt{holes(\(\cdot\))} as a CDT}\label{sec:cdt}
+This section makes \S\ref{sec:branch} precise: what
+\lstinline[language=mettail,basicstyle=\ttfamily\small]|holes(p)| returns for an un-grounded,
+\emph{branching} term, and why it is computed rather than annotated.
+
+\paragraph{The object.} A \emph{conditional demand tree} is
 \[
-  \Holes(p \plug_h q) \;=\; \big(\Holes(p)\setminus\{h\}\big)\ \cup\ \Holes(q),
+  \mathrm{CDT} \;::=\; \big\langle\, \mathsf{now}:\mathsf{Frontier},\ \ \mathsf{wait}:\overline{\mathsf{Edge}} \,\big\rangle,
+  \qquad
+  \mathsf{Frontier} \;::=\; \overline{(h:T)},
 \]
-which is the recursive engine of the marketplace: filling a hole can introduce new holes, deferred to
-new participants. $\grounded(p)$ holds iff $\Holes(p)=\varnothing$.
+\[
+  \mathsf{Edge} \;::=\; \mathsf{on}(s)\,\{\, \overline{\kappa_i\,x_i \Rightarrow \mathrm{CDT}_i} \,\},
+\]
+where $\mathsf{now}$ is a finite set of holes armed \emph{immediately and in parallel}; each
+$\mathsf{Edge}$ is a \emph{subscription} on a scrutinee $s$ (a neutral term stuck on an unresolved
+$\rul{Hole}$ or $\rul{Obs}$), with one continuation per constructor $\kappa_i$ of $s$'s variant type,
+binding the outcome payload $x_i$ (so $\mathrm{CDT}_i$ and its hole-types may mention $x_i$). This is
+exactly a finite \emph{dependent polynomial} / interaction structure: positions are outcome-states,
+the directions at a position are the holes owed there, the responses are the outcomes. $\mathsf{now}$
+and $\mathsf{wait}$ at one node are concurrent --- arm every $\mathsf{now}$ demand \emph{and}
+subscribe to every edge at once.
+
+\paragraph{Computing it (and why it halts).} \lstinline[language=mettail,basicstyle=\ttfamily\small]|holes(p)| is a two-step fold:
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item \emph{Symbolic normalization.} Reduce $p$ with agent holes held \emph{opaque} (neutral).
+  Strong normalization of grounded \texttt{PFLam} --- preserved by finite variants
+  (\S\ref{sec:open}) --- guarantees this terminates, yielding a \emph{demand normal form}: a tree of
+  $\rul{Case}$s on neutral scrutinees with hole-demands at the leaves.
+  \item \emph{Extraction + hoist.} Read it structurally: a demand $\hole{h}{T}$ not under any
+  unresolved $\rul{Case}$ joins $\mathsf{now}$; a $\rul{Case}$ on neutral $s$ yields an
+  $\mathsf{on}(s)\{\dots\}$ edge, recursively. Then iterate the \emph{distributive law}
+  \[
+    \mathsf{on}(s)\{\, \kappa_i \Rightarrow (\,\mathrm{owe}(h{:}T)\parallel e_i\,) \,\}_i
+    \quad\equiv\quad
+    \mathrm{owe}(h{:}T)\ \parallel\ \mathsf{on}(s)\{\, \kappa_i \Rightarrow e_i \,\}_i
+    \qquad
+    \text{(if } s,x_i \notin \mathrm{fv}(T)\text{)}
+  \]
+  to a fixpoint: a demand owed on \emph{every} branch, and whose type does not mention the outcome,
+  hoists to the parent frontier.
+\end{enumerate}
+The side condition does the real work. It hoists $h_{\mathrm{Cater}}$ (owed on both branches, type
+outcome-independent) all the way to the root $\mathsf{now}$, while $h_{\mathrm{Tent}}$ \emph{cannot}
+hoist past $\mathsf{on}(v)$ because its type $\mathsf{Tent}(v_{\mathrm{out}})$ binds the outcome. The
+\emph{type dependency} --- decidably checked --- is precisely what fibers the demand. The fixpoint is
+canonical: each hole sits at the highest node at which its type is well-formed, i.e.\ it is armed as
+early as its dependencies permit and no earlier.
+
+\paragraph{Spivak's example.} For \code{alicePF} (\S\ref{sec:example}),
+\[
+  \Holes(\mathtt{alicePF}) =
+  \Big\langle\, \mathsf{now}=\{\,h_{\mathrm{Venue}}:\!O_{\mathrm{venue}},\ h_{\mathrm{Cater}}:\!\mathsf{Catering}\,\},\ \,
+  \mathsf{wait}=\big[\,\mathsf{on}(h_{\mathrm{Venue}})\,\mathcal{B}\,\big] \,\Big\rangle,
+\]
+\[
+  \mathcal{B} = \{\ \mathsf{Indoor}\;v_{\mathrm{in}} \Rightarrow \langle\varnothing,[\,]\rangle,
+       \quad \mathsf{Outdoor}\;v_{\mathrm{out}} \Rightarrow \langle\{\,h_{\mathrm{Tent}}:\mathsf{Tent}(v_{\mathrm{out}})\,\},[\,]\rangle\ \}.
+\]
+$h_{\mathrm{Cater}}$ and $h_{\mathrm{Venue}}$ are armed now, in parallel; $h_{\mathrm{Tent}}$ is owed
+\emph{iff} $h_{\mathrm{Venue}}$ resolves $\mathsf{Outdoor}$, with a type that depends on which outdoor
+venue (Figure~\ref{fig:cdt}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[font=\scriptsize,>={Stealth[length=5pt]},
+   nd/.style={draw=accent,thick,rounded corners=2pt,fill=codebg,align=center,inner sep=4pt},
+   lf/.style={draw=rule,rounded corners=2pt,fill=white,align=center,inner sep=3pt}]
+  \node[nd] (root) {\textbf{now:}\ \ $h_{\mathrm{Venue}}:O_{\mathrm{venue}}$\ \ $\parallel$\ \ $h_{\mathrm{Cater}}:\mathsf{Catering}$\\[1pt]
+     \textbf{wait:}\ \ $\mathsf{on}(h_{\mathrm{Venue}})$};
+  \node[lf,below left=10mm and 6mm of root] (ind) {$\mathsf{Indoor}\ v_{\mathrm{in}}$\\[1pt]\emph{frontier} $=\varnothing$\ \ (grounded)};
+  \node[nd,below right=10mm and 6mm of root] (out) {$\mathsf{Outdoor}\ v_{\mathrm{out}}$\\[1pt]\textbf{now:}\ $h_{\mathrm{Tent}}:\mathsf{Tent}(v_{\mathrm{out}})$};
+  \draw[->,accent,thick] (root) -- (ind) node[midway,above left=-1pt,font=\scriptsize\itshape]{Indoor};
+  \draw[->,accent,thick] (root) -- (out) node[midway,above right=-1pt,font=\scriptsize\itshape]{Outdoor};
+\end{tikzpicture}
+\caption{The CDT of \code{alicePF}. The root frontier ($h_{\mathrm{Cater}}$, $h_{\mathrm{Venue}}$) is
+armed at publish; the $h_{\mathrm{Tent}}$ demand exists in the term \emph{now} (so the Outdoor branch
+can be priced and checked) but is \emph{armed} only when $h_{\mathrm{Venue}}$ resolves Outdoor.}
+\label{fig:cdt}
+\end{figure}
+
+\noindent
+This is the third way out of the eager/lazy dilemma (\S\ref{sec:branch}): the contingency is
+\emph{stated} in the term (so reasoning, pricing, and checking happen pre-grounding, recovering
+``lazy''\,'s loss), yet \emph{armed} only on the realizing outcome (so indoor venues carry no spurious
+tent obligation, avoiding ``eager''\,'s loss). When does a scrutinee resolve? If $s$ is a
+filler-resolved \rul{Hole} whose type is a variant, plugging the filler reduces the $\rul{Case}$ at
+\emph{ground time} and the coordinator arms the sub-CDT during matching. If $s$ is an \rul{Obs} hole,
+the branch fires at \emph{run time} on attestation. The CDT shape is identical; only the stage differs,
+and it is read off the hole's kind.
 
 % ===========================================================================
 \section{The bridge}\label{sec:bridge}
 % ===========================================================================
 MeTTaIL lets a defined language's terms be sent on rho channels. The coordination layer therefore
-carries \texttt{PFLam} terms as payloads and needs four host predicates/operators, each a rho fold
+carries \texttt{PFLam} terms as payloads and needs five host predicates/operators, each a rho fold
 that delegates to \texttt{PFLam}. We extend the embedded coordination language with:
 
 \begin{lstlisting}[language=mettail]
@@ -420,15 +589,27 @@ PlugP    . pf:Proc, h:Proc, q:Proc
     crate::pflam::plug_hole_payload(&pf, &h, &q)       // -> embedded PFLam term
 }] fold;
 
+// holes(pf) now returns a CONDITIONAL DEMAND TREE (sec. 4.4), not a list:
+//   < now: [[h,ty]...], wait: [ on(s){ [kappa, contFn] ... } ... ] >
+// where each cont is the sub-CDT as a function of the bound outcome payload.
 HolesP   . pf:Proc            |- "holes" "(" pf ")"    : Proc ![{
-    crate::pflam::agent_holes_payload(&pf)             // -> List of [h, ty]
+    crate::pflam::demand_tree_payload(&pf)             // -> CDT payload
+}] fold;
+
+// resolve(pf, s): the channel on which scrutinee s's outcome arrives. For a
+// filler-resolved Hole it is derived from the plug (the filler's variant tag +
+// payload); for an Obs hole it is the run-time attestation channel. Lets the
+// coordinator SUBSCRIBE to a branch edge and continue with the right sub-CDT.
+Resolve  . pf:Proc, s:Proc    |- "resolve" "(" pf "," s ")" : Proc ![{
+    crate::pflam::resolve_channel(&pf, &s)             // -> Name (a rho channel)
 }] fold;
 \end{lstlisting}
 
 \noindent
 With these in scope, the matching guard Spivak's framing asks for is literally a rholang
 \code{where} clause: \code{where pf |= ty}. Everything in \S\ref{sec:coord} is ordinary embedded
-rholang plus these four operators.
+rholang plus these operators: \code{now}-frontier holes become guarded demands, and \code{wait}-edges
+become \code{resolve}-subscriptions.
 
 % ===========================================================================
 \section{Coordination protocol (embedded rholang)}\label{sec:coord}
@@ -447,6 +628,7 @@ channel for hole \code{h} of one of Alice's PFs. Conventions:
 \midrule
 @[u, "pf", pfId]            & canonical store of user \textit{u}'s PF \textit{pfId} (latest term) \\
 @[u, "demand", pfId, h]    & open agent hole \textit{h}: candidates are offered here \\
+@[u, "resolve", pfId, s]   & outcome of scrutinee \textit{s} (filler tag at ground time, or attestation) \\
 @[u, "supply"]             & \textit{u} publishes grounded/partial PFs it offers to others \\
 @[u, "prov", pfId]         & provenance map: hole $\mapsto$ (party, fillerId) \\
 @[u, "ground", pfId]       & fires once \textit{pfId} becomes grounded \\
@@ -459,23 +641,41 @@ channel for hole \code{h} of one of Alice's PFs. Conventions:
 \end{center}
 
 \subsection{Publish: Draft $\to$ Published}\label{sec:publish}
-Publishing stores the PF and emits one persistent \emph{demand} per open agent hole. Each demand is a
-type-guarded receiver: it accepts only candidates that satisfy the hole's type, and on acceptance it
-plugs and re-publishes. This is the generalization of Spivak's
-\code{for( pf <- aliceChan where pf |= type ){ aliceChan!( (alicePF pf) ) }}.
+Publishing stores the PF and walks its \emph{conditional demand tree} (\S\ref{sec:cdt}): it arms one
+persistent, type-guarded demand for every hole in the current \code{now}-frontier, and \emph{subscribes}
+to every \code{wait}-edge so that a sub-CDT is armed only when its scrutinee resolves. Each demand is
+the generalization of Spivak's
+\code{for( pf <- aliceChan where pf |= type ){ aliceChan!( (alicePF pf) ) }}; the subscription is the
+new ingredient that makes branch-dependent holes (the tent) behave correctly.
 
 \begin{lstlisting}[language=rho]
-// publish(alice, pfId, alicePF): store, then arm one demand per agent hole.
-new publish in {
+// publish(u, pfId, pf): store, then arm the CDT of pf.
+new publish, armCDT in {
   contract publish(@u, @pfId, @pf) = {
-    @[u, "pf", pfId]!!( pf )                         // canonical store (persistent)
-    | for( @hs <- holes(pf) ) {                      // hs : List of [h, ty]
-        // arm a guarded demand for every open agent hole
-        match hs {
-          []            => @[u, "ground", pfId]!( pf )         // already grounded
-          [[h, ty] ...] => armDemand!( u, pfId, h, ty )
-        }
+    @[u, "pf", pfId]!!( pf )                          // canonical store (persistent)
+    | for( @cdt <- holes(pf) ) { armCDT!( u, pfId, cdt ) }
+  }
+  |
+  // armCDT walks one CDT node: arm every now-hole in PARALLEL, and subscribe to
+  // every wait-edge so sub-CDTs are armed only on the realizing outcome.
+  contract armCDT(@u, @pfId, @cdt) = {
+    match cdt {
+      < now: [], wait: [] >      => @[u, "ground", pfId]!( pf )   // realized path empty
+      < now: ns,  wait: ws >     => {
+        // (1) frontier: one guarded persistent demand per now-hole, all concurrent
+        for( @[h, ty] <- ns ) { armDemand!( u, pfId, h, ty ) }
+        // (2) edges: subscribe to each scrutinee; arm the matching sub-CDT on resolve
+        | for( @on(s, branches) <- ws ) {
+            for( @out <- resolve(pf, s) ) {            // outcome arrives (ground- or run-time)
+              match out {
+                // pick the branch for the realized constructor, binding its payload x,
+                // and arm that sub-CDT (its hole-types may mention x).
+                @[kappa, x] => armCDT!( u, pfId, select(branches, kappa, x) )
+              }
+            }
+          }
       }
+    }
   }
   |
   // one guarded, persistent demand for hole h with expected type ty
@@ -486,7 +686,9 @@ new publish in {
           pf2!( plug(pf, h, cand) ) |                            // fill the hole
           for( @next <- pf2 ) {
             recordProvenance!( u, pfId, h, cand ) |
-            republish!( u, pfId, next )                          // partial grounding -> recurse
+            // if h was a scrutinee, plug fired CaseRw: the branch is now realized,
+            // so re-deriving holes(next) yields the correct residual CDT.
+            republish!( u, pfId, next )
           }
         }
       }
@@ -496,11 +698,13 @@ new publish in {
 \end{lstlisting}
 
 \noindent
-Notes. (i)~The guard \code{where cand |= ty} is the decidable acceptance test of \S\ref{sec:typing};
-unmatched candidates simply do not fire the receive (they remain available for other demands).
-(ii)~The receive is \emph{persistent} (\code{<=}) so a demand keeps accepting until the hole is filled
-and the demand is withdrawn (\S\ref{sec:retire}). (iii)~\code{republish} re-enters \code{publish},
-re-deriving holes of the new term --- this is where $q$'s own holes (if any) become fresh demands.
+Notes. (i)~The frontier holes are armed \emph{concurrently} --- \code{hCater} and \code{hVenue} race
+freely; neither waits on the other. (ii)~A \code{wait}-edge arms nothing until \code{resolve(pf,s)}
+delivers an outcome, so the \emph{indoor} path never arms \code{hTent}. (iii)~\code{resolve} unifies
+the two stages: for a filler-resolved scrutinee it fires when the plug commits a variant (ground
+time); for an \code{Obs} scrutinee it fires on attestation (run time). (iv)~\code{republish} re-enters
+\code{publish}, re-deriving the CDT of the new term --- this is where a filler's own holes, and any
+branch just realized, become the next frontier.
 
 \subsection{Offer: supply side}\label{sec:offer}
 Bob offers a PF by sending it where a broker (or Alice directly) can pick it up. In the minimal form
@@ -531,15 +735,22 @@ auctions; none of them can cause an ill-typed plug, because the plug only happen
 guard.
 
 \subsection{Partial grounding and recursion}
-Each successful plug strictly transforms the hole set per \S\ref{sec:typing}. \code{republish}
-re-arms demands for whatever holes remain (old minus $h$, plus $q$'s new holes). The market thus
-explores a tree of sub-PFs of unbounded depth, each node owned by whichever participant supplied it.
-Termination of \emph{a particular} PF is exactly: every branch eventually reaches grounded fillers ---
-a liveness property of the market, not a theorem (\S\ref{sec:open}).
+Each successful plug transforms the demand tree, not merely a flat set: \code{republish} re-derives
+\code{holes(next)}, which re-arms the residual \code{now}-frontier (old minus $h$, plus $q$'s own
+frontier) and re-subscribes to the residual edges. If $h$ was a scrutinee, its plug realized a branch,
+so the residual CDT is the corresponding fiber --- the untaken branches and their holes are gone. The
+market thus explores a tree of sub-PFs of unbounded depth, each node owned by whichever participant
+supplied it. Termination of \emph{a particular} PF is exactly: every realized path eventually reaches
+grounded fillers --- a liveness property of the market, not a theorem (\S\ref{sec:open}).
 
 \subsection{Grounding detection: $\to$ Grounded}
-When \code{holes(pf)} returns \code{[]}, \code{publish} emits on \code{@[u,"ground",pfId]}. That event
-is the precondition for execution.
+Grounding is now \emph{path-realized}, not set-empty. As branches resolve, \rul{CaseRw} prunes the
+untaken arms, and \code{holes(pf)} of the residual term shrinks toward
+\code{< now: [], wait: [] >}. When \code{armCDT} reaches that node --- the realized path owes nothing
+and waits on nothing --- it emits on \code{@[u,"ground",pfId]}. That event is the precondition for
+execution. (A PF with an unresolved \code{Obs} edge is \emph{not} grounded: it still waits on a
+run-time outcome, so its tail is executed under monitoring rather than dispatched up front ---
+\S\ref{sec:exec}.)
 
 \subsection{Execution: Grounded $\to$ Running}\label{sec:exec}
 Running a grounded PF means: walk its plan, dispatch each leaf obligation to the party who supplied it
@@ -683,7 +894,8 @@ as supply, caveats as filters.
     (pub)   edge node[above]{arm demands} (match)
     (match) edge[bend left=12] node[right]{\code{cand |= ty}} (part)
     (part)  edge[bend left=12] node[left]{holes remain} (match)
-    (part)  edge node[above]{\code{holes=[]}} (ground)
+    (match) edge[loop above] node[above]{outcome resolves: arm fiber} (match)
+    (part)  edge node[above]{realized path empty} (ground)
     (match) edge[bend right=35] node[below,pos=0.4]{\code{holes=[]}} (ground)
     (ground)edge node[above]{run} (run)
     (run)   edge node[left]{all steps ok} (succ)
@@ -703,11 +915,12 @@ core; \emph{Succeeded} promotes to a template; failure retires to \emph{Hidden} 
 \toprule
 \textbf{From} & \textbf{To} & \textbf{Guard / event} & \textbf{Coordination effect} \\
 \midrule
-Draft & Published & \code{publish} & store PF; derive holes \\
-Published & Matching & holes $\neq\varnothing$ & arm one guarded demand per hole \\
+Draft & Published & \code{publish} & store PF; compute CDT \\
+Published & Matching & \code{now} $\neq\varnothing$ or \code{wait} $\neq\varnothing$ & arm frontier; subscribe to edges \\
 Matching & Part.\ Grounded & \code{cand |= ty} & \code{plug}; record provenance; republish \\
-Part.\ Grounded & Matching & holes $\neq\varnothing$ & re-arm demands (incl.\ filler's holes) \\
-Matching / Part. & Grounded & \code{holes(pf)=[]} & emit \code{@[u,"ground",pfId]} \\
+Matching & Matching & scrutinee resolves $\kappa$ & arm the $\kappa$-fiber's sub-CDT \\
+Part.\ Grounded & Matching & residual CDT non-empty & re-arm frontier (incl.\ filler's holes) \\
+Matching / Part. & Grounded & realized path empty & emit \code{@[u,"ground",pfId]} \\
 Grounded & Running & \code{run} & plan; dispatch obligations; start monitor \\
 Running & Succeeded & all steps \code{"ok"} & \code{abstract}; publish template \\
 Running & Hidden & step fails (quiet) & withdraw demands; retain privately \\
@@ -727,15 +940,24 @@ Matching & Hidden & abandon & withdraw demands \\
 canonical per-user channel and treats that channel as the single source of truth for its current term.}
 \req{FR-2}{The system shall distinguish agent holes from computation holes; only agent holes generate
 market demands, and $\grounded$ shall count only agent holes.}
-\req{FR-3}{For each open agent hole the system shall arm a persistent, type-guarded demand that accepts
-a candidate iff \code{cand |= ty}.}
+\req{FR-3}{\lstinline[language=mettail,basicstyle=\ttfamily\small]|holes(pf)| shall return a
+\emph{conditional demand tree} (CDT): a \code{now}-frontier of holes plus \code{wait}-edges over
+unresolved scrutinees, computed by symbolic normalization and the hoist distributive law
+(\S\ref{sec:cdt}). It shall not return a flat list.}
+\req{FR-3a}{For each hole in the current \code{now}-frontier the system shall arm a persistent,
+type-guarded demand that accepts a candidate iff \code{cand |= ty}; all frontier demands are armed
+concurrently.}
+\req{FR-3b}{For each \code{wait}-edge the system shall subscribe to the scrutinee's resolution and arm
+the matching branch's sub-CDT \emph{only} when that outcome lands. A branch hole shall never be armed
+on a path that does not realize its branch (no spurious obligations).}
 \req{FR-4}{Acceptance shall \code{plug} the candidate, record provenance (hole $\mapsto$ party,
-filler), and republish the resulting term, re-deriving demands for all remaining and newly introduced
-holes.}
+filler), and republish the resulting term, re-deriving its CDT --- including any branch just realized
+(\rul{CaseRw}) and any holes the filler itself introduces.}
 \req{FR-5}{Participants shall be able to offer PFs (supply) and brokers shall be able to create
 type-filtered forwarders from supply to demand; brokers shall not be able to cause an ill-typed plug.}
-\req{FR-6}{When a PF's agent-hole set becomes empty the system shall mark it Grounded and make it
-eligible to run.}
+\req{FR-6}{When the realized path's residual CDT is empty (\code{now=[]}, \code{wait=[]}) the system
+shall mark the PF Grounded and make it eligible to run. A PF still waiting on an \code{Obs} (run-time)
+scrutinee is not Grounded.}
 \req{FR-7}{Running shall dispatch each leaf obligation to the supplying party (from provenance) and
 begin monitoring.}
 \req{FR-8}{Monitoring shall advance only on positive attestation, shall support barrier steps via
@@ -763,63 +985,84 @@ attestations; the coordinator never asserts physical completion itself.}
 on-channel and replayable.}
 \req{NFR-6}{\emph{Monotone learning.} Templates and caveats accumulate and feed future matching without
 mutating past records.}
+\req{NFR-7}{\emph{Branching preserves termination.} The variant fragment (finite sums + dependent
+eliminator, no recursion) shall preserve strong normalization, so \code{holes} and the matching guard
+remain terminating (\S\ref{sec:open}).}
+\req{NFR-8}{\emph{Canonical demand placement.} The CDT shall be hoist-normal: every hole sits at the
+highest node at which its type is well-formed, i.e.\ armed as early as its dependencies permit and no
+earlier (\S\ref{sec:cdt}).}
 \end{description}
 
 % ===========================================================================
 \section{Worked example}\label{sec:example}
 % ===========================================================================
-Alice wants a catered dinner delivered at a venue on a date. As a $\Sigma$-bundle (record), her PF
-demands a \texttt{Venue}, a \texttt{Chef}, and a proof that the chef's cuisine is licensed for the
-venue --- the last being a \emph{dependent} field, which is what makes the types do real work.
+We use Spivak's branching case directly. Alice books a venue before she knows whether it will be
+\emph{indoor} or \emph{outdoor}; catering is owed either way, but a tent (rain contingency) is owed
+\emph{iff} the venue comes back outdoor, and the tent's type depends on \emph{which} outdoor venue.
+This is the minimal term whose open-hole set is a function of an outcome not yet observed.
 
 \begin{lstlisting}[language=rho]
-// Alice's PF (schematic PFLam term). Two agent holes hVenue, hChef and a
-// dependent field whose type mentions both fillers.
+// Alice's PF (PFLam term). hCater is flat; hVenue is a scrutinee whose variant
+// outcome decides whether hTent is owed. O_venue = < Indoor : V_in | Outdoor : V_out >.
 alicePF =
-  Sig (v : Venue) .
-  Sig (c : Chef)  .
-    LicensedFor (cuisine c) (kitchen v)           // dependent: depends on v and c
-  with holes
-    ? hVenue : Venue
-    ? hChef  : Pi (v : Venue) . Chef              // chef may depend on the chosen venue
+  reqs .                                          // root: date, headcount, budget
+  call_cater( reqs ; c .                          // c : Catering        -- owed on EVERY branch
+  case (? hVenue : O_venue) of {                  // scrutinee = a filler-resolved hole
+    Indoor  v_in  => ret (booking v_in  c)            // indoor: venue + catering
+    Outdoor v_out => ret (booking v_out c             // outdoor: venue + catering + TENT
+                            (? hTent : Tent v_out))    // hTent's TYPE depends on v_out
+  })
 
-// 1. PUBLISH
-publish!( alice, "dinner", alicePF )
-//    -> stores @[alice,"pf","dinner"], arms demands for hVenue and hChef
+// holes(alicePF)  -- the CDT (sec. 4.4), NOT a flat list:
+//   < now:  [ [hVenue, O_venue], [hCater, Catering] ]          // armed concurrently
+//   , wait: [ on(hVenue) {
+//               Indoor  v_in  => < now: [],                      wait: [] >    // grounded
+//               Outdoor v_out => < now: [[hTent, Tent v_out]],   wait: [] >    // tent owed here
+//             } ] >
+//   hCater hoisted to root (owed on both branches, type outcome-independent);
+//   hTent pinned under Outdoor (its type binds v_out, so it cannot hoist).
 
-// 2. OFFERS (supply)
-@[bob,   "supply"]!!( bobVenue )   // bobVenue   |= Venue
-@[carol, "supply"]!!( carolChef )  // carolChef  |= Pi (v:Venue).Chef
+// 1. PUBLISH: arm frontier {hVenue, hCater} now; subscribe to on(hVenue).
+publish!( alice, "event", alicePF )
 
-// 3. BROKER forwards type-matching candidates
-broker!( bob,   alice, "dinner", "hVenue", Venue )
-broker!( carol, alice, "dinner", "hChef",  Pi (v : Venue) . Chef )
+// 2. OFFERS + BROKER (frontier holes only; NO tent demand exists yet)
+@[bob,   "supply"]!!( bobOutdoorVenue )   // bobOutdoorVenue |= O_venue  (an Outdoor v_out)
+@[carol, "supply"]!!( carolCater )        // carolCater      |= Catering
+broker!( bob,   alice, "event", "hVenue", O_venue )
+broker!( carol, alice, "event", "hCater", Catering )
 
-// 4. MATCH + PLUG (happens behind Alice's guards)
-//    hVenue <- bobVenue, hChef <- carolChef ; provenance recorded
-//    each plug republishes; after both, holes("dinner") = []  -> GROUND
+// 3. hCater and hVenue match CONCURRENTLY behind Alice's guards; each plugs+republishes.
+//    Plugging hVenue with an Outdoor filler fires CaseRw -> the Outdoor branch is realized:
+//    resolve(pf, hVenue) delivers [Outdoor, v_out], so armCDT now arms the fiber:
+//      armDemand!( alice, "event", "hTent", Tent v_out )   // tent demanded ONLY now
+//    (had bob supplied an Indoor venue, resolve delivers [Indoor, v_in]; hTent never arms.)
 
-// 5. RUN: dispatch obligations from provenance
-//    @[bob,  "todo","dinner",0]!( "prepare & open venue" )
-//    @[carol,"todo","dinner",1]!( "cater dinner" )
+// 4. TENT offer for the now-armed, outcome-dependent demand
+@[dave, "supply"]!!( daveTent )           // daveTent |= Tent v_out   (depends on the venue!)
+broker!( dave, alice, "event", "hTent", Tent v_out )
+//    plug hTent -> residual CDT = < now: [], wait: [] >  -> GROUND
 
-// 6a. SUCCESS: both attest "ok"
-@[alice,"step","dinner",0]!( "ok" )   // bob done
-@[alice,"step","dinner",1]!( "ok" )   // carol done
-//    -> abstract -> @["mkt","templates"]!!( ["alice","dinner", template] )
+// 5. RUN: dispatch obligations from provenance (venue, catering, tent)
+//    @[bob,"todo","event",0]!(...) | @[carol,...1]!(...) | @[dave,...2]!(...)
 
-// 6b. FAILURE (alternative): chef no-shows
-@[alice,"step","dinner",1]!( "no-show" )
-//    -> fail -> withdrawDemands ; then either
-//       hide!( alice, "dinner" )                          // quiet
-//    or advertise!( alice, "dinner", "chef-no-show" )     // public caveat
+// 6a. SUCCESS: all attest "ok" -> abstract -> @["mkt","templates"]!!(["alice","event",t])
+// 6b. FAILURE: e.g. tent step fails -> withdrawDemands ; then
+//        hide!( alice, "event" )                     // quiet, or
+//        advertise!( alice, "event", "tent-failed" ) // public caveat
 \end{lstlisting}
 
 \noindent
-The dependent field \code{LicensedFor (cuisine c) (kitchen v)} is the point: a venue/chef pair that
-type-checks is one for which a licensing proof \emph{exists and is supplied}. The type system rejects
-incoherent groundings (an unlicensed pairing simply has no inhabitant for that field, so the bundle
-never type-checks, so the demand for that proof never fires), without anyone writing a bespoke rule.
+The example exhibits every moving part of Option A at once. \emph{Concurrency:} \code{hCater} and
+\code{hVenue} are armed together --- catering does not wait on the venue decision. \emph{Fibered
+demand:} \code{hTent} is present in the term from the start (so the outdoor branch can be priced and
+checked before anything grounds), yet it is \emph{armed} only after \code{hVenue} resolves
+\code{Outdoor}; an indoor outcome arms no tent, so the spurious-obligation problem never arises.
+\emph{Dependency does the pinning:} \code{hTent}'s type \code{Tent v_out} binds the outcome payload, so
+the hoist law cannot lift it above \code{on(hVenue)} --- the type system, decidably, is what fibers the
+demand. \emph{Ground- vs run-time} is one line's difference: written \code{? hVenue} the branch
+resolves at ground time (the chosen venue's variant tag); written \code{observe hVenue} (an \rul{Obs}
+hole) the same CDT resolves at run time, on attestation --- which is the shape Alice will want for an
+outcome like ``opening-day turnout'' that only execution reveals.
 
 % ===========================================================================
 \section{Established vs.\ conjectural; open problems}\label{sec:open}
@@ -831,10 +1074,19 @@ We separate what the design \emph{relies on and gets} from what it \emph{hopes f
   \item \emph{Acceptance is decidable.} Checking $q \Leftarrow T$ (hence \code{q |= ty}) is decidable
   when conversion is decidable; bidirectional checking against a \emph{given} candidate needs no
   higher-order unification.
-  \item \emph{Plugging is total and structural;} the hole-set algebra
-  $\Holes(p\plug_h q)=(\Holes(p)\setminus\{h\})\cup\Holes(q)$ holds definitionally.
-  \item \emph{The coordination layer is ordinary rho;} matching, brokering, joins/barriers, and
-  persistent demands are exactly the embedded-rholang constructs MeTTaIL already provides.
+  \item \emph{Plugging is total and structural;} on the flat fragment the hole-set algebra
+  $\Holes(p\plug_h q)=(\Holes(p)\setminus\{h\})\cup\Holes(q)$ holds definitionally, and with branching
+  it is the corresponding splice on the demand tree.
+  \item \emph{Branching preserves strong normalization.} Adding finite (dependent) variants with their
+  eliminator and commuting conversions, \emph{without recursion}, is the standard SN-conservative
+  extension (Tait/Girard reducibility extends to finite coproducts). Hence \code{holes} terminates and
+  the CDT is finite. The only SN risk is recursion/fixpoints, which this fragment excludes (NFR-7).
+  \item \emph{The CDT is well-defined and canonical.} Symbolic normalization yields a unique demand
+  normal form, and the hoist law has a fixpoint placing each hole at the highest type-admissible node
+  (NFR-8); the dependency side condition is a decidable free-variable check.
+  \item \emph{The coordination layer is ordinary rho;} matching, brokering, joins/barriers, persistent
+  demands, and the frontier-vs-subscription split are exactly the embedded-rholang constructs MeTTaIL
+  already provides, plus the five bridge folds.
 \end{itemize}
 
 \paragraph{Conjectural / delegated / out of scope for the calculus.}
@@ -845,12 +1097,26 @@ We separate what the design \emph{relies on and gets} from what it \emph{hopes f
   participation and incentives.
   \item \emph{Full dependent types may not normalize / convert decidably} once one adds the features a
   real marketplace wants (large elimination, general recursion, effects). The supported fragment must
-  be fixed deliberately; NFR-1 is a constraint on that choice, and it trades expressiveness for a
-  decidable \code{|=}.
+  be fixed deliberately; NFR-1/NFR-7 constrain that choice, trading expressiveness for a decidable
+  \code{|=} and a finite CDT.
+  \item \emph{Staging of branch resolution.} Whether a scrutinee resolves at ground time (a
+  filler-resolved \rul{Hole} whose plug commits a variant) or run time (an \rul{Obs} hole resolved by
+  attestation) is a real modelling decision per branch, not a default. The CDT is identical; the stage
+  is read off the hole kind. Which outcomes are knowable pre-grounding vs only by execution is
+  domain-specific and must be chosen with the user.
+  \item \emph{Valuation is the next layer, and it does not live in the type.} ``Earlier is better'',
+  ``more customers on opening day is better'' are preferences over the \emph{maximal plays} of the
+  CDT, not predicates and not types. The natural object is a grading
+  $\mathit{val}:\mathrm{Runs}(\mathrm{CDT})\to Q$ valued in an ordered monoid / preference quantale
+  $Q$, composed along the tree and used to \emph{rank} admissible offers and to price branches against
+  an outcome distribution. This is the same quantale-grading shape as phlogiston cost, valued in
+  preference rather than resource --- a deliberate continuity with the cost-accounted line of work, and
+  out of scope for this document beyond naming it.
   \item \emph{Templating as anti-unification.} ``Reintroduce holes at filled positions'' is clean for
   first-order positions; the principled general construction is least general generalization, which for
   typed/higher-order terms is subtle (no unique lgg in general). \code{abstract} is specified
-  behaviourally here; its exact generalization order is open.
+  behaviourally here; its exact generalization order is open. (Branching makes this richer: a template
+  may abstract over \emph{which branch} was taken, i.e.\ generalize a realized path back to the polynomial.)
   \item \emph{Execution is off-chain.} ``All parties do their part in the external world'' cannot be
   enforced by rho; NFR-4 reduces it to attestations from trusted oracles/timers. The trust model for
   those oracles, and the dispute resolution when attestations conflict, are out of scope here and
@@ -860,11 +1126,14 @@ We separate what the design \emph{relies on and gets} from what it \emph{hopes f
   Miller-pattern unification, decidable on the pattern fragment.
 \end{itemize}
 
-\paragraph{Suggested next decisions.} (1)~Fix the \texttt{PFLam} fragment and its conversion algorithm.
-(2)~Specify \code{plan} and \code{abstract} precisely (ordering of obligations; generalization order).
-(3)~Define the oracle/attestation trust model and where escrow attaches. (4)~Decide whether brokers are
-privileged matchmakers, open auctions, or both, and what reputation signal (templates vs.\ caveats)
-they consume.
+\paragraph{Suggested next decisions.} (1)~Fix the \texttt{PFLam} fragment, its conversion algorithm,
+and the precise variant/eliminator rules (motive discipline). (2)~Specify \code{plan} and
+\code{abstract} precisely (ordering of obligations; generalization order, including over branches).
+(3)~Decide, per outcome, ground-time vs run-time resolution (\rul{Hole} vs \rul{Obs}). (4)~Design the
+valuation layer: choose $Q$, the play-payoff, and how the market consumes it to rank offers and price
+branches. (5)~Define the oracle/attestation trust model and where escrow attaches. (6)~Decide whether
+brokers are privileged matchmakers, open auctions, or both, and what reputation signal (templates
+vs.\ caveats) they consume.
 
 % ===========================================================================
 \section*{Glossary}
@@ -873,13 +1142,22 @@ they consume.
 \begin{description}[leftmargin=7.5em,style=nextline,itemsep=1pt,font=\ttfamily\normalfont\bfseries]
   \item[PF] Plausible Fiction: a \texttt{PFLam} term with typed agent holes.
   \item[agent hole] A hole filled by another participant's PF; a market demand.
+  \item[CDT] Conditional demand tree: the value of \code{holes(pf)} --- a \code{now}-frontier plus
+  \code{wait}-edges over unresolved scrutinees; a finite dependent polynomial.
+  \item[frontier] The holes at a CDT node armed immediately and in parallel (\code{now}).
+  \item[scrutinee] A neutral term (stuck on an unresolved \rul{Hole}/\rul{Obs}) a branch waits on.
+  \item[observation hole] An agent hole (\rul{Obs}) resolved by a run-time attestation, not a plug.
   \item[computation hole] A redex/elaboration metavariable; filled by reduction, never advertised.
-  \item[grounded] No agent holes remain; the PF is runnable.
+  \item[hoist law] The distributive rule lifting a branch-uniform, outcome-independent demand to the
+  parent frontier; iterated to a canonical fixpoint.
+  \item[grounded] The realized path's residual CDT is empty; the PF is runnable.
   \item[plug] $p\plug_h q$: fill agent hole $h$ in $p$ with filler $q$ (capture-avoiding).
   \item[|=] \emph{models/satisfies}: \code{q |= ty} iff $q$ checks at type \code{ty}; the matching guard.
   \item[provenance] Map hole $\mapsto$ (party, fillerId), used to dispatch obligations and to abstract.
   \item[template] A re-abstracted, reusable PF promoted from a success.
   \item[caveat] A publicly advertised failed pattern (anti-template).
+  \item[valuation] Future layer: a grading $\mathit{val}:\mathrm{Runs}(\mathrm{CDT})\to Q$ ranking
+  outcomes by preference (not a type, not a predicate).
 \end{description}
 
 \end{document}
