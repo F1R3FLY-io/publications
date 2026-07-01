@@ -1,0 +1,820 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+\newtheorem{proposition}{Proposition}
+\newtheorem{finding}{Finding}
+
+\lstdefinelanguage{rho}{
+  morekeywords={new,in,for,match,contract,if,else,true,false,Nil},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+\lstset{
+  language=rho,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue!60!black},
+  commentstyle=\color{green!40!black}\itshape,
+  stringstyle=\color{red!60!black},
+  columns=fullflexible,
+  breaklines=true,
+  frame=single,
+  framesep=4pt,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+}
+
+\newcommand{\rev}{\textsc{rev}}
+\newcommand{\phlo}{\ensuremath{\Phi}}
+\newcommand{\price}{\ensuremath{\mathcal{Q}}}
+\newcommand{\Fsep}{\ensuremath{\Phi_{\mathrm{sep}}}}
+\newcommand{\tensorsig}{\ensuremath{\ast}}
+\newcommand{\lolli}{\ensuremath{\multimap}}
+\newcommand{\near}{\ensuremath{\mathrm{near}}}
+
+\title{A Decentralized Exchange on the Cost-Accounted Rho Calculus\\[2pt]
+\large A gap analysis, a two-spine decomposition, and a build plan for a hybrid
+spot-and-derivatives venue on F1R3Fi}
+
+\author{F1R3FLY.io \\ L. G. Meredith \quad\textit{in dialogue with Anthropic's Claude}}
+
+\date{July 2026 --- Draft for discussion}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The Peyton Jones--Eber--Seward combinators, realised in the cost-accounted rho calculus,
+already give an executable, resource-safe settlement language; two venues have been built on
+top of it --- Priced Plausible Fiction (a two-sided market of programmatic intentions) and a
+Kalshi/Polymarket-class prediction market. This note asks what remains to stand up a third and
+more demanding application on the same substrate: a full decentralised exchange (DEX), hybrid in
+market structure (automated market maker \emph{and} order book), permissioned or permissionless
+by configuration, and spanning spot trading, derivatives, and lending. The organising result is a
+\emph{two-spine decomposition}. The \emph{spot spine} settles entirely on-substrate and is
+oracle-free: it inherits atomic settlement, located authority, and MEV-flat batch clearing from
+the existing apparatus, and its swap primitive is not assembled but is a \emph{theorem} of the
+join schema (conservation of authority). The \emph{derivatives spine} re-imports the
+prediction-market oracle discipline wholesale and forces exactly one genuinely new risk-centre
+object, the liquidation engine, which we show is the acceptance gate lifted from a one-shot
+deployment check to a standing margin invariant --- and, operationally, a health-triggered variant
+of the loan-sale swap already implemented. We identify the multi-asset ledger as a free consequence
+of the cost \emph{spectrum} (each asset a signature-indexed located line), fix the one design
+decision this leaves open (value as magnitude-in-purse, metered by the unary phlogiston line, kept
+apart by \emph{cost is not amount}), and argue that the tensor--hom adjunction on signatures
+($\tensorsig = \otimes$, $\lolli$ the internal hom) is the intuitionistic-linear-logic backbone of
+the venue: an asset is a linear resource, a swap a linear map, a multi-hop route a curried
+composition, and a well-typed atomic route a single linear proof. We give a DEX-launch
+configuration tuple over a fixed safety floor, a primitive-by-primitive map against four papers and
+five implementation files, an honest ledger of what is present versus new, and a phased build plan.
+The headline: the spot swap, baskets, secondary-market position sale, MEV-resistant clearing, and
+term-lending \emph{instrument} are present or nearly so; the genuinely new builds are the stateful
+pool object, the liquidation engine, cross-pool batch clearing, and the money-market rate model
+--- and the credit \emph{venue}, as distinct from the credit instrument, does not yet exist.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}\label{sec:intro}
+
+A financial contract, in the Peyton Jones--Eber--Seward (PJES) sense~\cite{spj}, is a thing one
+\emph{holds}. A prediction market~\cite{predmkt} is a \emph{venue} one trades in. A job market of
+programmatic intentions~\cite{ppf} is a venue of a different shape. A decentralised exchange is a
+fourth object again --- and, in the modern DeFi sense of the term, the most demanding, because
+``DEX'' has come to mean not one venue but a stack of them: a spot exchange (automated market maker
+and/or order book), a derivatives exchange (perpetuals, options), and a money market (lending and
+borrowing), sharing a collateral and settlement layer.
+
+The thesis of this note is that the F1R3Fi substrate --- the cost-accounted rho
+calculus~\cite{cost} obtained by applying the cost endofunctor~\cite{cigslt} to the reflective
+higher-order rho calculus~\cite{rho}, with the PJES combinators realised on
+top~\cite{finrho} --- is unusually well-suited to carrying this stack, that a surprising fraction of
+it is \emph{already present} in the four papers and five implementation files we build on, and that
+the residue concentrates into four new objects rather than a new platform. We make the case by
+inventory and construction, in the spirit of the prediction-market gap analysis~\cite{predmkt},
+which decomposed a venue into four layers and located each against existing apparatus.
+
+\paragraph{The organising insight: two spines.}
+The single most useful thing to say at the outset is that a \emph{spot} DEX and a
+\emph{derivatives} DEX differ in exactly one structural respect, and it is the respect that decides
+where the difficulty lives.
+
+\begin{itemize}[leftmargin=1.4em]
+\item The \textbf{spot spine} (asset-for-asset swaps, AMM pools, order books, routing) settles
+\emph{immediately and entirely on-substrate}. There is no future event to recognise, no
+attestation, no off-chain dispatch, no resolution latch, no dispute window. This spine
+\emph{escapes} the oracle trust model that both prior venues live inside~\cite[\S8.5]{ppf}. The
+riskiest and least substrate-native layer of the prediction market --- Layer~3, oracle/resolution,
+where the venue ``lives or dies''~\cite[\S3]{predmkt} --- simply does not arise for spot.
+\item The \textbf{derivatives spine} (perpetuals, options, lending) needs external price for
+mark, settlement, and collateral valuation, so the oracle discipline of~\cite[\S4]{predmkt} is
+\emph{reused wholesale}, not rebuilt. Option settlement \emph{is} the prediction-market resolution
+latch. What this spine forces that is genuinely new is a liquidation engine --- its risk centre,
+exactly as the oracle was the prediction market's.
+\end{itemize}
+
+Schematically, the full venue is
+\[
+\footnotesize
+\text{DEX} \;\approx\;
+\underbrace{\text{asset ledger}}_{\text{cost spectrum, \S\ref{sec:assets}}}
+\;\cup\;
+\underbrace{\text{spot pool + clearing}}_{\text{new: \S\ref{sec:pool},\ \S\ref{sec:clearing}}}
+\;\cup\;
+\underbrace{\text{pred.-market oracle apparatus}}_{\text{reused: \cite{predmkt}}}
+\;\cup\;
+\underbrace{\text{liquidation engine}}_{\text{new: \S\ref{sec:liquidation}}} .
+\]
+
+\paragraph{What we take as given.}
+We take as given: the reflective rho calculus~\cite{rho} and its namespace logic
+generator OSLF~\cite{oslf}; the cost-accounted calculus~\cite{cost} with located token stacks, the
+acceptance gate, signatures-as-names, the five rewrite rules, the join cost schema, and the
+tensor--hom remark; the PJES realisation~\cite{finrho} with its four cost-accounting patterns and
+the located-stack correction; the priced-market machinery~\cite{ppf}; the prediction-market venue
+apparatus~\cite{predmkt}; and the five \texttt{spj\_*\_cost.rho} implementation files, of whose
+shared cost kernel and loan/futures layers we have read the source directly.\footnote{The cost
+kernel (\texttt{mkSlot}, \texttt{reserve}, \texttt{reserve2}, \texttt{spend}, \texttt{refund},
+\texttt{acquire}) and the combinators (\texttt{makeOne}, \texttt{makeGive}, \texttt{makeCand},
+\texttt{makeTruncate}, \texttt{makeGet}) together with the loan constructors
+(\texttt{schedulePayment}, \texttt{makeScheduledPayments}, \texttt{makeShortTermLoan},
+\texttt{makeMidTermLoan}, \texttt{makeLongTermLoan}, \texttt{makeSellLoan}) are cited from the
+verified source of \texttt{spj\_loans\_cost.rho} and the header/kernel of
+\texttt{spj-futures-cost.rho}. The full combinator family and the auction/power instruments are
+cited at the level documented in~\cite[\S2.2,\S4]{finrho}, attributed to
+\texttt{spj\_contracts\_cost.rho}, \texttt{spj\_dutch\_auction\_cost.rho}, and
+\texttt{spj-power-contracts-cost.rho}.}
+
+\paragraph{Outline.}
+\S\ref{sec:background} recalls the load-bearing apparatus. \S\ref{sec:spines} develops the
+two-spine decomposition. \S\ref{sec:assets} shows the multi-asset ledger falling out of the cost
+spectrum and fixes the value-representation decision. \S\S\ref{sec:pool}--\ref{sec:clearing} treat
+the two genuinely new spot builds: the stateful pool and cross-pool clearing.
+\S\ref{sec:derivatives} treats the derivatives spine and \S\ref{sec:liquidation} the liquidation
+engine. \S\ref{sec:lending} audits what lending is present and what a credit \emph{venue} still
+needs. \S\ref{sec:findings} collects the structural findings (swap-as-join, the ILL backbone,
+flash-as-$\lolli$). \S\ref{sec:tuple} gives the launch configuration tuple over a safety floor.
+\S\ref{sec:map} is the primitive-by-primitive map; \S\ref{sec:roadmap} the phased plan;
+\S\ref{sec:openproblems} the honest ledger of established versus conjectural. \S\ref{sec:conclusion}
+concludes.
+
+\section{Background: the apparatus we build on}\label{sec:background}
+
+We recall only what is load-bearing; \cite{rho,cost,cigslt,finrho} give the full account.
+
+\paragraph{The reflective calculus.}
+Names are quoted processes; the grammar is
+$P,Q ::= 0 \mid \mathrm{for}(y \leftarrow x)\,P \mid x!(Q) \mid P \mid Q \mid {\ast}x$, with
+$x,y ::= @P$. Reflection lets contracts, observables, oracles and obligations all be processes,
+exchanged as names and run by dereference. Parallel composition is associative--commutative (AC):
+the process soup is an unordered bag, which is what forces the located-stack discipline.
+
+\paragraph{Cost accounting.}
+The cost endofunctor~\cite{cigslt} adjoins signatures as a species of name
+($x,y ::= @T \mid s$), token stacks as first-class terms ($S ::= () \mid s\!::\!S$, a temporal
+monoid), and wrapping-by-construction (every continuation a signed thunk $\{P\}_s$ that fires only
+by spending a matching token). The single communication rule becomes a gated family whose base case
+is $\{\mathrm{for}(y \leftarrow x)\,T \mid x!(U)\}_s \mid s\!::\!S \rightsquigarrow T\{@U/y\} \mid S$.
+Three facts we use constantly:
+\begin{enumerate}[label=(\roman*),leftmargin=2em]
+\item \textbf{Located purses}~\cite[\S3.2]{finrho}. A stack held on a channel $c!(s\!::\!S)$; the
+right to spend is the right to receive on $c$. Because \texttt{new}-minted channels are unforgeable,
+authority is possession of the name, never adjacency in the AC bag.
+\item \textbf{The acceptance gate}~\cite[\S8.5]{cost}. Multi-step financial atomicity is a static
+analysis at deployment-acceptance: a linear resource proof $\Sigma_s \ge \Delta_s$ (supply at least
+demand) for every signature, \emph{before any step fires}. Its operational form is the all-or-nothing
+\texttt{reserve} from a located slot.
+\item \textbf{Cost is not amount}~\cite[\S3.6]{finrho}. Phlogiston counts funded rendezvous, not the
+magnitude of value moved; a swap of any size costs one token.
+\end{enumerate}
+
+\paragraph{The join schema and the two monoids.}
+A join is an $N$-ary cut firing all-or-nothing across $N$ channels. The join cost schema quantifies
+over three partition axes (receiver clauses, sends, token presentation), and
+Proposition~4.7 of~\cite{cost} (\emph{conservation of authority}) states that, across every choice
+of partition, the multiset of signatures consumed is exactly one receiver-authority and one
+sender-authority per channel: ``the join either gathers one token's worth of every participant's
+authority, or it does not fire.'' Two monoids sit side by side: the temporal stack monoid $::$
+(what is spent next, admits benign head-consumption) and the spatial-signature monoid $\tensorsig$
+(compound authority, \emph{weakening-forbidden} --- a composite must be discharged in full or
+explicitly \texttt{Split}). Remark~4.9 of~\cite{cost} makes $\tensorsig$ a tensor and the linear
+transfer $\lolli$ its right adjoint, leaving open whether the token discipline is a model of
+intuitionistic linear logic (ILL); \S\ref{sec:findings} argues that for a DEX this open question
+\emph{is} the type theory.
+
+\paragraph{The four cost-accounting patterns.}
+\cite{finrho} classifies every realised instrument into four patterns: (A) bilateral cash
+settlement / netting; (B) single-funder fixed leg; (C) conservative-bound option (max over branches,
+refund the unforced); (D) time-separated bundle (each leg its own funded deployment under concurrent
+acceptance). These recur throughout the DEX.
+
+\paragraph{The implementation kernel.}
+The five files share one cost kernel. \texttt{reserve} is the acceptance gate's \texttt{peel} loop
+verbatim; \texttt{reserve2} realises the compound-signature $s_1 \tensorsig s_2$ join (Rule~2),
+restoring both slots if either party is unfunded; \texttt{refund} returns the unforced remainder;
+\texttt{acquire} is the per-deployment boundary. On this kernel sit the combinators and, in
+\texttt{spj\_loans\_cost.rho}, term lending and the loan-sale atomic swap. We lean on these directly
+in \S\S\ref{sec:liquidation}--\ref{sec:lending}.
+
+\section{The two-spine decomposition}\label{sec:spines}
+
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.17\textwidth}p{0.38\textwidth}p{0.38\textwidth}@{}}
+\toprule
+& \textbf{Spot spine} & \textbf{Derivatives spine} \\
+\midrule
+Settlement & On-substrate, immediate, atomic & On-substrate settlement of an oracle-priced obligation \\
+Oracle & \textbf{None} (self-referential price only) & \textbf{Reused wholesale} from \cite[\S4]{predmkt} \\
+Risk centre & Contended pool state (dissolved by batch clearing) & Liquidation engine (\S\ref{sec:liquidation}) \\
+Swap primitive & Compound-signature join --- a \emph{theorem} (\S\ref{sec:findings}) & Mark/settle against attested observable \\
+New objects & Stateful pool; cross-pool clearing & Liquidation; margin accounting; money-market rate model \\
+Inherited & Located custody, gate, netting, MEV-flat batch & Option latch, blame capability, dispute window \\
+\bottomrule
+\end{tabular}
+\caption{The two spines. The spot spine is oracle-free and on-substrate; the derivatives spine
+re-imports the prediction-market oracle apparatus and forces one new risk-centre object.}
+\label{tab:spines}
+\end{table}
+
+Table~\ref{tab:spines} states the decomposition. The consequence for build risk is immediate: the
+part of a DEX that DeFi practitioners find hardest --- atomic, non-stranding, MEV-resistant
+settlement --- is the part this substrate has \emph{already} solved, three times over
+(\cite{finrho,ppf,predmkt}). The part that is actually new (a persistent, contended, autonomous
+counterparty holding \emph{independent} assets, plus a solvency-triggered forced-unwind object) is
+the part no prior venue had to construct, because every prior object is either bilateral (a contract
+fixing its parties) or bearer-conditional (outcome shares conserved to a single collateral). A pool
+is neither.
+
+We now proceed layer by layer, giving each a verdict in the vocabulary of the prediction-market
+note: \emph{present}, \emph{thin wrapper}, \emph{new}, or \emph{reused}.
+
+\section{The asset layer: the cost spectrum \emph{is} the multi-asset ledger}\label{sec:assets}
+
+\paragraph{Layer A collapses.}
+A DEX presupposes many independent fungible assets. The spectral decomposition of
+phlogiston~\cite[\S5.6]{cost} supplies them for free: phlogiston is not one fuel but ``as many
+distinct fuels as there are economically empowered actors'' --- a signature-indexed spectrum. Each
+asset is simply another spectral line, a signature-indexed located pool. Everything an asset layer
+needs is a consequence of the signature algebra already in the calculus:
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Minting} is trivial~\cite[\S2.4]{cost}: construct a stack, send it on the asset's
+signature channel. No privileged runtime hook, no oracle. \cite{cost} explicitly names ERC-20-like
+fungible tokens as ``expressible as standard cost-accounted Rholang programs.''
+\item \textbf{Custody and balances} are located stacks on unforgeable channels~\cite[\S3.2]{finrho};
+authority is possession of the channel.
+\item \textbf{Transfer} is the gated communication; \textbf{attenuation, amplification, delegation,
+just-in-time funding} all fall out of the signature algebra~\cite[\S2.4]{cost}.
+\item \textbf{Swap} is already witnessed: the \texttt{Exchange} contract of~\cite[App.\,B.9]{cost} is
+a token swap, and \cite{cost} itself notes that ``more sophisticated exchange contracts can implement
+variable rates, order books, or automated market makers --- all within Rholang.''
+\end{itemize}
+
+\noindent
+The DEX is therefore not greenfield on top of these papers; it is the fulfilment of a direction the
+foundational paper explicitly names. \rev{} is implemented (a \texttt{RevVault} the loan and futures
+files call through the registry), so at least one value line exists in production today.
+
+\paragraph{The one decision this leaves: three kinds of spectral line.}
+The phlogiston line is essentially \emph{unary} --- one token per funded rendezvous --- which is
+right for metering and wrong for asset magnitudes (one does not want a million-deep stack to
+represent a million units). \emph{Cost is not amount}~\cite[\S3.6]{finrho} is exactly the seam that
+keeps these apart, and it forces the venue to carry (at least) three kinds of line, which must never
+be conflated:
+\begin{enumerate}[label=(\arabic*),leftmargin=2em]
+\item the \textbf{phlogiston line} \phlo{} (unary; meters rendezvous; the acceptance gate's currency);
+\item the \textbf{value lines} (the traded assets $X, Y, \dots$; magnitudes held in located purses,
+as \rev{} amounts already are --- ``nanoREV'' in the implementation);
+\item the \textbf{share lines} (LP / pool-share and debt tokens; themselves minted spectral lines).
+\end{enumerate}
+This is the priced-market $\price$-versus-\phlo{} separation~\cite[\S6]{ppf} generalised: value lines
+carry magnitude, the phlogiston line carries count, and a deployment is admitted only against the
+\emph{product} order, never their conflation.
+
+\begin{finding}[Value representation]\label{find:value}
+Represent an asset amount as a \emph{magnitude in a located purse} (as \rev{} nanoREV already is),
+not as stack depth. Reserve stack depth for the unary phlogiston line and for capability-like,
+small-count tokens. Custody, authority, atomic settlement, and metering are identical either way ---
+all gated communication on signature-indexed located channels --- so the choice is purely the
+representation of magnitude, and magnitude-in-purse is the only scalable one. The \emph{asset ledger
+is present}; only this convention needs fixing, and it is the DEX note's first design decision.
+\end{finding}
+
+\section{The spot pool: the core new object}\label{sec:pool}
+
+\paragraph{Why the pool is genuinely new.}
+The prediction-market maker (CPMM, LMSR, CLOB)~\cite[\S6]{predmkt} prices \emph{outcome shares}
+under a conservation-to-collateral law $\sum_i \text{shares}_i = \text{collateral}$ --- itself a
+located-purse funding proof. A DEX pool is a different accounting object: two (or $N$) \emph{independent}
+assets on separate located purses under an AMM curve invariant, with fungible LP claims. The
+pricing-rule apparatus of~\cite[\S6.1]{predmkt} transfers verbatim; what is new is the
+two-independent-asset invariant and the LP lifecycle.
+
+\begin{definition}[Constant-function pool]\label{def:pool}
+A pool for the pair $(X,Y)$ is a persistent process holding two located reserve purses
+$L_X, L_Y$ and maintaining an invariant $\kappa(L_X, L_Y) \ge k$ (with $\kappa = {\cdot}$ for
+constant-product, growing with accrued fees). A swap reads the reserves, computes the output from the
+curve, executes a compound-signature two-leg settlement (\S\ref{sec:findings}) that provably does not
+decrease $\kappa$, and republishes the updated reserves. Reserves, output computation, and settlement
+all live behind the gate; a quote that cannot prove its purse funded does not fire~\cite[\S6.4]{predmkt}.
+\end{definition}
+
+\paragraph{LP accounting.}
+Add-liquidity mints a share-line token pro-rata to the deposit; remove-liquidity burns it and
+releases reserves pro-rata; swap fees accrue to $\kappa$ and thus to LP claims. Minting and burning
+are the trivial spectrum operations of \S\ref{sec:assets}; the pro-rata arithmetic is ordinary
+Rholang. The share line is a fungible receipt (\S\ref{sec:assets} kind (3)) and inherits custody and
+transfer for free. \textbf{Verdict: new, the core spot build} --- but the curve math is inherited and
+only the two-independent-asset invariant and the LP lifecycle are novel.
+
+\paragraph{Spot price as an exported observable.}
+A pool's spot price is a persistent channel returning its current value --- exactly the SPJ observable
+of~\cite[\S2.2]{finrho}, which~\cite[\S4.1]{predmkt} already identifies with a persistent oracle
+channel. So $\mathrm{scale}(\text{poolPrice}, c)$ is well-typed today; the pool exports price to the
+rest of the venue at no additional cost. A time-weighted average (TWAP) is a small accumulator on top.
+\textbf{Verdict: spot price present; TWAP a small new accumulator.}
+
+\section{Clearing and MEV: batch is idiomatic, cross-pool is the hard problem}\label{sec:clearing}
+
+\paragraph{Concurrency is substrate-native.}
+The concurrency spine is already in place~\cite[\S2.3,\S8.8]{cost}: trades on disjoint asset pairs
+draw disjoint token pools and run in parallel without merge analysis; trades contending the same pool
+are competing linear-proof obligations of which at most one succeeds. The model asks ``is this
+deployment funded?'' where run-to-completion asked ``is the tuplespace free?''~\cite[Rmk.\,2.1]{cost}.
+
+\paragraph{Batch clearing dissolves the one hard case.}
+A single price cell contended within a block is the one genuinely hard case the substrate flags. The
+frequent-batch-auction discipline of~\cite[\S6.2]{predmkt} dissolves it: orders in a window clear at
+one uniform price, the curve serving as residual counterparty, and Proposition~6.1 of~\cite{predmkt}
+(batch clearing is MEV-flat within a round) makes the intra-round reordering value exactly zero. Both
+requested market structures --- AMM and CLOB --- collapse into this one clearing discipline rather than
+two parallel engines: resting orders and the curve clear together at $p^\star$. This is the correct
+architectural spine for the requested \emph{hybrid} venue, and it matches the real-world convergence
+onto solver-cleared batch auctions.
+
+\paragraph{The genuinely hard problem: cross-pool clearing.}
+The single-market uniform-price batch does not immediately generalise to a venue clearing many pairs
+at once where arbitrage should be \emph{internalised} into the clear --- a coincidence-of-wants ring
+$X \to Y \to Z \to X$ that nets to zero external flow. As a compound-signature $N$-leg join, such a
+ring settles all-or-nothing with no merge analysis (\S\ref{sec:findings}); but \emph{finding} the
+welfare-maximising multi-asset clear is a matching/optimisation problem, the DEX cousin of the
+``combinatorial maker pricing is \#P-hard'' caveat of~\cite[\S3]{predmkt}. \textbf{Verdict: batch
+clearing inherited; cross-pool arbitrage internalisation is new and is where the MEV story is decided.}
+
+\section{The derivatives spine: the oracle returns, mostly reused}\label{sec:derivatives}
+
+With ``everything'' in scope the oracle layer that dropped out for spot returns --- but as reuse, not
+rebuild.
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Perpetual mark/index} is a deterministic-stratum oracle~\cite[\S4.3]{predmkt}: a
+persistent attested observable, source auditable by the signature-as-name on the attestation.
+\item \textbf{Funding} is periodic Pattern-A netting~\cite[\S4.1]{finrho} driven by that observable ---
+a single net transfer in the data-dependent direction, precisely the cash-settled futures machinery of
+\texttt{spj-futures-cost.rho}, whose header already derives net settlement from
+$\mathrm{cand}(\mathrm{scale}(\text{spot},\mathrm{one}), \mathrm{give}(\mathrm{one}(F)))$ under
+\texttt{reserve2}.
+\item \textbf{Option settlement} \emph{is} the prediction-market resolution latch~\cite[\S7]{predmkt}
+unchanged: write-once, redeem nested below consensus finality and dispute finality. No new machinery.
+\item \textbf{Cross-margin} is netting-as-clearing~\cite[\S2.3]{ppf} generalised across a portfolio ---
+a native advantage, since the substrate already collapses opposed obligations into one atomic transfer.
+\end{itemize}
+
+\noindent
+What is new on this spine is margin accounting (a live health observable per position) and the
+liquidation engine. Margin accounting is a small stateful wrapper; liquidation earns its own section.
+\textbf{Verdict: oracle and option-settlement reused; margin a thin wrapper; liquidation new.}
+
+\section{The liquidation engine: the acceptance gate made standing}\label{sec:liquidation}
+
+Liquidation is the derivatives spine's risk centre, and reading the loan-sale swap alongside the
+futures netting makes it markedly less greenfield than a first pass suggests.
+
+\paragraph{Liquidation as a standing acceptance gate.}
+The acceptance gate proves $\Sigma_s \ge \Delta_s$ once, at deployment. A leveraged position is
+deliberately under-collateralised against notional, so it looks like a permanent funding-proof
+failure. The resolution reframes what the gate proves: it certifies \emph{margin}-sufficiency, not
+notional-sufficiency, and it is re-evaluated continuously against the mark observable.
+
+\begin{finding}[Liquidation is the gate lifted to a standing invariant]\label{find:liq-gate}
+Liquidation is precisely what fires when the continuously re-evaluated funding proof would fail. It
+is not a mechanism bolted beside the acceptance gate; it \emph{is} the acceptance gate lifted from a
+one-shot deployment-time check to a standing invariant over a position's life. Where the deployment
+gate rejects an unfunded deployment before it runs, the standing gate forces settlement of a position
+whose margin proof has lapsed.
+\end{finding}
+
+\paragraph{Liquidation as a health-triggered \texttt{makeSellLoan}.}
+Operationally, the atomic seize-and-close is a swap the implementation \emph{already contains}. The
+loan sale \texttt{makeSellLoan} of \texttt{spj\_loans\_cost.rho} sells a lender position for
+\texttt{salePrice}, gated by \texttt{reserve2(buyerSlot, sellerSlot)} --- the compound authority
+$s_{\text{buyer}} \tensorsig s_{\text{seller}}$ --- and sequences payment before capability delivery
+to close the residual \texttt{RevVault}-bounce hazard on top of the fuel atomicity the gate already
+guarantees. A liquidation is structurally the same swap with two substitutions:
+\begin{enumerate}[label=(\roman*),leftmargin=2em]
+\item the willing buyer becomes a \emph{keeper} (the liquidator), and
+\item the trigger becomes a \emph{health-factor observable} rather than a counterparty's volition ---
+a \texttt{makeGet}-style guard (as in \texttt{spj\_loans\_cost.rho}) fired by the mark crossing the
+maintenance threshold, not by a block horizon.
+\end{enumerate}
+The mark-to-market it reads is the futures file's net-against-\texttt{spot}; the seize-and-close is
+\texttt{reserve2} over the position's collateral purse and the keeper's payment purse; the incentive
+(the liquidation bonus) is an ordinary spread on that swap --- itself an ordering surface best cleared
+in a batch (\S\ref{sec:clearing}).
+
+\begin{finding}[Liquidation is assembled, not invented]\label{find:liq-assembled}
+Liquidation $=$ \texttt{makeSellLoan} (loan sale, present) $\circ$ mark-to-market (futures netting,
+present) $\circ$ a health-guarded \texttt{get} (guard combinator, present). It remains a new build ---
+the trigger loop, the keeper incentive, and the batch interaction are new --- but it is composed from
+three primitives already in front of us, and it must sit below oracle finality (Invariant~7.1
+of~\cite{predmkt}) exactly as option redeem does.
+\end{finding}
+
+\paragraph{The contrast that sharpens the point.}
+Term lending as implemented settles repayment by \emph{starvation}: a missed scheduled payment is a
+\texttt{schedulePayment} that finds no funded token and simply blocks. That is the \emph{opposite} of
+liquidation, which must \emph{force} settlement on a solvency breach rather than wait for it. The
+implemented loans have no collateral purse and no forced-unwind path; liquidation is exactly the
+machinery they lack (\S\ref{sec:lending}).
+
+\section{Lending: the instrument is present, the venue is not}\label{sec:lending}
+
+We have read \texttt{spj\_loans\_cost.rho} in full. It implements \emph{fixed-schedule, bilateral,
+term lending}, and it does so correctly.
+
+\paragraph{What is present.}
+Three loan shapes --- short-term bullet (\texttt{makeShortTermLoan}), mid-term coupon-plus-bullet
+(\texttt{makeMidTermLoan}), long-term flat-amortising (\texttt{makeLongTermLoan}). Each decomposes
+cleanly: disbursement is $\mathrm{give}(\mathrm{get}(\text{start}, \mathrm{truncate}(\text{start},
+\mathrm{one}(\text{principal}))))$ funded by the lender; repayment is \texttt{makeScheduledPayments}
+--- a \texttt{cand}-folded strip of scheduled payments, each
+$\mathrm{get}(\mathrm{truncate}(\mathrm{one}(\text{amount})))$ --- funded by the borrower, each leg its own funded deployment at its
+own block under concurrent acceptance (the Pattern-D bundle of~\cite[\S4]{finrho}). Interest is
+rational ($\text{rateNum}/\text{rateDenom}$); amounts are nanoREV; the registry and \texttt{RevVault}
+plumbing are real. \texttt{makeSellLoan} adds a genuine secondary-market primitive: the lender's
+repayment position sold atomically via \texttt{reserve2}. As term credit --- the SPJ zero-coupon-bond
+/ annuity lineage executed with located fuel and atomic settlement --- this is complete.
+
+\paragraph{What is structurally absent.}
+This is the credit \emph{instrument}, not the credit \emph{venue}. The gap is not incidental; it is
+structural along four axes the file never touches:
+\begin{enumerate}[label=\arabic*.,leftmargin=2em]
+\item \textbf{No pool / no fungible lender side.} Lending is one known lender to one known borrower over
+a delivery channel. A money market is many suppliers into a shared pool with a fungible supply claim
+(the aToken/cToken receipt). That shared-pool object is the \emph{same} stateful pool of
+\S\ref{sec:pool} --- a money market is an AMM's sibling, not a loan's.
+\item \textbf{No utilisation-driven rate.} Interest is fixed at origination. A money market's rate is a
+function of pool utilisation, recomputed continuously --- the interest-rate model is the whole point, and
+it is absent.
+\item \textbf{No collateral, hence no liquidation.} Every loan is unsecured and calendar-settled; there
+is no collateral purse, no collateral factor / LTV, no health factor, no mark-to-market, no keeper.
+Repayment-by-starvation is the opposite of forced liquidation (\S\ref{sec:liquidation}).
+\item \textbf{No revolving credit.} The schedule is baked at construction: no repay-anytime,
+borrow-more-anytime, or variable principal.
+\end{enumerate}
+
+\begin{finding}[Credit instrument vs.\ credit venue]\label{find:lending}
+Term lending is present and correct and lands in the instrument layer as-is. Money-market lending is a
+distinct sub-venue that \emph{reuses the pool object} (\S\ref{sec:pool}) for its supply side and the
+\emph{liquidation engine} (\S\ref{sec:liquidation}) for its solvency discipline, and adds only a
+utilisation-curve rate model of its own. The honest framing, exactly parallel to \cite{finrho} giving
+the futures instrument while \cite{predmkt} had to build the venue around it: you have the credit
+instrument but not the credit venue.
+\end{finding}
+
+\section{Structural findings}\label{sec:findings}
+
+These are the intellectually load-bearing observations --- the parts a formal write-up would develop at
+length.
+
+\subsection{The swap is a theorem, not a construction}\label{sec:swap}
+
+Previously the atomic swap was derived from Pattern-A netting. The join schema gives the cleaner
+derivation: a two-asset swap is a compound-signature join, and conservation of authority
+(Prop.\,4.7 of~\cite{cost}) says the join gathers exactly one authority per leg or does not fire,
+\emph{regardless of how tokens are grouped}. Atomic-or-nothing swap is thus a theorem of the schema
+(Rule~3 / Case~J2 / Def.\,4.6 of~\cite{cost}), not an optimisation installed by hand --- and the
+\texttt{reserve2}-gated \texttt{makeSellLoan} of \texttt{spj\_loans\_cost.rho} is its
+\emph{already-implemented witness}. Two corollaries:
+
+\begin{proposition}[Baskets are free and cannot silently unbundle]\label{prop:basket}
+Reverse Currying~\cite[\S4.8.4]{cost} lets the splitter/joiner assemble and disassemble compound
+authorities, so index tokens, wrap/unwrap, and basket assets are immediate. \emph{Weakening-forbidden}
+\cite[\S4.8.5]{cost} is conservation-of-assets by construction: one cannot consume a basket
+$X \tensorsig Y$ to discharge a demand for $X$ alone and silently drop $Y$; unbundling must be an
+explicit, observable \texttt{Split}. An index product cannot leak its constituents.
+\end{proposition}
+
+\begin{proposition}[Coincidence-of-wants is an $N$-leg join]\label{prop:cow}
+A ring trade $X \to Y \to Z \to X$ is a compound-signature $N$-leg join: all legs settle or none, with
+no merge analysis. The clearing that internalises it is the cross-pool batch of \S\ref{sec:clearing}.
+\end{proposition}
+
+\subsection{The ILL backbone: asset as linear resource, route as curried composition}\label{sec:ill}
+
+Remark~4.9 of~\cite{cost} makes $\tensorsig$ a tensor on signatures and $\lolli$ its right adjoint,
+with $(s_1 \tensorsig s_2) \lolli s_3 \cong s_1 \lolli (s_2 \lolli s_3)$, and leaves open whether the
+token discipline is a model of ILL with $\tensorsig = \otimes$ and $\lolli$ the linear function space.
+For a DEX that open question \emph{is} the spine:
+
+\begin{itemize}[leftmargin=1.4em]
+\item an \textbf{atomic multi-asset swap} is a $\otimes$ of asset authorities --- joint, all-or-nothing
+(\S\ref{sec:swap});
+\item a \textbf{multi-hop route} $X \to Y \to Z$ is the curried chain $X \lolli (Y \lolli Z)$ ---
+consume $X$ for the authority to consume $Y$ for $Z$, staged, exactly the linear-transfer sugar
+$\lolli$ of~\cite[\S4.9]{cost};
+\item \textbf{route atomicity} --- the acceptance gate funds the whole route before any hop, so the
+classic ``stranded in the intermediate token'' failure is structurally impossible --- is precisely the
+statement that the curried chain discharges as \emph{one} linear proof.
+\end{itemize}
+
+\begin{finding}[The ILL reading is the DEX type theory]\label{find:ill}
+``An asset is a linear resource, a swap is a linear map, a route is a curried composition, and a
+well-typed atomic route is a linear proof'' is not an analogy but the ILL reading of the token
+discipline. It is the natural home for the spatial-behavioural types of~\cite[\S8]{finrho} applied to
+trading: slippage bounds and pool conservation become type-level assertions ($\Fsep$ for no-aliasing
+across pools, a graded $\langle \text{swap} \rangle$ modality for bounded-price settlement). Settling
+the adjunction --- is the discipline a model of ILL? --- is the theoretical heart of the DEX paper, a
+sequel the foundational paper already promises.
+\end{finding}
+
+\subsection{Flash swaps: an elegant fit, not a friction}\label{sec:flash}
+
+A flash loan is funded by its own proceeds, which naively violates ``prove funded before any step
+fires.'' On this substrate it has \emph{two} independent supports. The funding
+slot~\cite[\S5.7]{cost} lets the funder be determined at run time, not compile time: the flash
+operation creates a fresh slot, and the proceeds fund it mid-execution. And the $\lolli$
+staging~\cite[\S4.9]{cost} puts the borrow leg (funds the rendezvous) and the repayment leg (funds the
+continuation) in one atomic scope: the flash operation closes its own loop or does not fire, with no
+separate reentrancy guard --- reentrancy is structurally absent because the unit of state update is a
+single for-comprehension~\cite[Rmk.\,8.2]{cost}. \textbf{Verdict: flash swaps are a clean fit,
+plausibly cleaner than the callback-and-check pattern of incumbent chains.}
+
+\section{The DEX-launch configuration tuple over a fixed safety floor}\label{sec:tuple}
+
+Following~\cite[\S5]{predmkt}, a launch is the instantiation of a dependent record: some fields'
+admissible values depend on earlier fields, and a safety floor is a refinement invariant every
+instantiation must satisfy. Permissioning is a field (both spot and derivatives), realising the
+requested ``both, as a configuration'' posture.
+
+\[
+\footnotesize
+\begin{aligned}
+\mathrm{DEX} := \big\langle\;
+&\underbrace{\text{pair, assetLines}}_{\text{instrument}},\;
+\underbrace{\text{structure, execution, curve, fees}}_{\text{microstructure}},\\[-2pt]
+&\underbrace{\text{leverage, margin, oracle, spec, dispute, liquidation}}_{\text{derivatives}},\;
+\underbrace{\text{compliance, limits, gov.}}_{\text{policy}}
+\;\big\rangle
+\end{aligned}
+\]
+
+\paragraph{Fields (with dependent edges).}
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{structure} $\in \{\text{AMM}, \text{CLOB}, \text{Hybrid}\}$; \textbf{execution}
+$\in \{\text{Continuous}, \text{Batch}(w)\}$, orthogonal, but Continuous opts into the contended-price
+externality~\cite[\S6.2]{predmkt} and Batch is clean by construction. \textbf{curve} $\in
+\{\text{CPMM}, \text{LMSR-style}, \text{none}\}$ dependent on structure.
+\item \textbf{leverage} present $\Rightarrow$ \textbf{margin} $\in \{\text{Isolated}, \text{Cross}\}$
+and \textbf{liquidation}-policy required, and \textbf{oracle}/\textbf{spec}/\textbf{dispute} required
+(derivatives fields are ill-typed absent an oracle, exactly as in~\cite[\S5.2]{predmkt}). Spot-only
+markets leave the entire derivatives block empty --- the oracle-free spine.
+\item \textbf{compliance} $\in \{\text{Open}, \text{Gated}(s_{\text{compliance}})\}$: the gated case
+makes every transfer $\{\text{transfer}\}_{s_{\text{party}} \tensorsig s_{\text{compliance}}}$
+\cite[\S2.4]{cost}, the single field that most distinguishes the permissionless from the regulated
+shape. \textbf{limits} are the spatial-type bounds of~\cite[\S8]{finrho}.
+\end{itemize}
+
+\paragraph{The safety floor (fixed across every cell).}
+\begin{enumerate}[label=\arabic*.,leftmargin=2em]
+\item \textbf{Pool conservation with $\Fsep$}: reserves and purses do not alias across pools; the
+constant-function invariant never decreases on a swap.
+\item \textbf{Atomic swap-or-revert}: every swap is a compound-signature join (Prop.\,4.7), all-or-nothing.
+\item \textbf{Route funded before any hop}: a multi-hop route discharges as one linear proof
+(\S\ref{sec:ill}); no intermediate-token stranding.
+\item \textbf{Margin proof before leverage}: no leveraged position opens without a margin funding proof,
+and the standing gate (Finding~\ref{find:liq-gate}) governs its life.
+\item \textbf{Liquidation below oracle finality}: forced unwind is nested below consensus and dispute
+finality~\cite[Inv.\,7.1]{predmkt}, as option redeem is.
+\item \textbf{Weakening-forbidden}: no silent unbundling of a basket or compound authority
+(Prop.\,\ref{prop:basket}).
+\item \textbf{Cost is not amount}: value lines and the phlogiston line are separate quantales gated
+against their product~\cite[\S6]{ppf}, never conflated.
+\end{enumerate}
+The launcher picks policy above this line; nobody picks out of the floor. That line --- configurable
+policy over fixed safety --- is what stops ``community selects a market type'' from ever meaning
+``community configures an unsafe market.''
+
+\section{Primitive-by-primitive map}\label{sec:map}
+
+Table~\ref{tab:map} maps each DEX component onto apparatus in the four papers and five implementation
+files. ``present'' means realised in an implementation or a prior paper; ``reused'' means imported from
+the prediction-market venue unchanged; ``new'' means to be built, with the build's nature noted.
+
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.27\textwidth}p{0.46\textwidth}p{0.19\textwidth}@{}}
+\toprule
+\textbf{DEX component} & \textbf{F1R3Fi apparatus} & \textbf{Status} \\
+\midrule
+Fungible asset line & cost spectrum; minting~\cite[\S2.4]{cost}; \rev/\texttt{RevVault} & present \\
+Value magnitude & located purse, nanoREV (Finding~\ref{find:value}) & present (convention) \\
+Custody / balance & located stacks on unforgeable channels~\cite[\S3.2]{finrho} & present \\
+Asset-for-asset swap & compound-sig join; \texttt{reserve2}; \texttt{Exchange}~\cite[B.9]{cost} & present (theorem) \\
+Basket / index token & reverse Currying + weakening-forbidden~\cite[\S4.8]{cost} & present \\
+Slippage guard & conservative-bound gate; \texttt{makeGet}-style guard & thin wrapper \\
+Multi-hop route & $\lolli$ curried chain~\cite[\S4.9]{cost}; one linear proof & thin wrapper \\
+Spot price observable & persistent channel~\cite[\S2.2]{finrho} & present \\
+TWAP & accumulator on the observable & new (small) \\
+AMM pool ($X,Y$) & Def.\,\ref{def:pool}; curve from~\cite[\S6.1]{predmkt} & \textbf{new (core)} \\
+LP token / add-remove & share line + pro-rata (\S\ref{sec:pool}) & new (small) \\
+Order book & resting funded comprehensions~\cite[\S6.3]{predmkt} & present (idiom) \\
+Order cancellation & object-capability receive on order purse~\cite[\S6.3]{predmkt} & present \\
+Batch clearing & uniform-price join, MEV-flat~\cite[Prop.\,6.1]{predmkt} & present \\
+Cross-pool / CoW clear & $N$-leg join (Prop.\,\ref{prop:cow}); welfare match & \textbf{new (hard)} \\
+Flash swap & funding slot~\cite[\S5.7]{cost} $+$ $\lolli$ (\S\ref{sec:flash}) & present (idiom) \\
+Cash-settled future & Pattern-A netting; \texttt{spj-futures-cost.rho} & present \\
+Perp mark / funding & attested observable~\cite[\S4]{predmkt} + futures netting & reused + present \\
+Option settlement & resolution latch~\cite[\S7]{predmkt} & reused \\
+Margin accounting & health observable per position & new (wrapper) \\
+Liquidation engine & standing gate + health-triggered \texttt{makeSellLoan} & \textbf{new (assembled)} \\
+Term loan & \texttt{makeShortTermLoan} etc.; \texttt{spj\_loans\_cost.rho} & present \\
+Secondary-market sale & \texttt{makeSellLoan} (\texttt{reserve2} swap) & present \\
+Money-market pool & pool object (\S\ref{sec:pool}) + supply-claim line & new (reuses pool) \\
+Utilisation rate model & utilisation $\to$ rate function & \textbf{new} \\
+Compliance gate & $\{\cdot\}_{s_{\text{party}} \tensorsig s_{\text{compliance}}}$~\cite[\S2.4]{cost} & present \\
+Audit trail & native ledger of funded rendezvous~\cite[\S6]{finrho} & present \\
+Position limits & $\Fsep$, spatial bounds~\cite[\S8]{finrho} & type layer (in progress) \\
+\bottomrule
+\end{tabular}
+\caption{Primitive-by-primitive map. The four \textbf{bold} rows are the genuinely new builds; the
+rest are present, reused, or thin wrappers.}
+\label{tab:map}
+\end{table}
+
+The map's verdict is the note's headline: of the roughly thirty components a full hybrid DEX needs,
+four are the real build --- the \textbf{stateful pool}, \textbf{cross-pool batch clearing}, the
+\textbf{liquidation engine}, and the \textbf{money-market rate model} --- and everything else is
+present, reused, or a thin wrapper.
+
+\section{Phased build plan}\label{sec:roadmap}
+
+A phased plan, each phase the smallest end-to-end slice that exercises new machinery against a test
+oracle, in the manner of~\cite[\S8.1]{predmkt}.
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+\item[Phase 0 --- asset lines.] Fix Finding~\ref{find:value}: value as magnitude-in-purse, a second
+value line beside \rev{}, minted per~\cite[\S2.4]{cost}. Exercise transfer, custody, and the
+$\price$/\phlo{} product gate. Smallest slice; no pool.
+\item[Phase 1 --- spot swap and pool.] Implement Def.\,\ref{def:pool} for one $(X,Y)$ constant-product
+pool with LP tokens, add/remove liquidity, and the compound-signature swap (present as a theorem,
+\S\ref{sec:swap}). Test oracle: the pool invariant never decreases; $\Fsep$ holds. This is the
+minimal spot DEX and it is oracle-free.
+\item[Phase 2 --- batch clearing, hybrid.] Add resting orders (funded comprehensions) and the
+uniform-price batch join with the curve as residual counterparty~\cite[\S6.2]{predmkt}. Start batch
+because it is MEV-flat and idiomatic; the hybrid AMM+CLOB is one clearing discipline. Routing
+($\lolli$ chains) and slippage guards land here.
+\item[Phase 3 --- money market.] Reuse the Phase-1 pool for the supply side; add the supply-claim line
+and the utilisation-rate model. Borrowing draws against pooled liquidity with a collateral purse.
+Still no forced unwind --- defer liquidation to Phase~5.
+\item[Phase 4 --- derivatives, oracle-priced.] Import the oracle discipline and resolution
+latch~\cite[\S4,\S7]{predmkt}. Perp mark + funding (futures netting), option settlement (latch),
+cash-settled on a deterministic-stratum feed. Margin accounting as a live health observable.
+\item[Phase 5 --- liquidation.] Build the standing-gate trigger loop and the health-triggered
+\texttt{makeSellLoan} (Findings~\ref{find:liq-gate},~\ref{find:liq-assembled}), nested below oracle
+finality, with the keeper incentive cleared in the Phase-2 batch. This closes both the money market
+(Phase~3) and the derivatives spine (Phase~4).
+\item[Phase 6 --- cross-pool clearing and compliance.] Generalise the batch to internalise cross-pool
+arbitrage (Prop.\,\ref{prop:cow}) --- the hard optimisation. Wire the $\text{Gated}(s_{\text{compliance}})$
+configuration and position limits. Lift the regulated bundle.
+\end{description}
+
+\section{Established vs.\ conjectural; open problems}\label{sec:openproblems}
+
+In the spirit of~\cite{ppf,predmkt}, we separate what the design gets from what it hopes for.
+
+\paragraph{Established (given the cost gate and a normalising fragment).}
+\begin{itemize}[leftmargin=1.4em]
+\item The multi-asset ledger, custody, transfer, minting, and the atomic asset-for-asset swap are
+present or theorems (\S\ref{sec:assets},\ \S\ref{sec:swap}); the swap's atomicity is
+Prop.\,4.7 of~\cite{cost}, witnessed by \texttt{makeSellLoan}.
+\item Baskets are free and cannot silently unbundle (Prop.\,\ref{prop:basket}); routes discharge as one
+linear proof (\S\ref{sec:ill}); flash swaps fit cleanly (\S\ref{sec:flash}).
+\item MEV-flat clearing within a batch round is inherited (Prop.\,6.1 of~\cite{predmkt}).
+\item Term lending and secondary-market sale are implemented and correct (\S\ref{sec:lending}).
+\item Liquidation is assembled from present primitives (Finding~\ref{find:liq-assembled}), though the
+trigger loop and incentive are new.
+\end{itemize}
+
+\paragraph{Conjectural / delegated / next.}
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{The ILL model is open.} Whether the token discipline is a model of intuitionistic linear
+logic with $\tensorsig = \otimes$ and $\lolli$ the linear function space is the theoretical heart
+(Finding~\ref{find:ill}) and is unsettled in~\cite{cost}. The DEX types (slippage, conservation) sit on
+top of that answer.
+\item \textbf{Cross-pool welfare clearing is mechanism design.} Internalising arbitrage into a
+multi-asset batch is an optimisation problem (Prop.\,\ref{prop:cow}), the cousin of the \#P-hard
+combinatorial-pricing caveat~\cite[\S3]{predmkt}; which objective (surplus vs.\ coverage) and which
+matching algorithm is policy, not a theorem, exactly as the clearing rule is in~\cite[\S12]{ppf}.
+\item \textbf{The money-market rate model is design.} A utilisation-curve rate, its incentive
+compatibility, and its interaction with liquidation are engineering choices with no calculus-forced
+answer.
+\item \textbf{Oracle risk is inherited, not solved.} Everything mark-priced inherits the
+prediction-market oracle trust model and its open dispute-resolution question~\cite[\S4,\S8.5]{predmkt},
+now with leverage at stake.
+\item \textbf{Liveness is a market property.} That a pool always has liquidity, or a liquidation always
+finds a keeper, depends on incentives and participation; escrow and located purses give safety, not
+liveness --- the same separation~\cite[\S12]{ppf} draws.
+\end{itemize}
+
+\paragraph{Suggested next decisions.} (1) Fix the value-line convention (Finding~\ref{find:value}) and
+build Phase~0--1. (2) Settle, or bound, the ILL question enough to state the DEX type discipline.
+(3) Choose the batch clearing objective and matching algorithm. (4) Specify the utilisation-rate model.
+(5) Decide the liquidation keeper incentive and its batch interaction.
+
+\section{Conclusion}\label{sec:conclusion}
+
+A financial contract is a thing one holds; a prediction market is a place one trades; a DEX is a stack
+of such places sharing a collateral and settlement layer. The combinators, realised in the
+cost-accounted rho calculus, already give the instruments. We have shown that the venues are mostly
+within reach of the same apparatus, and that the reach is cleanly organised by a two-spine
+decomposition: the spot spine settles on-substrate and oracle-free, inheriting atomic swap (a theorem
+of the join schema), MEV-flat batch clearing, and located custody; the derivatives spine re-imports the
+prediction-market oracle discipline wholesale and forces exactly one new risk-centre object, liquidation,
+which is the acceptance gate lifted to a standing margin invariant and, operationally, a health-triggered
+variant of the loan sale already implemented. The multi-asset ledger falls out of the cost spectrum; the
+tensor--hom adjunction is the venue's intuitionistic-linear-logic backbone, under which an asset is a
+linear resource, a swap a linear map, and an atomic route a single linear proof. Of the roughly thirty
+components a full hybrid venue needs, four are the genuine build --- the stateful pool, cross-pool batch
+clearing, the liquidation engine, and the money-market rate model --- and the credit venue, as distinct
+from the credit instrument, is the one place where present machinery names a gap it does not yet fill. A
+description language tells you what a contract is worth; a settlement language on this substrate tells
+you, before a token moves, that it will settle; and an exchange on this substrate tells you, before a
+market opens, the exact discipline under which every asset in it will trade, lever, and unwind.
+
+\paragraph{Acknowledgements.}
+This note develops work conducted in extended dialogue with Anthropic's Claude, which served as a
+sounding board throughout --- decomposing the venue into spines, tracing the asset layer back to the
+cost spectrum, reading the loan and futures implementations to separate the credit instrument from the
+credit venue, and pressing the liquidation-as-standing-gate and swap-as-theorem identifications. The
+ideas and any errors are the author's.
+
+\begin{thebibliography}{99}
+
+\bibitem{rho} L. G. Meredith, M. Radestock. A reflective higher-order calculus. \emph{ENTCS}
+141(5):49--67, 2005.
+\bibitem{oslf} L. G. Meredith, M. Radestock. Namespace logic: a logic for a reflective higher-order
+calculus. \emph{TGC}, LNCS 3705:353--369, Springer, 2005.
+\bibitem{cost} L. G. Meredith. Cost-Accounted Rho Calculus: A Spectral Decomposition of Phlogiston.
+F1R3FLY.io, 2026.
+\bibitem{cigslt} L. G. Meredith. Continued interactive GSLTs and the cost endofunctor: a construction
+one level up from cost-accounted Rholang. F1R3FLY.io, 2026.
+\bibitem{finrho} L. G. Meredith. Financial Contract Combinators in the Cost-Accounted Rho Calculus.
+F1R3FLY.io, 2026.
+\bibitem{ppf} F1R3FLY.io (in dialogue with D. Spivak, Topos Institute). Priced Plausible Fiction: A
+Two-Sided Market of Programmatic Intentions on the Cost-Accounted Rho Calculus. 2026.
+\bibitem{predmkt} L. G. Meredith. Prediction Markets on the Cost-Accounted Rho Calculus. F1R3FLY.io,
+2026.
+\bibitem{mettail} L. G. Meredith. MeTTaIL (Rholang 1.4): a language for defining languages. F1R3FLY.io,
+2025--2026.
+\bibitem{rholang} L. G. Meredith et al. Rholang Specification. F1R3FLY.io / RChain Cooperative,
+2017--2026.
+\bibitem{spj} S. Peyton Jones, J.-M. Eber, J. Seward. Composing contracts: an adventure in financial
+engineering (functional pearl). \emph{ICFP}, Montreal, 2000.
+\bibitem{impl} F1R3FLY.io. F1R3Fi cost-accounted instrument implementations:
+\texttt{spj\_contracts\_cost.rho}, \texttt{spj\_dutch\_auction\_cost.rho},
+\texttt{spj\_loans\_cost.rho}, \texttt{spj-futures-cost.rho}, \texttt{spj-power-contracts-cost.rho}.
+Open-source repository, 2026.
+\bibitem{uniswap} H. Adams et al. Uniswap v2 Core / constant-product automated market makers. 2020.
+\bibitem{lmsr} R. Hanson. Logarithmic market scoring rules for modular combinatorial information
+aggregation. \emph{Journal of Prediction Markets} 1(1):3--15, 2007.
+\bibitem{aave} Money-market protocols with utilisation-curve interest and collateralised liquidation
+(Compound, Aave). Protocol documentation, 2019--2023.
+\bibitem{cow} Batch-auction / coincidence-of-wants DEX designs (CoW Protocol, uniform-price batch
+clearing). 2021--2024.
+\bibitem{flashboys} P. Daian et al. Flash Boys 2.0: frontrunning, transaction reordering, and consensus
+instability in decentralized exchanges. \emph{IEEE S\&P}, 2020.
+\bibitem{ocap} M. S. Miller. Robust Composition: Towards a Unified Approach to Access Control and
+Concurrency Control. PhD thesis, Johns Hopkins University, 2006.
+\bibitem{girard} J.-Y. Girard. Linear logic. \emph{Theoretical Computer Science} 50(1):1--101, 1987.
+\bibitem{casper} V. Buterin, V. Griffith. Casper the Friendly Finality Gadget. arXiv:1710.09437, 2017.
+\bibitem{gnosis} Gnosis. Conditional Tokens Framework. 2019.
+
+\end{thebibliography}
+
+\end{document}
