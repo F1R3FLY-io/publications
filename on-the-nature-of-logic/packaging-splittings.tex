@@ -1,0 +1,866 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,stmaryrd}
+\usepackage{mathpartir}
+\usepackage{tikz-cd}
+\usepackage{enumitem}
+\usepackage[expansion=false]{microtype}
+\usepackage[hidelinks]{hyperref}
+
+% ---- theorem environments ----
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}[definition]{Example}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{construction}[definition]{Construction}
+
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+\newtheorem{conjecture}[definition]{Conjecture}
+\newtheorem{principle}[definition]{Principle}
+
+% ---- notation ----
+\newcommand{\p}{\partial}
+\newcommand{\T}{T}
+\newcommand{\Coll}{S}
+\newcommand{\List}{\mathsf{List}}
+\newcommand{\Mset}{\mathsf{Bag}}
+\newcommand{\Pfin}{\mathsf{P}_{\mathrm{fin}}}
+\newcommand{\Dist}{\mathsf{D}}
+\newcommand{\plug}{\mathsf{plug}}
+\newcommand{\Split}{\mathsf{Split}}
+\newcommand{\Pack}{\mathsf{PACK}}
+\newcommand{\pack}{\mathsf{pack}}
+\newcommand{\Proto}{\Pi}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\real}{\Vdash}
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\catC}{\mathcal{C}}
+\newcommand{\Set}{\mathbf{Set}}
+\newcommand{\op}[1]{\widehat{#1}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\qmap}{q}
+\newcommand{\Pos}{\mathsf{Pos}}
+
+\title{\bfseries Packaging the Splittings\\[2pt]
+\large Realizability, collection monads, and the choice content of the
+McBride derivative in a finite-limits metalanguage}
+\author{L.\,G.\ Meredith\\\small F1R3FLY.io}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+i want to make visible the seams along which a logic is assembled. The
+commitment that makes the seams visible is a realizability semantics:
+a formula denotes the collection of computations that witness its
+computational content. Under that commitment a logic factors into three
+components --- a \emph{collection} component (how witnesses are aggregated),
+a \emph{structural} component (term constructors lifted to predicates on
+witnesses), and a \emph{behavioral} component (contexts labeling
+transitions lifted to modalities). The collection component sits awkwardly
+with categorical logic, because the subobject classifier bakes in
+\emph{set}-shaped collection: there is no list of all lists. i reconcile the
+two by going syntactic. Treating every collection as a term type, i use the
+McBride derivative to form the object of all splittings $(\p\T,\T)$ --- the
+\emph{proto power object} --- and then ask what must be added to the ambient
+metalanguage to \emph{package} the splittings back into the collection type.
+Committing the metalanguage to finite limits (cartesian logic) is what keeps
+the whole apparatus syntactic: there is no subobject classifier to lean on,
+so the derivative route is the only route; and choice cannot be asserted as a
+proposition, so it can enter only as a named section operation. The central
+claim is that packaging is exactly a section of the quotient presenting the
+collection monad, that its choice content equals the assertion that the atom
+object admits a linear order, and that going syntactic discharges this because
+term positions are already ordered. The construction is kept parametric in the
+order on atoms, isolating the choice residue at the atom boundary --- which is
+where later reflective (knot-tying) constructions will act. Throughout i note
+that the equations one quotients by --- commutativity and idempotence --- are
+exactly the equations the no-go theorems for distributive laws turn on, so the
+distributive-law obstruction and the packaging cost are one datum read twice.
+\end{abstract}
+
+\tableofcontents
+
+\section{Why realizability, and why this matters for the argument to the
+AI community}
+\label{sec:motivation}
+
+Most accounts take a logic as given: a fixed vocabulary of connectives, a
+notion of model, and a truth predicate that floats above computation. Truth
+values arrive from a Boolean or Heyting algebra that is postulated, not built.
+For a discipline that wants its reasoning systems to be inspectable ---
+traceable to constructions whose behavior can be run, audited, and held
+accountable --- this is exactly the wrong starting point. The glue that binds
+truth to the algebra is opaque, and once it is in place one can no longer see
+what the logic is \emph{made of}.
+
+i want the opposite. i want a logic whose every connective is an operation on
+computations, so that the entire edifice is a construction and nothing is
+postulated except the constructions themselves. The commitment that delivers
+this is realizability. Rather than asking whether a formula is true, we ask
+which computations \emph{witness} it, and we let the formula denote the
+collection of its witnesses:
+\[
+  \sem{\varphi} \;=\; \{\, e : e \real \varphi \,\}.
+\]
+This is the Kleene move \cite{Kleene45,vanOosten08}, but with the aggregating
+container promoted from an incidental detail to a \emph{parameter} of the
+construction. Once witnesses are computations and formulae are collections of
+them, every connective is forced to be an operation of one of exactly three
+kinds, corresponding to the three things one can vary: how witnesses are
+collected, how they are built, and how they move. This is the decomposition
+i develop in \S\ref{sec:three}.
+
+There is a second, sharper commitment, and it is the one i most want to
+defend to the AI community. i insist that the ambient metalanguage --- the
+language in which the collections, the constructions, and the packaging all
+live --- be a \emph{finite-limits} (cartesian, essentially-algebraic) theory
+\cite{Freyd72,GabrielUlmer71,PalmgrenVickers07}. The reason is not
+minimalism for its own sake. It is that a finite-limits metalanguage is the
+maximal commitment to ``everything is a construction'':
+\begin{itemize}[leftmargin=1.4em]
+\item there are no truth values floating in from a Boolean algebra, because
+      there is in general no subobject classifier (a lex category need not be
+      a topos);
+\item there is no non-constructive existential, because the only existentials
+      one may assert are provably \emph{unique} ones, carved out as partial
+      operations on equationally-defined subdomains;
+\item and --- the point that will do the real work in
+      \S\ref{sec:finlim} and \S\ref{sec:packaging} --- choice cannot be
+      \emph{stated} as a proposition at all. There is no $\forall$, and $\exists$
+      is available only when the witness is unique. So the only way to
+      ``add choice'' is to add a \emph{function symbol} to the signature,
+      together with equations making it a section. In a finite-limits
+      metalanguage, choice is not a truth one assumes; it is an operation one
+      names.
+\end{itemize}
+This is exactly the inspectability i am after. When choice enters, it enters
+as a symbol you can point at, with a documented arity and documented
+equations, and you can localize precisely where in the construction it was
+spent. Nothing is hidden in a semantic ether. The seams are visible because
+we have refused the glue --- the subobject classifier --- that ordinarily
+hides them.
+
+The remainder of the note carries this out. \S\ref{sec:three} gives the
+three-component decomposition. \S\ref{sec:dial} shows that the collection
+component is a substructural dial whose settings are governed by two
+equations, commutativity and idempotence. \S\ref{sec:disconnect} states the
+disconnect with categorical logic, and \S\ref{sec:nogo} shows that the same
+two equations are what the no-go theorems for distributive laws turn on ---
+so the obstruction to a uniform collection component and the cost of packaging
+are, as we will see, one datum read twice. \S\ref{sec:finlim} cashes out the
+finite-limits commitment. \S\ref{sec:derivative} builds the proto power
+object from the McBride derivative, and \S\ref{sec:packaging} defines
+packaging as a section and states the choice conjecture, parametric in the
+order on atoms. \S\ref{sec:grading} places the conjecture in the Weihrauch
+lattice, \S\ref{sec:instances} works the three instances, and
+\S\ref{sec:discussion} draws out the consequences, including the absence of
+any classicality collapse and the reflective use of the atom-order parameter.
+
+\section{Three components of a logic under realizability}
+\label{sec:three}
+
+Fix a representation of computation. Throughout i take it to be a term
+rewrite system: terms are computational states, and rewrites are steps. Write
+$\T$ for the type of terms. Fix also a way of aggregating witnesses: a
+\emph{collection type} $\Coll$, which will always carry the structure of a
+monad (\S\ref{sec:dial}). A formula denotes an object $\sem{\varphi} :
+\Coll(\T)$ --- a collection of terms.
+
+Under these two fixings, three families of connectives arise, and every
+connective is of one of the three kinds.
+
+\paragraph{Collection connectives.}
+Any operation on $\Coll$ lifts to a connective. If witnesses are collected in
+sets, the semilattice operations of $\Coll = \Pfin$ give the familiar
+connectives:
+\[
+  \sem{\varphi \wedge \psi} = \sem{\varphi} \cap \sem{\psi},
+  \qquad
+  \sem{\varphi \vee \psi} = \sem{\varphi} \cup \sem{\psi}.
+\]
+This is where the choice of container is felt: change $\Coll$ from sets to
+multisets, lists, trees, or distributions, and these connectives change with
+it. The collection component is the parameter i most want to vary, and
+\S\ref{sec:dial} explains what varying it does.
+
+\paragraph{Structural connectives.}
+Each term constructor of $\T$ lifts to a predicate transformer. If
+$f : \T^{n} \to \T$ is an $n$-ary constructor, define
+\[
+  \sem{\op{f}(\varphi_{1},\dots,\varphi_{n})}
+  \;=\;
+  \{\, f(e_{1},\dots,e_{n}) : e_{i} \real \varphi_{i} \,\}.
+\]
+The lifted constructor $\op{f}$ is a \emph{structural} predicate: it speaks
+about the \emph{shape} of a witness, asserting that the witnessing computation
+was built by $f$ from sub-witnesses of the $\varphi_{i}$. In the reflective
+setting these are the constructors of the rho calculus lifted to namespace
+predicates \cite{MeredithRadestock05a,MeredithRadestock05b}; in general they
+are the introduction half of an Operational-Semantics-in-Logical-Form (OSLF)
+presentation.
+
+\paragraph{Behavioral connectives.}
+Each rewrite is labeled by the context in which it fires. A step
+$C[l] \to C[r]$ carries the one-hole context $C$, an element of the
+\emph{derivative} $\p\T$ (\S\ref{sec:derivative}). Lifting the labels to
+modalities gives
+\[
+  \sem{\langle C\rangle \varphi}
+  = \{\, e : e \xrightarrow{\,C\,} e',\ e' \real \varphi \,\},
+  \qquad
+  \sem{[C]\varphi}
+  = \{\, e : \forall e'.\ e \xrightarrow{\,C\,} e' \Rightarrow e' \real \varphi \,\},
+\]
+the context-indexed Hennessy--Milner modalities. This is the elimination half
+of OSLF.
+
+\begin{remark}
+The structural and behavioral components are the two halves of OSLF, generated
+respectively from constructors and from labeled transitions. They are already
+well-understood in the reflective setting. The component that resists the
+categorical-logic packaging, and that this note is about, is the first one ---
+collection --- together with the derivative machinery ($\p\T$) that turns out
+to glue it to the third.
+\end{remark}
+
+\section{The collection component is a substructural dial}
+\label{sec:dial}
+
+The collection type $\Coll$ is a monad, and the algebraic theory presenting
+$\Coll$ is not incidental: \emph{its equations are the structural rules of the
+propositional logic the collection component induces.} This is the first fact
+that makes the decomposition worth having, because it says the collection
+component is not ``logic plus a data-structure flavor''; it \emph{is} the
+substructural hierarchy, indexed by how far $\Coll$ sits from set-shaped.
+
+Write the binary aggregation of $\Coll$ as $\ast$ with unit $\varepsilon$.
+The correspondence is:
+\[
+\begin{array}{lll}
+  \text{commutativity of } \ast & \longleftrightarrow & \text{exchange},\\[2pt]
+  \text{idempotence of } \ast    & \longleftrightarrow & \text{contraction},\\[2pt]
+  \text{unit/absorption laws}    & \longleftrightarrow & \text{weakening}.
+\end{array}
+\]
+Reading the standard collection monads through this correspondence:
+\begin{itemize}[leftmargin=1.4em]
+\item $\Pfin$, the finite-powerset monad --- a commutative, idempotent monoid
+      (a join-semilattice) --- gives exchange and contraction (and, with the
+      unit, weakening): the full structural regime, hence Heyting/Boolean
+      propositional logic.
+\item $\Mset$, the finite-multiset monad --- the free commutative monoid,
+      commutative but not idempotent --- gives exchange without contraction:
+      the multiplicative-linear regime with $\otimes$.
+\item $\List$, the list monad --- the free monoid, neither commutative nor
+      idempotent --- gives neither exchange nor contraction: a
+      non-commutative, Lambek-style regime.
+\item $\Dist$, the distribution monad --- commutative with a convex (barycentric)
+      structure in place of idempotence --- gives the probabilistic regime.
+\end{itemize}
+
+\begin{principle}[Collection is substructure]
+\label{prin:dial}
+The setting of the collection dial is the pair of Booleans
+$(\text{commutative?}, \text{idempotent?})$ of $\Coll$, and this pair is
+exactly the presence or absence of exchange and contraction in the induced
+logic.
+\end{principle}
+
+Keep the two coordinates of Principle~\ref{prin:dial} in view. They are the
+same two coordinates on which the no-go theorems of \S\ref{sec:nogo} turn,
+and the same two equations one quotients by when packaging in
+\S\ref{sec:packaging}. Everything in this note is, at bottom, bookkeeping on
+commutativity and idempotence.
+
+\section{The disconnect with categorical logic}
+\label{sec:disconnect}
+
+Categorical logic packages the collection component through the subobject
+classifier $\Omega$: the power object of $A$ is $\Omega^{A}$, the object of
+subobjects of $A$. This is a beautiful and total solution --- for one setting
+of the dial. It hard-wires $\Coll = $ powerset. Two things go wrong when we
+try to honor Principle~\ref{prin:dial} and turn the dial.
+
+First, the classifier fixes the collection shape. There is no
+$\Omega$-parametrized-by-$\Coll$; the power object is subsets, and only
+subsets. One cannot, inside the $\Omega$ story, ask for the multiset or list
+of witnesses.
+
+Second, and more tellingly, even the operation of forming ``the collection of
+all subcollections \emph{as an object of the same shape}'' fails away from
+sets. The slogan is: \emph{there is no list of all lists.} To assemble all
+sublists of a given list into a single \emph{list}, one must linearly order
+the sublists; there is no canonical order on them, and choosing one is choice.
+For sets the analogous assembly is free of order --- the subsets form a set
+with nothing to arrange --- which is exactly why the $\Omega$ story works for
+the powerset setting and only there.
+
+\begin{remark}
+The disconnect is not a defect of categorical logic to be repaired by a
+cleverer classifier. It is a signal that the packaging of the collection
+component into an object of the same shape is \emph{order-laden}, and that the
+$\Omega$ story succeeds precisely by living at the one setting of the dial
+(powerset) where the order requirement is vacuous. The reconciliation in
+\S\ref{sec:derivative}--\S\ref{sec:packaging} takes the order requirement
+seriously and localizes it, rather than wishing it away.
+\end{remark}
+
+\section{The same two equations: distributive laws and their no-go theorems}
+\label{sec:nogo}
+
+Before the reconciliation, i want to record why the collection dial cannot be
+turned freely if one insists on the standard monadic route to the structural
+connectives, because it is the same two equations again.
+
+The structural connectives of \S\ref{sec:three}, viewed monadically, ask the
+collection monad $\Coll$ to commute past the term monad $\T$. Lifting a
+constructor $f : \T^{n} \to \T$ to collections requires a coherent map
+$(\Coll\,A)^{n} \to \Coll(A^{n}) \to \Coll\,A$, and for this to be coherent
+across \emph{all} the constructors of $\T$ simultaneously one wants a
+distributive law
+\[
+  d : \Coll \circ \T \;\Rightarrow\; \T \circ \Coll,
+\]
+in the sense of Beck \cite{Beck69}. A distributive law is exactly what lets
+$\Coll$-collections be pushed through $\T$-structure functorially, yielding
+the lifted constructors.
+
+The trouble is that such laws are scarce, and the scarcity is governed by
+commutativity and idempotence. The covariant powerset monad does not
+distribute over itself \cite{KlinSalamanca18}; the distribution monad does not
+distribute over powerset \cite{VaraccaWinskel06}; and the general no-go
+theorems of Zwart and Marsden \cite{ZwartMarsden19} show that once the two
+theories being combined carry equational shapes of the wrong kind --- an
+idempotence or an absorption clashing with the other theory --- \emph{no}
+distributive law can exist. The upshot is that, along the distributive-law
+route, the only collection monads that commute nicely past term-like $\T$ are
+the set/multiset/distribution-shaped ones: exactly the ones near the
+top-and-commutative corner of the dial.
+
+\begin{principle}[One datum, read twice]
+\label{prin:twice}
+The equations that obstruct the distributive law $d : \Coll\T \Rightarrow
+\T\Coll$ --- commutativity and idempotence --- are the same equations that,
+in \S\ref{sec:packaging}, one must quotient $\List$ by to present $\Coll$, and
+hence the same equations whose section must be postulated to package. The
+no-go obstruction and the packaging cost are one datum read twice: once as a
+law that fails, once as an operation that must be added.
+\end{principle}
+
+The reconciliation of \S\ref{sec:derivative}--\S\ref{sec:packaging} is, in
+effect, a third way around the no-go theorems. The two known escapes are to
+\emph{quotient} (convex powerset, indexed valuations --- adjust $\Coll$ until
+the equations agree) or to \emph{restrict} (finite, ordered --- shrink until
+the clash cannot arise). The route here is to \emph{add a global structuring
+operation} --- the section --- and pay for it in a named, localized axiom.
+\S\ref{sec:discussion} argues these are dual dodges.
+
+\section{The finite-limits metalanguage does exactly what we need}
+\label{sec:finlim}
+
+Now the metalanguage commitment earns its keep. Take the ambient metalanguage
+to be a finite-limits theory: the cartesian fragment, with $\top$, $\wedge$,
+$=$, and existentials only where the witness is provably unique
+\cite{Freyd72,GabrielUlmer71,PalmgrenVickers07}. Absent are $\vee$, $\bot$,
+$\Rightarrow$, $\neg$, unrestricted $\exists$ and $\forall$, and --- in
+general --- a subobject classifier. Three consequences, each of which turns a
+would-be obstruction into a feature.
+
+\paragraph{(1) There is no $\Omega$ to lean on, so the syntactic route is the
+only route.} In a topos one might hope to repair \S\ref{sec:disconnect} with a
+cleverer use of the classifier. In a finite-limits metalanguage that hope is
+simply unavailable: a lex category need not be a topos, and the power object
+is not on the table. The McBride-derivative construction of
+\S\ref{sec:derivative} is therefore not \emph{an} alternative to the
+$\Omega$-story; it is the \emph{only} story. The commitment vindicates going
+syntactic instead of competing with it.
+
+\paragraph{(2) Choice cannot be a proposition, only an operation.} In
+cartesian logic one cannot write the choice principle in $\forall\exists$
+form: there is no $\forall$, and $\exists$ may be asserted only under
+uniqueness. So ``adding choice'' cannot mean asserting a sentence. It can only
+mean enlarging the signature with a function symbol and equations that make it
+a section of some quotient. This is precisely the shape that packaging will
+take in \S\ref{sec:packaging}: $\pack$ is a new operation, and the equation
+$\qmap \circ \pack = \id$ is choice-as-structure. The metalanguage forces the
+conjecture into its most honest and most inspectable form.
+
+\paragraph{(3) No classicality collapse.} In a topos, internal choice forces
+Boolean logic (Diaconescu \cite{Diaconescu75,MacLaneMoerdijk92}). That
+argument needs $\vee$, comprehension via the power object, and effective
+quotients to run --- \emph{none} of which are present in the cartesian
+fragment. Consequently one may add packaging/choice as pure structure without
+collapsing the object logic to classical. Choosing finite limits is exactly
+what keeps choice \emph{structural} rather than \emph{logical}. This is the
+technical heart of the inspectability argument of \S\ref{sec:motivation}: the
+choice we add is a nameable operation and it does not silently classicalize
+everything downstream.
+
+\section{The McBride derivative and the proto power object}
+\label{sec:derivative}
+
+i now build the object that replaces the power object. The move is to treat
+every collection \emph{syntactically} --- as a term type --- and to use the
+McBride derivative to enumerate its splittings.
+
+\subsection{Terms, derivatives, and the zipper}
+
+Let $F$ be a polynomial (container) endofunctor and let $\T = \mu X.\,F X$ be
+its initial algebra, the type of terms. Write $\p F$ for the derivative of
+$F$: the functor of one-hole $F$-contexts \cite{McBride01,AAGM05,Huet97}. The
+derivative of the fixpoint is a list of layers up the spine:
+\[
+  \p\T \;\cong\; \bigl(\p F[\T]\bigr)^{\!\ast}
+       \;=\; \List\!\bigl(\p F[\T]\bigr),
+\]
+each layer an $F$-node with one hole and its other children filled by
+subtrees. Plugging fills the hole:
+\[
+  \plug : \p\T \times \T \longrightarrow \T,
+  \qquad
+  \plug(\mathsf{nil}, t) = t, \quad
+  \plug(\ell :: c, t) = \plug\bigl(c, \mathsf{fill}(\ell, t)\bigr).
+\]
+
+\begin{definition}[Splittings]
+The object of \emph{splittings} of $\T$ is
+\[
+  \Split(\T) \;=\; \{\, (c,t) \in \p\T \times \T \,\}
+             \;\cong\; \textstyle\sum_{c:\p\T} \T,
+\]
+the pointed terms, with the whole recovered by $\plug(c,t)$. A splitting is a
+context together with a focus.
+\end{definition}
+
+Two facts about splittings are load-bearing.
+
+\begin{proposition}[Positions are ordered by syntax]
+\label{prop:dewey}
+The positions of a term --- equivalently, the contexts $c$ appearing in its
+splittings --- carry a canonical linear order, the traversal (Dewey) order,
+definable from the term's own structure by a fold. Hence $\p\T$ is linearly
+ordered \emph{per term}, with no appeal to any order on the atoms.
+\end{proposition}
+
+\begin{proof}[Sketch]
+A depth-first left-to-right traversal assigns to each position a Dewey path,
+and Dewey paths are linearly ordered lexicographically. The assignment is a
+catamorphism over $\T$, so it is definable once $\T$ is equipped with its
+recursor (\S\ref{sec:packaging}); no comparison on atoms is used, because
+positions are indexed by constructor-argument slots, which are ordered by the
+arity, not by the atoms sitting in them.
+\end{proof}
+
+\begin{proposition}[The aperture is the modal label]
+\label{prop:glue}
+The contexts that index splittings are the same objects that label rewrites in
+the behavioral component of \S\ref{sec:three}: both are elements of $\p\T$.
+Thus the collection component (via its splittings) and the behavioral
+component (via its modal labels) are glued at the derivative. In the agency
+vocabulary, the aperture --- the locus at which a computation may be acted
+upon --- is simultaneously the modal label and the raw material of the proto
+power object.
+\end{proposition}
+
+Proposition~\ref{prop:glue} is the structural dividend of going through $\p\T$:
+components (1) and (3) of \S\ref{sec:three} are not merely analogous, they
+share their carrier.
+
+\subsection{Collections are term types too}
+
+The syntactic stance says: present the collection type itself as a term type,
+so the same derivative machinery applies to it. The paradigm is the list
+monad,
+\[
+  \List\,A = \mu X.\, 1 + A \times X,
+\]
+a genuine $\mu$-type. Its derivative in the element parameter is the pair of a
+prefix and a suffix,
+\[
+  \p_{A}(\List\,A) \;\cong\; \List\,A \times \List\,A,
+\]
+so a splitting of a list is a triple $(\text{prefix}, \text{focus},
+\text{suffix})$ --- exactly a choice of one element to keep in view, with its
+surroundings. Gathering foci across a family of splittings and re-collecting
+rebuilds a \emph{sub}collection. This is the concrete content of ``no list of
+all lists'': each individual sublist is free to form, but assembling all of
+them into one list requires ordering them.
+
+\begin{definition}[Proto power object]
+\label{def:proto}
+For a term type $\T$, the \emph{proto power object} $\Proto(\T)$ is the
+container of splittings, written $(\p\T, \T)$: shapes are contexts $c : \p\T$,
+and the position at each shape is the focus of type $\T$. Its extension is
+$\Proto(\T)(X) = \sum_{c:\p\T} X$, and $\Proto(\T)(\T) = \Split(\T)$.
+\end{definition}
+
+$\Proto(\T)$ is ``proto'' because it enumerates one-step focusings; it is not
+yet closed under gathering foci into a subcollection of the same shape as
+$\T$. Closing it is packaging.
+
+\section{Packaging as a section, and the choice conjecture}
+\label{sec:packaging}
+
+\subsection{Presenting collections as quotients of the free case}
+
+Present each collection monad $\Coll$ syntactically, as a quotient of the
+free (list) collection:
+\[
+  \List\,A \xrightarrow{\ \qmap_{\Coll}\ } \Coll\,A,
+\]
+where
+\[
+  \qmap_{\List} = \id, \qquad
+  \qmap_{\Mset} = (-)/\text{perm}, \qquad
+  \qmap_{\Pfin} = (-)/(\text{perm} + \text{idem}).
+\]
+$\List$ is the free monoid --- the syntactic collection, paying nothing.
+$\Mset$ adds commutativity (permutation). $\Pfin$ adds commutativity and
+idempotence. These are precisely the two coordinates of the dial
+(Principle~\ref{prin:dial}) and the two culprits of the no-go theorems
+(Principle~\ref{prin:twice}).
+
+\subsection{Two additions before choice}
+
+Two things must be added to the bare finite-limits base before packaging can
+even be discussed, and honesty requires naming them.
+
+\begin{remark}[The recursor is the first non-Horn addition]
+\label{rem:recursor}
+Having ``the type of terms'' means an initial algebra $\mu F$, and using it
+--- defining any fold, hence $\pack$, hence the Dewey order of
+Proposition~\ref{prop:dewey} --- requires its \emph{recursor}. Formation and
+introduction for a $\mu$-type are algebraic; elimination (induction/recursion)
+is not cartesian. So the recursor is the first thing added to the bare base,
+and we add the \emph{weakest} one that still defines $\pack$: a
+non-dependent catamorphism. Everything downstream, including packaging, is a
+fold and inherits exactly this recursor and no more.
+\end{remark}
+
+\begin{remark}[Quotients before sections]
+For non-free $\Coll$, the map $\qmap_{\Coll}$ is a coequalizer, which a bare
+lex category may lack. Presenting $\Coll$ therefore already commits one to
+effective quotients (pretopos-flavored structure) \emph{before} asking them to
+split. Packaging then splits what one was forced to construct.
+\end{remark}
+
+So the layering is: cartesian base $\;\to\;$ weakest recursor for $\T$
+(Remark~\ref{rem:recursor}) $\;\to\;$ effective quotients for non-free $\Coll$
+$\;\to\;$ the section below. Choice sits only at the top layer.
+
+\subsection{The packaging axiom}
+
+\begin{definition}[Packaging]
+\label{def:pack}
+A \emph{packaging} for $\Coll$ is a signature operation
+\[
+  \pack_{\Coll} : \Coll\,A \longrightarrow \List\,A
+  \qquad\text{with}\qquad
+  \qmap_{\Coll} \circ \pack_{\Coll} = \id_{\Coll A},
+\]
+a section of the presenting quotient: a choice, for each $\Coll$-collection, of
+a list representative. The axiom asserting the existence of $\pack_{\Coll}$ is
+$\Pack_{\Coll}$. In the finite-limits metalanguage $\Pack_{\Coll}$ is not a
+proposition but the enlargement of the signature by $\pack_{\Coll}$ and the
+above equation --- choice-as-structure, per \S\ref{sec:finlim}(2).
+\end{definition}
+
+Definition~\ref{def:pack} is the syntactic form of the closure operation on
+the proto power object: to assemble the splittings of $\Proto(\T)$
+(Definition~\ref{def:proto}) into a $\Coll$-collection of the same shape is to
+apply $\qmap_{\Coll}$, and to make that assembly canonical --- to build
+$\T[(\p\T,\T)]$, the collection whose atoms are splittings --- is to choose the
+section $\pack_{\Coll}$.
+
+\subsection{The choice conjecture, parametric in the atom order}
+
+\begin{theorem}[Derivability of packaging, per instance]
+\label{thm:instances}
+Modulo the weakest recursor of Remark~\ref{rem:recursor}, and for the section
+taken uniformly (natural in $A$):
+\begin{enumerate}[label=\textup{(\roman*)},leftmargin=2.2em]
+\item $\Pack_{\List}$ is derivable outright; $\pack_{\List} = \id$.
+\item $\Pack_{\Mset}$ is derivable if the atom object $A$ carries a linear
+      order $\le$ definable in the theory --- take $\pack_{\Mset} =
+      \mathsf{sort}_{\le}$ --- and, conversely, a uniform section of
+      $\qmap_{\Mset}$ determines a linear order on $A$ (read off from its
+      action on two-element bags). So $\Pack_{\Mset}$ is inter-derivable with
+      ``$A$ is linearly ordered.''
+\item $\Pack_{\Pfin}$ is derivable if $A$ is linearly ordered \emph{and}
+      equality on $A$ is available to deduplicate --- take
+      $\pack_{\Pfin} = \mathsf{dedup} \circ \mathsf{sort}_{\le}$; conversely a
+      uniform section determines both an order and a canonical
+      representative.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Sketch]
+(i) is immediate. For (ii), $\mathsf{sort}_{\le}$ is an insertion sort, a fold
+over $\List\,A$ using $\le$, hence definable from the weakest recursor and
+$\le$; it lands in a canonical (sorted) representative of each permutation
+class, so $\qmap_{\Mset}\circ\mathsf{sort}_{\le} = \id$. Conversely, given a
+uniform section $s$, its value on the bag $\{a,b\}$ is one of the lists
+$[a,b]$ or $[b,a]$; uniformity (naturality in $A$) forces this decision to
+cohere into a total order, and the monoid equations force transitivity.
+(iii) adds idempotence: a section of the combined quotient must additionally
+select, from each finite subset, a duplicate-free list, i.e.\ a decision of
+equality plus the order of (ii). \end{proof}
+
+Theorem~\ref{thm:instances} localizes the choice content exactly. Read
+against the earlier, topos-flavored heuristic in which ordered collections
+were the expensive case (linearize an unordered carrier $=$ well-order $=$
+full choice), it \emph{inverts} the cost: here $\List$ is free and the
+quotients are dear. The two framings concern different maps, and the
+finite-limits, syntactic stance is what reconciles them:
+
+\begin{principle}[The McBride move trades and discharges]
+\label{prin:trade}
+Going through the derivative trades the \emph{well-ordering flavor} of choice
+for the \emph{quotient-section flavor}, and then discharges the former for
+free. The foci of a term-splitting are \emph{positions}, and positions are
+pre-ordered by the term's own structure (Proposition~\ref{prop:dewey}). Syntax
+hands you the linear order. So over a term rewrite system, packaging is
+derivable from the positional order, and choice re-enters only through the
+quotient equations, and only when the atom object $A$ carries no
+cartesian-definable linear order.
+\end{principle}
+
+\begin{conjecture}[Choice content of packaging]
+\label{conj:main}
+The choice content of $\Pack_{\Coll}$ equals the assertion that the atom
+object $A$ admits a linear order. Equivalently: with an order on $A$ supplied,
+$\Pack_{\Coll}$ is derivable for every finitary $\Coll$ presented as a quotient
+of $\List$; without one, $\Pack_{\Coll}$ is the added choice operation, and its
+strength is graded by the equations $\qmap_{\Coll}$ quotients $\List$ by. In
+particular the construction is kept \emph{parametric in an order on atoms}:
+supplying the parameter makes packaging free; withholding it isolates the
+entire choice residue at the atom object.
+\end{conjecture}
+
+The parametricity is deliberate and is the hook for later work
+(\S\ref{sec:discussion}): in a reflective setting the atoms are quoted
+processes --- names --- and an order on names is exactly a place where a knot
+may be tied. Leaving the order parametric localizes the choice content at the
+reflection boundary, where we will want to act on it.
+
+\section{Grading the conjecture in the Weihrauch lattice}
+\label{sec:grading}
+
+Conjecture~\ref{conj:main} is not a switch but a dial, and the natural home
+for its grading is the Weihrauch lattice \cite{BrattkaGherardi11}, which
+measures the uniform strength of a choice principle. i state the intended
+grading as a program; the finitary cases are within reach of the sketch of
+Theorem~\ref{thm:instances}, the infinitary ones are open.
+
+\begin{conjecture}[Weihrauch grading]
+\label{conj:weihrauch}
+The Weihrauch degree of $\Pack_{\Coll}$ over an atom object $A$ is monotone in
+the substructural strength of $\Coll$ --- i.e.\ in the equations
+$\qmap_{\Coll}$ adds to $\List$ --- and is bounded as follows:
+\begin{itemize}[leftmargin=1.4em]
+\item $\Pack_{\List}$: the identity; the bottom of the lattice.
+\item $\Pack_{\Mset}$ over finite bags on discrete $A$: the finite/bounded
+      choice needed to order each finite support uniformly; low in the
+      lattice, below $\mathsf{LPO}$ when $A$ is discrete.
+\item $\Pack_{\Mset}$ over an arbitrary (possibly infinite) atom object: a
+      closed-choice principle $\mathsf{C}_{A}$ on the carrier, climbing toward
+      well-ordering as $A$ grows; the well-ordering flavor of
+      Principle~\ref{prin:trade} re-emerges exactly here, when the syntactic
+      order is unavailable.
+\item $\Pack_{\Pfin}$: the degree of $\Pack_{\Mset}$ joined with the
+      equality/deduplication decision, adding an $\mathsf{LPO}$-flavored
+      component for the idempotence quotient.
+\end{itemize}
+\end{conjecture}
+
+The value of the Weihrauch reading is that it reframes the no-go theorems of
+\S\ref{sec:nogo} not as yes/no obstructions but as \emph{choice-strength
+measurements}. Where the classical no-go statement says ``no distributive law
+exists,'' the graded statement says ``the section that stands in for the
+missing law has degree $d$,'' and $d$ is a monotone invariant of how far
+$\Coll$ sits from the free case. That is the stronger thesis hiding inside the
+bare conjecture.
+
+\section{The three instances, concretely}
+\label{sec:instances}
+
+i collect the worked instances. In each, the theory is the cartesian base
+extended by the weakest recursor for the relevant $\mu$-type
+(Remark~\ref{rem:recursor}); the atom order is the parameter of
+Conjecture~\ref{conj:main}.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{@{}llll@{}}
+\hline
+$\Coll$ & equations added to $\List$ & $\pack_{\Coll}$ & choice residue \\
+\hline
+$\List$  & none                       & $\id$                                   & none \\
+$\Mset$  & commutativity              & $\mathsf{sort}_{\le}$                   & order on $A$ \\
+$\Pfin$  & commutativity, idempotence & $\mathsf{dedup}\circ\mathsf{sort}_{\le}$ & order on $A$, $=$ on $A$ \\
+\hline
+\end{tabular}
+\end{center}
+
+\begin{example}[List: nothing is spent]
+$\List\,A = \mu X.\,1 + A\times X$; $\qmap_{\List}=\id$; the section is the
+identity. The proto power object $\Proto(\List\,A)$ has $\p(\List\,A) \cong
+\List\,A \times \List\,A$ (prefix, suffix), and a splitting is
+$(\text{prefix},\text{focus},\text{suffix})$. Packaging is free because there
+is nothing to reassemble past the given list order.
+\end{example}
+
+\begin{example}[Bag: order on atoms is spent]
+$\Mset\,A = \List\,A/\text{perm}$. With $\le$ on $A$, insertion sort is a fold
+selecting the sorted representative, and $\qmap_{\Mset}\circ\mathsf{sort}_{\le}
+= \id$. Withhold $\le$ and no cartesian term produces a representative
+uniformly; $\pack_{\Mset}$ must be postulated, and by Theorem~\ref{thm:instances}(ii)
+its postulation is inter-derivable with linearly ordering $A$. This is the
+cleanest witness for Conjecture~\ref{conj:main}.
+\end{example}
+
+\begin{example}[Finite powerset: order and equality]
+$\Pfin\,A = \List\,A/(\text{perm}+\text{idem})$. Packaging needs the sorted
+representative of the previous example \emph{and} a deduplication, hence
+decidable equality on $A$ in addition to the order. The two additions are
+exactly the two quotient equations, confirming Principle~\ref{prin:twice}: the
+idempotence that obstructs $\Pfin$'s distributive laws is the same idempotence
+that must be paid for, as $\mathsf{dedup}$, at packaging time.
+\end{example}
+
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{No classicality collapse.} The absence of Diaconescu's argument in
+the cartesian fragment (\S\ref{sec:finlim}(3)) is what makes this entire
+program viable. We add a choice operation --- $\pack_{\Coll}$ --- and the
+object logic does not thereby go Boolean, because the collapse needs $\vee$,
+comprehension, and effective-quotient machinery that the metalanguage does not
+provide. Choice remains structural. A logic assembled this way can have any
+setting of the substructural dial (Principle~\ref{prin:dial}) and still admit
+packaging, without being forced to classicalize. This is the payoff i most
+want the AI community to register: inspectable choice that does not
+contaminate the logic it serves.
+
+\paragraph{Quotient versus choice as dual dodges.} \S\ref{sec:nogo} noted two
+standard escapes from the no-go theorems --- quotient (adjust $\Coll$ until the
+equations agree) and restrict (shrink until they cannot clash) --- and offered
+a third, adding a global section. i conjecture these are dual: the
+quotient-dodge builds a coequalizer, the section-dodge splits it; the
+restrict-dodge builds a well-founded (finite, ordered) carrier, the
+section-dodge well-orders it. In slogan form: \emph{coequalizer versus Zorn}.
+Making this duality precise --- exhibiting the section-dodge as the formal dual
+of the quotient-dodge in the appropriate fibration --- is the natural next
+technical step, and it would situate the construction cleanly against the
+existing distributive-law literature.
+
+\paragraph{Graphs are the genuine frontier.} Everything here rests on $\T$
+being a polynomial/container functor, so that $\p\T$ exists and
+Definition~\ref{def:proto} is available. Lists and trees are fine. Graphs are
+not free/regular in the naive sense, the McBride derivative does not directly
+apply, and the proto power object is not defined. i bracket the graph case
+explicitly rather than let it ride along with lists and trees; adapting the
+derivative to non-regular carriers (or replacing it by a suitable
+comonadic/traced structure) is the honest open problem for extending the
+collection dial past the container-shaped settings.
+
+\paragraph{The atom-order parameter and knot-tying.} Conjecture~\ref{conj:main}
+keeps the order on atoms parametric on purpose. In the reflective (rho) setting
+the atoms are quoted processes --- names --- and the boundary between process
+and name is exactly the reflection boundary. An order on names is therefore a
+structure imposed \emph{at} that boundary, and it is precisely the datum a
+knot-tying construction will manipulate. By isolating the entire choice residue
+of packaging in the atom order, the present construction leaves the knot
+exactly one place to be tied: supply the order (and packaging trivializes; the
+knot is untied) or withhold it (and the choice residue is the knot). This is
+the sense in which the finite-limits, derivative-based account is not merely a
+reconciliation of the collection component with categorical logic, but a setup
+for the reflective constructions to come.
+
+\paragraph{Summary.} The three-component decomposition makes the seams of a
+logic visible under realizability; the collection component is a substructural
+dial governed by commutativity and idempotence; those same two equations
+obstruct the distributive laws and set the cost of packaging; the
+finite-limits metalanguage removes the subobject classifier (forcing the
+syntactic route) and forbids stating choice as a proposition (forcing it to be
+a named section), while blocking the classicality collapse that would
+otherwise make this untenable; the McBride derivative supplies the proto power
+object and, through the positional order on splittings, discharges the
+well-ordering flavor of choice; and what remains --- the choice content of
+packaging --- is exactly the order on atoms, kept parametric for the knot to
+act on. That is the construction i wanted to formalize, and the shape of the
+program it opens.
+
+\begin{thebibliography}{99}
+
+\bibitem{Kleene45} S.~C.\ Kleene. On the interpretation of intuitionistic
+number theory. \emph{Journal of Symbolic Logic}, 10:109--124, 1945.
+
+\bibitem{vanOosten08} J.\ van Oosten. \emph{Realizability: An Introduction to
+its Categorical Side}. Studies in Logic and the Foundations of Mathematics
+152, Elsevier, 2008.
+
+\bibitem{MeredithRadestock05a} L.~G.\ Meredith and M.\ Radestock. A reflective
+higher-order calculus. \emph{Electronic Notes in Theoretical Computer
+Science}, 141(5):49--67, 2005.
+
+\bibitem{MeredithRadestock05b} L.~G.\ Meredith and M.\ Radestock. Namespace
+logic: A logic for a reflective higher-order calculus. In \emph{Trustworthy
+Global Computing (TGC)}, LNCS 3705, 2005.
+
+\bibitem{Beck69} J.\ Beck. Distributive laws. In \emph{Seminar on Triples and
+Categorical Homology Theory}, LNM 80, pp.\ 119--140, Springer, 1969.
+
+\bibitem{KlinSalamanca18} B.\ Klin and J.\ Salamanca. Iterated covariant
+powerset is not a monad. In \emph{Mathematical Foundations of Programming
+Semantics (MFPS)}, ENTCS 341, 2018.
+
+\bibitem{VaraccaWinskel06} D.\ Varacca and G.\ Winskel. Distributing
+probability over non-determinism. \emph{Mathematical Structures in Computer
+Science}, 16(1):87--113, 2006.
+
+\bibitem{ZwartMarsden19} M.\ Zwart and D.\ Marsden. No-go theorems for
+distributive laws. In \emph{Logic in Computer Science (LICS)}, 2019.
+(Extended version: \emph{Logical Methods in Computer Science}, 2022.)
+
+\bibitem{McBride01} C.\ McBride. The derivative of a regular type is its type
+of one-hole contexts. Unpublished manuscript, 2001.
+
+\bibitem{AAGM05} M.\ Abbott, T.\ Altenkirch, N.\ Ghani, and C.\ McBride.
+$\partial$ for data: Differentiating data structures. \emph{Fundamenta
+Informaticae}, 65(1--2):1--28, 2005.
+
+\bibitem{Huet97} G.\ Huet. The zipper. \emph{Journal of Functional
+Programming}, 7(5):549--554, 1997.
+
+\bibitem{Freyd72} P.\ Freyd. Aspects of topoi. \emph{Bulletin of the
+Australian Mathematical Society}, 7:1--76, 1972.
+
+\bibitem{GabrielUlmer71} P.\ Gabriel and F.\ Ulmer. \emph{Lokal
+pr\"asentierbare Kategorien}. LNM 221, Springer, 1971.
+
+\bibitem{PalmgrenVickers07} E.\ Palmgren and S.~J.\ Vickers. Partial Horn
+logic and cartesian categories. \emph{Annals of Pure and Applied Logic},
+145(3):314--353, 2007.
+
+\bibitem{Diaconescu75} R.\ Diaconescu. Axiom of choice and complementation.
+\emph{Proceedings of the American Mathematical Society}, 51:176--178, 1975.
+
+\bibitem{MacLaneMoerdijk92} S.\ Mac Lane and I.\ Moerdijk. \emph{Sheaves in
+Geometry and Logic: A First Introduction to Topos Theory}. Springer, 1992.
+
+\bibitem{BrattkaGherardi11} V.\ Brattka and G.\ Gherardi. Weihrauch degrees,
+omniscience principles and weak computability. \emph{Journal of Symbolic
+Logic}, 76(1):143--176, 2011.
+
+\end{thebibliography}
+
+\end{document}
