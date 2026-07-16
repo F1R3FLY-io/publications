@@ -1,0 +1,484 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+
+% ---- theorem environments ----
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}[definition]{Example}
+\theoremstyle{plain}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+\newtheorem{conjecture}[definition]{Conjecture}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+
+% ---- notation ----
+\newcommand{\Sig}{\mathsf{Sig}}
+\newcommand{\Stk}{\mathsf{Stk}}
+\newcommand{\Hist}{\mathsf{Hist}}
+\newcommand{\Ev}{\mathsf{Ev}}
+\newcommand{\Real}{\mathbb{R}}
+\newcommand{\Rpos}{\mathbb{R}_{>0}}
+\newcommand{\cost}{\mathsf{C}}
+\newcommand{\hist}{\mathsf{H}}
+\newcommand{\ciGSLT}{\mathsf{ciGSLT}}
+\newcommand{\Grph}{\mathcal{G}}
+\newcommand{\cover}{\widetilde{\mathcal{G}}}
+\newcommand{\im}{\operatorname{im}}
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\fund}{\pi_1}
+\newcommand{\emptyhist}{\varepsilon}
+\DeclareMathOperator{\Betti}{b_1}
+\DeclareMathOperator{\hol}{hol}
+
+\title{\bfseries History as an Endofunctor\\[0.35em]
+\large Reversibility, Covering Spaces, and the Memory Price of Energy Conservation\\ in Cost-Accounted GSLTs}
+\author{L.~G.~Meredith\\ \small F1R3FLY.io}
+\date{July 2026 --- working note}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Keeping a history as part of the state, and appending to it at every rewrite, recovers
+reversibility: a rewrite theory that discards its past is irreversible precisely because a
+configuration may have many predecessors, and recording which step was taken restores a unique
+one. We package this as an endofunctor $\hist$ on the category $\ciGSLT$ of continued interactive
+graph-structured lambda theories---the writer monad over the free monoid of rewrite events---and
+observe that it is the time-reversal dual of the cost endofunctor $\cost$: where $\cost$ debits a
+forward fuel modulus that \emph{drains} with reduction, $\hist$ accrues a backward trace that
+\emph{accumulates}, the two being the ledgers of what remains and what was spent along one time
+axis. The free history makes the graph of computation paths out of a term into a \emph{tree}: it
+is the universal cover of the reduction graph, and reversibility is exactly its unique-parent
+property. Erasures on the history form a lattice of monad quotients between this reversible cover
+and the irreversible base; the injective ones compress the log without folding the tree, while the
+identifying ones fold it, closing loops so that paths revisit states---an intermediate cover, i.e.\
+a quotient of the reduction graph's fundamental group by a chosen set of loops, with the
+order-forgetting (Mazurkiewicz) erasure folding exactly the commuting concurrent steps. Attaching
+the virtual-token energy of the companion note as a $1$-cochain on the reduction graph, we find
+that conservation of energy inverts the naive expectation: it is not bought by coarser erasure but
+is a \emph{lower bound on how much history must be kept}, set by the arbitrage (holonomy) class of
+the energy form. Frictionless (exact) energy is conserved at every grade, down to total erasure;
+dissipative energy carries holonomy, and conserving it forces retention of exactly the loops that
+holonomy obstructs---the holonomy-trivialising cover. Underneath sits a ledger law needing no
+cohomology---initial fuel equals fuel remaining plus fuel recorded spent, a potential-plus-kinetic
+invariant---whose one-way breakage under erasure is Landauer's principle: the history one may erase
+for free is exactly the redundant, state-recoverable (exact) part, so the Hodge threshold of the
+companion note and the Landauer threshold index the same class. Reversibility finally supplies the
+time-reversal symmetry whose Noether charge is the conserved energy, offering the generative half
+that the companion note's energy--time conjecture left open. Two structural refinements---the
+sublattice of energy-conserving grades and the dagger structure of the free history---are noted and
+deferred.
+\end{abstract}
+
+\section{Introduction}
+
+The cost endofunctor $\cost$ on $\ciGSLT$ \cite{CE} meters a rewrite theory by gating each step on
+the consumption of a token; the companion note \cite{VT} adjoins engines between token colours and
+extracts a virtual token---an energy---as the potential whose existence is no-arbitrage. Both
+constructions run \emph{forward}: they spend. This note adds the complementary gesture. A rewrite
+theory is irreversible because reduction forgets: from $Q$ one cannot in general recover the $P$
+that reduced to it, since many $P$ may. If instead the state carries a \emph{history}---a record of
+the steps taken---and each rewrite \emph{appends} to it, then the predecessor is recorded and
+reduction becomes invertible. Reversibility is not a new dynamics; it is the old dynamics run over
+an enriched state that refuses to forget.
+
+We make ``refuse to forget'' functorial. Section~\ref{sec:monad} presents the history endofunctor
+$\hist$ as the writer monad over the free monoid of rewrite events, dual in character to $\cost$
+and equipped with the same free--forgetful resolution, with the augmentation that drops history
+being the reintroduction of irreversibility. Section~\ref{sec:tree} identifies the free history's
+state graph as the universal cover of the reduction graph---a tree---and reversibility as its
+unique-parent property. Section~\ref{sec:erasure} organises the erasures as a lattice of quotients
+between the reversible cover and the irreversible base, distinguishing the erasures that merely
+compress the log from those that fold the tree and re-admit loops. Section~\ref{sec:energy} carries
+the virtual-token energy onto the reduction graph as a $1$-cochain, and Section~\ref{sec:price}
+draws the note's main consequence: energy conservation is a lower bound on retained history, set by
+the holonomy of that cochain. Section~\ref{sec:ledger} exhibits the underlying ledger law and reads
+its one-way breakage as Landauer's principle, identifying the free-to-erase history with the exact
+part of the energy form. Section~\ref{sec:noether} observes that reversibility supplies the
+time-reversal symmetry whose Noether charge is the conserved energy, addressing the generative half
+of the companion note's conjecture. Section~\ref{sec:further} records two deferred refinements.
+
+Throughout, the register is that of a working note: several statements are given at the level of
+rigour the setting affords, with the load-bearing refinements flagged as such.
+
+\section{The history monad}
+\label{sec:monad}
+
+Fix a continued interactive GSLT $G=(\Sigma,E,R)$ with interacting sort $P$ and rewrite rules $R$.
+
+\begin{definition}[Rewrite events]\label{def:event}
+A \emph{rewrite event} for $G$ records everything needed to invert one step: the rule
+$\ell\to r\in R$ fired, the occurrence (context) at which it fired, and, in a non-left-linear
+theory, the material discarded or duplicated by the step together with the choice made among
+concurrently enabled redexes. Write $\Ev$ for the set of events and
+$M=(\Ev^{*},\cdot,\emptyhist)$ for the free monoid on $\Ev$: finite sequences of events under
+concatenation, with the empty history $\emptyhist$.
+\end{definition}
+
+\begin{definition}[The history endofunctor]\label{def:hist}
+$\hist(G)$ is the continued interactive GSLT whose interacting configurations are pairs $(P,h)$ with
+$h\in M$, and whose rules are the \emph{logged} rules: for each $\ell\to r$ in $R$,
+\[
+  (\ell,\,h)\ \longrightarrow\ (r,\,h\cdot e_{\ell\to r}),
+\]
+appending the event $e_{\ell\to r}$ that names this step. Structural equations, the section, and
+the token apparatus (if $G$ is already cost-accounted) are carried unchanged on the first
+component; the history component is inert under $\equiv$.
+\end{definition}
+
+\begin{proposition}[$\hist$ is a monad, dual to $\cost$]\label{prop:monad}
+$\hist$ carries the structure of a monad $(\hist,\eta,\mu)$ on $\ciGSLT$. The unit
+$\eta_G:G\to\hist(G)$, $P\mapsto(P,\emptyhist)$, starts every term with the empty history; the
+multiplication $\mu_G:\hist^2(G)\to\hist(G)$ concatenates a history-of-histories into a single
+history. The augmentation $\pi_G:\hist(G)\to G$, $(P,h)\mapsto P$, forgets the history; it is a
+$\ciGSLT$-morphism, and $\pi_G\circ\eta_G=\id_G$. As with $\cost$ \cite[\S9]{CE}, $\hist$ resolves
+through a free--forgetful adjunction $\mathrm{Log}\dashv\mathrm{Forget}$ whose induced monad is
+$\hist$: $\mathrm{Log}$ installs the history apparatus and $\mathrm{Forget}$ strips it, the
+stripping being behaviour-altering---it reintroduces irreversibility.
+\end{proposition}
+
+\begin{remark}[Two ledgers of one clock]\label{rmk:duality}
+$\hist$ and $\cost$ are the two temporal halves of a single construction. The token stack $::$ of
+$\cost$ is a \emph{forward} modulus: it is produced up front and \emph{drained} by reduction, its
+consumed prefix being the run length \cite[Prop.~4.1]{CE}. The history $h$ of $\hist$ is the
+\emph{same quantity accrued from the other end}: it is produced by reduction and never drained, its
+length being the run length again. One is the ledger of fuel remaining, the other the ledger of
+fuel spent; together they book-keep one clock from both ends. This duality is sharpened into a
+conservation law in Section~\ref{sec:ledger}, where the two lengths are shown to sum to a constant.
+\end{remark}
+
+\section{The free history is the reversible tree}
+\label{sec:tree}
+
+Let $\Grph(P)$ be the \emph{reduction graph} rooted at a term $P$: vertices are the configurations
+reachable from $P$ under $R$, edges are single steps. Irreversibility of $G$ is visible here as the
+failure of a unique-predecessor property---a vertex may have several in-edges (two terms reducing to
+a common one) or lie on a self-loop (e.g.\ $\Omega\to\Omega$).
+
+\begin{proposition}[Free history unfolds the reduction graph]\label{prop:cover}
+Let $\hist_{\mathrm{free}}$ be the history functor of Definition~\ref{def:hist} with the full free
+monoid $M$ (no erasure). The sub-LTS of $\hist_{\mathrm{free}}(G)$ reachable from
+$(P,\emptyhist)$ is isomorphic to the tree unfolding of $\Grph(P)$---equivalently, to its universal
+cover $\cover(P)$---with the augmentation $\pi_G$ as the covering map. Concretely, its vertices are
+the finite reduction \emph{paths} out of $P$, an edge extends a path by one step, and the history
+of a node is its address: the path from the root.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+A reachable configuration $(Q,h)$ is determined by $h$, since $h$ is the sequence of steps taken
+and $P$ is fixed; and every $h$ that is a valid step-sequence from $P$ occurs, ending at the term
+$Q=\pi_G(Q,h)$ it induces. Thus reachable configurations are in bijection with finite reduction
+paths from $P$, edges extend by one event, and no two distinct paths are identified---this is the
+tree unfolding, whose defining universal property among covers of $\Grph(P)$ makes it the universal
+cover; $\pi_G$ sends a path to its endpoint, a covering map.
+\end{proof}
+
+\begin{corollary}[History is reversibility]\label{cor:rev}
+In $\hist_{\mathrm{free}}(G)$ every non-root node has a unique parent---delete the last event---so
+the backward relation is a total function on the reachable tree: $\hist_{\mathrm{free}}(G)$ is
+backward-deterministic. ``Keep a history'' and ``the computation graph is a tree'' are one
+statement; the tree is the reversible cover, and the base $\Grph(P)$ is recovered by folding it
+along $\pi_G$.
+\end{corollary}
+
+Corollary~\ref{cor:rev} is the abstract form of the constructions that make specific process
+calculi reversible by remembering their past---CCSK \cite{CCSK} and RCCS \cite{RCCS}; here the
+remembering is the free monad $\hist_{\mathrm{free}}$ and backward-determinism is the tree's
+unique-parent property, before any calculus-specific bookkeeping.
+
+\section{Erasures: the grading lattice}
+\label{sec:erasure}
+
+Between the reversible cover and the irreversible base lie the partial histories. An \emph{erasure}
+is a congruence $\sim$ on the history monoid $M$ that is compatible with appending and with the
+dynamics, yielding a quotient monad $\hist_{\sim}$ and a factorisation of the augmentation
+\[
+  \hist_{\mathrm{free}}(G)\ \twoheadrightarrow\ \hist_{\sim}(G)\ \twoheadrightarrow\ \id(G)=G,
+\]
+the right-hand terminal quotient collapsing all history. Under refinement these erasures form a
+lattice, with $\hist_{\mathrm{free}}$ at the top (remember everything, fully reversible) and the
+base at the bottom (remember nothing, fully irreversible).
+
+Two qualitatively different bands of the lattice matter.
+
+\begin{definition}[Log-compressing vs.\ folding erasures]\label{def:bands}
+An erasure is \emph{log-compressing} if the induced map on reachable configurations remains
+injective---distinct nodes of $\cover(P)$ stay distinct---so only the \emph{addresses} shorten while
+the tree, and hence reversibility, is preserved. An erasure is \emph{folding} if it identifies
+distinct nodes lying over a common base vertex, closing a loop; thereafter a path may revisit a
+state and the quotient is a proper intermediate cover of $\Grph(P)$.
+\end{definition}
+
+\begin{proposition}[Folding erasures are intermediate covers]\label{prop:galois}
+The folding erasures of $\hist_{\mathrm{free}}(G)$ over $\Grph(P)$ correspond, by the Galois theory
+of covering spaces, to the subgroups of the fundamental group $\fund(\Grph(P))$---a free group of
+rank $\Betti(\Grph(P))$. A folding erasure closes exactly the loops in its chosen subgroup;
+choosing all loops recovers the base, choosing none recovers the tree.
+\end{proposition}
+
+\begin{remark}[The order-forgetting erasure is true concurrency]\label{rmk:mazurkiewicz}
+One folding grade is distinguished. Abelianising the history---retaining the \emph{multiset} of
+events rather than their order---identifies two paths iff they differ by transposing independent,
+concurrently-enabled steps. This is the maximal abelian cover, and in a concurrent theory it is
+exactly the Mazurkiewicz-trace \cite{Mazurkiewicz} (true-concurrency) unfolding: the grade at which
+``same computation up to scheduling'' becomes ``same state.'' The purely sequential interleavings
+are folded away; only genuinely causal branching remains in the tree.
+\end{remark}
+
+\begin{remark}[Loop rank here, arbitrage rank there]
+The rank $\Betti(\Grph(P))$ governing the folding lattice is the first Betti number of the
+\emph{reduction} graph, the exact analogue of the first Betti number of the \emph{engine} graph
+that governed the arbitrage lattice of \cite[Prop.~4.3]{VT}. In both notes the room for a
+degeneracy---loops to close here, arbitrage cycles to price there---is a first homology of a graph,
+and the two constructions meet in the next two sections, where the energy of \cite{VT} is evaluated
+along the loops of $\Grph(P)$.
+\end{remark}
+
+\section{Energy on the reduction graph}
+\label{sec:energy}
+
+The companion note \cite{VT} produces, from an arbitrage-free system of engines, a virtual-token
+valuation $\nu$ assigning each token colour a real value, and---under friction---a dissipation
+$\theta\ge 0$ charged by each lossy conversion \cite[\S7]{VT}. Transport this onto the reduction
+graph as the energy increment effected by each step.
+
+\begin{definition}[Energy $1$-cochain]\label{def:omega}
+The \emph{energy form} $\omega\in C^1(\Grph(P);\Real)$ assigns to each step $Q\to Q'$ the
+virtual-token energy it effects, inclusive of any dissipation: $\omega(Q\to Q')$ is the change in
+$\nu$-value of the configuration's token content across the step, plus the dissipation $\theta$ of
+any lossy engine the step invokes.
+\end{definition}
+
+By the graph--Hodge decomposition \cite{Hodge} used in \cite[\S4]{VT}, $\omega$ splits orthogonally,
+\[
+  \omega \;=\; \underbrace{\delta\phi}_{\text{exact}} \;\oplus\; \underbrace{\omega_{\mathrm{cyc}}}_{\text{cyclic}},
+\]
+with $\delta\phi$ the gradient of a state-energy potential $\phi$ on configurations and
+$\omega_{\mathrm{cyc}}$ a divergence-free circulation. The holonomy of a loop $\gamma$ in
+$\Grph(P)$ is
+\[
+  \hol(\gamma)\;=\;\oint_{\gamma}\omega\;=\;\oint_{\gamma}\omega_{\mathrm{cyc}},
+\]
+the exact part contributing nothing around closed paths.
+
+\begin{proposition}[Exactness is frictionless energy]\label{prop:exact}
+$\omega$ is exact---$\omega_{\mathrm{cyc}}=0$, all holonomies vanish---iff energy is a state
+function: the value $\phi(Q)$ of a configuration is path-independent, so no loop of computation
+changes the energy. This is the frictionless limit $\theta\equiv 0$. A nonzero holonomy
+$\hol(\gamma)\neq 0$ is exactly a loop around which the dissipation $\oint_\gamma\theta$ fails to
+cancel: energy tracked inclusive of loss is then path-dependent.
+\end{proposition}
+
+\section{The memory price of conservation}
+\label{sec:price}
+
+We can now state the note's main consequence. Fold the tree by some erasure; the folded loops are
+those the erasure closes (Proposition~\ref{prop:galois}). Energy descends to a well-defined state
+function on the folded quotient iff $\omega$ restricted to those loops is exact---iff every closed
+loop has vanishing holonomy.
+
+\begin{theorem}[Conservation bounds erasure from below]\label{thm:price}
+Let $\sim$ be a folding erasure closing the loop-subgroup $\Lambda\le\fund(\Grph(P))$. Energy is
+conserved on $\hist_{\sim}(G)$---i.e.\ $\phi$ descends to a single-valued state function on the
+folded quotient---iff $\hol(\gamma)=0$ for every $\gamma\in\Lambda$. Consequently:
+\begin{enumerate}[label=\textup{(\roman*)}]
+\item If $\omega$ is exact (arbitrage-free, frictionless), every $\Lambda$ satisfies the condition:
+energy is conserved at \emph{every} grade, down to and including total erasure. A conservative
+system tolerates arbitrary forgetting.
+\item If $\omega$ carries a nonzero holonomy class, the grades on which energy is conserved are
+exactly those whose closed loops avoid it. Conservation then \emph{forbids} folding the
+holonomy-carrying loops: they must remain unfolded as tree-branches, i.e.\ history recording them
+must be retained.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+A potential descends along a folding iff it is constant on each identified fibre, i.e.\ iff the
+increment around each closed loop is zero; that increment is $\hol(\gamma)$. (i) and (ii) are the
+two cases $\omega_{\mathrm{cyc}}=0$ and $\omega_{\mathrm{cyc}}\neq0$.
+\end{proof}
+
+The naive expectation---that coarser erasure buys conservation---is thus inverted. Conservation is
+a \emph{lower bound on how much history must be kept}, and the bound is set by the holonomy class of
+$\omega$: zero holonomy puts the bound on the floor (erase everything and energy survives), while
+nonzero holonomy forces retention up to the cover that trivialises it. That cover is the
+Riemann-surface move---unwinding a multivalued potential by climbing onto the sheet where it becomes
+single-valued, remembering the winding rather than collapsing it.
+
+\begin{corollary}[The maximal energy-conserving grade]\label{cor:maximal}
+Among the erasures on which energy is conserved there is a coarsest---fold the tree everywhere the
+potential is single-valued and leave it unfolded exactly where the holonomy obstructs, i.e.\ the
+cover corresponding to the smallest normal subgroup of $\fund(\Grph(P))$ containing every
+zero-holonomy loop. This is the natural physical state space of the computation: the reduction
+graph quotiented as far as energy conservation permits and no further.
+\end{corollary}
+
+We record that the existence of Corollary~\ref{cor:maximal}'s coarsest grade in full generality---as
+opposed to under finiteness of $\Grph(P)$---depends on the erasure lattice possessing the relevant
+joins, and defer this to Section~\ref{sec:further}.
+
+\section{The ledger law and Landauer's principle}
+\label{sec:ledger}
+
+Beneath the cohomology sits an elementary invariant, and it is the cleanest thing to state.
+
+\begin{proposition}[The ledger law: potential plus kinetic]\label{prop:ledger}
+Run a cost-accounted term under $\hist$ from an initial stack of depth $\sigma_0$ (total fuel). Let
+$\sigma(t)$ be the stack depth remaining and $\kappa(t)$ the number of events recorded in the
+history after $t$ steps. Each forced step pops one cell and appends one event, so
+\[
+  \sigma(t)+\kappa(t)\;=\;\sigma_0\qquad\text{for all }t.
+\]
+Fuel remaining plus fuel recorded spent is conserved by construction.
+\end{proposition}
+
+Read $\sigma$ as potential energy---fuel not yet expended---and $\kappa$ as kinetic---work done and
+logged. Their sum is the conserved total. Reversibility is that the transfer is invertible: undo a
+step (pop an event, push a cell) and one unit returns from spent to remaining. This is the
+frictionless, exact case of Section~\ref{sec:energy} read on the nose.
+
+Erasure is what makes the transfer one-way. Forget a recorded event and $\kappa$ falls, but $\sigma$
+cannot rise---one cannot un-spend fuel---so the invariant breaks \emph{irreversibly}.
+
+\begin{remark}[Landauer's principle]\label{rmk:landauer}
+The irreversible step is erasure, and erasure has a cost. Discarding a history event that is
+\emph{not} recoverable from the current state destroys information and, by Landauer's principle
+\cite{Landauer,Bennett}, dissipates energy as heat; discarding an event that \emph{is} recoverable
+from the state is logically reversible and free. The recoverable events are precisely those
+determined by the current configuration---the \emph{exact} part $\delta\phi$ of the energy form,
+the forced reversible returns---while the irrecoverable events are the holonomy-carrying part
+$\omega_{\mathrm{cyc}}$, the genuinely lost information. Hence the history one may erase for free is
+exactly the history whose erasure preserves energy: \emph{erase-freely} and
+\emph{conserve-energy-freely} are the same permission, bounded by the same class. The Hodge
+threshold of \cite{VT} and the Landauer threshold index one and the same cohomology class of
+$\omega$.
+\end{remark}
+
+Remark~\ref{rmk:landauer} is the mechanism under the exergy reading of \cite[\S7]{VT}: dissipation
+is the Landauer heat of erasing the irrecoverable, holonomy-carrying history, and the free energy
+that decreases monotonically is what remains recoverable.
+
+\section{Reversal symmetry and the generative half of energy}
+\label{sec:noether}
+
+The companion note closed with an energy--time conjecture \cite[Conj.~8.1]{VT}: the virtual token is
+manifestly the conserved \emph{charge}, but the token stack alone---one-way time, only draining---does
+not exhibit it as the \emph{generator} of the dynamics that physical energy (the Hamiltonian) is.
+The history functor supplies the missing direction.
+
+\begin{conjecture}[Reversal symmetry carries the generator]\label{conj:noether}
+In $\hist_{\mathrm{free}}(G)$ reduction is time-reversal symmetric: each forward step has a unique
+inverse (Corollary~\ref{cor:rev}), so the augmented dynamics admits an involution exchanging
+forward reduction with backward replay. This involution is the time-reversal symmetry whose Noether
+\cite{Noether} charge is the conserved energy of Theorem~\ref{thm:price}(i); the two-sided time of
+Remark~\ref{rmk:duality}---$::$ forward, $h$ backward, balanced by the ledger law---is the parameter
+it translates, and the conserved energy is its generator. The erasure grades measure how much of the
+symmetry, hence how much of the conservation, is spent: total erasure breaks the involution
+entirely and returns the one-way, non-generative charge of the stack alone.
+\end{conjecture}
+
+Conjecture~\ref{conj:noether} is offered as the reversible completion of \cite[Conj.~8.1]{VT}: the
+stack gives energy as a debit, the free history restores the reverse direction and hence the
+symmetry, and Noether's correspondence---where it can be made to hold---turns the symmetry's charge
+into the generator. Whether the involution is literally a dagger on the augmented LTS is the
+subject of the next section.
+
+\section{Two deferred refinements}
+\label{sec:further}
+
+Two structural questions are load-bearing and left for a subsequent note.
+
+\emph{The sublattice of energy-conserving grades.} Whether the erasures compatible with the rewrite
+structure form a lattice possessing the joins needed for the coarsest energy-conserving grade of
+Corollary~\ref{cor:maximal} to exist in general, or only under finiteness of $\Grph(P)$, is open.
+The covering-space correspondence of Proposition~\ref{prop:galois} suggests the answer is the
+lattice of subgroups of $\fund(\Grph(P))$ cut down to those closing only zero-holonomy loops; making
+this a genuine sublattice with a top element below the tree is the first refinement.
+
+\emph{The dagger structure of the free history.} Backward-determinism (Corollary~\ref{cor:rev})
+gives an involution on the reachable tree, but whether it is a genuine dagger on the augmented LTS
+of a \emph{non-linear} GSLT---where the discarded-and-duplicated-material bookkeeping of
+Definition~\ref{def:event} must be inverted exactly---is where a clean involution could fail. The
+reversible process calculi \cite{CCSK,RCCS} obtain backward-determinism in the linear setting; the
+non-linear case, and hence the precise sense of Conjecture~\ref{conj:noether}, is the second
+refinement.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Keeping a history and appending at every rewrite is an endofunctor $\hist$ on $\ciGSLT$, the writer
+monad over rewrite events and the time-reversal dual of the cost endofunctor: $\cost$ drains a
+forward modulus, $\hist$ accrues a backward one, and the ledger law binds the two into a conserved
+sum. The free history is the universal cover of the reduction graph---a tree---and reversibility is
+its unique-parent property; erasures grade the passage from this reversible cover down to the
+irreversible base through the intermediate covers, the order-forgetting grade landing on true
+concurrency. Evaluating the virtual-token energy of the companion note along the loops of the
+reduction graph inverts the naive picture of conservation: energy is conserved not by forgetting
+more but by remembering enough, the memory bound set by the holonomy class of the energy form, and
+the history free to erase is exactly the state-recoverable, exact part---so that the Hodge threshold
+of the companion note and Landauer's threshold coincide. Reversibility supplies the time-reversal
+symmetry whose Noether charge is the conserved energy, completing from the reverse direction the
+energy--time picture the companion note began. The construction is thus the temporal complement of
+cost accounting: where metering asks what a computation may spend, history asks what it must
+remember, and energy conservation is exactly the exchange rate between the two.
+
+\bigskip
+\noindent\emph{Nihil Sine Vestigio.}
+
+\begin{thebibliography}{99}
+
+\bibitem{VT} L.~G.~Meredith, \emph{Energy as a Virtual Token: No-Arbitrage, the Graph--Hodge
+Potential, and the Conserved Scalar of Cost-Accounted GSLTs}, F1R3FLY.io working note, 2026.
+
+\bibitem{CE} L.~G.~Meredith, \emph{Continued Interactive GSLTs and the Cost Endofunctor: A
+construction one level up from cost-accounted Rholang}, F1R3FLY.io, 2026.
+
+\bibitem{CARho} L.~G.~Meredith, \emph{Cost-Accounted Rho Calculus: A Spectral Decomposition of
+Phlogiston}, F1R3FLY.io, 2026.
+
+\bibitem{MC} L.~G.~Meredith, \emph{Mortal Computation: Mortality, the Genome, and Life-History in
+Cost-Accounted GSLTs}, F1R3FLY.io working note, 2026.
+
+\bibitem{CCSK} I.~Phillips and I.~Ulidowski, \emph{Reversing algebraic process calculi}, Journal of
+Logic and Algebraic Programming, vol.~73, no.~1--2, pp.~70--96, 2007.
+
+\bibitem{RCCS} V.~Danos and J.~Krivine, \emph{Reversible communicating systems}, in CONCUR 2004,
+Lecture Notes in Computer Science, vol.~3170, pp.~292--307, Springer, 2004.
+
+\bibitem{Landauer} R.~Landauer, \emph{Irreversibility and heat generation in the computing process},
+IBM Journal of Research and Development, vol.~5, no.~3, pp.~183--191, 1961.
+
+\bibitem{Bennett} C.~H.~Bennett, \emph{Logical reversibility of computation}, IBM Journal of
+Research and Development, vol.~17, no.~6, pp.~525--532, 1973.
+
+\bibitem{Mazurkiewicz} A.~Mazurkiewicz, \emph{Trace theory}, in Petri Nets: Applications and
+Relationships to Other Models of Concurrency, Lecture Notes in Computer Science, vol.~255,
+pp.~278--324, Springer, 1987.
+
+\bibitem{Moggi} E.~Moggi, \emph{Notions of computation and monads}, Information and Computation,
+vol.~93, no.~1, pp.~55--92, 1991.
+
+\bibitem{Hodge} X.~Jiang, L.-H.~Lim, Y.~Yao, and Y.~Ye, \emph{Statistical ranking and combinatorial
+Hodge theory}, Mathematical Programming, vol.~127, no.~1, pp.~203--244, 2011.
+
+\bibitem{Noether} E.~Noether, \emph{Invariante Variationsprobleme}, Nachrichten von der
+Gesellschaft der Wissenschaften zu G\"ottingen, Mathematisch-Physikalische Klasse, pp.~235--257,
+1918.
+
+\bibitem{MacLane} S.~Mac~Lane, \emph{Categories for the Working Mathematician}, 2nd ed., Graduate
+Texts in Mathematics, vol.~5, Springer, 1998.
+
+\end{thebibliography}
+
+\end{document}
