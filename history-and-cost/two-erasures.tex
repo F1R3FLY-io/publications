@@ -1,0 +1,783 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage[expansion=false]{microtype}
+
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{construction}[definition]{Construction}
+\newtheorem{example}[definition]{Example}
+
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+\newtheorem{conjecture}[definition]{Conjecture}
+
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{problem}{Problem}
+
+\newcommand{\ciG}{\mathsf{ciGSLT}}
+\newcommand{\iG}{\mathsf{iGSLT}}
+\newcommand{\CtxC}{\mathrm{Ctx}}
+\newcommand{\Sig}{\mathsf{Sig}}
+\newcommand{\Stk}{\mathsf{Stk}}
+\newcommand{\Ev}{\mathsf{Ev}}
+\newcommand{\Surf}{\mathsf{Surf}}
+\newcommand{\Alg}{\text{-}\mathsf{Alg}}
+\newcommand{\Kl}{\mathsf{Kl}}
+\newcommand{\rhoc}{\rho}
+\newcommand{\CCSrec}{\mathrm{CCS}{+}\mathrm{rec}}
+\newcommand{\compute}{\mathrm{compute}}
+\newcommand{\near}{\mathrm{near}}
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\Fcond}{(\mathrm{F})}
+\newcommand{\Dcond}{(\mathrm{D})}
+\newcommand{\Icond}{(\mathrm{I})}
+
+\title{Two Erasures and Two Laxities\\[4pt]
+\large Internalising the Cost and History Monads over Continued Interactive GSLTs}
+\author{L. G. Meredith\thanks{\texttt{lgreg.meredith@f1r3fly.io}}\\ F1R3FLY.io}
+\date{July 2026 --- working note}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Two constructions over the category $\ciG$ of continued interactive graph-structured lambda
+theories install an apparatus and then run with it. The cost endofunctor $C$ meters a theory by
+gating each step on the consumption of a token; the history endofunctor $H$ logs each step as an
+event, recovering reversibility. Both are monads, and both come with an evident free--forgetful
+resolution whose forgetful leg strips the apparatus off. This note is about a \emph{second}
+erasure, available for both and of an entirely different character: rather than stripping the
+apparatus, one encodes it back into the base theory, so that the metering or the logging is
+performed by the base's own computation. We argue that this second erasure is not an adjunction
+and should not be made into one. Both erasures are algebra structures for the monad on the base
+object --- forgetting is the trivial action, internalising the faithful one --- so the pair sits
+inside a lattice of graded lax algebras ordered by the kernel of the action, and the two
+resolutions the cost note reached for are simply the Kleisli and Eilenberg--Moore resolutions of
+one monad. This also corrects the hypothesis under which internalisation was previously claimed:
+Turing completeness supplies first-order data, whereas internalising a theory's own cost or
+history apparatus is a demand for the theory to code its own higher-order syntax, and the two
+routes to that demand are erasure by binding and reflection. The failure of an internalising
+algebra to be strict then splits into two kinds. \emph{Graded} laxity is overhead: the algebra
+laws hold up to relative bisimulation, at a cost measured in the monad's own monoid. \emph{Kernelled}
+laxity is loss: the algebra map identifies configurations the source distinguishes, and factors
+through a quotient. We run the analysis over three probes --- $\CCSrec$, $\lambda$, and $\rhoc$ ---
+and find that they do not differ over whether internalisation exists but over which laxity it
+suffers, with the grade decomposing into a positional and a representational factor on which
+$\lambda$ and $\rhoc$ sit at opposite corners. The duality that motivates the programme ---
+cost as resource-bounded forward evolution, history as the record required for reversal ---
+is then not a single theorem but a hierarchy of internality across the three probes.
+\end{abstract}
+
+\tableofcontents
+
+\section{The programme}
+\label{sec:programme}
+
+Three prior notes set up the pieces. The cost endofunctor note \cite{cost} isolates the class of
+theories on which cost accounting can be installed --- continued interactive GSLTs, whose dynamics
+is presented as an interaction cut and which carry a computable section of their
+structural-congruence quotient --- and builds an endofunctor $C$ that signs terms, adjoins a token
+stack, and replaces the cut by a gated family, so that no redex fires without spending a token.
+The probing-universality note \cite{probe} replaces the Turing yardstick with a relative property:
+one fixes a probe theory and asks what that probe can see, with contexts as the primary structure
+and two conditions --- hosting and exhausting --- preventing the question from having a trivial
+answer. The history note \cite{history} adds the complementary construction $H$, the writer monad
+over rewrite events, whose free instance unfolds the reduction graph into its universal cover and
+whose unique-parent property is reversibility.
+
+Each of $C$ and $H$ arrives with a free--forgetful adjunction. \emph{Install} the apparatus,
+\emph{forget} the apparatus. Forgetting is structure-preserving and behaviour-altering: strip the
+gating and the theory runs without friction; strip the log and it runs without a past.
+
+There is a second way to be rid of the apparatus, and it is the subject of this note. Instead of
+deleting it, encode it. If the base theory can represent the tokens, the stacks, the signatures ---
+or the events, the occurrences, the residuals --- as data of its own, then the metered or logged
+dynamics can be simulated by the base's own computation, and the adjoined sorts dissolve without
+the behaviour they governed being lost. Call this \emph{internalisation}. It is an erasure of the
+apparatus and not of what the apparatus did.
+
+The question this note sets out to answer is what kind of gadget internalisation is. The cost note
+guessed at an adjunction \cite[\S9.3]{cost}, and we will argue that the guess is wrong in three
+separable ways: the hypothesis is at the wrong level of the linear-time/branching-time spectrum,
+it is the wrong property even at the right level, and the conclusion as stated is vacuous. All
+three defects are repaired by machinery already present in \cite{probe}, and the repair yields a
+better object than the one originally sought.
+
+\paragraph{Plan.} Section~\ref{sec:setting} recalls $\ciG$. Section~\ref{sec:relative} recalls the
+relative notion of expressiveness and makes one clarification on which everything downstream turns:
+internal representability is a property of a morphism, not of an object.
+Section~\ref{sec:monads} recalls $C$ and $H$ and the sense in which they are two ledgers of one
+clock. Section~\ref{sec:erasures} sets the two erasures side by side and observes that both are
+algebras. Section~\ref{sec:gadget} proposes the gadget: a lattice of graded lax algebras.
+Section~\ref{sec:laxities} separates the two kinds of laxity. Section~\ref{sec:probes} runs the
+three probes. Section~\ref{sec:duality} states the duality as a hierarchy of internality.
+Section~\ref{sec:open} lists what is not settled.
+
+\paragraph{Register.} This is a working note. Several statements are given at the level of rigour
+the setting affords, and the load-bearing gaps are flagged as such rather than papered over.
+
+\section{The setting}
+\label{sec:setting}
+
+We recall only what is needed. A graph-structured lambda theory is a multi-sorted term theory
+$G = (\Sigma, E, R)$: a sorted signature with binding, a structural congruence $\equiv$, and a
+rewrite relation on the quotient. It is \emph{interactive} when it carries a distinguished
+interacting sort $P$ of programs, a binary interaction constructor $K(P,E)$ with $E$ an operand of
+the interacting sort, and at least one base rewrite rule headed by $K$ \cite[Def.~2.2]{probe}.
+
+\begin{definition}[The interaction cut]
+\label{def:cut}
+An interactive GSLT is presented in interaction-cut form when its generating rule is written
+\[
+K\bigl(K_p(I, C_p),\; K_e(J, C_e)\bigr) \longrightarrow K'\bigl(C'_p,\, C'_e\bigr),
+\qquad (C'_p, C'_e) = \compute(I,J,C_p,C_e),
+\tag{$\dagger$}
+\]
+naming the interaction constructor $K$; two introductions each separating an interaction surface
+($I$, $J$ --- the part that must match) from a continuation ($C_p$ the program continuation, $C_e$
+the environment continuation); and the partial contraction $\compute$, Milner's pseudo-application.
+\end{definition}
+
+Binding is one mode by which information migrates across the contraction, not a feature of the cut:
+CCS realises the shape with pseudo-application degenerating to pure release, and is in that sense
+the paradigmatic instance.
+
+\begin{definition}[Continued]
+\label{def:continued}
+An interactive GSLT is \emph{continued} when equipped with a presentation in the form $(\dagger)$
+and with a \emph{section}: a computable canonical-form function on the interacting sort. $\ciG$ is
+the category of these.
+\end{definition}
+
+Two facts about surfaces will matter. When $K$ is free, position is unforgeable and the surface is
+carried structurally, by the context $K([\,],S)$; when $K$ carries any equation, position is
+forgeable and the surface must be reified as an explicit datum, matched by a partial nearness
+operator $\near(I,J)$ \cite[Rmk.~2.7]{probe}. The two poles are a free $K$ ($\lambda$, where
+$K = \mathrm{App}$) and a freely mixed associative--commutative $K$ ($\rhoc$ and CCS, where
+$K = {\mid}$).
+
+\section{Relative expressiveness}
+\label{sec:relative}
+
+\subsection{Contexts as the primary structure}
+
+The move of \cite{probe} is to take contexts rather than terms as primary. A theory presents a
+symmetric multicategory $\CtxC(G)$ whose objects are interfaces $(s,n,\sigma)$ --- sort, binding
+stage, surface multiset --- and whose morphisms are multi-hole contexts taken modulo $\equiv$.
+Terms are the nullary contexts, so a functor $\CtxC(G) \to \CtxC(H)$ encodes terms and contexts by
+one and the same map. Transitions are labelled by contexts:
+$P \xrightarrow{\;C\;} Q$ iff $C \in L$ and $C[P] \to Q$, with the only primitive observation being
+$\Downarrow$, a reduction or a success report. No modal logic is used.
+
+A morphism $\iota : G \to H$ is a symmetric pseudofunctor of context multicategories, stage-indexed,
+preserving and reflecting $\Downarrow$. It induces a label class $L_\iota = \iota(\CtxC_1(G))$, and
+the target is observed \emph{only} through that class: $\sim_\iota$ is bisimulation in
+$\mathrm{CLTS}(H, L_\iota)$. This is what allows the extra expressive power of a target to be
+recorded as data about an encoding rather than as an obstruction to its existence.
+
+\begin{definition}[The two conditions]
+\label{def:conditions}
+$\iota$ \emph{hosts} $G$, written $\iota \models \Fcond$, if it is faithful up to bisimulation:
+$\iota(C) \sim_\iota \iota(D)$ implies $C \sim_{\CtxC_1(G)} D$. Its \emph{kernel} is the congruence
+$C \approx_\iota D \iff \iota(C) \sim_\iota \iota(D)$; hosting says the kernel is as fine as
+possible. $\iota$ \emph{exhausts} $H$, written $\iota \models \Dcond$, if it is dense: every
+$H$-context is $\sim_\iota$-indistinguishable from an assembly of $\iota$-images by parallel
+composition, restriction, and hole-filling.
+\end{definition}
+
+Hosting says the target can run the source; exhausting says the target is nothing the source cannot
+assemble. Together they say the two can write meta-circular interpreters for one another
+\cite[Cor.~6.4]{probe}. Every morphism factors as a quotient by its kernel followed by a hosting
+embedding \cite[Prop.~4.11]{probe}; we will use this factorisation as the diagnostic that separates
+our two laxities.
+
+\subsection{Internal representability, and a clarification}
+
+\begin{definition}[Condition $\Icond$]
+\label{def:I}
+$\iota : G \to H$ satisfies $\Icond$ if there is a coding $\ulcorner - \urcorner$ of $G$-terms as
+$H$-data, definable in $H$, and a single $H$-term $U_\iota$ with
+$U_\iota\langle \ulcorner P \urcorner \rangle \sim_\iota \iota(P)$ for every $G$-term $P$.
+\end{definition}
+
+Condition $\Icond$ is what turns a translation into an interpreter, and it is the condition on which
+internalisation rests. One clarification is essential, and its absence is the source of the error
+we are repairing.
+
+\begin{remark}[$\Icond$ is a property of a morphism, not of an object]
+\label{rmk:I-relative}
+The literature invites the reading ``theory $T$ satisfies $\Icond$,'' and \cite{probe} itself uses
+that shorthand in two places that appear to conflict. Its separations table records
+$\mathrm{TM}^\sharp \to \CCSrec$ as satisfying $\Icond$; its Remark~2.13 records that $\lambda$,
+$\pi$, and $\rhoc$ satisfy $\Icond$ and that CCS does not. Both are correct, because $\Icond$ is
+indexed by a source. $\CCSrec$ can internally represent Turing-machine configurations
+$\langle q, w, i\rangle$, which are first-order data and for which recursion supplies counters. It
+cannot internally represent \emph{its own contexts}, which are paths of actions, names, and
+residual bags of processes, and are therefore higher-order.
+
+Internalisation is always the second kind of demand. Its source is the theory's own apparatus, so
+the coding required is self-coding. Every claim below about a theory ``satisfying $\Icond$'' should
+be read as a claim about the endo-directed morphism, and nothing about a theory's power to code
+\emph{other} models transfers.
+\end{remark}
+
+There are exactly two known routes to self-coding, and \cite[\S2.3]{probe} names both. \emph{Erasure
+by binding}: a one-hole context is representable as a term, $C[\,] \mapsto \lambda x. C[x]$, with
+hole-filling realised by substitution. This is available in $\lambda$, $\pi$, and $\rhoc$.
+\emph{Reflection}: a context is representable as a name, available in $\rhoc$ and, there, twice over,
+since $@$ makes the representing term quotable in turn. CCS has neither: restriction hides a name
+but is never instantiated, prefix binds nothing, so there is no abstraction to form and no
+substitution to plug with. That is a statement about the layer derivative, not about computability,
+and no supply of channels or recursion touches it.
+
+\section{Two monads}
+\label{sec:monads}
+
+\subsection{The cost monad}
+
+$C$ adjoins to a continued interactive GSLT a sort $\Sig$ of signatures with
+$\# = \mathrm{digest} \circ \mathrm{cf}$ and a commutative monoid $(\Sig, *, ())$; a wrapped-term
+sort $T$ with $\{\cdot\}_s$; and a sort $\Stk$ of token stacks $S ::= (\,) \mid s :: S$. Every
+continuation slot is re-sorted to $T$, so in the image every continuation is a metered thunk by
+construction and the contraction need not be lifted. The cut is replaced by a gated family whose
+only run-time interaction with tokens is unwrapping: forcing a thunk by spending a matching cell
+\cite[\S3]{cost}.
+
+The unit $\eta_G(P) = \{P\}_{()}$ embeds $G$ as the cost-free fragment; the multiplication
+$\mu_G$ flattens by multiplying nested signatures in $(\Sig,*)$ and concatenating the
+stack-of-stacks in the free monoid $(\Stk, \cdot)$. It is a monad, and a non-idempotent one:
+flattening is a true merge of two resource accounts \cite[Rmk.~9.3]{cost}.
+
+\subsection{The history monad}
+
+$H$ adjoins a history component: configurations are pairs $(P,h)$ with $h$ in the free monoid
+$M = (\Ev^*, \cdot, \varepsilon)$ on rewrite events, and each rule is logged,
+$(\ell, h) \to (r, h \cdot e_{\ell \to r})$. The unit starts every term with the empty history, the
+multiplication concatenates, and the augmentation $\pi_G(P,h) = P$ forgets. The free history
+unfolds the reduction graph into its universal cover, and reversibility is that tree's unique-parent
+property \cite[\S3]{history}.
+
+\begin{remark}[Two ledgers of one clock]
+\label{rmk:ledger}
+The token stack is a forward modulus: produced up front, drained by reduction. The history is the
+same quantity accrued from the other end: produced by reduction, never drained. Run a cost-accounted
+term under $H$ from an initial stack of depth $\sigma_0$; each forced step pops one cell and appends
+one event, so $\sigma(t) + \kappa(t) = \sigma_0$ throughout \cite[Prop.~7.1]{history}. Fuel remaining
+plus fuel recorded spent is conserved by construction. This is the duality the present note is
+written to support, and the reason the two monads must be treated by one apparatus.
+\end{remark}
+
+A detail of Definition~2.1 of \cite{history} carries most of the weight of
+Section~\ref{sec:probes}: a rewrite event records the \emph{occurrence}, that is the context, at
+which the rule fired. Events are therefore higher-order data. Internalising $H$ is a demand that the
+theory code its own contexts; internalising $C$ is a demand that it code its own canonical forms.
+These are different demands, and $\rhoc$ satisfies both with one operator only because it fuses
+section and quotient in $@$ \cite[\S5]{cost}.
+
+\section{Two erasures}
+\label{sec:erasures}
+
+\subsection{Forgetting}
+
+For each monad the evident resolution installs and strips. $\mathrm{Free} \dashv \mathrm{Forget}$
+for $C$, $\mathrm{Log} \dashv \mathrm{Forget}$ for $H$. Forgetting is structure-preserving and
+behaviour-altering: erasing the gating removes the friction, so $\mathrm{Forget}\,\mathrm{Free}\,G$
+runs $G$'s interactions for nothing, and erasing the log reintroduces irreversibility.
+
+\subsection{Internalising}
+
+The cost note proposes a second construction \cite[\S9.3]{cost}. Restricting to Turing-complete
+bases, the metering apparatus of $C(G)$ --- signature equality, stack maintenance, gating --- is
+computable, hence encodable in $G$ itself, yielding $I_G : C(G) \to G$ with
+$I_G \circ \eta_G \approx \id_G$ up to weak bisimulation and, allegedly, an adjoint retraction
+$\eta_G \dashv I_G$ in a bicategory of simulations.
+
+\begin{remark}[Three defects]
+\label{rmk:defects}
+The construction is sound in spirit and unsound as stated.
+
+\emph{Wrong level.} Turing completeness is a statement about the input/output relation, the coarsest
+invariant in the linear-time/branching-time spectrum; the conclusion is stated up to weak
+bisimulation, at the other end. An interpreter decodes before it acts, decoding is silent work, and
+silent work relocates choice points, so the inference is exactly the one \cite{probe} exists to
+forbid.
+
+\emph{Wrong property.} Even granting the level, what internalisation requires is not universality
+but self-coding, and by Remark~\ref{rmk:I-relative} the two do not coincide. Turing completeness
+supplies first-order data. The signatures of $C(G)$ are digests of canonical forms of $G$-terms and
+the events of $H(G)$ carry $G$-contexts; both are higher-order demands, met by erasure by binding or
+by reflection and not by computability as such.
+
+\emph{Vacuous conclusion.} If unit and counit are both invertible up to bisimulation then the
+adjunction is an adjoint equivalence and the word does no work \cite[Rmk.~6.6]{probe}. The repair
+there is to grade, so that the failure to be an equivalence is exactly the interpretive overhead
+\cite[Cor.~6.9]{probe}; we take up that repair in Section~\ref{sec:laxities}.
+\end{remark}
+
+Note the mechanism of the repair, since it is the whole point. The cost note asks weak bisimulation
+to \emph{absorb} the interpreter's administrative steps. The relative setting instead restricts the
+observing contexts to $L_\iota$ and then recovers the overhead as a grade. Nothing is swept into
+$\tau$; the residue moves from the equivalence to the measure.
+
+\subsection{Both erasures are algebras}
+
+The following is elementary and, we think, decisive.
+
+\begin{proposition}[The trivial action is an algebra]
+\label{prop:trivial}
+Let $T$ be either $C$ or $H$ and let $\alpha_G : T(G) \to G$ discard the apparatus --- for $H$,
+$\alpha(P,h) = P$; for $C$, strip wrappers and ignore the stack. Then $\alpha \circ \eta = \id$ and
+$\alpha \circ T\alpha = \alpha \circ \mu$. Hence forgetting is an Eilenberg--Moore algebra structure
+on $G$: the trivial one.
+\end{proposition}
+
+\begin{proof}
+For $H$: $\eta(P) = (P,\varepsilon)$ and $\alpha(P,\varepsilon) = P$. Both $\alpha \circ H\alpha$ and
+$\alpha \circ \mu$ send $(P, h_2, h_1)$ to $P$, since both discard every history component. The $C$
+case is identical, with signature multiplication and stack concatenation both discarded.
+\end{proof}
+
+Internalisation, when it exists, is likewise a map $T(G) \to G$ satisfying the same two laws up to
+the equivalence in play. So the two erasures are not an adjunction and a not-an-adjunction. They are
+\emph{two algebra structures on the same object}, differing in the kernel of the action: forgetting
+has maximal kernel, internalising has --- when it hosts --- trivial kernel.
+
+\begin{remark}[What the cost note's two adjunctions actually are]
+\label{rmk:kleisli-em}
+The cost note promises ``two adjunctions with opposite embeddings'' \cite[\S9]{cost}. That phrase
+describes the Kleisli and Eilenberg--Moore resolutions of a monad, initial and terminal among
+resolutions. Its $\mathsf{Cost}\text{-}\ciG$ is the free side, i.e.\ Kleisli; internalisation lives
+on the Eilenberg--Moore side, as a lift along $U^C : \ciG^{C} \to \ciG$. The note built the first
+resolution and then went looking for the second in a place where it had already been. The
+internalisable objects are exactly those admitting such a lift, and the correct hypothesis cutting
+them out is $\Icond$ for the endo-directed morphism, not Turing completeness.
+\end{remark}
+
+\section{The gadget: a lattice of graded lax algebras}
+\label{sec:gadget}
+
+\subsection{Grading in the monad's own monoid}
+
+The grading of \cite[Def.~6.7]{probe} is a function $g : \mathbb{N} \to \mathbb{N}$ bounding the
+target steps per source step, introduced to rescue a degenerate adjunction. For $C$ and $H$ it need
+not be imported.
+
+\begin{definition}[Grading object]
+\label{def:grading}
+The grading object of $C$ is the monoid $(\Sig, *) \times (\Stk, \cdot)$; that of $H$ is
+$(\Ev^*, \cdot)$. In each case it is the monoid the monad already carries, and grades compose under
+$\mu$ by the monad's own multiplication: signatures multiply and stacks concatenate for $C$, events
+concatenate for $H$.
+\end{definition}
+
+So these monads \emph{measure their own internalisation, in their own currency}. This is a better
+situation than the general one, and it is what makes the grading intended semantics rather than a
+rescue: the token stack was already ``an exact operational modulus for the cut elimination, realised
+by running the reduction'' \cite[Prop.~4.1]{cost}, and the history is the same modulus accrued
+backwards.
+
+\begin{definition}[Graded lax algebra]
+\label{def:lax-algebra}
+A \emph{graded lax $T$-algebra} on $G$ is a $\CtxC$-morphism $\alpha : T(G) \to G$ together with
+2-cells
+\[
+u : \alpha \circ \eta_G \Rightarrow \id_G, \qquad
+a : \alpha \circ T\alpha \Rightarrow \alpha \circ \mu_G
+\]
+in the graded simulation bicategory, each witnessing an $\sim_\iota$-equivalence and each carrying a
+grade in the grading object of $T$, subject to the evident coherence.
+\end{definition}
+
+\begin{proposition}[The lattice]
+\label{prop:lattice}
+The graded lax $T$-algebra structures on a fixed $G$ are preordered by the kernel of the action.
+Proposition~\ref{prop:trivial} exhibits a bottom element --- the trivial action, maximal kernel ---
+and an internalisation with $\Fcond$, when one exists, is a top: trivial kernel. Intermediate
+algebras are partial erasures, retaining some of the apparatus as data and discarding the rest.
+\end{proposition}
+
+\begin{remark}[Relation to the erasure lattice of the history note]
+\label{rmk:galois}
+Section~4 of \cite{history} constructs a lattice of erasures for $H$ between the reversible cover
+and the irreversible base, corresponding by covering-space Galois theory to subgroups of
+$\pi_1(\mathcal{G}(P))$. That is a lattice of \emph{quotient monads} $H_\sim$, i.e.\ of congruences
+on $M$, whereas Proposition~\ref{prop:lattice} is a lattice of \emph{actions} of $M$ on a fixed base.
+These are two lattices related by a Galois connection --- an action factors through $H_\sim$ exactly
+when it kills $\sim$ --- and not the same lattice. The identification should not be made casually.
+Under it, the order-forgetting (Mazurkiewicz) grade of \cite[Rmk.~4.3]{history} is the action that
+kills exactly the transpositions of concurrently enabled steps.
+\end{remark}
+
+\subsection{When is there a monad map?}
+
+The most economical packaging would be a single 2-cell rather than per-object structure.
+
+\begin{definition}[Uniform internalisation]
+\label{def:monad-map}
+A \emph{lax monad morphism} $T \Rightarrow \mathrm{Id}$ on a full subcategory $\mathcal{K}
+\subseteq \ciG$ is a family $\alpha_G$ of graded lax $T$-algebras, natural in
+$\CtxC$-morphisms of $\mathcal{K}$, with $T$ restricting to $\mathcal{K}$.
+\end{definition}
+
+This exists exactly when $\mathcal{K}$ has a uniform faithful top: every object internalises, the
+choice is natural, and $T$ preserves membership. It is therefore a property of a class of theories
+and not the general gadget. Section~\ref{sec:probes} exhibits a class where it fails.
+
+Two closure questions attach to Definition~\ref{def:monad-map} and are not discharged here. First,
+whether $T$ restricts: $C(G)$ adjoins $\Sig$ and $\Stk$, which are inert under $\to$ and bind
+nothing, and by \cite[Rmk.~3.7]{probe} they enlarge the sort set while leaving the stage category
+untouched --- so the expectation is that $C$ preserves membership, but the argument that $C(G)$
+remains self-coding when $G$ is has not been written down. Second, whether hosting and exhausting
+transport: hosting does, by transitivity \cite[Prop.~4.7]{probe}, since
+$M \preceq G \preceq C(G)$ via $\eta$; exhausting is the live question, and we record what it
+amounts to.
+
+\begin{remark}[Closure and internalisability are the same condition]
+\label{rmk:closure}
+For a probe $M$ and an $M$-exact $G$, density of $M \to C(G)$ asks that every $C(G)$-context be
+$\sim_\iota$-indistinguishable from an assembly of $M$-images: that $M$ assemble wrappers, stacks,
+and the gated family. That is precisely the internalisation claim. So $C$ preserves $M$-exactness
+exactly when the apparatus internalises, and closure need not be proved separately.
+
+The witnessing assembly is, moreover, already on record. Section~7 of \cite{cost} describes what $C$
+was built to replace: ``fuel acquisition was an encoded multi-step protocol on auxiliary channels,''
+with $C$'s improvement over it being protocol fusion. That translation presentation is the density
+witness, and the grade of the internalisation is the fusion speedup read backwards --- a quantity the
+cost note named and then discarded.
+\end{remark}
+
+\section{Two kinds of laxity}
+\label{sec:laxities}
+
+An internalising algebra can fail to be strict in two ways, and conflating them is the last of the
+errors we are repairing.
+
+\begin{definition}[Graded and kernelled laxity]
+\label{def:laxities}
+A graded lax $T$-algebra $\alpha$ on $G$ has
+\begin{description}[leftmargin=2.2em,style=nextline]
+\item[graded laxity] when $\alpha \models \Fcond$ --- the kernel is trivial --- and the 2-cells
+$u, a$ carry non-unit grade. Nothing is identified; the laws hold, at a price.
+\item[kernelled laxity] when $\alpha \not\models \Fcond$: the action identifies configurations the
+source distinguishes, and by \cite[Prop.~4.11]{probe} factors as
+$T(G) \twoheadrightarrow T(G)/{\approx_\alpha} \to G$ with the second leg hosting.
+\end{description}
+\end{definition}
+
+Graded laxity is \emph{overhead}. Kernelled laxity is \emph{loss}. The distinction is the
+over-/under-discrimination dichotomy of \cite[Rmk.~2.17]{probe} seen from the algebra side: a target
+whose own contexts see too much is repaired by relativising the label class, whereas an encoding
+that identifies too much is not repairable at all and must be recorded as a kernel.
+
+\begin{proposition}[The criterion for uniformity]
+\label{prop:criterion}
+A lax monad morphism $T \Rightarrow \mathrm{Id}$ on $\mathcal{K}$ tolerates graded laxity and not
+kernelled laxity: naturality of $\alpha$ together with $\Fcond$ at each object is what makes the
+family a family. A class containing an object whose only internalisation is kernelled admits no such
+morphism, and its lattice of algebras has a top that is not faithful.
+\end{proposition}
+
+\begin{remark}[The thermodynamic reading]
+\label{rmk:landauer}
+The two laxities have distinct standing under \cite[Rmk.~7.2]{history}. Graded laxity is a bijective
+re-encoding: the apparatus is kept, in another representation, so the ledger law
+$\sigma + \kappa = \sigma_0$ survives and the step is logically reversible, hence Landauer-free.
+Kernelled laxity destroys information that is not recoverable from the state, and is therefore
+dissipative. Forgetting, being the maximal kernel, is the maximally dissipative erasure; a faithful
+internalisation is the free one. This is the sharpest available statement of what distinguishes the
+two erasures, and it is a physical statement rather than a categorical one.
+\end{remark}
+
+\section{The three probes}
+\label{sec:probes}
+
+We now run the analysis over three probes. Fixing a probe $M$ and considering the objects $G$
+admitting a $\CtxC$-morphism $M \to G$ satisfying $\Fcond$ and $\Dcond$ gives the $\equiv$-class of
+$M$; taking a family of probes rather than one gives a \emph{profile} rather than a degree, which is
+Problem~7 of \cite{probe} with the family fixed at $\{\CCSrec, \lambda, \rhoc\}$.
+
+\subsection{$\CCSrec$: Turing complete, not self-coding}
+
+$\CCSrec$ is Turing complete; \cite[Cor.~5.10]{probe} says so explicitly while proving that no
+$\CtxC$-morphism $\pi \to \CCSrec$ satisfies $\Fcond$. By Remark~\ref{rmk:I-relative} that power is
+the wrong power. A CCS context is a path made of actions, names, and residual bags; the prefix layer
+differentiates to an action and the restriction layer to a name, neither of which is a term, and
+there is no abstraction to plug with. So $\CCSrec$ cannot code its own contexts.
+
+What follows is not that internalisation is impossible but that it is kernelled. $\CCSrec$ can
+simulate the metering or logging apparatus: Gödel-number the configurations, run a universal process,
+and present an input datum as a synchronisation sequence on $\mathit{bit}_0, \mathit{bit}_1,
+\mathit{end}$. That is functionally correct and not $\sim_\iota$-faithful. In a value-passing
+calculus, receiving a datum is one transition; serialised it is $|\mathrm{code}|$ transitions, each a
+branch point. Serial decoding manufactures choice points that $\iota(P)$ does not have --- which is
+the impedance-matching diagnosis of \cite[\S2.2]{probe} turned on CCS instead of on the machine
+models.
+
+\begin{remark}[Confirmation from the reversibility literature]
+\label{rmk:ccsk}
+If $H$ has no faithful internalisation over CCS, then making CCS reversible should require external
+bookkeeping. It does: CCSK \cite{ccsk} and RCCS \cite{rccs} obtain backward determinism by adjoining
+apparatus, never by encoding it into the calculus. The free $H$ exists there; its faithful
+internalisation does not.
+\end{remark}
+
+\begin{remark}[An undischarged hypothesis]
+\label{rmk:pool}
+The $\CCSrec$ column rests partly on a gap that \cite[Rmk.~5.11]{probe} flags rather than closes: the
+separation arguments do not by themselves exclude an encoding that pre-allocates a fixed finite pool
+of channels and simulates by case analysis over the pool. Excluding those needs a finitary uniformity
+hypothesis, essentially finite support in the sense of nominal sets. Until it is discharged, the
+claim that $\CCSrec$ suffers kernelled and not merely graded laxity is conditional.
+\end{remark}
+
+\subsection{$\lambda$: sharp positions, expensive codes}
+
+$\lambda$ satisfies $\Icond$ endo-directedly by erasure by binding, and carries a section --- the de
+Bruijn form \cite[\S5.2]{cost}. Both erasures therefore exist, and the internalisation is faithful.
+
+Two structural facts shape its grade. First, $K = \mathrm{App}$ is free, so by \cite[\S2.3]{probe}
+the layer derivative is $T + T$ with the tag carrying the positional information, $\mathrm{plug}$ is
+injective, and contexts form a genuine coordinate system. Position is unforgeable, no nearness
+operator is needed, and the located stack of \cite[\S10]{cost} is implicit in the context
+$K([\,],S)$. Simulating the interaction structure is correspondingly cheap. Second, codes must be
+Church-encoded: $\lambda$ can abstract over a hole but cannot treat the result as first-class
+transmissible data, so the representational half of the grade is expensive.
+
+\begin{remark}[A conjectural landing point]
+\label{rmk:levy}
+The order-forgetting erasure of \cite[Rmk.~4.3]{history} identifies two reduction paths when they
+differ by transposing independent steps. In the $\lambda$ instance this should be Lévy's permutation
+equivalence of reductions, and the corresponding fold of the universal cover the classical theory of
+developments. If so, the abstract erasure lattice acquires a well-developed concrete instance. We
+have not checked it; see Problem~\ref{prob:levy}.
+\end{remark}
+
+\subsection{$\rhoc$: cheap codes, collapsed positions}
+
+$\rhoc$ satisfies $\Icond$ twice over --- by binding and by reflection, with $@$ making the
+representing term quotable in turn. Codes are primitive, so the representational half of the grade is
+cheap, and this is the design case for which $C$ was built. But $K = {\mid}$ is associative--commutative,
+so by \cite[\S2.3]{probe} the layer derivative satisfies $\partial(\mathrm{Bag}\,T) \cong
+\mathrm{Bag}\,T$, $\mathrm{plug}$ is radically non-injective, positional structure has collapsed
+entirely, and the surface must be reified and matched by $\near$. Simulating that --- the bag, the
+nearness match, the located purse --- is where $\rhoc$'s grade goes.
+
+\subsection{The profile}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lccccl@{}}
+\toprule
+Probe & $K$ & self-coding & positional & representational & laxity \\
+\midrule
+$\CCSrec$ & AC & none & high & --- & kernelled \\
+$\lambda$ & free & binding & low & high (Church) & graded \\
+$\rhoc$ & AC & binding, reflection & high & low (primitive) & graded \\
+\bottomrule
+\end{tabular}
+\caption{The three probes. ``Positional'' is the cost of simulating the interaction structure;
+``representational'' the cost of coding terms as data. $\CCSrec$ has no representational entry
+because its coding is not faithful, which is what makes its laxity kernelled rather than graded.}
+\label{tab:probes}
+\end{table}
+
+The finding is that the probes do not differ over whether internalisation \emph{exists}. They differ
+over which laxity it suffers, and --- among those suffering graded laxity --- over where the grade
+goes. $\lambda$ and $\rhoc$ sit at opposite corners: a rigid $K$ makes interaction cheap to simulate
+while forcing expensive codes; reflection makes codes cheap while an AC $K$ forces an expensive
+simulation of position. No probe minimises both.
+
+\begin{conjecture}[The grade factors]
+\label{conj:factor}
+The grade of a faithful internalisation of $C$ or $H$ over a probe $M$ factors as a product of a
+positional factor, determined by the equational theory of $K$, and a representational factor,
+determined by the route to self-coding. The two factors are independent: they are computed from the
+layer derivative and from the coding respectively.
+\end{conjecture}
+
+We regard Conjecture~\ref{conj:factor} as the main technical claim the three-probe analysis suggests
+and do not prove it here; see Problem~\ref{prob:factor}.
+
+\section{The duality, as a hierarchy of internality}
+\label{sec:duality}
+
+We can now state what the two monads are to each other.
+
+$C$ is resource-bounded forward evolution: a budget installed up front and drained by reduction, the
+consumed prefix of the temporal stack being the realised cost. $H$ is the record required for
+reversal: a log produced by reduction and never drained, whose free instance is the universal cover
+and whose unique-parent property is backward determinism. The ledger law
+$\sigma(t) + \kappa(t) = \sigma_0$ binds them: one clock, two ledgers, read from opposite ends.
+
+Under the algebra reading of Section~\ref{sec:erasures} the duality is visible in what the algebras
+do. A $C$-algebra is a calculus that knows how to \emph{pay}. $H$ is a writer monad, so an
+$H$-algebra is precisely an action of the event monoid --- a calculus that knows how to
+\emph{replay}. Pay and replay are the two erasure structures, and time reversal exchanges them.
+
+One asymmetry is real and should not be smoothed away. $H$'s action only ever appends, which requires
+no decision; $C$'s must decide a surface match and a token match at every step, which requires a
+decidable guard supplied by the section. So the interpreter witnessing $C$'s internalisation carries
+a branch per step that $H$'s does not, and we should expect $C$'s grade to exceed $H$'s over any
+probe. That is a prediction the ledger law does not make and the algebra reading does.
+
+Finally, the three probes turn the self-coding hypothesis from a side condition into the thing being
+measured, and the duality becomes a hierarchy rather than a single theorem.
+
+\begin{description}[leftmargin=2.4em,style=nextline]
+\item[$\CCSrec$: external.] Both $C$ and $H$ can be installed and neither faithfully internalised.
+The duality is real and cannot be stated inside the calculus; time is bookkeeping done from outside,
+which is what the reversible-CCS constructions do by hand.
+\item[$\lambda$: internal by encoding.] Both internalise faithfully, at a grade dominated by
+representation. The ledger law reads as a bounded reduction sequence carrying its own path --- a
+legible, classical object, paid for in coding overhead.
+\item[$\rhoc$: internal primitively.] Both internalise faithfully at a grade dominated by position,
+and $\rhoc$ can write its own metered reversible interpreter as a $\rhoc$ term. The duality becomes a
+statement the theory makes about itself.
+\end{description}
+
+That $\rhoc$ reaches the top of this hierarchy is not an accident of its expressive power but of the
+fusion noted in \cite[\S5]{cost}: $@$ serves as both the communication quotient and the
+authentication section, so the two distinct demands --- code your canonical forms, code your contexts
+--- are met by one operator. $\lambda$ meets them by two unrelated mechanisms. $\CCSrec$ meets
+neither.
+
+\section{Open problems}
+\label{sec:open}
+
+\begin{problem}[The grade decomposition]
+\label{prob:factor}
+Prove or refute Conjecture~\ref{conj:factor}. The positional factor should be computable from the
+layer derivative of $K$ --- free giving injective $\mathrm{plug}$ and a coordinate system, AC giving
+$\partial(\mathrm{Bag}\,T) \cong \mathrm{Bag}\,T$ and collapse --- and the representational factor
+from the route to self-coding. What must be checked is that they do not interact.
+\end{problem}
+
+\begin{problem}[The $\lambda$ instance of order-forgetting]
+\label{prob:levy}
+Is the Mazurkiewicz grade of \cite[Rmk.~4.3]{history}, instantiated at $\lambda$, exactly Lévy's
+permutation equivalence of reductions? If so, is the corresponding intermediate cover the theory of
+developments?
+\end{problem}
+
+\begin{problem}[Does forgetting factor through internalising?]
+\label{prob:factorisation}
+Is $\mathrm{Forget}$ the composite of a faithful internalisation with a quotient dropping the encoded
+apparatus? If so the two erasures are one map with a factorisation, and by
+Remark~\ref{rmk:landauer} the free and dissipative parts sit exactly on the seam.
+\end{problem}
+
+\begin{problem}[Discharging the uniformity hypothesis]
+\label{prob:pool}
+Formulate the finitary uniformity condition of Remark~\ref{rmk:pool} precisely, most likely as finite
+support in the sense of nominal sets, and verify it for every $\CtxC$-morphism arising from an
+internally representable encoding. Until this is done the $\CCSrec$ column is conditional.
+\end{problem}
+
+\begin{problem}[Is reflection necessary?]
+\label{prob:necessary}
+Reflection and erasure by binding are sufficient for faithful internalisation. Is either necessary?
+A negative answer would widen the class; a positive one would make ``the theories over which the
+cost/history duality is internal'' a structural characterisation rather than a list.
+\end{problem}
+
+\begin{problem}[A distributive law]
+\label{prob:distributive}
+Is there a distributive law relating $C$ and $H$ --- metered history against history of metering? The
+history note carries the token apparatus unchanged on the first component \cite[Def.~2.2]{history},
+which is close to asserting one. This is where the duality would stop being an analogy between two
+constructions and become a theorem about their composite, and it is the natural sequel.
+\end{problem}
+
+\begin{problem}[Closure]
+\label{prob:closure}
+Write down the argument, sketched in Remark~\ref{rmk:closure}, that $C(G)$ remains self-coding when
+$G$ is, so that $C$ restricts to the subcategory on which Definition~\ref{def:monad-map} is
+available.
+\end{problem}
+
+\section*{A correction carried forward}
+
+Independently of the above, Remark~2.12 of \cite{probe} corrects Table~1 of \cite{cost}: the
+$\lambda$ row records the program-side surface as $x$, but read through the rigidity of
+$\mathrm{App}$ that entry names the \emph{delivery site} --- the locations inside the program
+continuation at which the environment's contribution arrives --- rather than the contact surface,
+which on both sides is the $\mathrm{App}$ location. This is why the environment-side entry is
+nominally degenerate rather than absent. Any revision of \cite{cost} should fold this in.
+
+\begin{thebibliography}{9}
+
+\bibitem{cost}
+L. G. Meredith.
+\emph{Continued Interactive GSLTs and the Cost Endofunctor: a construction one level up from
+cost-accounted Rholang.}
+F1R3FLY.io, 2026.
+
+\bibitem{probe}
+L. G. Meredith.
+\emph{Probing Universality: replacing the Turing yardstick with a relative property for interactive
+GSLTs.}
+F1R3FLY.io, 2026.
+
+\bibitem{history}
+L. G. Meredith.
+\emph{History as an Endofunctor: reversibility, covering spaces, and the memory price of energy
+conservation in cost-accounted GSLTs.}
+F1R3FLY.io working note, 2026.
+
+\bibitem{ccsk}
+I. Phillips and I. Ulidowski.
+Reversing algebraic process calculi.
+\emph{Journal of Logic and Algebraic Programming}, 73(1--2):70--96, 2007.
+
+\bibitem{rccs}
+V. Danos and J. Krivine.
+Reversible communicating systems.
+In \emph{CONCUR 2004}, LNCS 3170, pp.~292--307. Springer, 2004.
+
+\bibitem{maclane}
+S. Mac Lane.
+\emph{Categories for the Working Mathematician}, 2nd edition.
+Graduate Texts in Mathematics 5. Springer, 1998.
+
+\bibitem{landauer}
+R. Landauer.
+Irreversibility and heat generation in the computing process.
+\emph{IBM Journal of Research and Development}, 5(3):183--191, 1961.
+
+\bibitem{bennett}
+C. H. Bennett.
+Logical reversibility of computation.
+\emph{IBM Journal of Research and Development}, 17(6):525--532, 1973.
+
+\bibitem{levy}
+J.-J. Lévy.
+\emph{Réductions correctes et optimales dans le lambda-calcul.}
+Thèse de doctorat d'état, Université Paris VII, 1978.
+
+\bibitem{mcbride}
+C. McBride.
+The derivative of a regular type is its type of one-hole contexts.
+Unpublished manuscript, 2001.
+
+\bibitem{gorla}
+D. Gorla.
+Towards a unified approach to encodability and separation results for process calculi.
+\emph{Information and Computation}, 208(9):1031--1053, 2010.
+
+\end{thebibliography}
+
+\end{document}
