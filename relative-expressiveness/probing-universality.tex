@@ -1,0 +1,1738 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{stmaryrd}
+\usepackage{tikz-cd}
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{construction}[definition]{Construction}
+\newtheorem{design}[definition]{Design choice}
+\newtheorem{example}[definition]{Example}
+\newtheorem{notation}[definition]{Notation}
+
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+\newtheorem{conjecture}[definition]{Conjecture}
+
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{problem}{Problem}
+
+\newcommand{\Ctx}{\mathrm{Ctx}}
+\newcommand{\Sim}{\mathrm{Sim}}
+\newcommand{\Psh}{\mathrm{Psh}}
+\newcommand{\GSLT}{\mathbf{GSLT}}
+\newcommand{\iGSLT}{\mathbf{iGSLT}}
+\newcommand{\ciGSLT}{\mathbf{ciGSLT}}
+\newcommand{\CtxGSLT}{\mathbf{CtxGSLT}}
+\newcommand{\Nerve}{\mathrm{N}}
+\newcommand{\Real}{\mathrm{R}}
+\newcommand{\enc}[1]{\llbracket #1 \rrbracket}
+\newcommand{\code}[1]{\ulcorner #1 \urcorner}
+\newcommand{\hole}{[-]}
+\newcommand{\bisim}{\approx}
+\newcommand{\obs}{\Downarrow}
+
+\title{\bf Probing Universality\\[2pt]
+\large Replacing the Turing Yardstick with a Relative Property\\ for Interactive GSLTs}
+\author{L.\ G.\ Meredith\thanks{\texttt{lgreg.meredith@f1r3fly.io}}\\ F1R3FLY.io}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Expressiveness comparisons between computational models are conventionally
+anchored to a single absolute yardstick: Turing completeness. For functions this
+works. For interactive systems it does not, because Turing completeness is a
+statement about the input/output relation and the input/output relation is the
+coarsest invariant in the linear-time/branching-time spectrum, while the
+equivalences that matter for interaction sit at the other end. Calculi of identical
+Turing power are routinely separated by uniform-encoding criteria, so the yardstick
+is measuring something other than what is being compared.
+
+The obvious repair --- demand behavioural rather than computational universality ---
+merely relocates the problem, since the arbiter of which behavioural equivalence to
+use is an adequate modal logic, and the logical apparatus available in the ambient
+setting is inherited from the $\lambda$-calculus. An absolute notion is quietly
+$\lambda$-relative.
+
+This note replaces the yardstick with a relative property. One fixes a probe --- Turing
+machines, $\lambda$, CCS, $\pi$, rho, or anything else --- and asks what that probe can
+see of the theory under investigation. No logic is required: bisimulation is
+identification in a final coalgebra, and the only primitive observation is reduction.
+What must be supplied instead are conditions preventing the question from having a
+trivial answer.
+
+We recall the naive category of graph-structured lambda theories with
+bisimulation-preserving morphisms and exhibit three defects: the constant map to $0$
+is a morphism; the canonical encoding of the $\lambda$-calculus into $\pi$ is not a map
+of terms at all, so signature preservation does not typecheck; and ambient contexts
+in a richer theory observe strictly more than the encoded contexts of a poorer one.
+We then rebuild the definition with contexts as the primary structure. A theory
+presents a symmetric multicategory of contexts whose interfaces record sort, binding
+stage, and interaction surface; transitions are labelled by contexts; and a morphism
+of theories is a pseudofunctor of context multicategories, so that terms, being the
+nullary contexts, are encoded by the same map that encodes contexts. Bisimulation on
+the target is computed only over the image of the probe's contexts.
+
+Two conditions are then isolated: \emph{hosting} (faithfulness), which says the
+target can run the source, and \emph{exhausting} (density), which says the target is
+nothing the source cannot assemble. They induce a preorder whose degrees refine
+Turing completeness, the classical notion being recovered as the trace collapse ---
+which above the Turing threshold has exactly one degree where the branching-time
+order has many. Our main structural observation is that the two conditions are the
+two halves of mutual meta-circularity: hosting yields an interpreter for the source
+written in the target, exhausting an interpreter for the target written in the
+source, and their two composites are meta-circular interpreters, each behaviourally
+the identity and syntactically not.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+Ask whether one computational model is at least as expressive as another and the
+answer is normally routed through a single absolute standard. Both models are
+compared to the Turing machine; if both clear the bar, they are equi-expressive.
+That procedure is sound for models of function computation, and it is the reason the
+classification of programming languages by expressive power is so short a list.
+
+For interactive systems it fails, and it fails for a structural reason rather than a
+technical one. Turing completeness is a statement about which partial recursive
+functions a model realises --- a property of its input/output relation. The
+input/output relation is the coarsest invariant in the linear-time/branching-time
+spectrum. The equivalences that matter for interacting systems --- bisimulation and its
+refinements --- sit at the opposite end. A hypothesis stated at the trace level cannot
+control a conclusion stated at the branching level. Concretely: an interpreter must
+decode before it acts, decoding is silent work, and silent work relocates choice
+points, so an encoding may be functionally perfect and behaviourally wrong. The gap
+is not hypothetical. The separation literature exhibits pairs of calculi of identical
+Turing power between which no encoding satisfying reasonable uniformity criteria
+exists \cite{palamidessi,gorla,peters-glabbeek}.
+
+The natural repair is to demand of a model not computational universality but
+\emph{behavioural} universality: a self-interpreter faithful up to bisimulation. But
+stated absolutely, this only relocates the difficulty. Which bisimulation? The usual
+arbiter is adequacy of a modal logic, and the logical constructions available in the
+ambient setting are inherited from the $\lambda$-calculus. An absolute behavioural
+notion is quietly $\lambda$-relative, which is precisely the parochialism one was
+trying to escape.
+
+This note therefore replaces the yardstick rather than recalibrating it. One fixes a
+\emph{probe} --- Turing machines, $\lambda$, CCS, $\pi$, rho, or anything else --- and
+asks what that probe can see of the theory under investigation. Universality becomes
+a relation, not a predicate. No logic is required: bisimulation is identification in
+a final coalgebra, and the only primitive observation is reduction. What must be
+supplied instead are conditions preventing the question from having a trivial answer,
+and most of this note is about finding the right ones. They turn out to be two, they
+are standard categorical properties rather than a checklist, and together they say
+precisely that source and target can write meta-circular interpreters for one
+another.
+
+The classical notion is not discarded. It reappears in Section~\ref{sec:tc} as the
+trace collapse of the relative order --- a single degree sitting above a threshold,
+where the branching-time order has many. Turing completeness is thus the shadow of
+the relative property, and the separations that the classical notion cannot see are
+exactly the ones the shadow loses.
+
+\paragraph{Outline.}
+Section~\ref{sec:naive} fixes the class of theories through a three-rung ladder,
+spells out the shape of the core rewrite rule, shows why the machine models require
+impedance matching to enter the category at all, and explains via the McBride derivative
+why equations on the interaction constructor force surfaces to be reified --- which
+matters because the contexts whose derivative is at issue are exactly the labels of
+the transition systems of Section~\ref{sec:contexts}. It closes with the defects of
+the naive notion of morphism.
+Section~\ref{sec:contexts} rebuilds the category with contexts as the primary
+structure. Section~\ref{sec:conditions} isolates the two conditions.
+Section~\ref{sec:tc} relates the resulting order to Turing completeness.
+Section~\ref{sec:meta} proves the two-interpreter theorem. Section~\ref{sec:open}
+lists what is not yet settled.
+
+\section{The naive setting and its defects}
+\label{sec:naive}
+
+\subsection{A ladder of theories}
+
+The theories in play are pinned down in three stages, each rung adding structure
+and each still accommodating the usual suspects. The progression matters for what
+follows: the constructions of Sections~\ref{sec:contexts}--\ref{sec:conditions}
+need only the second rung, while the interpreters of Section~\ref{sec:meta} need
+the third, and knowing which is which is what keeps the hypotheses honest.
+
+\paragraph{Rung one: graph-structured lambda theories.}
+
+\begin{definition}[GSLT]
+\label{def:gslt}
+A \emph{graph-structured lambda theory} $G$ consists of a sorted signature with
+binding; a set of terms generated by that signature; a structural congruence
+$\equiv$ making the term set a graph-like quotient, so that terms are considered up
+to the commutative-monoid laws of parallel composition, scope extrusion, and the
+like; and a rewrite relation $\to$ on the quotient.
+\end{definition}
+
+At this rung almost everything qualifies --- $\lambda$, CCS, $\pi$, rho, the ambient
+calculus, and Turing machines with $\equiv$ trivial. That breadth is the problem:
+Definition~\ref{def:gslt} constrains the \emph{shape} of a theory's dynamics not at
+all, so nothing can be said uniformly about how one theory simulates another.
+
+\paragraph{Rung two: interactive.}
+
+The second rung asks only for a \emph{site of interaction}. Following
+\cite[Def.~2.1]{cost}:
+
+\begin{definition}[Interactive GSLT]
+\label{def:igslt}
+$G$ is \emph{interactive} if it carries, over and above the data of
+Definition~\ref{def:gslt}, a distinguished interacting sort $P$ of programs; a binary
+\emph{interaction constructor} $K(P,E)$ representing the interaction of a program with
+an environment $E$, an operand of the interacting sort, with $E = P$ in the
+process-calculus instances; and at least one base rewrite rule whose left-hand side
+features $K$, generating a labelled transition system on $P$ modulo $\equiv$ on which
+bisimulation is the intended equivalence.
+\end{definition}
+
+For the $\lambda$-calculus $K$ is application; for CCS, $\pi$, and rho it is parallel
+composition; for the interaction categories it is composition along a shared
+interface. Nothing about surfaces or continuations is asserted at this rung. What a
+bare GSLT lacks and an interactive one supplies is exactly a named site of
+interaction and a rule that fires there.
+
+\begin{remark}[Where the machine models fail]
+\label{rem:machines}
+The requirement that $E$ be an operand of the interacting sort is not a
+technicality. A Turing machine does have an intuitive cut --- between the automaton
+and the tape --- but automaton and tape are of different kinds, so there is no binary
+$K$ on the interacting sort of which the transition rule is an instance. Turing
+machines therefore admit no interaction-cut presentation naively, and neither do
+Mealy or Moore machines, whose cut is between a transducer and a stream. They are
+GSLTs; they are not interactive ones. Section~\ref{sec:tc} takes this seriously: the
+classical yardstick is not merely a coarse probe, it is not natively an object of the
+category at all, and must be \emph{presented} as one --- by a choice, such as encoding
+the tape as a process, that is in no way canonical.
+\end{remark}
+
+\paragraph{Rung three: continued.}
+
+The third rung decomposes both sides of the cut. It is here, and not before, that
+surfaces and continuations appear.
+
+\begin{definition}[The interaction cut]
+\label{def:cut}
+An interactive GSLT is presented in \emph{interaction-cut form} when its generating
+rule is written
+\[
+K\bigl(\,K_p(I,C_p),\; K_e(J,C_e)\,\bigr) \;\longrightarrow\; K'\bigl(\,C_p',\,C_e'\,\bigr),
+\qquad
+(C_p',C_e') = \mathrm{compute}(I,J,C_p,C_e)
+\tag{$\dagger$}
+\]
+naming the interaction constructor $K$; two introductions $K_p(I,C_p)$ and
+$K_e(J,C_e)$, each separating an \emph{interaction surface} ($I$, $J$ --- the part that
+must match for the cut to fire) from a \emph{continuation} ($C_p$ the program
+continuation, $C_e$ the environment continuation); the partial \emph{contraction}
+$\mathrm{compute}$, which on a surface match combines the continuations into
+residuals; and the constructor $K'$ repackaging them.
+\end{definition}
+
+$\mathrm{compute}$ is Milner's pseudo-application: applied to $\lambda y.P$ and
+$[u,Q]$ it returns $P\{u/y\} \mid Q$, factoring into the substitution by which the
+datum migrates from the environment continuation into the program continuation
+through the binder, and the release of the environment's residual. Binding is one
+mode of migration, not a feature of the cut as such; CCS realises the shape with
+pseudo-application degenerating to pure release.
+
+\begin{definition}[Surfaces and nearness]
+\label{def:surface}
+Surfaces inhabit a sort $\mathrm{Surf}$. When $K$ is non-free the match condition is
+carried by a \emph{nearness operator}
+\[
+\mathrm{near}(I,J),
+\]
+partial, and returning --- when defined --- the surface at which $I$ and $J$ meet.
+Interaction is gated on its being defined.
+\end{definition}
+
+Nearness is thus \emph{surface-valued} rather than boolean: two introductions do not
+merely match or fail to match, they produce a surface, and that surface locates the
+resources the cut may draw on. It specialises across the spectrum as complementarity
+of actions in CCS, name-equality of subjects in $\pi$ and rho, and interface
+agreement in the interaction categories.
+
+\begin{definition}[Continued interactive GSLT]
+\label{def:cigslt}
+An interactive GSLT is \emph{continued} when equipped with
+\begin{enumerate}[label=(\roman*),leftmargin=2.4em]
+\item a presentation of its dynamics in interaction-cut form $(\dagger)$, naming
+$K$, $K_p$, $K_e$, $K'$ and the partial contraction $\mathrm{compute}$; and
+\item a \emph{section}: a computable canonical-form function on the interacting sort,
+i.e.\ a computable section of the $\equiv$-quotient.
+\end{enumerate}
+$\ciGSLT$ is the category of these, with morphisms the theory maps that are
+bisimulation-preserving on the interacting sort.\footnote{The definition of a
+continued interactive GSLT in \cite[Def.~6.1]{cost} carries a third clause, required
+there for a construction not treated in this note. Nothing below depends on it, and
+we omit it.}
+\end{definition}
+
+The adjective names a strict enrichment, not a restriction: (i) and (ii) are data
+added on top of an interactive GSLT, and forgetting them recovers it. It records that
+the theory carries the structure a construction \emph{over} it will need, not that
+any such construction has been performed.
+
+\begin{remark}[Two carriers of the surface, and why $\lambda$ survives]
+\label{rem:regimes}
+Definition~\ref{def:cigslt} appears to exclude the $\lambda$-calculus, which has no
+sort of surfaces and no nearness operator. It does not, because a surface may be
+carried in either of two ways.
+\begin{enumerate}[label=(\alph*),leftmargin=2.0em]
+\item \emph{Structurally, when $K$ is free.} Position is then unforgeable: nothing
+drifts into contact with what it does not already neighbour. The surface is not
+recorded by any explicit $I$ or $J$ but by the structural context $K([\,],S)$, and
+$\mathrm{near}$ is trivially defined --- being in the hole is being near. $\lambda$ is
+exactly this case on the environment side: $\mathrm{App}$ is free, and its rigidity
+supplies the surface that no explicit $J$ records. A nominally absent surface is not
+a missing match condition but one carried by the geometry of $K$.
+\item \emph{Nominally, when $K$ is non-free.} Any equation on $K$ loosens position:
+associativity re-brackets adjacency, a unit law inserts or deletes neighbours, and
+associative--com\-mu\-ta\-tiv\-i\-ty is the limit at which no positional structure
+survives at all --- the freely mixed bag, where rho with $K = {\mid}$ lives. Adjacency having
+become cheap and non-exclusive, taking proximity as authority is ambient authority
+and is a leak. The surface must therefore be reintroduced nominally, supplied by
+$\mathrm{near}$.
+\end{enumerate}
+The two carriers are one notion seen twice; only the carrier changes, from the
+geometry of $K$ to an explicit operator. A free $K$ and a freely mixed $K$ are the
+poles, and every $K$ carrying equations sits on the nominal side between them.
+\end{remark}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Instance & Surfaces $I,J$ & Prog.\ cont.\ $C_p$ & Env.\ cont.\ $C_e$ & Contraction $\mathrm{compute}$ \\
+\midrule
+CCS
+  & $a,\bar a$ (compl.)
+  & $P$ & $Q$
+  & pure release $P \mid Q$ \\
+rho / $\pi$ (sync.)
+  & $x,x$ (name-eq.)
+  & $\lambda y.P$ & $[Q_1,Q_2]$
+  & $P\{Q_1/y\} \mid Q_2$ \\
+rho / $\pi$ (async.)
+  & $x,x$ (name-eq.)
+  & $\lambda y.P$ & $[Q,-]$
+  & $P\{Q/y\}$ \\
+$\lambda$
+  & $x,-$ ($K_e$ degen.)
+  & $\lambda x.M$ & $N$
+  & $M\{N/x\}$ \\
+Ambients
+  & $n$ (open $n$ vs.\ $n[\cdot]$)
+  & $P$ & $Q$
+  & boundary dissolve / move \\
+Interaction cats.
+  & shared interface
+  & process & process
+  & interface composition \\
+\bottomrule
+\end{tabular}
+\caption{Anchoring instances across the migration spectrum, after
+\cite[Tab.~1]{cost}. A surface entry of $-$ denotes a nominally degenerate surface,
+carried structurally by the rigidity of $K$ rather than absent; an
+environment-continuation entry of $-$ denotes a degenerate continuation, which is
+what distinguishes asynchronous from synchronous output. Four migration modes
+appear: none (CCS, interaction categories), binding (rho, $\pi$, $\lambda$), and
+spatial restructuring (ambients), where the contraction relocates or dissolves a
+boundary rather than substituting.}
+\label{tab:instances}
+\end{table}
+
+The instances differ in how much information migrates between environment and program
+under contraction, and this migration spectrum is what makes the class wide rather
+than narrow. CCS realises the shape with no migration at all and is in that sense the
+paradigmatic instance; $\pi$ and rho realise it with migration by binding;
+$\beta$-reduction with migration and no environment residual --- the environment
+introduction has a degenerate surface and its continuation carries no residual, so the
+argument is its own continuation and pseudo-application is ordinary application.
+
+\begin{remark}[Which clause this note uses]
+\label{rem:whichhalf}
+Sections~\ref{sec:contexts} and \ref{sec:conditions} need rung two, together with
+clause (i) only insofar as surfaces sharpen the interfaces of
+Definition~\ref{def:interface}; a reader who drops the surface component throughout
+loses resolution in the labels and nothing else. Clause (ii), the section, is what
+Section~\ref{sec:meta} needs: it is what makes the interpreters exist as terms rather
+than as relations.
+\end{remark}
+
+\begin{proposition}[The section makes $\Ctx(G)$ effectively presented]
+\label{prop:effctx}
+If $G$ is continued then $\Ctx(G)$ admits codes: equality of contexts is decidable on
+representatives, and hole-filling is computable.
+\end{proposition}
+
+\begin{proof}
+Clause (ii) of Definition~\ref{def:cigslt} picks a canonical representative of each
+$\equiv$-class, so a context is presented by a representative term with labelled
+holes. Hole-filling is a syntactic substitution on representatives followed by
+re-application of the section. Stage and surface data
+(Definition~\ref{def:interface}) are finite and carried along.
+\end{proof}
+
+Proposition~\ref{prop:effctx} is why clause (ii) cannot be dispensed with. Without
+it, $\Ctx(G)$ still exists as a mathematical object --- quotient multicategories are
+unproblematic --- but nothing about it is nameable, and the interpreters of
+Section~\ref{sec:meta} would exist only as relations between terms rather than as
+terms of the calculi themselves.
+
+\paragraph{The usual suspects.}
+Each rung retains the examples that matter, and loses exactly the machine models.
+
+\begin{center}
+\small
+\begin{tabular}{@{}lcccp{4.2cm}@{}}
+\toprule
+Theory & GSLT & Interactive & Continued & $K$, and the section \\
+\midrule
+Turing machines & \checkmark & --- & --- & cut is automaton/tape: different kinds \\
+Mealy, Moore & \checkmark & --- & --- & cut is transducer/stream: different kinds \\
+$\lambda$ ($\beta$) & \checkmark & \checkmark & \checkmark & $\mathrm{App}$; de Bruijn form, no channel constructor needed \cite[\S5.2]{cost} \\
+CCS & \checkmark & \checkmark & \checkmark & $\mid$; monoid normal form \\
+$\pi$ & \checkmark & \checkmark & \checkmark & $\mid$; as CCS plus $\alpha$-normalisation \\
+rho & \checkmark & \checkmark & \checkmark & $\mid$; $\#$ fuses section and quotient \\
+Interaction cats. & \checkmark & \checkmark & \checkmark & composition along an interface \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The two exclusions are the point of the rung, not an embarrassment of it. What the
+machine models lack is not computational power but a cut between operands of the
+interacting sort, and it is precisely that absence which makes them unable to say
+anything about how one interacting system simulates another. That $\lambda$ passes
+clause (ii) without possessing anything like rho's $@\cdot$ is the sharp test of the
+same point from the other side: what is required is a section, not a channel
+constructor \cite[\S5.2]{cost}.
+
+\begin{remark}[The ladder is not the probe order]
+\label{rem:ladder-vs-order}
+Ascending the ladder narrows the class of theories under discussion; it says nothing
+about their relative expressiveness. $\lambda$ and rho are both continued, and
+Section~\ref{sec:tc} will place them at very different degrees. The ladder fixes the
+category; the probe order fixes the ordering within it.
+\end{remark}
+
+Throughout, $\obs$ denotes a fixed primitive observation on terms. We take
+$P \obs$ to mean that $P$ has a reduction, or --- when a success predicate is
+available --- that $P$ reports success. This is the only observation we assume, and
+it is intrinsic to the rewrite relation. In particular no modal logic is used
+anywhere in this note.
+
+\begin{definition}[Naive morphism]
+\label{def:naive}
+A \emph{naive morphism} $f : G \to H$ is a function on terms satisfying
+$P \bisim_G Q \implies f(P) \bisim_H f(Q)$, where $\bisim$ denotes the intended
+weak bisimulation of each theory. Write $\GSLT_{\mathrm{naive}}$ for the resulting
+category.
+\end{definition}
+
+This is the definition implicitly in play when one says that morphisms of $\ciGSLT$
+are ``bisimulation-preserving and quote-faithful''. Quote-faithfulness is an extra
+condition specific to reflective theories and does not repair what follows.
+
+\subsection{Impedance matching: why the machine models fail}
+\label{sec:impedance}
+
+Remark~\ref{rem:machines} asserted that Turing, Mealy, and Moore machines are GSLTs
+but not interactive ones. The claim is worth working, both because the classical
+yardstick is built from them and because the repair --- which is always available ---
+turns out to introduce exactly the pathology this note exists to diagnose.
+
+\paragraph{They are GSLTs.}
+A Turing machine presents as a GSLT without difficulty. Take sorts for control
+states, tape alphabet, and configurations; terms of the configuration sort are
+triples $\langle q, w, i\rangle$ of state, tape contents, and head position;
+$\equiv$ is trivial; and $\to$ is the transition relation. Everything
+Definition~\ref{def:gslt} asks for is present. Mealy and Moore machines present
+similarly, with configurations pairing a state with an input stream.
+
+\paragraph{They are not interactive.}
+Definition~\ref{def:igslt} asks for a binary $K(P,E)$ whose operands both inhabit the
+interacting sort, and for a rule headed by $K$. The natural cut in a Turing machine
+is between the automaton and the tape --- but the automaton inhabits the sort of
+control states and the tape inhabits the sort of words, so any $K$ pairing them is a
+constructor of a heterogeneous product, not a binary operation on one sort. The
+asymmetry is of \emph{kind}, not merely of role: in an interaction cut program and
+environment are interchangeable in kind while distinguished in role, whereas a tape
+can never be an automaton. Consequently the transition relation is not a $K$-headed
+rule closed under $K$-contexts, and the labelled transition system it generates does
+not live on an interacting sort.
+
+Mealy and Moore machines fail for the same reason and for a second one besides.
+Their dynamics is a function on state and input rather than a rewrite of a term;
+there is no term algebra on which the step is congruent, so even granting a cut there
+is nothing for it to be closed under. The failure is a failure of compositionality
+before it is a failure of typing.
+
+\paragraph{Impedance matching, and what it costs.}
+The repair is standard and always available: reflect the environment into the
+interacting sort. Encode the tape as a process --- a chain of cells communicating with
+a head process --- and both operands of $K = {\mid}$ become processes. Call the
+result a \emph{process presentation}, $\mathrm{TM}^\sharp$.
+
+Three observations, and the third is the one that matters here.
+
+\begin{enumerate}[leftmargin=1.6em]
+\item The encoding is a choice. Cells may be a linked list, an array of indexed
+agents, or a pair of stacks; each yields a different $\Ctx(\mathrm{TM}^\sharp)$ and
+hence a different probe. Nothing internal to the machine model selects among them.
+\item The encoding is not conservative on steps. One machine transition becomes
+several cut firings --- request, reply, commit --- so the induced transition system is
+not the machine's but a refinement of it.
+\item Those extra firings are administrative, and administrative steps relocate
+choice points. That is precisely the mechanism by which a functionally correct
+interpreter becomes behaviourally wrong (Section~\ref{sec:intro}).
+\end{enumerate}
+
+So the admission ticket that lets the classical yardstick into the category
+introduces the very pathology the yardstick is constitutionally unable to see. This
+is not an argument against the machine models; it is an argument against using them
+as the standard against which interacting systems are measured.
+
+\subsection{Locations as labels: the derivative and the reification of surfaces}
+\label{sec:derivative}
+
+\paragraph{Why this subsection is here.}
+Section~\ref{sec:clts} will label transitions by \emph{contexts}: a term's behaviour
+is recorded not by abstract actions drawn from some separately postulated alphabet,
+but by the contexts that can make it move. A context is a location. So the labels of
+every transition system in this note are locations, and a labelling is informative
+only to the extent that its labels are distinguishable. The question of when a
+location is a genuine coordinate on a term is therefore the question of how much
+resolution the probe order of Sections~\ref{sec:conditions}--\ref{sec:tc} has at its
+disposal, and it is settled here, before any of that machinery is built. The chain is
+short and worth stating in advance:
+\[
+\begin{array}{rcl}
+\text{contexts separate positions} &\iff& \mathrm{plug} \text{ is injective}\\[2pt]
+&\Longrightarrow& \text{context labels carry information}\\[2pt]
+&\Longrightarrow& \text{the induced bisimulation is fine.}
+\end{array}
+\]
+Everything below is an analysis of when the first line holds, what happens when it
+fails, and what must be added to the theory to compensate.
+
+Remark~\ref{rem:regimes} said that a free $K$ carries the surface structurally, as
+the context $K([\,],S)$, and that equations on $K$ force the surface to be carried
+nominally instead. The erosion can now be stated exactly, and the right instrument is
+McBride's derivative \cite{mcbride}.
+
+\paragraph{Location is a zipper, and a zipper is not a term.}
+Let the terms be $T = \mu X.\,F(X)$ for a signature functor $F$. The one-hole
+contexts are not $\partial F$ but paths of layers: writing $\partial F(T)$ for a
+single layer with one slot vacated and the rest filled with terms,
+\[
+\Ctx_T \;=\; \mathrm{List}\bigl(\partial F(T)\bigr),
+\qquad
+\mathrm{plug} : \Ctx_T \times T \to T .
+\]
+This is Huet's zipper \cite{huet} read algebraically via McBride's derivative
+\cite{mcbride}. Two points must be kept apart, and running them together is the error
+this subsection is written to avoid. First, $\Ctx_T$ and $T$ are \emph{different
+types}. Second, a location is a coordinate on a term exactly when $\mathrm{plug}$ is
+injective --- distinct contexts must name distinct holes --- and that is a statement
+about $\mathrm{plug}$, not about any isomorphism between $\Ctx_T$ and $T$.
+
+Layer derivatives for the constructors at issue. The right-hand column says what the
+derivative \emph{is}; it does not say that any of these is a surface.
+\[
+\begin{array}{llll}
+\text{prefix} & F_0(X) = A \times X & \partial F_0(X) = A & \text{an action}\\
+\text{restriction} & F_0(X) = \mathcal{N} \times X & \partial F_0(X) = \mathcal{N} & \text{a name}\\
+\text{abstraction} & F_0(X) = \mathrm{Var} \times X & \partial F_0(X) = \mathrm{Var} & \text{a variable}\\
+\text{free binary }K & F_0(X) = X \times X & \partial F_0(X) = X + X & \text{a sibling, tagged}\\
+\text{AC }K & F_0(X) = \mathrm{Bag}\,X & \partial F_0(X) = \mathrm{Bag}\,X & \text{the rest of the bag}
+\end{array}
+\]
+Only the two $K$-rows bear on surfaces at all, since only $K$ is the site of the cut.
+The abstraction row is listed because it is what makes erasure by binding possible
+below, and because the variable it produces is easily and wrongly taken for a
+surface.
+
+\paragraph{Free $K$: the derivative is a coordinate system.}
+For a free binary $K$ the layer derivative is $T + T$ --- a sibling subterm together
+with a tag saying which side the hole is on --- and it is the \emph{tag}, not the
+sibling, that carries the positional information. $\mathrm{plug}$ is injective, so
+$\Ctx_T$ is a coordinate system on terms, and $K([\,],S)$ is a context that names its
+position uniquely. This is the precise content of position being unforgeable: the
+surface is the location, and no reification is needed because $\Ctx_T$ is already
+doing the work.
+
+\begin{remark}[The surface of a $\beta$-redex, and what the variable is instead]
+\label{rem:lambdasurface}
+The $\lambda$-calculus is the case to state carefully, since it is the one where the
+surface is easiest to misidentify. $K = \mathrm{App}$ is free, so by the paragraph
+above the surface is supplied by the location. An application comprises a location
+together with a function and an argument; the \emph{location is the surface}, the
+function is the program and the argument is the environment --- or, dually, the
+argument is the program and the function is the environment. The location itself is
+symmetric; which operand is assigned which role is an orientation, not something the
+syntax fixes. What is not available in either orientation is a nominal surface,
+precisely because $\mathrm{App}$ is rigid.
+
+A bound variable is therefore \emph{not} a surface. It is nonetheless closely
+related, and the relation is worth naming, because both are derivative data. The
+surface is the location at which program and environment come into contact --- the
+$\partial$ of the $K$-layer. The variable is the name of the locations \emph{inside}
+the program continuation at which the environment's contribution will be delivered:
+the occurrences of $x$ in $M$ are a multiset of holes in $M$, and $\lambda x.M$ is
+exactly that multi-hole context internalised as a term with $x$ naming its holes.
+Contact site and delivery site are both locations, at different levels of the term
+and playing different roles in the cut.
+
+This also sharpens Table~\ref{tab:instances}, whose $\lambda$ row records the
+program-side surface as $x$ following \cite[Tab.~1]{cost}. Read through the rigidity
+analysis, that entry is naming the delivery site rather than the contact surface; the
+contact surface on \emph{both} sides is the $\mathrm{App}$ location, which is why the
+environment-side entry is nominally degenerate rather than absent.
+\end{remark}
+
+\paragraph{Equations erode injectivity.}
+Once $K$ carries equations the derivative is computed in the quotient, and what
+degrades is injectivity of $\mathrm{plug}$ --- not the type of contexts.
+\begin{itemize}[leftmargin=1.4em]
+\item \emph{Associativity.} Trees collapse to lists and formerly distinct bracketings
+of the same neighbourhood become the same context.
+\item \emph{Units.} Neighbours may be inserted or deleted, so one location is
+reachable from strictly more decompositions.
+\item \emph{Associativity with commutativity.} Lists collapse to bags and
+$\partial(\mathrm{Bag}\,T) \cong \mathrm{Bag}\,T$: the derivative has forgotten
+\emph{which} occurrence was vacated. For a bag containing $n$ copies of a subterm
+there are $n$ decompositions no context distinguishes, and $\mathrm{plug}$ is
+radically non-injective.
+\end{itemize}
+At the AC pole the zipper has ceased to be a coordinate system. This is what
+``adjacency has become cheap and non-exclusive'' amounts to formally: not that
+positions are hard to tell apart, but that $\Ctx_T$ no longer separates them.
+
+Read through the chain above, the consequence is not merely that authority leaks. It
+is that the labels of the transition system collapse. Two contexts that ought to
+witness different behaviour become the same label, so the induced bisimulation
+identifies terms it should distinguish, and every probe built from the theory
+inherits the loss. Equations on $K$ are thus not a local nuisance about capability;
+they are a global reduction in the resolution of everything the theory can observe or
+be observed by.
+
+\paragraph{Two erasures, only one of them benign.}
+It is tempting, having computed $\partial(\mathrm{Bag}\,T) \cong \mathrm{Bag}\,T$, to
+say that context and term have become the same thing. They have not, and the
+temptation conceals a genuine distinction between two ways the type barrier can come
+down.
+
+\emph{Erasure by binding.} In a calculus with a binder and a substitution, a one-hole
+context is representable \emph{as a term}: $C[\,] \mapsto \lambda x.C[x]$, with
+$\mathrm{plug}$ realised by substitution. Here $\Ctx_T$ genuinely embeds into $T$ (or
+into an abstraction sort over $T$), the embedding is faithful, and nothing is lost.
+This is available in $\lambda$, $\pi$, and rho, and in rho it is available twice over,
+since $@$ makes the representing term quotable in turn. Note that the binder is here
+reifying the \emph{delivery} locations inside a continuation, which is dual to the
+reification of the \emph{contact} location forced at the AC pole
+(Remark~\ref{rem:lambdasurface}); the two reifications have different targets and
+should not be run together. Note what this is: the ability
+of a theory to internalise its own contexts, which is exactly condition (I) of
+Section~\ref{sec:tc} seen from the syntax side. The erasure is not a convenience; it
+is a structural property that some theories have and others do not.
+
+\emph{Erasure by collapse.} At the AC pole the layer derivative is term-shaped for an
+entirely different reason: a bag with a hole is just a smaller bag, because the hole
+carries no information. Nothing has been internalised; something has been forgotten.
+The two situations look alike on the page and are opposite in character --- one is a
+faithful embedding, the other a quotient.
+
+\paragraph{CCS: the distinction is irreducible.}
+CCS has no binder in the substitutive sense. Restriction hides a name but is never
+instantiated, and prefix binds nothing, so there is no abstraction to form and no
+substitution to plug with; erasure by binding is unavailable. And the layer
+derivatives above show why erasure by collapse does not cover the gap: the prefix
+layer differentiates to an \emph{action} and the restriction layer to a \emph{name},
+neither of which is a term. A CCS context is a path made of actions, names, and
+residual bags, and that is irreducibly a different type from a CCS process.
+
+This matters for how the present section may be used. The paradigmatic instance of
+the interaction cut is the one calculus in which the context/term distinction cannot
+be erased, so no argument in this note may presuppose the erasure. Accordingly the
+erosion criterion above is stated purely as failure of injectivity of
+$\mathrm{plug}$, which is meaningful whether or not $\Ctx_T$ embeds into $T$.
+
+\paragraph{Hence reification.}
+When $\mathrm{plug}$ ceases to be injective the surface can no longer be read off the
+context, and must be \emph{reified} as an explicit datum $I : \mathrm{Surf}$ carried
+by the introduction, with $\mathrm{near}(I,J)$ supplying the match condition the
+zipper can no longer supply. Reification is forced, and forced exactly at the point
+injectivity fails. What reification restores is a coordinate system indexed by the
+reified surface in place of the collapsed one --- and with it, labels that once again
+separate. The nominal surface is, in this reading, precisely the information the
+derivative could no longer carry, put back by hand so that context labels retain
+content.
+
+\begin{remark}[Consequences downstream]
+\label{rem:derivconseq}
+Three things in the sequel follow from this subsection rather than being independent
+stipulations. First, $\Ctx(G)$ of Definition~\ref{def:ctx} is a multicategory of
+zippers and its members are the transition labels of Section~\ref{sec:clts}, so when
+$\mathrm{plug}$ loses injectivity the label set shrinks and the induced bisimulation
+coarsens; this is Remark~\ref{rem:Kequations}, now derived rather than observed. Second, interfaces
+carry a surface component (Definition~\ref{def:interface}) for exactly this reason:
+if the zipper separated positions, sort and stage would suffice. Third, and least
+expected, erasure by binding is the syntactic face of internal representability:
+a theory can code its own contexts precisely when it can abstract over a hole, which
+is why $\lambda$, $\pi$, and rho satisfy condition (I) of
+Definition~\ref{def:I} and CCS does not. The separation of
+Corollary~\ref{cor:pinotccs} and the failure of erasure in CCS are one fact.
+\end{remark}
+
+\subsection{Defect one: preservation is the cheap direction}
+
+\begin{proposition}
+\label{prop:trivial}
+For any $G$ and any $H$ possessing an inert term $0$ with $0 \not\obs$, the constant
+map $P \mapsto 0$ is a naive morphism.
+\end{proposition}
+
+\begin{proof}
+Immediate: the hypothesis of the implication is discharged by a constant conclusion.
+\end{proof}
+
+The trivial encoding preserves bisimulation because \emph{preservation} is the cheap
+direction. What one wants is \emph{reflection},
+$f(P) \bisim_H f(Q) \implies P \bisim_G Q$, i.e.\ faithfulness on the bisimulation
+quotient. This kills the constant map at once. It does not, however, suffice.
+
+\begin{remark}[Table lookup]
+\label{rem:lookup}
+If $H$ is Turing complete, enumerate the terms of $G$ and define $f$ by case
+analysis on the G\"odel index, choosing pairwise non-bisimilar images. The result is
+faithful and worthless: all the content sits in the metatheoretic map, none in $H$.
+Faithfulness must therefore be paired with a condition forbidding the encoding to
+inspect its argument. The obvious such condition --- that $f$ be a homomorphism of
+the signature --- is refuted by the next subsection.
+\end{remark}
+
+\subsection{Defect two: signature preservation does not typecheck}
+
+Consider Milner's encoding of the $\lambda$-calculus into $\pi$ \cite{milner-fap}.
+In the call-by-name presentation,
+\[
+\enc{\lambda x.M}p = p(x).p(q).\enc{M}q,
+\qquad
+\enc{x}p = \overline{x}\langle p\rangle,
+\]
+\[
+\enc{MN}p = (\nu q)\bigl(\enc{M}q \mid (\nu y)(\overline{q}\langle y\rangle.\overline{q}\langle p\rangle \mid {!}\,y(r).\enc{N}r)\bigr).
+\]
+
+Two things are visible.
+
+First, $\enc{-}$ is not a function from terms to terms. Its target is
+name-abstracted processes: $\enc{-} : \Lambda \to (\mathcal{N} \multimap \Pi)$,
+each term being encoded relative to a continuation name at which its value is
+delivered. A signature homomorphism $\Lambda \to \Pi$ is not merely false here; it
+is not a well-formed demand.
+
+Second, even granting the parameterisation, no operator of $\Pi$ corresponds to
+application. The application clause introduces restriction, replication, and a
+two-step forwarding protocol. What is uniform about the clause is that a fixed
+\emph{context} is used, with the encodings of the subterms plugged into its holes ---
+a context-level, not a signature-level, regularity.
+
+\begin{remark}[The kernel]
+\label{rem:kernel}
+Nor is the encoding faithful. The equivalence it induces on $\lambda$-terms is,
+by Sangiorgi's analysis of the lazy encoding \cite{sangiorgi-lazy}, L\'evy--Longo
+tree equality; the call-by-value variant induces an eager-normal-form equivalence.
+Both are strictly coarser than $\beta$-conversion. So the canonical example of a
+good encoding fails both of the obvious repairs: it is not a signature homomorphism,
+and it is not faithful.
+\end{remark}
+
+The moral we draw is the one that motivates the whole of Section~\ref{sec:contexts}.
+The point of moving to bisimulation is to break with syntactic constraints; syntactic
+constraints should therefore re-enter only as optional refinements, never as the
+primitive. What survives the break is not the signature but the \emph{theory of
+contexts}.
+
+\subsection{Defect three: ambient contexts observe too much}
+
+Suppose $\iota : \pi \to \text{rho}$ is any reasonable encoding. Rho possesses a
+reflection operator $@$ turning a process into a name, and contexts built from it
+can inspect the code of their hole in ways no $\pi$ context can. Consequently there
+are $\pi$-terms $P \bisim_\pi Q$ whose images are separated by some rho context. If
+bisimulation on the target is computed over \emph{all} rho contexts, no encoding of
+$\pi$ into rho preserves bisimulation, and the naive category records the fact that
+rho is more expressive than $\pi$ as the \emph{absence} of any morphism between them.
+That is exactly backwards: the extra expressive power of the target should be
+recorded as data about the encoding, not as an obstruction to its existence.
+
+\begin{remark}[Two dual failures]
+\label{rem:dual}
+Defects two and three are dual and must not be conflated.
+\begin{itemize}[leftmargin=1.4em]
+\item \emph{Under-discrimination}: the encoding identifies source terms the source
+distinguishes. Milner's $\lambda \to \pi$, whose kernel is L\'evy--Longo equality.
+\item \emph{Over-discrimination}: the target's own contexts separate images the
+source considers equal. $\pi \to \text{rho}$.
+\end{itemize}
+Restricting the class of observing contexts can only make the target equivalence
+\emph{coarser}. It therefore repairs over-discrimination completely and
+under-discrimination never. Two different instruments are required, and
+Section~\ref{sec:conditions} supplies both: relativisation of the label class for the
+first, and an image factorisation recording the kernel for the second.
+\end{remark}
+
+\section{Contexts as the primary structure}
+\label{sec:contexts}
+
+\subsection{Stages}
+
+A first attempt at the objects of the context multicategory would take them to be
+lists of sorts together with the name-arity data recording which free names a term
+may use. That is the wrong definition, and wrong in the way this note exists to
+avoid: it presupposes a sort of names with substitution behaviour, which is
+structure imported from $\pi$ and rho rather than structure common to all
+interactive GSLTs. It is ill-formed for the $\lambda$-calculus, where binders bind
+variables and not channels; it is vacuous for Turing machines; and it is inert for
+CCS, whose restriction operator hides a name but is never instantiated, so that
+there is no substitution for the arity data to track. The correct definition is
+parametric in the binding signature and degenerates, rather than breaks, in each of
+these cases.
+
+\begin{definition}[Stage category]
+\label{def:stage}
+The binding signature of $G$ determines a small category $\mathbb{F}_G$ of
+\emph{stages}: objects are the finite name or variable contexts in which a term of
+$G$ may be formed, and morphisms are the admissible maps between them. We require
+that passing beneath a binder be witnessed by an inclusion
+$n \hookrightarrow n \sqcup \{a\}$, and permit $\mathbb{F}_G$ to be terminal.
+\end{definition}
+
+\begin{remark}[Stages across the instances]
+\label{rem:stages}
+The stage category, not a clause in the definition of interface, is where the
+instances differ.
+
+\begin{center}
+\begin{tabular}{@{}llp{5.0cm}@{}}
+\toprule
+Theory & $\mathbb{F}_G$ & Action \\
+\midrule
+TM, finite CCS & terminal & none \\
+CCS with restriction & $\mathbb{I}$: finite sets, injections & renaming; binders hide but never instantiate \\
+$\lambda$ & free-variable contexts & substitution of terms for variables \\
+$\pi$ & $\mathbb{F}$: finite sets, all maps & substitution; names may be identified \\
+rho & fixed point with $\mathcal{N} \cong @\,\mathrm{Proc}$ & reflection; the name object is the term object \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This is already an expressiveness stratification, and Section~\ref{sec:tc} will
+show that some of the separations in the probe order are visible at the level of
+$\mathbb{F}_G$ alone, without descending to particular terms.
+\end{remark}
+
+\subsection{The context multicategory}
+
+\begin{definition}[Interface]
+\label{def:interface}
+An \emph{interface} of $G$ is a triple $(s,n,\sigma)$ with $s \in S$ a sort, $n$ an
+object of $\mathbb{F}_G$, and $\sigma$ a finite multiset of elements of
+$\mathrm{Srf}$ --- the surfaces offered at that position.
+\end{definition}
+
+\begin{remark}[Why interfaces carry surfaces]
+\label{rem:surfaceinterface}
+A context can interact with its hole exactly when it offers a surface near, in the
+sense of Definition~\ref{def:surface}, to one the hole exposes. Recording $\sigma$
+is therefore not bookkeeping: it is what makes hole-filling
+\emph{interaction-relevant} rather than merely syntactic. Composition of contexts
+composes surface multisets, with pairs consumed by $\smile$ replaced by their
+surface of contact. Sort says what kind of thing sits at the position, stage says
+which names are in scope there, and surface says what interaction is on offer;
+Section~\ref{sec:tc} separates theories using the second, and the third is what the
+labels of Section~\ref{sec:clts} ultimately record.
+\end{remark}
+
+\begin{definition}[Context multicategory]
+\label{def:ctx}
+The \emph{context multicategory} $\Ctx(G)$ has interfaces as objects. A morphism
+\[
+C \;:\; (s_1,n_1,\sigma_1),\dots,(s_k,n_k,\sigma_k) \longrightarrow (s,n,\sigma)
+\]
+is a term of sort $s$ formed at stage $n$ offering surfaces $\sigma$, with $k$
+labelled holes taken modulo $\equiv$, where hole $i$ has sort $s_i$, occurs beneath a
+chain of binders exhibiting a map $n \to n_i$ in $\mathbb{F}_G$, and is offered the
+surfaces $\sigma_i$ by the surrounding term. Composition is hole-filling, defined
+when the stage and surface data of the filler agree with those recorded at the hole;
+the identity on $(s,n,\sigma)$ is the bare hole $\hole$; the symmetric group acts by
+permuting hole labels.
+\end{definition}
+
+\begin{remark}[Capture is data, not a defect]
+\label{rem:capture}
+Hole-filling is deliberately \emph{not} capture-avoiding: $(\nu a)\hole$ captures,
+and it must, since that is what distinguishes it from $\hole$. The map $n \to n_i$
+is exactly the record of which binders the hole sits beneath, and it is what makes
+composition well defined without $\alpha$-renaming the hole's names apart.
+Consequently $\Ctx(G)$ cannot be formed in a setting where substitution is
+capture-avoiding by fiat; the stage data is what replaces that discipline.
+\end{remark}
+
+\begin{remark}[Degeneration]
+\label{rem:degenerate}
+For Turing machines and for finite CCS without restriction, $\mathbb{F}_G$ is
+terminal, every interface is a sort, and Definition~\ref{def:ctx} reduces to the
+naive one. For CCS with restriction the stages are non-trivial and they matter:
+$(\nu a)(\hole \mid \bar a.0)$ and $\hole \mid \bar a.0$ are distinct contexts
+precisely because their holes sit at different stages. For the $\lambda$-calculus,
+$n$ is the free-variable context. For $C(G)$ the adjoined sorts $\mathrm{Sig}$ and
+$\mathrm{Stk}$ enlarge $S$ and leave $\mathbb{F}_G$ untouched, since signatures and
+the added sorts bind nothing. No instance requires a special case.
+\end{remark}
+
+\begin{remark}[Equations on $K$ coarsen the probe]
+\label{rem:Kequations}
+$\Ctx(G)$ is formed modulo $\equiv$. If $K$ carries equations --- regime (b) of
+Remark~\ref{rem:regimes} --- then two things happen at once, and they are the same
+thing counted twice. Contexts that were positionally distinct become identified, so
+$\Ctx(G)$ shrinks and the label class $L_\iota$ it induces on any target shrinks with
+it; and $\smile$ is enlarged, so more introductions can meet than position licenses.
+Loss of positional discrimination in the probe and leakage of ambient authority in
+the theory are one phenomenon. A theory with a free $K$ is therefore a strictly
+sharper probe than the same theory with equations imposed on $K$, and the two
+presentations sit at different degrees.
+\end{remark}
+
+\begin{remark}[Terms are the nullary contexts]
+\label{rem:nullary}
+A term of sort $s$ at stage $n$ is precisely a morphism $() \to (s,n)$. Hence a
+functor $\Ctx(G) \to \Ctx(H)$ encodes terms and contexts by one and the same map,
+and their compatibility is functoriality rather than an axiom imposed on top. This
+is the technical content of the slogan that the contexts must be mapped as well.
+\end{remark}
+
+\begin{remark}[Why a multicategory]
+\label{rem:multi}
+Parallel composition is genuinely binary and restriction genuinely binds across both
+arguments, so the interesting contexts have several holes. A category of unary
+contexts loses exactly the structure that distinguishes concurrent theories. Density
+in Section~\ref{sec:conditions} is also a multi-ary condition: it asks how ambient
+contexts decompose, and the decomposition is by parallel assembly.
+\end{remark}
+
+\subsection{Context-labelled transitions}
+\label{sec:clts}
+
+This is the move Section~\ref{sec:derivative} was written to prepare. Labels are not
+drawn from a separately postulated alphabet of actions; they are the contexts
+themselves, which is to say the locations of Definition~\ref{def:ctx}. Everything
+established there about when locations separate is therefore a statement about how
+much these labels can distinguish, and the reader should carry it forward:
+where $\mathrm{plug}$ is injective the labelling is faithful, where it is not the
+labelling collapses, and reification of the surface is what restores it.
+
+\begin{definition}[Context-labelled transition system]
+\label{def:clts}
+Let $L \subseteq \Ctx_1(G)$ be a class of unary contexts containing $\hole$ and
+closed under composition. The transition system $\mathrm{CLTS}(G,L)$ has terms as
+states and
+\[
+P \xrightarrow{\;C\;} Q
+\qquad\text{iff}\qquad
+C \in L \text{ and } C[P] \to Q,
+\]
+with $\obs$ as the atomic predicate on states.
+\end{definition}
+
+\begin{definition}[$L$-bisimulation]
+$\sim_L$ is the largest symmetric relation $R$ on terms such that $P \mathbin{R} Q$
+implies (i) $P \obs$ iff $Q \obs$, and (ii) whenever $P \xrightarrow{C} P'$ there is
+$Q \Rightarrow \xrightarrow{C} \Rightarrow Q'$ with $P' \mathbin{R} Q'$, where
+$\Rightarrow$ is reflexive-transitive silent reduction.
+\end{definition}
+
+\begin{remark}[Relation to derived congruences]
+\label{rem:rpo}
+Taking $L = \Ctx_1(G)$ entire makes the label set unmanageably large, which is why
+Leifer and Milner restrict to contexts minimal for enabling a reaction, via relative
+pushouts \cite{leifer-milner,sewell,bigraphs}. We note that relativisation to the
+image of a probe, introduced next, is an \emph{alternative} taming device: if the
+label class is already the image of a small theory, minimality is not needed to keep
+it tractable. Whether the two tamings agree on shared examples is
+Problem~\ref{prob:rpo}.
+\end{remark}
+
+\subsection{Morphisms}
+
+\begin{definition}[Ctx-morphism]
+\label{def:ctxmor}
+A \emph{Ctx-morphism} $\iota : G \to H$ is a symmetric pseudofunctor of
+multicategories $\iota : \Ctx(G) \to \Ctx(H)$ such that
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em]
+\item $\iota(\hole) \bisim \hole$ and
+$\iota\bigl(C \circ (D_1,\dots,D_n)\bigr) \bisim \iota(C) \circ (\iota D_1,\dots,\iota D_n)$,
+the comparisons being the structure 2-cells of the pseudofunctor;
+\item $\iota$ reflects and preserves the primitive observation:
+$C[\vec P] \obs$ iff $\iota(C)[\iota \vec P] \obs$;
+\item $\iota$ is \emph{stage-indexed}: it is accompanied by a functor
+$\varphi_\iota : \mathbb{F}_G \to \mathbb{F}_H$ over which it acts on interfaces,
+$(s,n) \mapsto (\iota s, \varphi_\iota n)$, compatibly with the maps $n \to n_i$
+recorded at holes.
+\end{enumerate}
+Write $\CtxGSLT$ for the resulting bicategory, with 2-cells the bisimulations
+between images.
+\end{definition}
+
+Note that ``pseudo'' is not fussiness. Encodings routinely preserve context
+composition only up to administrative reduction --- Milner's forwarders are exactly
+that --- so strict functoriality would exclude the examples.
+
+\begin{definition}[Induced label class and relative bisimulation]
+\label{def:relbis}
+For $\iota : G \to H$ put $L_\iota := \iota\bigl(\Ctx_1(G)\bigr)$, closed under
+composition. Two $H$-terms $X,Y$ are \emph{$\iota$-indistinguishable}, written
+$X \sim_\iota Y$, if they are bisimilar in $\mathrm{CLTS}(H, L_\iota)$.
+\end{definition}
+
+This is the formal content of the observation that when $\pi$ is encoded into rho,
+the encoding may be probed only by the images of $\pi$ contexts.
+
+\begin{proposition}[Preservation is now structural]
+\label{prop:preserve}
+For any Ctx-morphism $\iota$, the assignment $P \mapsto \iota(P)$ is a morphism of
+transition systems
+$\mathrm{CLTS}(G,\Ctx_1(G)) \to \mathrm{CLTS}(H,L_\iota)$.
+Consequently $P \sim_{\Ctx_1(G)} Q$ implies $\iota P \sim_\iota \iota Q$.
+\end{proposition}
+
+\begin{proof}
+If $P \xrightarrow{C} Q$ then $C[P] \to Q$; applying $\iota$ and using (i) of
+Definition~\ref{def:ctxmor}, $\iota(C)[\iota P]$ is bisimilar to $\iota(C[P])$, which
+by (ii) and the fact that pseudofunctors preserve the reduction witnessed by $\obs$
+reduces to a term bisimilar to $\iota Q$. Labels are transported because
+$\iota(C) \in L_\iota$ by definition. The consequence is the standard transport of
+bisimilarity along a morphism of transition systems.
+\end{proof}
+
+\begin{remark}
+\label{rem:kernel-congruence}
+Proposition~\ref{prop:preserve} costs nothing because functoriality was built into
+Definition~\ref{def:ctxmor}. This is the first dividend of taking contexts as
+primary: the compositionality condition that had to be imposed as an axiom in the
+naive setting is now definitional, and the induced kernel (Definition~\ref{def:F})
+is automatically a congruence.
+\end{remark}
+
+\subsection{Adequacy of the probe}
+
+Relativising the label class introduces a new way to cheat: the fewer contexts one
+admits, the coarser the induced equivalence and the easier preservation becomes. In
+the limit, admitting no contexts makes everything equivalent. The invariant of
+interest is therefore always the \emph{pair} $(\iota, L_\iota)$, never the encoding
+alone, and the probe must be pinned down independently.
+
+\begin{definition}[Self-separating probe]
+\label{def:selfsep}
+$G$ is \emph{self-separating} if $\sim_{\Ctx_1(G)}$ coincides with the intended
+weak bisimulation $\bisim_G$.
+\end{definition}
+
+If a probe is not self-separating then a statement of the form ``the encoding
+preserves bisimulation over encoded $G$ contexts'' preserves something other than
+what $G$ means by equivalence, and the whole exercise is void. Self-separation is a
+hypothesis on the probe alone, verified once per probe, and is the standard question
+of whether a derived context congruence agrees with barbed congruence
+\cite{leifer-milner,sewell}.
+
+\section{The two conditions}
+\label{sec:conditions}
+
+\subsection{Hosting}
+
+\begin{definition}[Condition (F): hosting]
+\label{def:F}
+A Ctx-morphism $\iota : G \to H$ \emph{hosts} $G$, written $\iota \models (F)$, if it
+is faithful up to bisimulation: for all parallel $C, D$ in $\Ctx(G)$,
+\[
+\iota(C) \sim_\iota \iota(D) \implies C \sim_{\Ctx_1(G)} D .
+\]
+The \emph{kernel} of $\iota$ is the congruence
+$C \approx_\iota D \iff \iota(C) \sim_\iota \iota(D)$; condition (F) says the kernel
+is as fine as possible.
+\end{definition}
+
+\begin{proposition}[Non-degeneracy]
+\label{prop:nondeg}
+The constant assignment $\iota(-) = 0$ does not satisfy (F) whenever $G$ has two
+non-bisimilar terms.
+\end{proposition}
+
+\begin{proof}
+All nullary contexts have the same image, so the kernel is the total relation,
+which is not $\sim_{\Ctx_1(G)}$ under the hypothesis.
+\end{proof}
+
+So the degeneracy that motivated the search is excluded by (F) alone, and by a
+condition that mentions neither syntax nor logic.
+
+\subsection{Exhausting}
+
+Hosting says the target is at least as expressive as the probe. The complementary
+question --- whether the target is anything \emph{more} --- is density.
+
+\begin{definition}[Restricted nerve]
+\label{def:nerve}
+For $\iota : G \to H$ define
+\[
+\Nerve_\iota : \Ctx(H) \longrightarrow \Psh\bigl(\Ctx(G)\bigr),
+\qquad
+\Nerve_\iota(X)(C) = \Sim\bigl(\iota C,\, X\bigr),
+\]
+where $\Sim(-,-)$ is the set of simulations, taken up to $\sim_\iota$.
+\end{definition}
+
+\begin{definition}[Condition (D): exhausting]
+\label{def:D}
+$\iota \models (D)$ if $\iota$ is \emph{dense}, i.e.\ $\Nerve_\iota$ is fully
+faithful. Equivalently, every $H$-context is a canonical colimit of the diagram of
+$\iota$-images mapping into it.
+\end{definition}
+
+\begin{proposition}[Operational reading]
+\label{prop:Dop}
+$\iota \models (D)$ iff every $H$-context $D$ is $\sim_\iota$-indistinguishable from
+a context assembled out of $\iota$-images: there is a finite diagram
+$C_1,\dots,C_k$ in $\Ctx(G)$ and an assembly of $\iota C_1, \dots, \iota C_k$ by
+parallel composition, restriction, and hole-filling that is $\sim_\iota$-equivalent
+to $D$.
+\end{proposition}
+
+\begin{design}[Which colimits]
+\label{des:colim}
+Proposition~\ref{prop:Dop} is stated for the class of \emph{assembly colimits}:
+those generated by parallel composition, restriction, and hole-filling, closed under
+the reduction-directed joins needed to make the presentation stable under $\to$.
+Pinning this class down precisely is the main piece of unfinished business in this
+note; see Problem~\ref{prob:colim}. We use the operational reading as the working
+definition throughout and flag every place where the choice matters.
+\end{design}
+
+\begin{proposition}[Composition]
+\label{prop:compose}
+Condition (F) is stable under composition. Condition (D) is stable under composition
+of morphisms preserving assembly colimits.
+\end{proposition}
+
+\begin{proof}
+For (F), faithfulness composes. For (D), if every $H$-context is an assembly of
+$\iota$-images and every $K$-context is an assembly of $\kappa$-images, then every
+$K$-context is an assembly of assemblies of $\kappa\iota$-images, and an assembly of
+assemblies is an assembly provided $\kappa$ carries the inner assemblies to
+assemblies --- which is the stated hypothesis.
+\end{proof}
+
+\begin{remark}
+The hypothesis in Proposition~\ref{prop:compose} is not idle: density is famously not
+stable under composition in general, and the failure is exactly failure of
+cocontinuity. This is a real constraint on the theory, not a technicality to be
+assumed away.
+\end{remark}
+
+\subsection{Relative universality}
+
+\begin{definition}[The probe order]
+\label{def:order}
+Write $G \preceq H$ if some Ctx-morphism $\iota : G \to H$ satisfies (F); say $H$ is
+\emph{$G$-universal}. Write $G \equiv H$ if some $\iota$ satisfies both (F) and (D);
+say $H$ is \emph{$G$-exact}. Write $G \prec H$ if $G \preceq H$ but no $\iota$
+satisfying (F) also satisfies (D).
+\end{definition}
+
+\begin{proposition}
+$\preceq$ is a preorder on theories, and $\equiv$ is the induced equivalence on
+morphisms preserving assembly colimits.
+\end{proposition}
+
+\begin{proof}
+Reflexivity by the identity, transitivity by Proposition~\ref{prop:compose}.
+\end{proof}
+
+So theories carry \emph{degrees} under $\preceq$, and $\prec$ is a strictness
+relation with a positive criterion: hosted but not exhausted. The observation that
+arbitrary rho contexts see strictly more than $\pi$ contexts is now a
+theorem-shaped assertion --- that no (F)-morphism $\pi \to \text{rho}$ is dense ---
+rather than an obstruction to the existence of morphisms.
+
+\subsection{Image factorisation}
+
+Condition (F) is too strong to demand of every encoding, since Milner's fails it.
+The general statement is a factorisation.
+
+\begin{proposition}[Image factorisation]
+\label{prop:factor}
+Every Ctx-morphism $\iota : G \to H$ factors as
+\[
+\begin{tikzcd}[column sep=2.6em]
+G \arrow[r, two heads, "q"] & G/{\approx_\iota} \arrow[r, hook, "\bar\iota"] & H
+\end{tikzcd}
+\]
+where $q$ is the quotient by the kernel and $\bar\iota \models (F)$.
+\end{proposition}
+
+\begin{proof}
+The kernel $\approx_\iota$ is a congruence by
+Remark~\ref{rem:kernel-congruence}, so the quotient multicategory exists; $\iota$
+factors through it by construction, and the induced $\bar\iota$ is faithful by
+definition of the kernel.
+\end{proof}
+
+\begin{example}[Milner, located]
+\label{ex:milner}
+For Milner's call-by-name encoding, $q$ is the quotient of $\Lambda$ by L\'evy--Longo
+tree equality and $\bar\iota$ hosts the quotient inside $\pi$. The encoding is thus
+completely described by the pair: a nontrivial quotient recording under-discrimination,
+followed by a hosting embedding. Neither half is visible in
+Definition~\ref{def:naive}.
+\end{example}
+
+\begin{remark}[The full invariant]
+An encoding is characterised by three data: the kernel (how much of the source is
+lost), the failure of density (how much of the target is unseen), and --- once
+Section~\ref{sec:meta-grade} is in play --- the overhead. Reporting only that ``an
+encoding exists'' discards all three.
+\end{remark}
+
+\section{Refining Turing completeness}
+\label{sec:tc}
+
+\subsection{The classical notion as a trace collapse}
+
+\begin{definition}[Trace collapse]
+\label{def:collapse}
+The \emph{trace collapse} of $\CtxGSLT$ is the bicategory obtained by replacing the
+2-cells --- bisimulations --- by trace inclusions, so that two terms are identified
+when they admit the same sequences of labels.
+\end{definition}
+
+By Remark~\ref{rem:machines} the Turing machine is not an object of the category, so
+before it can serve as a probe at all it must be \emph{presented} as one.
+
+\begin{definition}[A presentation of $\mathrm{TM}$]
+\label{def:tmpres}
+A \emph{process presentation} of Turing machines is an interactive GSLT
+$\mathrm{TM}^\sharp$ whose interacting sort contains both automaton and tape --- for
+instance by encoding the tape as a process --- with $K$ the constructor placing an
+automaton beside a tape, and whose interaction rule is the machine's transition
+relation.
+\end{definition}
+
+Such a presentation exists, and that is the whole difficulty: it is a choice.
+Different encodings of the tape yield different $\Ctx(\mathrm{TM}^\sharp)$ and hence
+different probes, and nothing internal to the machine model selects among them. The
+classical yardstick is therefore not merely coarse; it is not even well defined as a
+probe until an extraneous decision has been made.
+
+\begin{proposition}[Recovering Turing completeness]
+\label{prop:tc}
+Fix a process presentation $\mathrm{TM}^\sharp$. In the trace collapse, $H$ is
+$\mathrm{TM}^\sharp$-universal if and only if $H$ is Turing complete in the classical
+sense, and the criterion is independent of which presentation was fixed.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+In the trace collapse the branching structure of $\Ctx(\mathrm{TM}^\sharp)$ is
+invisible, so the only surviving content of faithfulness on the nullary component is
+that distinct input/output functions have distinct images --- i.e.\ that $H$ realises
+every partial recursive function. Conversely a universal machine simulated in $H$
+supplies the morphism. Independence of the presentation holds because any two process
+presentations of the same machine model compute the same functions, and at trace level
+that is all that is being compared.
+\end{proof}
+
+\begin{remark}[Presentation-dependence is the diagnostic]
+\label{rem:presdep}
+The independence clause of Proposition~\ref{prop:tc} holds \emph{only} in the trace
+collapse. Before collapsing, distinct process presentations of the same machine model
+sit at distinct degrees, since they induce distinct context multicategories. The
+classical notion is thus well defined precisely to the extent that it is blind, and
+the coincidence of those two facts is not an accident: what makes it insensitive to
+the choice of presentation is exactly what makes it insensitive to branching.
+\end{remark}
+
+\begin{remark}[Why the classical notion is blind]
+\label{rem:blind}
+Above the Turing threshold the trace-collapsed order has a single degree: any two
+Turing-complete theories host one another at trace level. The branching-time order
+does not collapse, and the separation results \cite{palamidessi,gorla,peters-glabbeek}
+are exactly exhibitions of that non-collapse. Classical Turing completeness is thus
+the shadow of $\preceq$ under Definition~\ref{def:collapse}, and using it as a
+hypothesis for a bisimulation-level conclusion is using the shadow to constrain the
+object.
+\end{remark}
+
+\subsection{The ladder}
+
+The following stratification replaces the single predicate. Each level adds one
+requirement; the classical notion is level 0, and level 4 is what a genuine claim of
+behavioural universality amounts to.
+
+\begin{center}
+\begin{tabular}{@{}clp{6.4cm}@{}}
+\toprule
+Level & Condition & Comment \\
+\midrule
+0 & functional universality & classical Turing completeness; trace level \\
+1 & sound simulation & $\iota$ is a Ctx-morphism; no faithfulness claimed \\
+2 & hosting (F) & kernel is trivial; source runs faithfully in target \\
+3 & internal representability (I) & the encoding is realised by a single target
+term applied to codes, not by a metatheoretic family \\
+4 & exhausting (D) & target adds nothing the source cannot assemble \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{definition}[Condition (I): internal representability]
+\label{def:I}
+$\iota \models (I)$ if there is a coding $\code{-}$ of $G$-terms as $H$-data,
+definable in $H$, and a single $H$-term $U_\iota$ with
+$U_\iota\langle \code{P}\rangle \sim_\iota \iota(P)$ for every $G$-term $P$.
+\end{definition}
+
+Condition (I) is what turns a translation into an interpreter, and it factors
+exactly along the ladder of Section~\ref{sec:naive}.
+
+\begin{proposition}[Continuity and reflection give (I)]
+\label{prop:contrefl}
+Let $G$ and $H$ be continued (Definition~\ref{def:cigslt}) and let $H$ be
+reflective, in the sense that it carries a term-level quoting operator $@$ with
+$*@P \equiv P$. Then any Ctx-morphism $\iota : G \to H$ satisfies (I).
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+By clause (ii) and Proposition~\ref{prop:effctx}, $\Ctx(G)$ admits codes, so $\code{-}$ is
+a computable map from $G$-terms to finite data. By reflection of $H$, that data is
+representable as an $H$-name, and $*$ recovers the process it names; $U_\iota$ is
+then the $H$-term that decodes and dispatches, definable because the guards it must
+decide are decidable by clause (ii) of $H$.
+\end{proof}
+
+The two hypotheses do distinct work, and separating them is the point: continuity
+of $G$ supplies canonical representatives to be coded, reflection of $H$ supplies
+an internal home for the codes. In $\pi$ the second fails --- processes are not
+transmissible data, so any coding is metatheoretic --- while in rho both hold by
+construction. Non-naturality of an internalisation family and externality of its
+coding are the same defect seen twice, and Proposition~\ref{prop:contrefl} says
+exactly which hypothesis repairs it.
+
+\subsection{Separations}
+
+\begin{center}
+\begin{tabular}{@{}lcccl@{}}
+\toprule
+Probe / target & (F) & (I) & (D) & Obstruction \\
+\midrule
+$\mathrm{TM}^\sharp \to$ CCS+rec & \checkmark & \checkmark & --- & no name passing; probe needs a presentation \\
+$\pi \to$ CCS+rec & --- & --- & --- & fixed interface \\
+$\lambda \to \pi$ & --- & \checkmark & --- & kernel is L\'evy--Longo \\
+$\pi \to$ rho & \checkmark & \checkmark & --- & $@$ not assemblable \\
+rho $\to$ rho & \checkmark & \checkmark & \checkmark & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Separation at the level of stages}
+
+The entry for $\pi \to \mathrm{CCS}$ deserves its own statement, since it is the
+cleanest separation the order provides and it is invisible classically. With
+Definition~\ref{def:stage} in hand it can be argued at the level of stage
+categories, without descending to a particular pair of terms.
+
+\begin{definition}[Stage-changing transition]
+\label{def:stagechange}
+A transition $P \xrightarrow{C} Q$ is \emph{stage-changing} if the stage of $Q$
+properly extends that of $P$ in $\mathbb{F}_G$.
+\end{definition}
+
+Bound output in $\pi$ is stage-changing: extruding a private name enlarges the
+observer's stage. Restriction in CCS is not: $(\nu a)P$ never emits $a$, so every
+CCS transition is stage-preserving, and $\mathbb{F}_{\mathrm{CCS}} = \mathbb{I}$
+contains only injections.
+
+\begin{proposition}[Hosting constrains the stage functor]
+\label{prop:stagefunctor}
+If $\iota : G \to H$ satisfies (F), then $\varphi_\iota : \mathbb{F}_G \to
+\mathbb{F}_H$ is faithful and preserves the substitution action: for every map
+$\sigma$ in $\mathbb{F}_G$ whose induced action separates two $G$-terms,
+$\varphi_\iota \sigma$ separates their images.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Suppose $\varphi_\iota \sigma = \varphi_\iota \tau$ for distinct $\sigma, \tau$
+separating $P$ from $Q$. The $G$-contexts realising $\sigma$ and $\tau$ then have
+$\sim_\iota$-equal images, so the kernel of $\iota$ identifies them, contradicting
+(F). Preservation of the action is the same argument applied to the nullary
+component.
+\end{proof}
+
+\begin{corollary}[$\pi \not\preceq \mathrm{CCS}$]
+\label{cor:pinotccs}
+No Ctx-morphism $\pi \to \mathrm{CCS}{+}\mathrm{rec}$ satisfies (F), although
+$\mathrm{CCS}{+}\mathrm{rec}$ is Turing complete.
+\end{corollary}
+
+\begin{proof}[Proof sketch]
+$\mathbb{F}_\pi$ contains non-injective maps: a $\pi$ context may deliver a name
+that identifies two names previously distinct, turning an inert composition into a
+redex. Every map of $\mathbb{F}_{\mathrm{CCS}} = \mathbb{I}$ is injective, so
+$\varphi_\iota$ must send a non-monic to a monic and therefore identifies maps that
+$\mathbb{F}_\pi$ distinguishes. By Proposition~\ref{prop:stagefunctor} this
+contradicts (F).
+\end{proof}
+
+\begin{remark}[Residual hypothesis]
+\label{rem:residual}
+The sketch rules out encodings that are stage-indexed in the sense of
+Definition~\ref{def:ctxmor}(iii). It does not by itself rule out an encoding that
+pre-allocates a fixed finite pool of CCS channels and simulates identification by
+case analysis over the pool. Excluding those requires the additional hypothesis
+that $\varphi_\iota$ be finitary and uniform --- essentially the finite-support
+condition of nominal sets. We record this as a hypothesis rather than pretending it
+is discharged; it is the same gap that the uniformity criteria of \cite{gorla} are
+designed to close, and it is the one place where this note's machinery does not yet
+subsume the checklist.
+\end{remark}
+
+Behavioural universality therefore forces name passing; under (I) it forces the
+coding to land in the name sort, which is reflection.
+
+\section{Two meta-circular interpreters}
+\label{sec:meta}
+
+We come to the structural payoff. Conditions (F) and (D) look like two unrelated
+technical hygiene requirements. They are in fact the two halves of mutual
+meta-circularity: one gives an interpreter running the source inside the target, the
+other an interpreter running the target inside the source.
+
+\subsection{The source, inside the target}
+
+\begin{theorem}[Hosting yields an interpreter for the source]
+\label{thm:src-in-tgt}
+Let $\iota : G \to H$ satisfy (F) and (I), and let $G$ be self-separating. Then
+$U_\iota$ is an interpreter for $G$ written in $H$, correct up to $\sim_\iota$: for
+every $G$-term $P$ and every $G$-context $C$,
+\[
+U_\iota\langle \code{C[P]}\rangle \;\sim_\iota\; \iota(C)\bigl[\,U_\iota\langle\code{P}\rangle\,\bigr],
+\]
+and $P \bisim_G Q$ iff
+$U_\iota\langle\code{P}\rangle \sim_\iota U_\iota\langle\code{Q}\rangle$.
+\end{theorem}
+
+\begin{proof}
+The displayed equation is Definition~\ref{def:I} composed with functoriality (i) of
+Definition~\ref{def:ctxmor}. The right-to-left direction of the second claim is
+Proposition~\ref{prop:preserve}; the left-to-right direction is (F) together with
+self-separation of $G$, which identifies $\sim_{\Ctx_1(G)}$ with $\bisim_G$.
+\end{proof}
+
+Write $E_{G\to H} := U_\iota$ for this interpreter.
+
+\subsection{The target, inside the source}
+
+\begin{theorem}[Exhausting yields an interpreter for the target]
+\label{thm:tgt-in-src}
+Let $\iota : G \to H$ satisfy (D) with $G$ and $H$ continued. Then the assembly
+presentations of Proposition~\ref{prop:Dop} are effective, and there is a $G$-term
+$V_\iota$ interpreting $H$ inside $G$: for every $H$-context $D$ and $H$-term $X$,
+\[
+V_\iota\langle \code{D},\code{X}\rangle \;\bisim_G\; \text{the }G\text{-context assembly } \delta(D) \text{ applied to } \delta(X),
+\]
+where $\delta$ is the computable procedure taking a code for an $H$-context to a
+finite assembly of $\iota$-images $\sim_\iota$-equivalent to it.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+By (D), each $H$-context is $\sim_\iota$-equivalent to an assembly of $\iota$-images.
+By clause (ii) for $H$ and Proposition~\ref{prop:effctx}, $H$-contexts admit codes, and by
+clause (ii) for $G$ the search for an assembly ranges over an effectively enumerable set of
+$G$-context representatives with decidable equality, so $\delta$ is computable; by faithfulness of $\iota$
+on the assembled pieces --- which is the fully faithful half of
+Definition~\ref{def:D} --- the $G$-contexts underlying those images are determined up
+to $\sim_{\Ctx_1(G)}$. $V_\iota$ therefore decodes, recovers the underlying
+$G$-contexts, runs them under $G$'s own dynamics, and reassembles. Correctness up to
+$\bisim_G$ follows from self-separation of $G$ and Proposition~\ref{prop:preserve}
+applied in the reverse direction along the fully faithful nerve.
+\end{proof}
+
+Write $E_{H\to G} := V_\iota$.
+
+\begin{remark}[Where the asymmetry lives]
+Theorem~\ref{thm:src-in-tgt} needs (I) and Theorem~\ref{thm:tgt-in-src} needs
+effectiveness of $\delta$. Both are ``the encoding is not merely a metatheoretic
+function'' conditions, imposed once on each side, and both are now consequences
+rather than hypotheses: (I) follows from continuity together with reflection of the
+target (Proposition~\ref{prop:contrefl}), and effectiveness of $\delta$ follows from
+the sections of both theories (Proposition~\ref{prop:effctx}). This is the whole
+purpose of rung three of Section~\ref{sec:naive}. In a reflective continued theory
+the same operator supplies both.
+\end{remark}
+
+\subsection{The two round trips}
+
+\begin{corollary}[Two meta-circular interpreters]
+\label{cor:meta}
+Suppose $G$ and $H$ are continued and self-separating, $H$ is reflective, and
+$\iota : G \to H$ satisfies (F) and (D). Then (I) and effective assembly hold by
+Propositions~\ref{prop:contrefl} and \ref{prop:effctx}, and
+\[
+M_G \;:=\; E_{H\to G} \circ E_{G\to H} \;:\; G \rightsquigarrow G,
+\qquad
+M_H \;:=\; E_{G\to H} \circ E_{H\to G} \;:\; H \rightsquigarrow H
+\]
+are interpreters for $G$ in $G$ and for $H$ in $H$ respectively, satisfying
+\[
+M_G \;\bisim_G\; \mathrm{id}_G,
+\qquad
+M_H \;\sim_\iota\; \mathrm{id}_H .
+\]
+$M_G$ is the source looping through the target; $M_H$ is the target looping through
+the source.
+\end{corollary}
+
+\begin{proof}
+Composition of the two theorems. $M_G$ takes a $G$-term to its code, runs it under
+$H$'s dynamics as simulated by $V_\iota$, and returns; each leg preserves and
+reflects the relevant equivalence, so the composite is behaviourally the identity.
+Symmetrically for $M_H$, with $\sim_\iota$ in place of $\bisim_H$ because $H$ is
+observed only through $L_\iota$.
+\end{proof}
+
+\begin{definition}[Meta-circularity]
+\label{def:metacirc}
+An endo-interpreter $M : G \rightsquigarrow G$ is \emph{meta-circular} if it is
+syntactically non-trivial --- $M(P) \not\equiv P$ for some $P$ --- and behaviourally
+the identity, $M \bisim \mathrm{id}$.
+\end{definition}
+
+Corollary~\ref{cor:meta} says that exactness of a probe relation manufactures a
+meta-circular interpreter on each side. This is the precise sense in which the two
+conditions belong together: (F) alone gives a one-way hosting with no return
+journey, (D) alone gives a decomposition with nothing to decompose faithfully, and
+only the conjunction closes the loop.
+
+\begin{remark}[Monad and comonad]
+\label{rem:monad}
+$E_{G\to H} \dashv E_{H\to G}$ is an adjunction in the simulation bicategory whose
+induced monad on $G$ is $M_G$ and whose induced comonad on $H$ is $M_H$. Both are
+idempotent up to bisimulation, so the adjunction is an adjoint equivalence. In
+such situations the degeneracy is usually noted with unease --- if both unit and
+counit are invertible, the word ``adjunction'' does no work. The reading offered here
+is the opposite: the degeneracy \emph{is} the content. An adjoint equivalence between
+two theories in the simulation bicategory is precisely the statement that each can
+meta-circularly interpret the other. What is missing in such cases is not
+non-degeneracy but a grading, supplied next.
+\end{remark}
+
+\subsection{Grading: meta-circularity is not free}
+\label{sec:meta-grade}
+
+\begin{definition}[Graded interpreter]
+\label{def:graded}
+$E$ has \emph{grade} $g : \mathbb{N} \to \mathbb{N}$ if every labelled step of the
+source is matched by at most $g(n)$ steps of the target, $n$ the size of the
+argument. Write $G \preceq_g H$ for hosting with grade $g$.
+\end{definition}
+
+\begin{proposition}[The cost of the loop]
+\label{prop:loop-cost}
+If $E_{G\to H}$ has grade $g$ and $E_{H\to G}$ has grade $h$, then $M_G$ has grade
+$g \circ h$. Hence $M_G \bisim \mathrm{id}_G$ but $M_G \not\bisim_{1} \mathrm{id}_G$
+whenever $g\circ h$ is not the identity: the round trip is behaviourally invisible and
+resource-visible.
+\end{proposition}
+
+\begin{corollary}[Graded lax coreflection]
+\label{cor:lax}
+In the graded simulation bicategory, $E_{G\to H} \dashv E_{H\to G}$ is a lax
+coreflection: the unit has grade $1$ and the counit has grade $g \circ h$. The
+failure to be an equivalence is exactly the interpretive overhead.
+\end{corollary}
+
+Ungraded, the adjunction collapses and says nothing; graded, its counit is a
+measurement, and the thing being measured is the price of self-interpretation. The
+grading is stated here because it costs nothing to state and because the interpretive
+overhead it names is the only quantity in this note with a plausible claim to being
+measured rather than merely compared; nothing else below depends on it.
+
+\section{Open problems}
+\label{sec:open}
+
+\begin{problem}[Assembly colimits]
+\label{prob:colim}
+Pin down the class of colimits in Design~\ref{des:colim}. Density is only as sharp as
+the colimits one admits, and admitting too many trivialises (D) while admitting too
+few makes it unsatisfiable. The candidate is the class generated by parallel
+composition, restriction, and hole-filling, closed under reduction-directed joins;
+what must be checked is that this class is stable under Ctx-morphisms preserving
+$\obs$.
+\end{problem}
+
+\begin{problem}[Self-separation of $\pi$]
+\label{prob:rpo}
+Is $\pi$ self-separating in the sense of Definition~\ref{def:selfsep}? Equivalently,
+does the context-labelled bisimulation over all unary $\pi$ contexts agree with
+barbed congruence? If the RPO-derived labels of \cite{leifer-milner} suffice, does the
+relativised label class $L_\iota$ agree with them on shared examples?
+\end{problem}
+
+\begin{problem}[The rho probe of $\lambda$]
+Compute the kernel of the canonical encoding $\lambda \to \text{rho}$. Since
+reflection permits the tree structure of a term to be internalised, the kernel may be
+strictly finer than L\'evy--Longo. If it is $\beta$-conversion itself, that is a
+sharp statement of what reflection adds over name passing.
+\end{problem}
+
+\begin{problem}[$\pi \prec$ rho]
+\label{prob:pirho}
+Exhibit a rho context --- $@$, or the nearness operator of
+Definition~\ref{def:surface} --- and
+prove that it is not $\sim_\iota$-equivalent to any assembly of encoded $\pi$
+contexts. This is the first genuine strictness result the order should deliver, and
+it is the one the classical yardstick is constitutionally unable to see.
+
+Remark~\ref{rem:stages} suggests attacking it at the level of stages rather than
+terms, as Corollary~\ref{cor:pinotccs} does for the CCS case: $\mathbb{F}_\pi$ is a
+category of finite sets, whereas $\mathbb{F}_{\mathrm{rho}}$ satisfies
+$\mathcal{N} \cong @\,\mathrm{Proc}$ and is therefore a fixed point no functor from
+finite sets can reach. If the argument goes through, both separations become
+statements about binding signatures alone, and the probe order acquires a
+computable lower bound.
+\end{problem}
+
+\begin{problem}[Discharging Remark~\ref{rem:residual}]
+Formulate the finitary uniformity hypothesis on $\varphi_\iota$ precisely --- most
+likely as finite support in the sense of nominal sets --- and verify that it holds
+for every Ctx-morphism arising from an internally representable encoding in the
+sense of Definition~\ref{def:I}. If (I) implies it, the residual gap closes and the
+separation arguments become unconditional.
+\end{problem}
+
+\begin{problem}[Well-foundedness of the graded order]
+Is $\preceq_g$ well-founded? A descending chain of theories each hosting the next
+with strictly better grade would be a hierarchy of increasingly efficient
+self-interpretation, and its existence or absence is the quantitative analogue of the
+degree structure.
+\end{problem}
+
+\begin{problem}[Probe profiles]
+A theory's invariant under this analysis is not a single degree but the profile of
+its kernels and densities across a family of probes. Is the profile of rho determined
+by finitely many probes?
+\end{problem}
+
+\begin{thebibliography}{99}
+
+\bibitem{cost}
+L.\ G.\ Meredith.
+\newblock \emph{Continued Interactive GSLTs and the Cost Endofunctor: a construction
+one level up from cost-accounted Rholang}.
+\newblock F1R3FLY.io, 2026.
+
+\bibitem{rho}
+L.\ G.\ Meredith and M.\ Radestock.
+\newblock A reflective higher-order calculus.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}, 2005.
+
+\bibitem{milner-fap}
+R.\ Milner.
+\newblock Functions as processes.
+\newblock \emph{Mathematical Structures in Computer Science}, 1992.
+
+\bibitem{sangiorgi-lazy}
+D.\ Sangiorgi.
+\newblock The lazy lambda calculus in a concurrency scenario.
+\newblock \emph{Information and Computation}, 1994.
+
+\bibitem{sw}
+D.\ Sangiorgi and D.\ Walker.
+\newblock \emph{The $\pi$-Calculus: A Theory of Mobile Processes}.
+\newblock Cambridge University Press, 2001.
+
+\bibitem{leifer-milner}
+J.\ Leifer and R.\ Milner.
+\newblock Deriving bisimulation congruences for reactive systems.
+\newblock In \emph{CONCUR}, 2000.
+
+\bibitem{sewell}
+P.\ Sewell.
+\newblock From rewrite rules to bisimulation congruences.
+\newblock \emph{Theoretical Computer Science}, 2002.
+
+\bibitem{bigraphs}
+R.\ Milner.
+\newblock \emph{The Space and Motion of Communicating Agents}.
+\newblock Cambridge University Press, 2009.
+
+\bibitem{palamidessi}
+C.\ Palamidessi.
+\newblock Comparing the expressive power of the synchronous and the asynchronous
+$\pi$-calculi.
+\newblock \emph{Mathematical Structures in Computer Science}, 2003.
+
+\bibitem{gorla}
+D.\ Gorla.
+\newblock Towards a unified approach to encodability and separation results for
+process calculi.
+\newblock \emph{Information and Computation}, 2010.
+
+\bibitem{peters-glabbeek}
+K.\ Peters and R.\ J.\ van Glabbeek.
+\newblock Analysing and comparing encodability criteria for process calculi.
+\newblock In \emph{EXPRESS/SOS}, 2015.
+
+\bibitem{mcbride}
+C.\ McBride.
+\newblock The derivative of a regular type is its type of one-hole contexts.
+\newblock Unpublished manuscript, 2001.
+
+\bibitem{huet}
+G.\ Huet.
+\newblock The zipper.
+\newblock \emph{Journal of Functional Programming}, 1997.
+
+\bibitem{kelly}
+G.\ M.\ Kelly.
+\newblock \emph{Basic Concepts of Enriched Category Theory}.
+\newblock Cambridge University Press, 1982.
+
+\bibitem{cwm}
+S.\ Mac Lane.
+\newblock \emph{Categories for the Working Mathematician}.
+\newblock Springer, 2nd edition, 1998.
+
+\end{thebibliography}
+
+\end{document}
