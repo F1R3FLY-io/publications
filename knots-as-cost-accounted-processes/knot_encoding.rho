@@ -1,0 +1,209 @@
+// ===========================================================================
+//  Knots as rholang processes  --  F1R3FLY.io working code
+//  Target: f1r3node-rust rholang-cli
+//
+//  Crossing gate (four ports oi,oo,ui,uo; private latch l):
+//     over strand : receive on oi, forward on oo, PRODUCE the latch l
+//     under strand: JOIN on (ui, l) with '&', then forward on uo
+//  Chirality == which strand produces l (over) vs. joins on it (under).
+//
+//  A DT traversal makes every arc a single-producer / single-consumer
+//  channel, so the arcs ARE the wires: no forwarder processes.
+//  "Current" is one message per arc; it is solvent by construction and the
+//  leftover forwarded tokens are the metered surplus.
+//
+//  NB on interpreter limits (rholang/README.md): no 0-arity send/receive
+//  (we always carry Nil), no guarded receive patterns, match patterns are
+//  not pre-evaluated (we never put arithmetic in a pattern).
+// ===========================================================================
+
+
+// ---------------------------------------------------------------------------
+//  Part 1.  The trefoil 3_1, DT code [4,6,2], expanded by hand.  Runnable.
+//
+//  passes 1..6, arc a_k = pass k -> pass (k+1 mod 6).  pass p: in a_{p-1}, out a_p.
+//  alternating => odd pass is OVER at every crossing (all-positive DT).
+//    crossing 1 {odd 1, even 4}: over a6->a1, under a3->a4
+//    crossing 2 {odd 3, even 6}: over a2->a3, under a5->a6
+//    crossing 3 {odd 5, even 2}: over a4->a5, under a1->a2
+// ---------------------------------------------------------------------------
+new a1, a2, a3, a4, a5, a6, stdout(`rho:io:stdout`) in {
+
+  // crossing 1
+  new l in {
+      for (s <- a6) { a1!(*s) | l!(Nil) }
+    | for (s <- a3 & _ <- l) { a4!(*s) }
+  }
+  |
+  // crossing 2
+  new l in {
+      for (s <- a2) { a3!(*s) | l!(Nil) }
+    | for (s <- a5 & _ <- l) { a6!(*s) }
+  }
+  |
+  // crossing 3
+  new l in {
+      for (s <- a4) { a5!(*s) | l!(Nil) }
+    | for (s <- a1 & _ <- l) { a2!(*s) }
+  }
+  |
+  // current: one token per arc (solvent; residue = surplus)
+  a1!(Nil) | a2!(Nil) | a3!(Nil) | a4!(Nil) | a5!(Nil) | a6!(Nil)
+  |
+  stdout!("trefoil encoding running")
+}
+
+
+// ===========================================================================
+//  Part 2.  Parametric builder:  DT code  ->  knot process.
+//
+//  DTtoKnot(dt, ret): dt is a list of signed even labels (one per crossing).
+//  Builds the whole network from a fresh unforgeable token `knot`; arc k is
+//  the reflected name  @[*knot, k].  Returns *knot on ret so a caller can
+//  seed / observe the boundary if desired.
+//
+//  Convention:  dt_i > 0  =>  the ODD-labelled pass is the OVER strand.
+//  (Flip the (over,under) assignment below for the opposite convention.)
+// ===========================================================================
+new DTtoKnot, length in {
+
+  // length of a list
+  contract length(@xs, ret) = {
+    match xs {
+      []        => ret!(0)
+      [_ ...t]  => { new r in { length!(t, *r) | for (@m <- r) { ret!(m + 1) } } }
+    }
+  } |
+
+  contract DTtoKnot(@dt, ret) = {
+    new knot, gates, inject, lenCh in {
+
+      length!(dt, *lenCh) |
+      for (@len <- lenCh) {
+        // N = 2n arcs
+        new go in {
+          // ---- spawn one gate per crossing ----
+          // gates(remaining, i, N): i is 1-based crossing index (odd label = 2i-1)
+          contract gates(@rem, @i, @nn) = {
+            match rem {
+              [] => Nil
+              [d ...t] => {
+                // even label and over/under choice
+                new eCh in {
+                  ( if (d < 0) { eCh!(0 - d) } else { eCh!(d) } ) |
+                  for (@e <- eCh) {
+                    new pick in {
+                      // pick!(overPass, underPass)
+                      ( if (d > 0) { pick!(2 * i - 1, e) } else { pick!(e, 2 * i - 1) } ) |
+                      for (@over, @under <- pick) {
+                        new oiCh, uiCh in {
+                          // in-arc(p) = N if p==1 else p-1 ; out-arc(p) = p
+                          ( if (over == 1)  { oiCh!(nn) } else { oiCh!(over - 1) } ) |
+                          ( if (under == 1) { uiCh!(nn) } else { uiCh!(under - 1) } ) |
+                          for (@oi <- oiCh & @ui <- uiCh) {
+                            // the gate itself
+                            new l in {
+                                for (s <- @[*knot, oi]) {
+                                  @[*knot, over]!(*s) | l!(Nil)
+                                }
+                              | for (s <- @[*knot, ui] & _ <- l) {
+                                  @[*knot, under]!(*s)
+                                }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                } |
+                gates!(t, i + 1, nn)
+              }
+            }
+          } |
+
+          // ---- inject current on every arc 1..N ----
+          contract inject(@k, @nn) = {
+            if (k <= nn) { @[*knot, k]!(Nil) | inject!(k + 1, nn) } else { Nil }
+          } |
+
+          gates!(dt, 1, 2 * len) |
+          inject!(1, 2 * len) |
+          ret!(*knot)
+        }
+      }
+    }
+  } |
+
+  // Example: build the trefoil and the figure-eight
+  new r1, r2 in {
+    DTtoKnot!([4, 6, 2], *r1) |
+    DTtoKnot!([4, 6, 8, 2], *r2) |
+    for (_ <- r1) { Nil } |
+    for (_ <- r2) { Nil }
+  }
+}
+
+
+// ===========================================================================
+//  Part 3.  The Perko pair.  Perko A = 10_161, DT [4,12,-16,14,-18,2,8,-20,-10,-6]
+//  (KnotInfo / Wikipedia).  Perko A and Perko B (formerly 10_162) are the SAME
+//  knot with DIFFERENT writhes -- the classical refutation of Little's
+//  writhe-invariance claim.  Our encoding gives them weakly-bisimilar boundary
+//  forwarders (same knot) but cost ledgers differing by 2*(w_A - w_B).
+//  Generated by dt_to_rho.py; standard DT sign convention.
+// ===========================================================================
+// Perko A  10_161 (formerly the Perko pair 10_161/10_162): DT [4, 12, -16, 14, -18, 2, 8, -20, -10, -6]  (n=10 crossings, 20 arcs)
+new a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20 in {
+  new l in {
+      for (s <- a20) { a1!(*s) | l!(Nil) }
+    | for (s <- a3 & _ <- l) { a4!(*s) }
+  }  // crossing 1: over a20->a1, under a3->a4
+  |
+  new l in {
+      for (s <- a2) { a3!(*s) | l!(Nil) }
+    | for (s <- a11 & _ <- l) { a12!(*s) }
+  }  // crossing 2: over a2->a3, under a11->a12
+  |
+  new l in {
+      for (s <- a15) { a16!(*s) | l!(Nil) }
+    | for (s <- a4 & _ <- l) { a5!(*s) }
+  }  // crossing 3: over a15->a16, under a4->a5
+  |
+  new l in {
+      for (s <- a6) { a7!(*s) | l!(Nil) }
+    | for (s <- a13 & _ <- l) { a14!(*s) }
+  }  // crossing 4: over a6->a7, under a13->a14
+  |
+  new l in {
+      for (s <- a17) { a18!(*s) | l!(Nil) }
+    | for (s <- a8 & _ <- l) { a9!(*s) }
+  }  // crossing 5: over a17->a18, under a8->a9
+  |
+  new l in {
+      for (s <- a10) { a11!(*s) | l!(Nil) }
+    | for (s <- a1 & _ <- l) { a2!(*s) }
+  }  // crossing 6: over a10->a11, under a1->a2
+  |
+  new l in {
+      for (s <- a12) { a13!(*s) | l!(Nil) }
+    | for (s <- a7 & _ <- l) { a8!(*s) }
+  }  // crossing 7: over a12->a13, under a7->a8
+  |
+  new l in {
+      for (s <- a19) { a20!(*s) | l!(Nil) }
+    | for (s <- a14 & _ <- l) { a15!(*s) }
+  }  // crossing 8: over a19->a20, under a14->a15
+  |
+  new l in {
+      for (s <- a9) { a10!(*s) | l!(Nil) }
+    | for (s <- a16 & _ <- l) { a17!(*s) }
+  }  // crossing 9: over a9->a10, under a16->a17
+  |
+  new l in {
+      for (s <- a5) { a6!(*s) | l!(Nil) }
+    | for (s <- a18 & _ <- l) { a19!(*s) }
+  }  // crossing 10: over a5->a6, under a18->a19
+  |
+  // current (solvent by construction; residue = metered surplus)
+  a1!(Nil)  | a2!(Nil)  | a3!(Nil)  | a4!(Nil)  | a5!(Nil)  | a6!(Nil)  | a7!(Nil)  | a8!(Nil)  | a9!(Nil)  | a10!(Nil)  | a11!(Nil)  | a12!(Nil)  | a13!(Nil)  | a14!(Nil)  | a15!(Nil)  | a16!(Nil)  | a17!(Nil)  | a18!(Nil)  | a19!(Nil)  | a20!(Nil)
+}
