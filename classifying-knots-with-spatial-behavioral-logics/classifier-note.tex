@@ -1,0 +1,818 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue,citecolor=black}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{conjecture}{Conjecture}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+\newtheorem{example}{Example}
+
+\newcommand{\enc}[1]{[\![ #1 ]\!]}
+\newcommand{\wbisim}{\approx}
+\newcommand{\Nil}{\mathbf{0}}
+\newcommand{\writhe}{\operatorname{w}}
+\newcommand{\cost}{\operatorname{c}}
+\newcommand{\Gate}{\mathsf{Gate}}
+\newcommand{\charf}[1]{\chi_{#1}}
+\newcommand{\sep}{\mathbin{\vert}}
+\newcommand{\ssep}[1]{\mathbin{\vert_{#1}}}
+\newcommand{\Hq}{\mathrm{H}}
+\newcommand{\fn}{\operatorname{fn}}
+
+\lstdefinelanguage{rholang}{
+  morekeywords={new,in,for,contract,def,match,if,else,Nil,true,false},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+\lstset{
+  language=rholang,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!45!black}\itshape,
+  stringstyle=\color{red!60!black},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  frame=none,
+  xleftmargin=1.5em,
+}
+
+\title{Classifying Knot Diagrams with a Spatial--Behavioural Logic\\
+\large A logic obtained for free from the encoding of knots as processes}
+\author{L. G. Meredith\\ F1R3FLY.io}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A companion note encoded knot diagrams as cost-accounted rholang processes and
+showed the encoding invariant under the Reidemeister moves up to weak
+bisimulation. Weak bisimulation, however, is nearly blind on a closed knot: the
+encoding of a closed diagram is a live $\tau$-network with no free names, so its
+observable behaviour carries almost no information. This note takes up the other
+half. Because the host is a graph-structured lambda theory, it comes with a
+logic --- generated from its own constructors and rewrite rules by the OSLF
+family of algorithms --- and we get that logic for free the moment we encode
+knots into it. Nothing here is designed for knots. We assemble the pieces the
+template supplies, add two features it does not yet have (a greatest fixed point
+and a graded separating conjunction), and observe that in a reflective calculus
+the name predicates are considerably stronger than in a calculus of atomic names,
+because a name is a quoted process and a predicate may therefore see into its
+structure. We then work a stable of examples: split diagrams, nugatory crossings
+and reducedness, connected sums, Conway spheres, alternation, and the writhe.
+Two of these are worth the price of admission on their own. Reducedness is a
+one-line separation statement, because a nugatory crossing is exactly a crossing
+whose deletion disconnects the term --- a property no behavioural logic can
+express. And the conjunction \emph{reduced} $\wedge$ \emph{alternating} carves
+out precisely the fragment on which the cost ledger of the companion note stops
+being a framing and becomes a knot invariant. Throughout we are candid that these
+are properties of \emph{diagrams}; we argue this is the right level, since it is
+the level at which classical knot theory states the Tait conjectures.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+
+\subsection{What we are claiming, and what we are not}
+
+The companion note \cite{knots} encodes a knot diagram as a process. A crossing
+becomes a gate: the over-strand passes a signal through and produces a private
+latch; the under-strand joins on its incoming signal and that latch; chirality is
+which strand plays which role. Driving the construction from a
+Dowker--Thistlethwaite code makes every arc a single-producer/single-consumer
+channel, so a diagram is a flat parallel composition of gates plus injected
+current. Taken as a monoidal functor from tangles to processes modulo weak
+bisimulation, the encoding is invariant under the Reidemeister moves.
+
+That result is one-directional. It says non-isotopic diagrams are never
+\emph{wrongly} separated. It says nothing about whether isotopy classes are
+\emph{distinguished}, and there the news is bad: closing a tangle into a knot
+restricts every boundary name, so a closed encoding is a live, periodic
+$\tau$-network. Weak bisimulation abstracts exactly the internal steps. As an
+observable object a closed knot is nearly featureless, and one should not expect
+its weak-bisimulation class to carry knot type.
+
+The claim of this note is that the discriminating content is not gone; it has
+moved. It is in the \emph{spatial} structure of the term --- how many gates there
+are, which arcs they share, how the network falls apart when a gate is removed,
+what the chirality pattern is as one walks the traversal. All of that is invisible
+to a modal logic and completely visible to a spatial one. The encoding did not
+destroy the information; weak bisimulation is simply the wrong instrument for
+reading it.
+
+What we are \emph{not} claiming is that any of this is a knot invariant on the
+nose. Almost every formula below is a property of a diagram, and we take
+Section~\ref{sec:diagrams} to say plainly which is which. We regard this as the
+honest and also the useful level: it is the level at which Tait stated his
+conjectures, and the level at which the classical results about alternating
+diagrams live.
+
+\subsection{The logic is not designed; it is generated}
+
+The reason the logic costs nothing is worth stating up front, because it is the
+whole architectural point and is easy to mistake for a slogan.
+
+A graph-structured lambda theory (GSLT) is a triple $(\Sigma, E, R)$: a signature
+which is in general a lambda theory, a set of equations imposing a structural
+congruence, and an adjoined graph of rewrite rules \cite{omnibus}. Given such a
+presentation, the OSLF family of algorithms generates a logic from it: one
+structural connective per term former of $\Sigma$, one modality per rewrite rule
+of $R$ together with a choice of redex position, and a propositional layer
+stratified by the categorical strength available. The generation does not know
+which theory it is applied to.
+
+The consequence for us is immediate. The companion note encodes knots into the
+rho calculus. The rho calculus is a GSLT with a published presentation. So the
+logic for knot diagrams is whatever the generator emits on that presentation ---
+we do not get to choose it, and equally we do not have to build it. What the
+present note contributes is not a logic but the observation that the generated
+one already says the things a knot theorist wants said, plus two additions to the
+template (\S\ref{sec:additions}) and one observation about reflection
+(\S\ref{sec:names}) that make the saying practical.
+
+\begin{remark}[Why the base theory is the encoding]
+One could instead present the tangle category $\mathbf{Tang}$ directly as a GSLT
+and generate a logic from \emph{its} constructors and moves. The companion note
+declines that route and so do we, for the reason given there: the discriminating
+material is the gate --- which strand produces the latch, whether the latch is
+matched or counted, how gates sit beside one another under $\sep$ --- and gates
+are objects on the process side. A direct presentation of the tangle category has
+no gates in it to talk about. It also keeps the resolution reading of
+\cite[\S9]{knots} in play, since the four-port hole is what a gate becomes when
+its latch is forgotten (\S\ref{sec:relax}).
+\end{remark}
+
+\subsection{Ideal logic, checkable fragment}\label{sec:ideal}
+
+One methodological commitment governs everything below. We distinguish the
+\emph{ideal} logic --- adequate for the idealised calculus, and the thing that
+\emph{defines} the invariant --- from \emph{fragments}, restricted so that model
+checking terminates, which \emph{decide} it. These are different artifacts with
+different jobs, and it is a mistake to ask one to do the other's work.
+
+The precedent is familiar and should reassure the topologist. The Kauffman
+bracket is \emph{defined} by a sum over $2^n$ resolutions; nobody computes it that
+way, and nobody thinks the definition is impugned by the existence of a better
+algorithm. Likewise here: the adequate logic says what the invariant is, and a
+user chasing a terminating check restricts the theory, or the connectives, or
+both, and accepts that the restricted logic no longer resolves everything. Since
+the spatial and behavioural connectives are generated from the theory, restricting
+the theory restricts them automatically; the connectives arising from the
+collection semantics --- infinitary joins, and hence the fixed point of
+\S\ref{sec:nu} --- can force non-termination independently and may need
+restricting on their own account. A logic whose model checking terminates is
+necessarily not adequate for the whole of a Turing-complete host.
+
+We flag which side of this line each example falls on as we go.
+
+\section{The logic, assembled}\label{sec:logic}
+
+\subsection{What the template supplies}
+
+We recall only what we use. The rho calculus has term formers
+$\Nil$, $*n$ (drop), $n!(Q)$ (output), $\mathtt{for}(x \leftarrow n)P$ (input),
+parallel composition, and $@P$ (quote); parallel composition carries an
+associative--commutative equational theory, and the communication rewrite is the
+single interaction rule. Feeding that presentation to the generator yields three
+layers.
+
+\paragraph{Structural connectives.}
+One type former $f^\sharp$ per term former $f$, whose inhabitants are the terms
+whose root former is $f$. We write $\mathsf{out}(n)\varphi$ for the predicate
+holding of $n!(Q)$ with $Q \models \varphi$, and
+$\mathsf{in}(n)\varphi$ for the analogous predicate on receipts. The interesting
+one is parallel composition. Because $\sep$ is associative--commutative, the
+generated connective is a genuine \emph{separating conjunction} in the sense of
+spatial and separation logics \cite{caires-cardelli,reynolds}:
+\[
+P \models \varphi \sep \psi
+\quad\Longleftrightarrow\quad
+P \equiv Q \sep R \ \text{ with } \ Q \models \varphi,\ R \models \psi .
+\]
+Everything in \S\ref{sec:examples} that a modal logic cannot say is said with
+this connective.
+
+\paragraph{Behavioural modalities.}
+One primitive modality $\langle K_j\rangle^{\vec x :: \vec A}B$ per rewrite rule
+and choice of redex position, where $K_j$ is the one-hole context determined by
+that position. These are \emph{context-labelled}: the label is the context in
+which the step fires, not merely an action name. We return to why that matters in
+\S\ref{sec:caires}.
+
+\paragraph{Propositional layer.}
+Conjunction and $\top$ come from the finite-limits fragment; disjunction,
+implication and negation require more, and a specification supplies them or does
+not. We assume conjunction, disjunction, and negation throughout the ideal logic,
+and say so when a fragment gives one up.
+
+\paragraph{Restriction.}
+The encoding of a closed diagram is $\mathtt{new}\ a_1,\dots,a_{2n}\ \mathtt{in}\
+\{\cdots\}$, so every arc name is bound. We need a connective that gets under the
+binder. Following the spatial-logic tradition we take a hidden-name quantifier:
+\[
+P \models \Hq x.\,\varphi
+\quad\Longleftrightarrow\quad
+P \equiv \mathtt{new}\ x\ \mathtt{in}\ Q \ \text{ with } \ Q \models \varphi,
+\ x \ \text{fresh}.
+\]
+
+\begin{remark}[Restriction hides names from observation, not from description]
+\label{rem:crux}
+This is the crux of the whole note and deserves to be isolated. Restriction makes
+a name unobservable: no context can communicate on it, which is exactly why a
+closed knot's behaviour is all $\tau$ and why weak bisimulation sees nothing. It
+does not make the name \emph{undescribable}. $\Hq x.\varphi$ reaches under the
+binder and speaks about the structure so hidden. The spatial layer therefore
+recovers precisely what closing the diagram took away from the behavioural layer.
+The companion note's pessimism about closed encodings is a fact about
+$\wbisim$, not about the term.
+\end{remark}
+
+\subsection{Names are processes}\label{sec:names}
+
+In a calculus of atomic names, a name predicate can do two things: test equality
+and test freshness. Caires' spatial logic for the $\pi$-calculus \cite{caires} is
+of that kind, and its name apparatus --- name equality, the revelation
+connective, the fresh-name quantifier --- is exactly what atomic names permit.
+
+The rho calculus is reflective. Names are not atoms; a name is a quoted process,
+with $@$ and $*$ mediating between the two sorts and $@(*n) = n$ as the only
+equation. A name predicate may therefore \emph{see into the structure of the
+name}:
+\[
+n \models @\varphi
+\quad\Longleftrightarrow\quad
+n = @P \ \text{ with } \ P \models \varphi .
+\]
+This is namespace logic \cite{namespace}: a full logic on names, in which one
+describes a \emph{namespace} by a property rather than enumerating it. The
+difference from the atomic setting is not cosmetic, and it pays three times here.
+
+\paragraph{Arc names carry their traversal index.}
+The parametric builder of \cite[App.~A]{knots} constructs arc $k$ of a knot as the
+reflected name $@[*\mathit{knot}, k]$: a structured name whose components are the
+diagram's unforgeable token and the arc's position in the DT traversal. A name
+predicate can therefore recover both. ``$a$ is an arc of \emph{this} diagram'' and
+``$a$ is the arc at traversal position $k$'' are name-level statements, not
+data-level ones. In an atomic-name setting the index would have to be carried as a
+message and the logic could speak of it only by observing traffic --- which, for a
+closed knot, is precisely what is unavailable.
+
+\paragraph{Walking the traversal is a name operation.}
+Consequently the walk that the alternation formula of \S\ref{sec:alt} performs ---
+from arc $k$ to arc $k+1$ --- can be taken at the name level rather than by
+searching the term for the gate that consumes $a_k$. The same property has a
+spatial reading and a nominal reading; the nominal one is dramatically cheaper to
+check, since it replaces a search over $n$ gates by a computation on a name.
+
+\paragraph{A name may quote a tangle.}
+Most consequentially for \S\ref{sec:mutation}, a name can quote an arbitrary
+process, hence an arbitrary sub-tangle. ``The channel $c$ carries a tangle
+satisfying $\varphi$'' is then simply $c \models @\varphi$ --- a statement about
+the name, with no communication required. This is the same mechanism by which
+Rholang~1.4 types a channel by the language definition it carries
+\cite[\S9]{omnibus}, and it is the natural way to talk about what sits on the far
+side of a Conway sphere.
+
+\begin{remark}[Two boundaries, one mechanism]
+It is worth noticing that reflection is doing for names what the separating
+conjunction does for processes: both are ways of describing a decomposition
+without executing it. $@\varphi$ opens a name to reveal the process inside;
+$\varphi \sep \psi$ opens a process to reveal the parts. A knot diagram is a
+structure made entirely of such decompositions, which is why the two connectives
+between them cover so much of the classical vocabulary.
+\end{remark}
+
+\subsection{Two additions to the template}\label{sec:additions}
+
+The generated logic as it stands lacks two things we need. Both are independent
+features rather than knot-specific hacks, and both should probably migrate into
+the rubric of \cite{omnibus} rather than living here; we develop them here so that
+this note is self-contained.
+
+\subsubsection{A greatest fixed point}\label{sec:nu}
+
+Add to the grammar a propositional variable $X$ and the former $\nu X.\varphi$,
+with $X$ occurring only positively in $\varphi$. The semantics is the standard
+one and requires nothing exotic: a formula denotes a collection of witnesses, the
+collections are ordered by inclusion, $\varphi$ positive in $X$ induces a monotone
+operator on that order, and $\nu X.\varphi$ denotes its greatest post-fixed point,
+which exists by Knaster--Tarski provided the order has arbitrary joins.
+
+Two comments on the cost. First, in the vocabulary of \cite{splitting} the demand
+for arbitrary joins is a constraint on the \emph{collection} component, not on
+the structural or behavioural ones --- the fixed point is paid for by the shape of
+the container in which witnesses are aggregated. That is also why $\nu$ is the
+first casualty of a terminating fragment: infinitary collection connectives break
+termination independently of how thin one makes the theory fragment.
+
+Second, and specific to us, the addition is not optional. The gate of \cite{knots}
+is a recursive definition that reinstates itself at the latch join, so a gate's
+own behaviour is infinite and no finite modal formula pins it. The characteristic
+formula of \S\ref{sec:chi} is necessarily a $\nu$-formula. This is a satisfying
+place for the feature to enter, since it enters on the strength of an ordinary
+design decision about the object language rather than as apparatus imported to
+make a particular example work; alternating diagrams (\S\ref{sec:alt}) then come
+along as a second use of something already bought.
+
+\begin{remark}[What $\nu$ buys is uniformity]\label{rem:uniform}
+It is worth being precise about the gain, because it is easy to overstate. For a
+\emph{fixed} diagram with $2n$ arcs, alternation is a finite conjunction over the
+arcs and needs no fixed point at all. What $\nu$ provides is a \emph{single}
+formula, the same for every diagram, in place of a $2n$-fold conjunction that must
+be rewritten for each $n$. Uniformity, not raw expressive power over a fixed
+input. This matters for the same reason it matters in program logics: a
+classifier one has to regenerate per input is not a classifier.
+\end{remark}
+
+\subsubsection{Graded separation}\label{sec:graded}
+
+The separating conjunction splits a term. For knots we care about \emph{how much}
+of the interface the two halves share, since that number is precisely the
+classical tangle-decomposition hierarchy. Define, for a set $\vec a$ of restricted
+names,
+\[
+P \models \varphi \ssep{k} \psi
+\quad\Longleftrightarrow\quad
+P \equiv \Hq \vec a.\,(Q \sep R)
+\ \text{ with } \
+Q \models \varphi,\ R \models \psi,\ \bigl|\fn(Q) \cap \fn(R) \cap \vec a\bigr| = k .
+\]
+$\ssep{k}$ is derived rather than primitive: it is $\sep$ under $\Hq$, with the
+cardinality condition expressed by the name predicates of \S\ref{sec:names}, which
+can say of a name that it is an arc of this diagram and can therefore count the
+shared ones. We treat it as a defined abbreviation throughout.
+
+\section{Characteristic formulae}\label{sec:chi}
+
+\subsection{The idea, imported}\label{sec:caires}
+
+Caires \cite{caires} identifies the notion we need: a \emph{characteristic
+formula} for a process --- a single formula satisfied by exactly the processes
+equivalent to it. Characteristic formulae turn an equivalence question into a
+model-checking question, which is the move a classifier is made of.
+
+We import the idea and not the logic, and the distinction matters. Caires'
+modalities are labelled by actions. Ours are labelled by \emph{contexts}
+(\S\ref{sec:logic}), which is a strictly finer instrument: the label records the
+one-hole context in which a step fires, so two steps that perform the same action
+in different surroundings are distinguished. For gates this is exactly what one
+wants, because chirality --- the whole content of a crossing --- is a fact about
+which half of the gate sits in which context. In an action-labelled logic one
+recovers chirality by encoding it into a name discipline and then reasoning about
+names; here it is read directly off the label. Add to this the stronger name
+predicates of \S\ref{sec:names}, and the two logics differ in both of the
+ingredients a characteristic formula is built from.
+
+\subsection{The gate}
+
+Recall the gate:
+\begin{lstlisting}
+def Gate(oi, oo, ui, uo) = {
+  new l in {
+      for (s <- oi)          { oo!(*s) | l!(Nil) }
+    | for (s <- ui & _ <- l) { uo!(*s) | Gate(oi,oo,ui,uo) }
+  }
+}
+\end{lstlisting}
+Its characteristic formula describes a restriction of a two-way separation, with
+the recursive occurrence caught by the fixed point:
+\[
+\charf{\Gate}(oi,oo,ui,uo)
+\;\coloneqq\;
+\nu X.\ \Hq \ell.\Bigl(
+  \mathsf{in}(oi)\bigl[\mathsf{out}(oo)\top \sep \mathsf{out}(\ell)\top\bigr]
+  \ \sep\
+  \mathsf{in}(ui,\ell)\bigl[\mathsf{out}(uo)\top \sep X\bigr]
+\Bigr).
+\]
+Read left to right: the term is, up to structural congruence, the restriction of a
+name $\ell$ over a parallel composition of exactly two receipts; the first is a
+receipt on $oi$ whose continuation separates into an output on $oo$ and an output
+on $\ell$; the second is a join on $ui$ and $\ell$ whose continuation separates
+into an output on $uo$ and something again satisfying $X$. The greatest fixed
+point is the right one: we want the gate to be reinstated forever, not to be
+well-founded.
+
+Two features of the encoding are legible in the formula and are worth naming.
+Chirality is the asymmetry between the two conjuncts --- which one produces
+$\ell$ and which joins on it --- so $\charf{\Gate}$ and the formula for the mirror
+crossing differ by swapping $oi \leftrightarrow ui$, $oo \leftrightarrow uo$. And
+the \emph{matched} latch of \cite{knots} is visible as the placement of $X$: the
+gate reinstates inside the under-branch, so each latch belongs to one
+instantiation. Had the two receipts been made persistent instead --- a
+\emph{counting} latch --- $X$ would not appear and the formula would be smaller
+and weaker.
+
+\subsection{The relaxation lattice}\label{sec:relax}
+
+$\charf{\Gate}$ sits at the top of a lattice of progressively weaker formulae,
+obtained by forgetting parts of it. This is where a classifier's dials live, and
+the lattice has a pleasing bottom.
+
+\begin{center}
+\begin{tabular}{lll}
+\hline
+formula & forgets & what remains \\
+\hline
+$\charf{\Gate}$ & nothing & the gate up to $\wbisim$ \\
+$\charf{\Gate}^{-\nu}$ & the reinstatement & one passage through the crossing \\
+$\charf{\Gate}^{\pm}$ & the continuations & chirality only \\
+$\charf{\Gate}^{\circ}$ & the latch $\ell$ & a four-port hole \\
+\hline
+\end{tabular}
+\end{center}
+
+The bottom row is the point. Forget the latch entirely and what is left is a
+predicate on four ports with no over/under content --- which is exactly the
+resolution-context of \cite[\S9]{knots}, the hole into which the two Kauffman
+smoothings are plugged. The dynamic gate and the Kauffman smoothing are therefore
+not material from two unrelated halves of a subject; they are the top and bottom
+of one relaxation lattice, and the bracket is what one computes after relaxing all
+the way down. We do not develop the bracket here, but we note that the axis exists
+and that the classifier and the state sum are graded by the same parameter.
+
+\section{A stable of examples}\label{sec:examples}
+
+Throughout, $D$ is a diagram with $n$ crossings, $\enc{D}$ its encoding, and
+$a_1,\dots,a_{2n}$ its arcs, with $o(i)$ and $u(i)$ the passes at which crossing
+$i$ is met as over- and under-strand.
+
+\subsection{Graded separation}\label{sec:sep}
+
+One scheme covers four classical notions. Because the encoding is a flat parallel
+composition of gates, and because the arcs are the only shared names, a
+decomposition of the term is a decomposition of the diagram, and the number of
+shared arcs is the number of points in which the separating curve meets it.
+
+\begin{center}
+\begin{tabular}{cll}
+\hline
+shared arcs & spatial statement & classical notion \\
+\hline
+$0$ & $\enc{D} \models \varphi \ssep{0} \psi$ & split link \\
+$0$, after deleting one gate & $\enc{D} \models \charf{\Gate}(\cdots) \sep (\varphi \ssep{0} \psi)$ & nugatory crossing \\
+$2$ & $\enc{D} \models \varphi \ssep{2} \psi$ & connected sum \\
+$4$ & $\enc{D} \models \varphi \ssep{4} \psi$ & Conway sphere; site of mutation \\
+\hline
+\end{tabular}
+\end{center}
+
+The correspondence is not an analogy. A simple closed curve in the plane meeting
+the diagram transversally in $k$ points cuts the arc set into two parts sharing
+exactly $k$ arcs, and conversely a $k$-shared decomposition of the term exhibits
+such a curve. The classical hierarchy --- split, composite, mutable --- is a
+hierarchy in $k$, and the logic is graded by $k$ because the separating
+conjunction is graded by its interface.
+
+\begin{remark}[This is what a modal logic cannot say]
+Bisimulation cannot count crossings, and it cannot see that a network falls into
+two halves that do not communicate. Two diagrams whose encodings are weakly
+bisimilar may have different $k$-decompositions for every $k$. Separation is
+where the spatial layer earns its name, and it is a fortunate accident --- or
+rather, not an accident at all --- that knot theory is largely a subject about
+separating curves.
+\end{remark}
+
+\subsection{Reduced diagrams}\label{sec:reduced}
+
+The cleanest instance, and the one to check by hand. A crossing is
+\emph{nugatory} if there is a simple closed curve meeting the diagram
+transversally at that crossing and nowhere else; a diagram is \emph{reduced} if it
+has no nugatory crossing. Reducedness is the standing hypothesis of most of the
+classical theorems about diagrams, and it is usually explained with a picture.
+
+In the encoding it is a separation statement. Delete gate $i$ from $\enc{D}$. The
+traversal cycle breaks into two paths,
+\[
+\pi^{+}_i = [\,a_{o(i)},\ \dots,\ a_{u(i)-1}\,],
+\qquad
+\pi^{-}_i = [\,a_{u(i)},\ \dots,\ a_{o(i)-1}\,],
+\]
+the second being the latch gap of \cite[\S5]{knots}. Crossing $i$ is nugatory
+exactly when no remaining gate has ports in both paths --- when, that is, the rest
+of the term separates with no shared arcs.
+
+\begin{proposition}[Reducedness is a separation formula]\label{prop:reduced}
+Crossing $i$ of $D$ is nugatory if and only if
+\[
+\enc{D} \ \models\
+\Hq \vec a.\Bigl(\charf{\Gate}(a_{o(i)-1},a_{o(i)},a_{u(i)-1},a_{u(i)})
+\ \sep\ \bigl(\varphi \ssep{0} \psi\bigr)\Bigr)
+\]
+for some $\varphi, \psi$, where $\varphi$ and $\psi$ have their free arcs in
+$\pi^{+}_i$ and $\pi^{-}_i$ respectively. Hence $D$ is reduced iff the negation of
+this holds for every $i$, a formula of size linear in $n$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Left to right: a curve meeting $D$ only at crossing $i$ separates the other $n-1$
+crossings into those inside and those outside, and since the curve crosses no arc,
+no remaining gate has ports on both sides; take $\varphi, \psi$ to be the
+$\charf{\Gate}$-conjunctions of the two families. Right to left: a $0$-shared
+decomposition of $\enc{D} \setminus G_i$ exhibits two families of gates with
+disjoint arc support, whose union is all arcs but those at crossing $i$; the two
+paths $\pi^{\pm}_i$ are then separated by a curve through $i$ alone.
+\end{proof}
+
+We stress how little machinery this used. Non-separability is the primitive the
+connective was built on; reducedness is that primitive applied to the term with
+one gate removed. Nothing was encoded, and no picture was needed.
+
+\subsection{Alternating diagrams}\label{sec:alt}
+
+$D$ is \emph{alternating} if, following the traversal, one passes alternately over
+and under. In the encoding, arc $a_k$ is produced by pass $k$ and consumed by pass
+$k+1$, so alternation says: whenever $a$ is the over-out port of a gate it is the
+under-in port of a gate, and conversely.
+
+Write $\mathsf{ov}(a) \coloneqq \exists b,c,d.\ \charf{\Gate}(a,b,c,d) \sep \top$
+for ``$a$ is the over-in port of some gate'', and $\mathsf{un}(a)$ for the
+analogous under-in statement. The walk alternates, and is a greatest fixed point
+over the pair:
+\[
+\begin{aligned}
+A_{O}(a) &\;=\; \exists b,c,d.\ \bigl(\charf{\Gate}(a,b,c,d) \sep \top\bigr) \wedge A_{U}(b),\\
+A_{U}(a) &\;=\; \exists b,c,d.\ \bigl(\charf{\Gate}(c,d,a,b) \sep \top\bigr) \wedge A_{O}(b),
+\end{aligned}
+\qquad
+\mathsf{Alt} \;\coloneqq\; \nu (A_O, A_U).\ A_O(a_1) \vee A_U(a_1).
+\]
+In the first clause $a$ is the over-in port, so the pass consuming $a$ is an
+over-pass and its out-arc is $b$; the next pass must then be an under-pass, which
+is $A_U(b)$. The second clause is the mirror.
+
+\begin{remark}[The recursion is bounded by the diagram]\label{rem:bounded}
+The traversal closes after $2n$ steps, so the fixed point is exact at its $2n$-th
+unfolding: $\nu^{2n} = \nu$ here, not an approximation. Alternation is therefore
+\emph{finitely} checkable per diagram in spite of $\nu$ being an infinitary
+connective in general. This is the good case, and it is worth understanding why it
+is good: the recursion follows the \emph{structure} --- the arc cycle --- rather
+than the reduction. Recursions that follow the reduction are the unbounded ones.
+By \S\ref{sec:names} the walk can be taken on names, so the check is $O(n)$ name
+operations rather than a search over gates.
+\end{remark}
+
+\subsection{Tait, and where the ledger becomes an invariant}\label{sec:tait}
+
+Now the two previous formulae are conjoined, and the payoff is not a curiosity.
+
+$\mathsf{Red} \wedge \mathsf{Alt}$ is exactly the hypothesis of the Tait
+conjectures. By the theorem of Kauffman, Murasugi and Thistlethwaite
+\cite{kauffman,murasugi,thistlethwaite}, a reduced alternating diagram realises
+the crossing number of its link. So a diagram satisfying the conjunction carries a
+certificate of minimality: a formula in the generated logic, checkable in time
+linear in $n$ by Remark~\ref{rem:bounded} and Proposition~\ref{prop:reduced},
+implies a statement about the knot and not merely the diagram.
+
+The sharper payoff concerns the companion note. There the cost ledger is shown to
+satisfy $\cost(\enc{D}) = 2\writhe(D)$ identically, and the Perko pair is used to
+insist that this is a \emph{framed} invariant: two reduced $10$-crossing diagrams
+of one knot with different writhes and therefore different ledgers. Little's 1900
+claim that the writhe of a reduced diagram is a knot invariant is false, and the
+Perko pair is the counterexample.
+
+But Little's claim is true on the alternating fragment. By the flyping theorem of
+Menasco and Thistlethwaite \cite{flyping}, any two reduced alternating diagrams of
+the same link are related by flypes, and a flype preserves the writhe. Hence:
+
+\begin{proposition}[The formula carves out the fragment]\label{prop:fragment}
+On diagrams satisfying $\mathsf{Red} \wedge \mathsf{Alt}$, the cost ledger
+$\cost(\enc{D}) = 2\writhe(D)$ is an invariant of the knot type, not merely of the
+framing.
+\end{proposition}
+
+This is the demonstration we would lead with. A spatial--behavioural formula ---
+one conjunct from the separating conjunction, one from the fixed point, neither
+designed for the purpose --- identifies exactly the region on which a quantity
+from the \emph{other} note upgrades from a framed invariant to an unframed one.
+The Perko pair, which is non-alternating, is outside the region, exactly as it
+must be. Two independently developed pieces of apparatus agree about where the
+boundary lies, and neither was tuned to make them agree.
+
+\subsection{The writhe as a counting formula}\label{sec:writhe}
+
+The writhe itself can be written as a formula, but only after one is careful about
+where the sign lives.
+
+The sign $\varepsilon_i$ of a crossing is \emph{not} its chirality: chirality is
+which strand goes over, whereas the sign needs that together with both strand
+directions \cite[Rem.~2]{knots}. So the plain gate term does not contain the sign,
+and no formula over $\enc{D}$ can count the writhe. In the cost-accounted theory
+$C(\mathrm{rho})$, however, the token stack is a sort of the grammar
+\cite[\S6]{omnibus} and each crossing's located stack carries $\varepsilon_i$.
+The sign is then part of the term, hence visible to the structural layer, and
+\[
+\mathsf{W}_{w} \;\coloneqq\;
+\bigvee_{\substack{p+m = n \\ p - m = w}}
+\underbrace{\charf{\Gate}^{+} \sep \cdots \sep \charf{\Gate}^{+}}_{p}
+\ \sep\
+\underbrace{\charf{\Gate}^{-} \sep \cdots \sep \charf{\Gate}^{-}}_{m}
+\ \sep\ \top
+\]
+says that the diagram has writhe $w$, where $\charf{\Gate}^{\pm}$ is the gate
+formula conjoined with the predicate on its located stack's sign.
+
+The interest is not the formula, which is routine, but the cross-check. The same
+quantity now has two independent readings --- a ledger reading, obtained by
+running the process and summing debits, and a logical reading, obtained by
+inspecting the term without running it --- and they must agree. That they do is a
+small piece of evidence that the encoding and the generated logic are describing
+the same object, and cheap demonstrations of two routes to one answer are worth
+more to a sceptical reader than an additional theorem.
+
+\subsection{Mutation: the open case}\label{sec:mutation}
+
+The $k=4$ row of \S\ref{sec:sep} is the interesting risk, and we record it as an
+open problem rather than a result.
+
+Conway mutation cuts a diagram along a sphere meeting it in four points, rotates
+the tangle inside, and reglues. It is the classical source of hard-to-separate
+pairs: the Kinoshita--Terasaka and Conway knots are mutants, share a Jones
+polynomial, share an Alexander polynomial, and are distinguished only by
+considerably heavier machinery.
+
+In our setting a mutation is a re-plugging of a four-arc subterm --- and by
+\S\ref{sec:sep} the site is \emph{visible}: $\enc{D} \models \varphi \ssep{4}
+\psi$ locates it, and by \S\ref{sec:names} the tangle on the far side can be named
+by a quotation and described by $@\varphi$ without communicating with it. Whether
+the induced equivalence \emph{separates} mutants is a different question, and it
+is open.
+
+\begin{conjecture}[Mutants]\label{conj:mutants}
+There is a formula in the graded-separation fragment satisfied by the
+Kinoshita--Terasaka diagram and not by the Conway diagram.
+\end{conjecture}
+
+We flag this as the natural first computation for the classifier, precisely
+because it can come out either way and one would want to know which before
+building further on it. If it holds, it is a place where the process invariant
+strictly beats the polynomial, on the same graded-separation scheme as the easy
+cases of \S\ref{sec:reduced}; if it fails, the failure locates a definite limit
+and is worth as much.
+
+\section{Diagrams, not knots}\label{sec:diagrams}
+
+Every formula above is a predicate on diagrams. $\mathsf{Alt}$ detects an
+alternating \emph{diagram}; ``$K$ is an alternating knot'' is an existential over
+the diagrams of $K$. $\mathsf{Red}$, the $\ssep{k}$ statements, and
+$\mathsf{W}_w$ are all likewise diagram-level. We have said this once per example
+and say it once more in general, because the companion note had to correct exactly
+this confusion in another guise --- reading the writhe, a diagram quantity, as a
+knot quantity --- and we would rather not reintroduce it in new clothes.
+
+We regard the level as correct rather than as a limitation, for three reasons.
+
+First, it is where the classical theory lives. Reducedness, alternation, flypes,
+the crossing number of a \emph{diagram}, the Tait conjectures --- these are all
+diagram-level notions, and the theorems that make them valuable are theorems about
+diagrams that have knot-level consequences. Section~\ref{sec:tait} is precisely of
+that shape.
+
+Second, the passage from diagram to knot is a quotient, and quotients are
+downstream work. A diagram predicate $\varphi$ induces two knot predicates,
+$\exists D \in K.\, \varphi(D)$ and $\forall D \in K.\, \varphi(D)$, and which one
+is wanted depends on the application. The interesting mathematics is in showing
+that a particular $\varphi$ has one of these forms computable --- which for
+alternation is a genuine theorem and not a formality.
+
+Third, the honest statement of what the companion note proved is also
+diagram-level in this sense. Reidemeister invariance says the encoding does not
+distinguish diagrams it should not. The classifier's job is the converse, and the
+converse is naturally attacked by finding diagram properties fine enough to
+separate, then asking which of them descend.
+
+\section{Checkability}\label{sec:check}
+
+Following \S\ref{sec:ideal}, we record what a terminating fragment would keep and
+give up.
+
+\paragraph{Keep.}
+The structural connectives, including $\sep$ and the derived $\ssep{k}$; the name
+predicates of \S\ref{sec:names}; the context-labelled modalities; conjunction and
+disjunction; and $\nu$ \emph{under a fixed unfolding bound}. By
+Remark~\ref{rem:bounded} the recursions this note actually uses follow the
+traversal and are exact at $2n$ unfoldings, so the bound costs nothing on these
+examples.
+
+\paragraph{Give up.}
+The composition adjunct $\varphi \triangleright \psi$. Validity for spatial logics
+with the adjunct is where undecidability bites hardest, and the generated
+structural layer of \cite{omnibus} does not currently supply a right adjoint to
+$\sep$ in any case. We therefore place the adjunct in the ideal logic only and
+exclude it from the checkable fragment explicitly, rather than leaving its status
+implicit. Negation is the other candidate: it is what adequacy needs and what
+decidability least likes, and $\mathsf{Red}$ as stated in
+Proposition~\ref{prop:reduced} uses it. Since the negation there is applied to a
+formula of bounded size over a fixed finite diagram, it is harmless; we note that
+this is a property of the use and not a general licence.
+
+\paragraph{What terminates.}
+On a fixed diagram with $n$ crossings, $\mathsf{Alt}$ is $O(n)$ name operations,
+$\mathsf{Red}$ is $n$ separation tests each over a term of $n$ gates, and
+$\mathsf{W}_w$ is a single pass over the located stacks. The $\ssep{4}$ search of
+\S\ref{sec:mutation} is the expensive one, since the number of four-element arc
+interfaces is $\binom{2n}{4}$; whether it admits a better algorithm is open and is
+the practical question standing between this note and a usable tool.
+
+\section{Open problems}
+
+\begin{enumerate}[leftmargin=1.4em]
+\item \textbf{Mutants.} Conjecture~\ref{conj:mutants}: does the
+graded-separation fragment separate the Kinoshita--Terasaka and Conway diagrams?
+This is the first computation to do.
+\item \textbf{Descent.} Which of the diagram predicates of
+\S\ref{sec:examples} have computable existential or universal closures over an
+isotopy class? Alternation is the model case and is a theorem; reducedness is the
+next one to ask about.
+\item \textbf{Faithfulness.} The companion note reformulates the converse of
+its invariance theorem as the question whether the encoding \emph{reflects} as
+well as preserves context-labelled transition structure. The present note's
+formulae are candidate separating witnesses; assembling them into a proof, or
+into a counterexample, is the main open problem behind both notes.
+\item \textbf{The relaxation lattice and the bracket.}
+Section~\ref{sec:relax} exhibits $\charf{\Gate}^{\circ}$ --- the gate with its
+latch forgotten --- as the Kauffman resolution-context. Making the passage from
+$\charf{\Gate}$ to $\charf{\Gate}^{\circ}$ into a statement relating the
+classifier and the state sum, rather than an observation that both live on one
+axis, is the most promising structural question here.
+\item \textbf{Migration.} The fixed point of \S\ref{sec:nu} and the graded
+separation of \S\ref{sec:graded} are independent of knots and belong in the
+rubric of \cite{omnibus}. Whether $\ssep{k}$ should be primitive there or remain
+derived is a question about the rubric, not about this application.
+\end{enumerate}
+
+\begin{thebibliography}{99}
+
+\bibitem{knots} L.~G.~Meredith. \emph{Knots as cost-accounted rholang processes: a
+  Dowker--Thistlethwaite-driven encoding and weak-bisimulation invariance.}
+  F1R3FLY.io, 2026.
+
+\bibitem{omnibus} \emph{Graph-structured lambda theories: a reference for the
+  working developer.} F1R3FLY.io, 2026.
+
+\bibitem{splitting} L.~G.~Meredith. \emph{Splitting the mind of Zeus:
+  realizability, collection monads, and the choice content of the McBride
+  derivative in a finite-limits metalanguage.} F1R3FLY.io, 2026.
+
+\bibitem{caires} L.~Caires. \emph{Behavioral and spatial observations in a logic
+  for the $\pi$-calculus.} In Foundations of Software Science and Computation
+  Structures (FoSSaCS), LNCS 2987, Springer, 2004.
+
+\bibitem{caires-cardelli} L.~Caires and L.~Cardelli. \emph{A spatial logic for
+  concurrency (part I).} Information and Computation \textbf{186}(2):194--235,
+  2003.
+
+\bibitem{namespace} L.~G.~Meredith and M.~Radestock. \emph{Namespace logic: a
+  logic for a reflective higher-order calculus.} In Trustworthy Global Computing,
+  LNCS 3705, Springer, 2005.
+
+\bibitem{rho} L.~G.~Meredith and M.~Radestock. \emph{A reflective higher-order
+  calculus.} Electronic Notes in Theoretical Computer Science
+  \textbf{141}(5):49--67, 2005.
+
+\bibitem{reynolds} J.~C.~Reynolds. \emph{Separation logic: a logic for shared
+  mutable data structures.} In Logic in Computer Science (LICS), 2002.
+
+\bibitem{oslf} Operational Semantics in Logical Form (OSLF): a family of
+  algorithms auto-generating logics and type systems from graph-structured lambda
+  theories.
+
+\bibitem{kauffman} L.~H.~Kauffman. \emph{State models and the Jones polynomial.}
+  Topology \textbf{26}:395--407, 1987.
+
+\bibitem{murasugi} K.~Murasugi. \emph{Jones polynomials and classical conjectures
+  in knot theory.} Topology \textbf{26}:187--194, 1987.
+
+\bibitem{thistlethwaite} M.~B.~Thistlethwaite. \emph{A spanning tree expansion of
+  the Jones polynomial.} Topology \textbf{26}:297--309, 1987.
+
+\bibitem{flyping} W.~Menasco and M.~Thistlethwaite. \emph{The classification of
+  alternating links.} Annals of Mathematics \textbf{138}:113--171, 1993.
+
+\bibitem{conway} J.~H.~Conway. \emph{An enumeration of knots and links, and some
+  of their algebraic properties.} In Computational Problems in Abstract Algebra,
+  Pergamon, 1970.
+
+\bibitem{lickorish} W.~B.~R.~Lickorish. \emph{An introduction to knot theory.}
+  Graduate Texts in Mathematics 175, Springer, 1997.
+
+\end{thebibliography}
+
+\end{document}
