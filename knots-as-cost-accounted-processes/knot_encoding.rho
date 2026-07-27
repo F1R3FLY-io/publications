@@ -4,28 +4,42 @@
 //
 // Crossing gate (four ports oi,oo,ui,uo; private latch l):
 //   over strand : receive on oi, forward on oo, PRODUCE the latch l
-//   under strand: JOIN on (ui, l) with '&', then forward on uo
+//   under strand: JOIN on (ui, l) with '&', forward on uo, REINSTATE the gate
 // Chirality == which strand produces l (over) vs. joins on it (under).
 //
-// PERSISTENCE. Both halves use the persistent receipt '<=' rather than the
-// linear '<-'.  A linear receive is consumed by its own firing, so a gate
-// built from linear receives evaporates after one visitation: the term would
-// model a single passage through the diagram rather than the diagram.  A
-// crossing is standing apparatus, so the gate is a standing process; what
-// stays linear is the traffic, not the machinery.  NB a rholang receipt is
-// linear or persistent as a WHOLE -- '<-' and '<=' may not be mixed inside
-// one '&' group -- so the under-join is persistent in both binds.  That is
-// what we want: the RECEIVE persists, while the latch MESSAGE is still
-// consumed once per firing, so each passage of the under-strand still costs
-// one latch.
+// RECURSION, NOT PERSISTENT RECEIPTS.  Every receipt below is LINEAR ('<-').
+// The gate body is therefore a one-shot cell; what makes a crossing standing
+// apparatus is that the cell reinstates itself.  The reinstatement sits in
+// the under-half's continuation, and that placement is forced: the under-join
+// can fire only after the over-half produced the latch, so its firing is the
+// unique witness that one COMPLETE crossing event -- one over-passage and the
+// under-passage it enabled -- has occurred.  Reinstating there releases
+// exactly one copy per event (both continuations would double the copies each
+// event; the over-half alone would arm a fresh over-receive while the old
+// under-half is still outstanding).  It needs no guard and no extra channel.
+//
+// MATCHED LATCH.  Because 'new l' runs afresh on each instantiation, the
+// latch an over-passage produces is consumed by the under-passage of the SAME
+// copy: over-enables-under is a matching, not a count.  (Making both receipts
+// persistent instead would share one latch channel across all passages, which
+// counts but does not pair.)  A consequence: between an over-firing and the
+// matching under-firing there is no receiver on oi at all, so a second
+// over-signal simply waits -- structurally, not by any test.
 //
 // A DT traversal makes every arc a single-producer / single-consumer
 // channel, so the arcs ARE the wires: no forwarder processes.
-// "Current" is one message per arc.  With persistent gates the current is
-// CONSERVED rather than spent: arc tokens are neither created nor destroyed,
-// latches are created and destroyed in matched pairs, and once every
-// half-gate has fired once the marking is back where it started.  A period
-// is 2n primary rendezvous (n over-receives + n under-joins).
+// "Current" is one message per arc.  It is CONSERVED rather than spent: arc
+// tokens are neither created nor destroyed, latches are created and destroyed
+// in matched pairs, exactly one copy of each gate is live at any time, and
+// once every half-gate has fired once the marking is back where it started.
+// A period is 2n primary rendezvous (n over-receives + n under-joins).
+//
+// NB in the calculus, unfolding a definition is an EQUATION and costs
+// nothing.  In this interpreter 'contract' is a persistent receive on the
+// definition channel, so each reinstatement is a real comm.  It draws on the
+// stack located at the definition channel, not at any crossing, so the signed
+// ledger (= 2*writhe) is unaffected; only the unsigned count reads 3n per
+// period here against 2n in the calculus.
 //
 // NB on interpreter limits (rholang/README.md): no 0-arity send/receive
 // (we always carry Nil), no guarded receive patterns, match patterns are
@@ -34,7 +48,7 @@
 
 
 // ---------------------------------------------------------------------------
-// Part 1.  The trefoil 3_1, DT code [4,6,2], expanded by hand.  Runnable.
+// Part 1.  The trefoil 3_1, DT code [4,6,2].  Runnable.
 //
 // passes 1..6, arc a_k = pass k -> pass (k+1 mod 6).  pass p: in a_{p-1}, out a_p.
 // alternating => odd pass is OVER at every crossing (all-positive DT).
@@ -42,24 +56,20 @@
 //   crossing 2 {odd 3, even 6}:  over a2->a3, under a5->a6
 //   crossing 3 {odd 5, even 2}:  over a4->a5, under a1->a2
 // ---------------------------------------------------------------------------
-new a1, a2, a3, a4, a5, a6, stdout(`rho:io:stdout`) in {
-  // crossing 1
-  new l in {
-      for (s <= a6) { a1!(*s) | l!(Nil) }
-    | for (s <= a3 & _ <= l) { a4!(*s) }
+new Gate, a1, a2, a3, a4, a5, a6, stdout(`rho:io:stdout`) in {
+
+  contract Gate(oi, oo, ui, uo) = {
+    new l in {
+        for (s <- oi)          { oo!(*s) | l!(Nil) }
+      | for (s <- ui & _ <- l) { uo!(*s) | Gate!(*oi, *oo, *ui, *uo) }
+    }
   }
   |
-  // crossing 2
-  new l in {
-      for (s <= a2) { a3!(*s) | l!(Nil) }
-    | for (s <= a5 & _ <= l) { a6!(*s) }
-  }
+  Gate!(*a6, *a1, *a3, *a4)      // crossing 1
   |
-  // crossing 3
-  new l in {
-      for (s <= a4) { a5!(*s) | l!(Nil) }
-    | for (s <= a1 & _ <= l) { a2!(*s) }
-  }
+  Gate!(*a2, *a3, *a5, *a6)      // crossing 2
+  |
+  Gate!(*a4, *a5, *a1, *a2)      // crossing 3
   |
   // current: one token per arc.  Conserved; the orbit has period 6.
   a1!(Nil) | a2!(Nil) | a3!(Nil) | a4!(Nil) | a5!(Nil) | a6!(Nil)
@@ -78,11 +88,16 @@ new a1, a2, a3, a4, a5, a6, stdout(`rho:io:stdout`) in {
 //
 // Convention: dt_i > 0  =>  the ODD-labelled pass is the OVER strand.
 // (Flip the (over,under) assignment below for the opposite convention.)
-//
-// Note the gate receipts are persistent, exactly as in Part 1; the plumbing
-// receives that build the term stay linear, since they fire once each.
 // ===========================================================================
-new DTtoKnot, length in {
+new DTtoKnot, Gate, length in {
+
+  // the crossing gate, once, for all crossings of all knots built here
+  contract Gate(oi, oo, ui, uo) = {
+    new l in {
+        for (s <- oi)          { oo!(*s) | l!(Nil) }
+      | for (s <- ui & _ <- l) { uo!(*s) | Gate!(*oi, *oo, *ui, *uo) }
+    }
+  } |
 
   // length of a list
   contract length(@xs, ret) = {
@@ -98,7 +113,7 @@ new DTtoKnot, length in {
       for (@len <- lenCh) {
         // N = 2n arcs
         new go in {
-          // ---- spawn one gate per crossing ----
+          // ---- instantiate one Gate per crossing ----
           // gates(remaining, i, N): i is 1-based crossing index (odd label = 2i-1)
           contract gates(@rem, @i, @nn) = {
             match rem {
@@ -117,15 +132,8 @@ new DTtoKnot, length in {
                           ( if (over  == 1) { oiCh!(nn) } else { oiCh!(over  - 1) } ) |
                           ( if (under == 1) { uiCh!(nn) } else { uiCh!(under - 1) } ) |
                           for (@oi <- oiCh & @ui <- uiCh) {
-                            // the gate itself -- both receipts persistent
-                            new l in {
-                                for (s <= @[*knot, oi]) {
-                                  @[*knot, over]!(*s) | l!(Nil)
-                                }
-                              | for (s <= @[*knot, ui] & _ <= l) {
-                                  @[*knot, under]!(*s)
-                                }
-                            }
+                            Gate!( *@[*knot, oi],    *@[*knot, over],
+                                   *@[*knot, ui],    *@[*knot, under] )
                           }
                         }
                       }
@@ -169,58 +177,27 @@ new DTtoKnot, length in {
 // Generated by dt_to_rho.py; standard DT sign convention.
 // ===========================================================================
 
-// Perko A 10_161: DT [4, 12, -16, 14, -18, 2, 8, -20, -10, -6]  (n=10 crossings, 20 arcs)
-new a1, a2, a3, a4, a5, a6, a7, a8, a9, a10,
+// Perko A 10_161: DT [4, 12, -16, 14, -18, 2, 8, -20, -10, -6]  (n=10, 20 arcs)
+new Gate, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10,
     a11, a12, a13, a14, a15, a16, a17, a18, a19, a20 in {
-  new l in {
-      for (s <= a20) { a1!(*s) | l!(Nil) }
-    | for (s <= a3 & _ <= l) { a4!(*s) }
-  }   // crossing 1: over a20->a1, under a3->a4
+
+  contract Gate(oi, oo, ui, uo) = {
+    new l in {
+        for (s <- oi)          { oo!(*s) | l!(Nil) }
+      | for (s <- ui & _ <- l) { uo!(*s) | Gate!(*oi, *oo, *ui, *uo) }
+    }
+  }
   |
-  new l in {
-      for (s <= a2) { a3!(*s) | l!(Nil) }
-    | for (s <= a11 & _ <= l) { a12!(*s) }
-  }   // crossing 2: over a2->a3, under a11->a12
-  |
-  new l in {
-      for (s <= a15) { a16!(*s) | l!(Nil) }
-    | for (s <= a4 & _ <= l) { a5!(*s) }
-  }   // crossing 3: over a15->a16, under a4->a5
-  |
-  new l in {
-      for (s <= a6) { a7!(*s) | l!(Nil) }
-    | for (s <= a13 & _ <= l) { a14!(*s) }
-  }   // crossing 4: over a6->a7, under a13->a14
-  |
-  new l in {
-      for (s <= a17) { a18!(*s) | l!(Nil) }
-    | for (s <= a8 & _ <= l) { a9!(*s) }
-  }   // crossing 5: over a17->a18, under a8->a9
-  |
-  new l in {
-      for (s <= a10) { a11!(*s) | l!(Nil) }
-    | for (s <= a1 & _ <= l) { a2!(*s) }
-  }   // crossing 6: over a10->a11, under a1->a2
-  |
-  new l in {
-      for (s <= a12) { a13!(*s) | l!(Nil) }
-    | for (s <= a7 & _ <= l) { a8!(*s) }
-  }   // crossing 7: over a12->a13, under a7->a8
-  |
-  new l in {
-      for (s <= a19) { a20!(*s) | l!(Nil) }
-    | for (s <= a14 & _ <= l) { a15!(*s) }
-  }   // crossing 8: over a19->a20, under a14->a15
-  |
-  new l in {
-      for (s <= a9) { a10!(*s) | l!(Nil) }
-    | for (s <= a16 & _ <= l) { a17!(*s) }
-  }   // crossing 9: over a9->a10, under a16->a17
-  |
-  new l in {
-      for (s <= a5) { a6!(*s) | l!(Nil) }
-    | for (s <= a18 & _ <= l) { a19!(*s) }
-  }   // crossing 10: over a5->a6, under a18->a19
+  Gate!(*a20, *a1,  *a3,  *a4)    // crossing  1: over a20->a1,  under a3->a4
+  | Gate!(*a2,  *a3,  *a11, *a12)   // crossing  2: over a2->a3,   under a11->a12
+  | Gate!(*a15, *a16, *a4,  *a5)    // crossing  3: over a15->a16, under a4->a5
+  | Gate!(*a6,  *a7,  *a13, *a14)   // crossing  4: over a6->a7,   under a13->a14
+  | Gate!(*a17, *a18, *a8,  *a9)    // crossing  5: over a17->a18, under a8->a9
+  | Gate!(*a10, *a11, *a1,  *a2)    // crossing  6: over a10->a11, under a1->a2
+  | Gate!(*a12, *a13, *a7,  *a8)    // crossing  7: over a12->a13, under a7->a8
+  | Gate!(*a19, *a20, *a14, *a15)   // crossing  8: over a19->a20, under a14->a15
+  | Gate!(*a9,  *a10, *a16, *a17)   // crossing  9: over a9->a10,  under a16->a17
+  | Gate!(*a5,  *a6,  *a18, *a19)   // crossing 10: over a5->a6,   under a18->a19
   |
   // current: one token per arc; conserved, period 20
   a1!(Nil)  | a2!(Nil)  | a3!(Nil)  | a4!(Nil)  | a5!(Nil)  | a6!(Nil)  | a7!(Nil)  |
