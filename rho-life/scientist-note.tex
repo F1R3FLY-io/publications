@@ -566,6 +566,187 @@ for which subject matters admit closed sciences and which do not, and we suspect
 than it looks.
 \end{remark}
 
+\section{Searching the lattice}
+\label{sec:search}
+
+Section~\ref{sec:lattice} supplies a space of hypotheses and a metric on it, and says that a scientist's
+trajectory is a walk. It does not say how the walk is chosen. That is the revision policy, which we
+left open as one of the note's three free parameters (\S\ref{sec:audit}), and we leave it open still.
+What we do here is narrower and, we think, more useful: the metric is an \emph{ultra}metric, and
+ultrametric spaces are geometrically unlike the spaces search algorithms are usually designed for. Much
+of what one would reflexively try is unavailable, and one thing one might not have thought necessary
+turns out to be forced.
+
+\subsection{The geometry is a tree}
+
+Three facts about ultrametric spaces do the work. Balls are nested or disjoint, never partially
+overlapping. Every point of a ball is a centre of it, so no point in a neighbourhood is distinguished.
+And there is no betweenness: for $\varphi \ne \psi$ there is no formula standing partway from one to
+the other in the sense a convex combination would.
+
+\begin{remark}[There is no gradient]
+\label{rem:nogradient}
+Gradient methods are not merely a poor fit here; they are not well typed. A gradient presupposes a
+direction in which one may move by an arbitrarily small amount and a notion of interpolation between
+neighbouring points, and an ultrametric space supplies neither. What it supplies instead is branching,
+so the search available on a hypothesis lattice is tree search, and the strategies below are all tree
+strategies.
+\end{remark}
+
+This has a consequence which we regard as the central fact governing revision policies.
+
+\begin{proposition}[Confinement]
+\label{prop:confinement}
+Let $\varphi_0, \varphi_1, \ldots, \varphi_k$ be a revision walk with
+$d(\varphi_{i-1}, \varphi_i) < 2^{-n}$ for every $i$. Then $d(\varphi_0, \varphi_k) < 2^{-n}$: the
+walk never leaves the ball of radius $2^{-n}$ in which it began.
+\end{proposition}
+
+\begin{proof}
+By the ultrametric inequality $d(\varphi_0, \varphi_k) \le \max_i d(\varphi_{i-1}, \varphi_i)$, and
+the maximum is below $2^{-n}$ by hypothesis.
+\end{proof}
+
+In a Euclidean space, sufficiently many small steps reach anywhere; here they reach nothing outside the
+ball they started in, however many are taken and however long the scientist lives. A policy of
+incremental revision is not slow at escaping a bad basin --- it cannot escape one at all. Whatever ball
+a scientist's early commitments place it in is the ball it will die in, unless it makes a move that is
+not small.
+
+We take this up again in \S\ref{sec:repro}, because it turns a biological mechanism into a
+computational necessity.
+
+\subsection{The two parameters}
+
+\begin{definition}[Revision move]
+\label{def:move}
+A \emph{revision move} is a pair: a \emph{locus} in the formula tree --- which structural predicate is
+to be varied --- together with an \emph{operation} at that locus, weakening or strengthening. The
+locus fixes the direction; its depth fixes the distance.
+\end{definition}
+
+So the two parameters the policy must choose are exactly the two the metric grades.
+
+\paragraph{Distance is backtracking depth.} A move of distance $2^{-n}$ agrees with the current
+hypothesis on every approximant below stage $n$ and differs at $n$. Small distance means a deep
+backtrack and a fine adjustment; large distance means a shallow backtrack and the abandonment of an
+early commitment.
+
+\paragraph{Direction is a choice of sibling.} At a node of the tree the available directions are the
+one-step refinements the generated logic admits at that locus. The branching factor is therefore fixed
+by which connectives OSLF emitted, and is not ours to choose.
+
+The price schedule follows without further assumption.
+
+\begin{proposition}[Cost is monotone in distance]
+\label{prop:movecost}
+Evidence gathered by an assay of modal depth $k$ bears on the approximants at stage $k$ and above. A
+move of distance $2^{-n}$ therefore invalidates exactly those confirmations obtained at depth $n$ or
+greater, and the count of invalidated confirmations is non-decreasing as the distance of the move
+increases.
+\end{proposition}
+
+A radical revision is expensive in precisely the currency the scientist has been spending: it discards
+the assays that bought the commitments it abandons. Cheap moves are confined
+(Proposition~\ref{prop:confinement}) and unconfined moves are dear, which is the trade-off any policy
+is negotiating.
+
+\begin{remark}[Two gradings, one poset]
+\label{rem:twogradings}
+The relaxation lattice and the ultrametric grade the same partial order differently, and conflating
+them is easy. The lattice orders by logical strength: how much of a characteristic formula has been
+forgotten. The metric orders by depth: how far down the forgotten material sat. Forgetting a conjunct
+at stage $1$ and forgetting one at stage $5$ are both a single lattice step, and are metrically very
+far apart. Definition~\ref{def:move} keeps the two apart by naming the locus and the operation
+separately.
+\end{remark}
+
+\subsection{Strategies}
+
+We catalogue rather than recommend, since which policy is best is an ecological question and depends on
+the distribution of \S\ref{sec:distributions}.
+
+\begin{description}
+\item[Conservative.] Always move the least distance that the last refutation forces. Cheap by
+Proposition~\ref{prop:movecost}, low variance, and by Proposition~\ref{prop:confinement} permanently
+confined to its initial ball.
+
+\item[Radical.] On refutation, abandon a commitment high in the tree. Unconfined, and expensive in
+exactly the confirmations it throws away.
+
+\item[Adaptive, with refutation rate as temperature.] Jump far when refutations are frequent --- a
+high refutation rate is evidence that a commitment high in the tree is wrong --- and refine when they
+are rare. This is annealing-shaped, but the temperature is not a schedule imposed from outside: it is
+the ratio of \texttt{refute} to \texttt{confirm} events, which the assays of \S\ref{sec:assay} already
+produce as messages. We regard this as the default policy a designer would reach for, precisely
+because its control parameter is already an observable of the system.
+\end{description}
+
+Direction selection is the second half of the policy, and the candidates differ in what they optimise.
+
+\begin{description}
+\item[Blind.] Choose a sibling uniformly. Requires no evaluation, and is what a lineage does when the
+choice function of Definition~\ref{def:crossover} is unbiased.
+
+\item[By formula cost.] Prefer siblings whose formulae are cheap to check. This is the minimum
+description length bias of \S\ref{sec:scores} appearing as a search heuristic rather than as an
+accounting identity, and it has the merit that the scientist prefers hypotheses it can afford to test.
+
+\item[By discriminating power.] Prefer a sibling $\psi$ for which some assay separates $\psi$ from the
+current $\varphi$ --- that is, design the crucial experiment first and let it select the direction.
+This is the distinguishing-formula problem for bisimulation inequivalence \cite{Cleaveland}, and it is
+the most classically scientific of the options: it maximises the information a single assay returns.
+
+\item[By expected yield.] Prefer siblings which, if true, locate more tokens.
+\end{description}
+
+\begin{remark}[Yield, not truth]
+\label{rem:yieldbias}
+The last of these is the one this world actually selects for, and it is worth saying so plainly. A
+mortal scientist is not rewarded for holding true hypotheses but for holding nutritive ones, so a
+lineage under selection will drift toward yield-biased direction choice and away from
+discrimination-biased choice wherever the two disagree. This is the pragmatist objection of
+Remark~\ref{rem:pragmatist} arriving at a specific mechanism rather than as a general caveat: it is not
+that the scientist is indifferent to truth, but that its search is steered at every node by what pays.
+\end{remark}
+
+\subsection{The search is itself metered}
+
+One further constraint is easy to overlook and is not a detail. Choosing a direction requires
+evaluating candidate siblings, and evaluation is model checking, and model checking is priced. A
+scientist therefore cannot survey the branching it faces.
+
+\begin{proposition}[Bounded branching]
+\label{prop:branching}
+The number of siblings a scientist can evaluate before committing to a move is bounded by its stack
+divided by the cost of checking one. Hence the effective branching factor of its search is a function
+of its wealth, not of the logic.
+\end{proposition}
+
+\begin{corollary}[Poverty is confining]
+\label{cor:poverty}
+A scientist whose stack affords few evaluations per move is likelier to take the cheapest available
+move, and by Proposition~\ref{prop:movecost} the cheapest moves are the shortest. By
+Proposition~\ref{prop:confinement} a policy of short moves cannot leave its ball. Impoverishment
+therefore tends to confinement, and the confinement is not recoverable by patience --- only by a
+subsequent move that the scientist could not afford to evaluate.
+\end{corollary}
+
+We note without developing it that this closes a loop with \S\ref{sec:trophic}: a source-feeder whose
+inquiry converges accumulates the surplus that would buy a wide survey, and has nothing left to search
+for; a prey-feeder that needs the survey is the one paying an unbounded epistemic rent.
+
+\subsection{What escapes}
+
+Proposition~\ref{prop:confinement} leaves an individual scientist with exactly one route out of a bad
+basin: a move that is not small, at a cost given by Proposition~\ref{prop:movecost}, chosen from a
+branching it cannot afford to survey. That is a poor prospect, and it is the reason
+\S\ref{sec:repro} is not an appendix to this note but a part of its argument. A crossover at a locus
+high in the term tree is, transported along the characteristic-formula construction, a shallow
+re-branch in the formula tree --- a displacement of exactly the kind an incremental walk provably
+cannot make, and one no individual pays for, because the cost is borne by the offspring that does not
+yet exist.
+
 \section{The game}
 \label{sec:game}
 
@@ -1363,6 +1544,16 @@ two mechanisms on two timescales --- within a life by walking the relaxation lat
 not merely a means of persistence; it is doing science by other means, and the proximate/ultimate
 distinction of \S\ref{sec:scores} extends to cover it.
 
+The correspondence is tighter than an analogy. A revision move is a locus in the formula tree together
+with an operation there (Definition~\ref{def:move}); a crossover is a locus in the term tree together
+with a choice of allele (Definition~\ref{def:crossover}). The characteristic-formula construction of
+\S\ref{sec:lattice} carries term structure to formula structure, so a swap at a term-context $K$
+induces a revision at the formula-locus $K$ corresponds to. The two mechanisms are one move,
+transported along $\chi$, and applied at two timescales. What distinguishes them is the accessible
+distance: by Proposition~\ref{prop:confinement} an individual's incremental walk cannot leave its ball,
+whereas a swap high in the term tree is a shallow re-branch by construction. \emph{Recombination is how
+a lineage makes the displacements its members cannot.}
+
 \paragraph{Reproduction is what makes induction pay.} Corollary~\ref{cor:induction} forced hypotheses
 to be about namespaces, since destructive assay leaves an individual-level hypothesis worthless after
 its own first test. But a namespace with no live members is worthless too. Reproduction repopulates
@@ -1638,6 +1829,7 @@ one. This is the proximate/ultimate distinction of behavioural ecology: viabilit
 criterion, the revision delta is the proximate mechanism that tracks it, and neither is redundant.
 
 \begin{remark}[The pragmatist's objection, and surplus]
+\label{rem:pragmatist}
 It should be conceded plainly that this scientist is not a disinterested seeker of truth. Its
 epistemology is metabolic, and truths that do not pay go unfunded. That is the standard objection to
 pragmatism and we do not think it can be argued away. The construction does, however, have an unusually
@@ -1703,20 +1895,20 @@ added.
 \subsection{Sources, metabolism, death}
 
 \begin{lstlisting}
-// A source (Def. 30): rate-limited by being a single contract, non-exclusive
+// A source (Def. 38): rate-limited by being a single contract, non-exclusive
 // since anyone may call it, non-adaptive, and FINITE -- conservation is exact.
 def Source(s, q, reserve) = {
   for (ret <- s) {
     match reserve >= q {
       true  => { ret!(q) | Source(s, q, reserve - q) }
-      false => { ret!(0) }                  // exhausted; cf. Prop. 36
+      false => { ret!(0) }                  // exhausted; cf. Prop. 44
     }
   }
 }
 
-// Reclaim - debit - reissue (Def. 12).  Between the receipt and the send the
-// stack is a message in flight: metabolism is a race condition (Rem. 13), and
-// the metabolic channel m is exactly the vulnerability of Thm. 16.
+// Reclaim - debit - reissue (Def. 20).  Between the receipt and the send the
+// stack is a message in flight: metabolism is a race condition (Rem. 21), and
+// the metabolic channel m is exactly the vulnerability of Thm. 24.
 def Live(m, burn, step) = {
   for (sigma <- m) {
     match *sigma > burn {
@@ -1731,7 +1923,7 @@ def Live(m, burn, step) = {
 
 \begin{lstlisting}
 // A grazer holds no hypothesis and senses nothing beyond the one channel it
-// was born knowing.  By Prop. 32 its environment is a source, so its science
+// was born knowing.  By Prop. 40 its environment is a source, so its science
 // was over before it began -- and it pays no epistemic rent at all.
 def Grazer(m, src) = {
   Live(m, 1, @{
@@ -1767,10 +1959,10 @@ def Forage(m, sns, hyp) = {
 
 \begin{lstlisting}
 // The offspring's code is CONSTRUCTED as a name and sits inert on `code'
-// -- it does not reduce, does not age, burns nothing (Def. 38).  Dropping it
+// -- it does not reduce, does not age, burns nothing (Def. 46).  Dropping it
 // with * is what makes it a phenotype, and what starts the meter.
 //
-// The guard enforces Prop. 50: a parent may not endow below the outlay its
+// The guard enforces Prop. 58: a parent may not endow below the outlay its
 // child needs for a first successful harvest.
 def Beget(m, alleles, prv, mate) = {
   for (sigma <- m where *sigma > *prv + floor) {
@@ -1792,8 +1984,8 @@ def Beget(m, alleles, prv, mate) = {
 \begin{lstlisting}
 // Three homologous loci are exposed as parameters: the sensing allele, the
 // hypothesis allele, and the provisioning allele.  This is assortment at
-// three loci; crossover proper (Sec. 11.4) splits a guard from its body
-// inside an allele and carries the reading-frame condition of Def. 42.
+// three loci; crossover proper (Sec. 12.4) splits a guard from its body
+// inside an allele and carries the reading-frame condition of Def. 50.
 def Pick(a, b, bit, ret) = {
   match *bit { 0 => { ret!(*a) } ; 1 => { ret!(*b) } }
 }
@@ -1817,12 +2009,12 @@ def Crossover(mother, father, chi, ret) = {
 // anything able to read it can.  Conspecific(s) is a name predicate (Sec. 3.1)
 // holding of genomes whose sensing allele names the same source namespace as s.
 // Nothing declares a species; reproductive isolation is namespace disjointness
-// and nothing more (Prop. 43).
+// and nothing more (Prop. 51).
 def Mate(m, alleles, sns, prv, mate) = {
   mate!(*alleles)
 | for (partner <- mate where partner |= Conspecific(*sns)) {
     new chi, ret in {
-        chi!( Coin3 )                        // the choice function of Def. 44
+        chi!( Coin3 )                        // the choice function of Def. 52
       | Crossover(alleles, partner, chi, ret)
       | for (kid <- ret) { Beget(m, kid, prv, mate) }
     }
@@ -1838,7 +2030,7 @@ def Body(m, sns, hyp, prv, mate) = {
 }
 
 // The asexual lineage: no partner, no alignment, NO DISCLOSURE, and no
-// recombination to compute.  Strictly cheaper -- and by Prop. 37 it presents
+// recombination to compute.  Strictly cheaper -- and by Prop. 45 it presents
 // a fixed namespace for anything that cares to learn it.
 def Clone(m, sns, hyp, prv) = {
   Live(m, 2, @{
@@ -1855,7 +2047,7 @@ new sun1, sun2, mate in {
 
   // Two large external stacks.  sun1 is shallow and gives small quanta;
   // sun2 lies deeper and gives larger ones -- the two order parameters
-  // of Sec. 12.2 instantiated as two loci rather than as a distribution.
+  // of Sec. 13.2 instantiated as two loci rather than as a distribution.
     Source(sun1, 1,  60000)
   | Source(sun2, 8, 240000)
 
@@ -1956,6 +2148,9 @@ Notes in Theoretical Computer Science} 141(5):49--67, 2005.
 
 \bibitem{OSLF} \emph{Operational semantics in logical form (OSLF): a family of algorithms
 auto-generating logics and type systems from graph-structured lambda theories.}
+
+\bibitem{Cleaveland} R.\ Cleaveland. On automatically explaining bisimulation inequivalence. In
+\emph{Computer Aided Verification (CAV)}, LNCS 531, Springer, 1990.
 
 \bibitem{Caires} L.\ Caires. Behavioral and spatial observations in a logic for the pi-calculus. In
 \emph{Foundations of Software Science and Computation Structures (FoSSaCS)}, LNCS 2987, Springer, 2004.
