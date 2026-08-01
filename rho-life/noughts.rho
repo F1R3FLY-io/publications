@@ -6,7 +6,8 @@
 //  mortal-scientist note appears here as ordinary code:
 //
 //    Sec. 3   the arena        -- Arena, Turn, Harvest   (the admitted context class)
-//    Sec. 4   the board        -- Board, Cells, Line     (squares are the parands)
+//    Sec. 4   the board        -- Board, Cells, Square, Line, Scan
+//    Sec. 4.3 the context K_s  -- Square, Choose       (a ply is ONE rewrite)
 //    Sec. 5   the ladder       -- Ladder                 (hypotheses as formulae)
 //    Sec. 6   the assay        -- Move                   (a move IS an experiment)
 //    Sec. 6.1 metabolism       -- Live, Wall
@@ -33,8 +34,9 @@
 // =============================================================================
 
 new stdout(`rho:io:stdout`), display, arena, wall, mate, ladder,
-    Live, Wall, Board, Cells, Line, Scan, Arena, Turn, Adjudicate, Harvest,
-    Move, Revise, Ladder, Pick, Crossover, Beget, Body, PlayOne, Mate
+    Live, Wall, Board, Cells, Square, Line, Scan, Arena, Turn, Adjudicate,
+    Harvest, Choose, Positions, Move, Revise, Ladder, Pick, Crossover, Beget,
+    Body, PlayOne, Mate
 in {
 
   for (@line <= display) { stdout!(line) }
@@ -73,47 +75,71 @@ in {
     }
 
   // ===========================================================================
-  //  THE BOARD  --  nine squares in parallel, and eight lines that watch them.
+  //  THE BOARD  --  and why a ply must be exactly one rewrite.
   //
-  //  The squares are the parands. This is FORCED, not chosen: Sec. 5 needs
-  //  "fork" to be a separating conjunction at k = 0, and a fork is two threats
-  //  whose COMPLETING SQUARES differ. Under a line-indexed encoding two threats
-  //  with a common gap would satisfy the same formula, and that is not a fork.
-  //  The logic dictated the layout (Prop. 4).
+  //  Square k of board b carries TWO reflected names: a MOVE CHANNEL
+  //  sq_k = @[*b,k] and a MARK CELL mk_k = @[*b,"m",k]. An EMPTY square is a
+  //  RECEIPT offering to be claimed; an OCCUPIED square is that receipt gone
+  //  and a resting send on its mark cell.
   //
-  //  Square k of board b is the reflected name @[*b, k] -- a structured name
-  //  carrying the board's unforgeable token and the square's index, so a name
-  //  predicate can recover both without observing any traffic. Same device as
-  //  the arcs of the knot encoding.
+  //  This is what makes a ply a single rewrite, and that is what makes <K_s> a
+  //  GENERATED modality rather than a derived abbreviation: the redex position
+  //  of the claim at s IS the move at s, and the one-hole context K_s is the
+  //  whole rest of the board (Def. 5, Prop. 6). Nine empty squares are nine
+  //  redex positions, so the branching factor of `exists s' is the legal move
+  //  count.
+  //
+  //  Offers live on a THIRD family, th_s = @[*b,"t",s], and not on the move
+  //  channels. Were a line to signal a threat by sending on sq_s, the signal
+  //  would rendezvous with the square's own receipt and the line would have
+  //  PLAYED THE MOVE. Perception must not be able to act; that separation of
+  //  grades one and two is enforced here by a choice of namespace.
   // ===========================================================================
 
   | contract Board(b, @marks) = { Cells!(*b, marks, 0) | Scan!(*b) }
 
   | contract Cells(b, @marks, @k) = {
       match k < 9 {
-        true  => { @[*b, k]!(marks.nth(k)) | Cells!(*b, marks, k + 1) }
+        true  => {
+            @[*b,"m",k]!(marks.nth(k))                    // the mark cell
+          | match marks.nth(k) == 0 {
+              true  => { Square!(*b, k) }                 // empty: offer a receipt
+              false => { Nil }                            // occupied: no receipt
+            }
+          | Cells!(*b, marks, k + 1)
+        }
         false => { Nil }
       }
     }
 
-  // A line reads its three squares and, when it holds two marks of one player
-  // and one empty square, reinstates a standing OFFER on the empty square's
-  // channel. A threat is therefore not computed on demand: it is a piece of
-  // the term, and so visible to the structural layer.
+  // An empty square. The claim is ONE rewrite: a join consuming the mover's
+  // send and the stale mark together. After it fires no receipt remains, so the
+  // square is no longer a redex position -- which is exactly Prop. 6.
+  | contract Square(b, @k) = {
+      for (@p <- @[*b,k] & @old <- @[*b,"m",k]) { @[*b,"m",k]!(p) }
+    }
+
+  // A line reads its three MARK CELLS and replaces them; it never touches a
+  // move channel. When it finds two marks of one player and one empty square s
+  // it deposits a standing offer on th_s. A threat is therefore not computed on
+  // demand: it is a piece of the term, and so visible to the structural layer.
   | contract Line(b, @i, @j, @k) = {
-      for (@x <- @[*b,i] & @y <- @[*b,j] & @z <- @[*b,k]) {
-          @[*b,i]!(x) | @[*b,j]!(y) | @[*b,k]!(z)
+      for (@x <- @[*b,"m",i] & @y <- @[*b,"m",j] & @z <- @[*b,"m",k]) {
+          @[*b,"m",i]!(x) | @[*b,"m",j]!(y) | @[*b,"m",k]!(z)
         | match (x, y, z) {
-            (p, q, 0) where p == q and p > 0 => { @[*b,k]!(("claim", p)) }
-            (p, 0, q) where p == q and p > 0 => { @[*b,j]!(("claim", p)) }
-            (0, p, q) where p == q and p > 0 => { @[*b,i]!(("claim", p)) }
+            (p, q, 0) where p == q and p > 0 => { @[*b,"t",k]!(p) }
+            (p, 0, q) where p == q and p > 0 => { @[*b,"t",j]!(p) }
+            (0, p, q) where p == q and p > 0 => { @[*b,"t",i]!(p) }
             _                                => { Nil }
           }
       }
     }
 
-  // The eight lines, re-run after each move. Scanning is metered like anything
-  // else: perception is priced (Def. 3), and this is where the price is paid.
+  // The eight lines, re-run after each claim. This is the SETTLING of Lem. 8:
+  // each line fires once, no line's output enables another (offers go to the
+  // th names, which no line reads), so it terminates and is confluent -- which
+  // is what makes the settled modality <<K_s>> deterministic in s.
+  // Scanning is metered like everything else: perception is priced.
   | contract Scan(b) = {
         Line!(*b,0,1,2) | Line!(*b,3,4,5) | Line!(*b,6,7,8)
       | Line!(*b,0,3,6) | Line!(*b,1,4,7) | Line!(*b,2,5,8)
@@ -138,23 +164,39 @@ in {
   //  establish, defence cheap only to destroy.
   // ===========================================================================
 
-  //! ideal -- cumulative, highest priority first
+  //! ideal -- cumulative, highest priority first.
+  //
+  //  Emp(s)     := in(sq_s)TOP                 the square still offers a receipt
+  //  Thr_s(p)   := out(th_s)@p                 a completing offer stands at s
+  //  Fork(p)    := (H s. Thr_s(p) | TOP) |_0 (H s. Thr_s(p) | TOP)
+  //  <<K_s>>phi := the claim at s fires, the board settles (Lem. 8), phi holds
+  //
+  //  `exists s' and `forall t' range over REDEX POSITIONS, which by Prop. 6 is
+  //  to say over legal moves. Note where the alternation is: rungs 1 and 2 have
+  //  no modality at all -- winning and blocking are PERCEPTION, reading offers
+  //  the last settling deposited -- and the one genuinely alternating rung is 4,
+  //  a box under a diamond. By Prop. 6 of the companion note that is the rung
+  //  with no finite confirming witness, and Sec. 8 measures that it is also the
+  //  worst purchase on the ladder.
   | contract Ladder(@r, ret) = {
       match r {
         0 => { ret!( @{ TOP } ) }
-        1 => { ret!( @{ <K> Win(me) } ) }
-        2 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) } ) }
-        3 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) or <K> Fork(me) } ) }
-        4 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) or <K> Fork(me)
-                                    or <K>[K] ~Fork(them) } ) }
-        5 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) or <K> Fork(me)
-                                    or <K>[K] ~Fork(them) or Central } ) }
-        // chi: the characteristic formula of the arena running this opponent.
-        // A nu-formula, exact at a finite unfolding because the game tree is
-        // finite -- the recursion follows the STRUCTURE, not the reduction.
-        // This is the closed-science case (companion note, Rem. 10), and
-        // Sec. 10 is where that turns out to be fatal.
-        6 => { ret!( @{ nu X. ( <K> X and ~ <K>[K] Lost ) } ) }
+        1 => { ret!( @{ exists s. Emp(s) and Thr(s, me) } ) }
+        2 => { ret!( @{ exists s. Emp(s) and (Thr(s, me) or Thr(s, them)) } ) }
+        3 => { ret!( @{ exists s. Emp(s) and (Thr(s, me) or Thr(s, them))
+                                          or <<K s>> Fork(me) } ) }
+        4 => { ret!( @{ exists s. Emp(s) and (Thr(s, me) or Thr(s, them))
+                                          or <<K s>> Fork(me)
+                                          or forall t. <<K s>>[K t] ~Fork(them) } ) }
+        5 => { ret!( @{ exists s. Emp(s) and (Thr(s, me) or Thr(s, them))
+                                          or <<K s>> Fork(me)
+                                          or forall t. <<K s>>[K t] ~Fork(them)
+                                          or Central(s) } ) }
+        // chi: exact at a finite unfolding, because the board loses a square at
+        // every step, so the alternation bottoms out at nine. This is the
+        // CLOSED-science case (companion note, Rem. 10) -- and Sec. 10 is where
+        // that turns out to be fatal.
+        6 => { ret!( @{ nu X. forall s. [K s]( ~Lost and exists t. <<K t>> X ) } ) }
       }
     }
 
@@ -169,9 +211,34 @@ in {
   //  which is ignorance, not refutation.
   // ===========================================================================
 
-  | contract Move(b, @hyp, @me, ret) = {
+  // Choosing WHICH redex position to fire is the whole of the policy. The
+  //! ideal guard ranges over the empty squares -- that is, over the redex
+  // positions of Def. 5 -- and picks the first satisfying the held rung. By
+  // Prop. 17 of the companion note the number it can afford to evaluate is its
+  // stack divided by the cost of one check, so a poor scientist does not survey
+  // its own branching.
+  | contract Choose(b, @hyp, @me, ret) = {
+      new cand in {
+          Positions!(*b, *cand, 0)
+        | for (@s <- cand where Sat(s, hyp, me)) {          //! ideal
+            new r in { Move!(*b, s, hyp, me, *r)
+                     | for (@o <- r) { ret!(s, o) } }
+          }
+      }
+    }
+
+  | contract Positions(b, cand, @k) = {
+      match k < 9 {
+        true  => { cand!(k) | Positions!(*b, *cand, k + 1) }
+        false => { Nil }
+      }
+    }
+
+  | contract Move(b, @s, @hyp, @me, ret) = {
       new probe in {
-          @[*b, "offer"]!(*probe, me)             // the probe perturbs the world
+          @[*b, s]!(me)                  // THE CLAIM: one rewrite, at redex s
+        | Scan!(*b)                      // the settling of Lem. 8
+        | @[*b,"state"]!(*probe)
                                                   //! ideal: structural guards
         | for (@pos <- probe where pos |= hyp)    { ret!(("confirm", pos)) }
         | for (@pos <- probe where ~(pos |= hyp)) { ret!(("refute",  pos)) }
@@ -224,10 +291,9 @@ in {
 
   | contract Turn(b, @hX, mX, @hO, mO, over, @who) = {
       new played in {
-          Move!(*b, if (who == 1) { hX } else { hO }, who, *played)
-        | for (@outcome <- played) {
-            Scan!(*b)                            // perception, and it is priced
-          | Adjudicate!(*b, *over, who)
+          Choose!(*b, if (who == 1) { hX } else { hO }, who, *played)
+        | for (@s, @outcome <- played) {
+            Adjudicate!(*b, *over, who)
           | Turn!(*b, hX, *mX, hO, *mO, *over, 3 - who)
         }
       }
@@ -237,10 +303,11 @@ in {
   | contract Adjudicate(b, over, @who) = {
       new r in {
           @[*b, "state"]!(*r)
-        | for (@pos <- r where pos |= @{ <K> out(over)@("won", who) }) {
+        | for (@pos <- r where pos |= @{ Line3(who) }) {
             over!(("won", who))
           }
-        | for (@pos <- r where pos |= @{ Full and ~ <K> out(over)@("won", who) }) {
+        | for (@pos <- r where pos |= @{ ~Line3(who) and
+                                         ~ exists s. Emp(s) }) {
             over!("draw")
           }
       }

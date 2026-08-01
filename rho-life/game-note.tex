@@ -162,9 +162,12 @@ Four features of the framework are exercised, and the interest is that each is
   the position afterwards is not the position before. \S1.1 of \cite{scientist}
   argues that observation is action; here it is not an argument but the rules of
   the game.
-\item[Minimax is an alternating modal formula.] $\langle K\rangle[K']\langle
-  K''\rangle\cdots$ reads ``I have a move such that for every reply I have a
-  move such that\ldots'', which is minimax written out. Proposition 6 of
+\item[Minimax is an alternating modal formula.] The modalities are labelled by
+  redex positions, and \S\ref{sec:K} shows that in this domain a redex position
+  \emph{is} a move. So $\exists s.\langle K_s\rangle \forall t. [K_t]\cdots$
+  reads ``I have a move such that for every reply I have a move
+  such that\ldots'', which is minimax written out, and the quantifiers range
+  over something rather than standing in for it. Proposition 6 of
   \cite{scientist} then has something to say about which half of the game is
   cheap to learn.
 \item[A fork is a separating conjunction.] Two threats whose completing squares
@@ -363,29 +366,46 @@ Separation is the connective for that. But which separation, and of what? The
 answer depends on how the board is encoded, and the constraint turns out to be
 tight.
 
-\paragraph{The encoding.} The board is a parallel composition of nine
-\emph{cell} processes, one per square, each holding a resting send on that
-square's channel carrying its mark; and eight \emph{line} processes, one per
-line, each persistently reading its three cells and, when the line holds two
-marks of one player and one empty square, reinstating a standing \emph{offer} on
-the empty square's channel. A threat is therefore not something computed on
+\paragraph{The encoding.} A board $b$ carries, for each square $k$, two names
+built by reflection in the manner of the knot encoding's arcs: a \emph{move
+channel} $\mathit{sq}_k = @[*b,k]$ and a \emph{mark cell} $\mathit{mk}_k =
+@[*b,\texttt{"m"},k]$. An empty square is a \emph{receipt} offering to be
+claimed; an occupied square is the absence of that receipt together with a
+resting send on its mark cell:
+\[
+\mathsf{Empty}_k \;\equiv\; \texttt{for}(@p \leftarrow \mathit{sq}_k\ \&\ @\_
+\leftarrow \mathit{mk}_k)\{\ \mathit{mk}_k!(p)\ \}
+\qquad\qquad
+\mathsf{Held}_k(p) \;\equiv\; \mathit{mk}_k!(p) .
+\]
+In parallel sit eight \emph{line} processes. A line reads the three mark cells
+of its line and replaces them; if it finds two marks of one player and one empty
+square $s$, it deposits a standing \emph{offer} on a third family of names,
+$\mathit{th}_s = @[*b,\texttt{"t"},s]$. A threat is therefore not computed on
 demand. It is a piece of the term.
+
+Offers live on their own names rather than on the move channels for a reason
+worth stating: were a line to signal a threat by sending on $\mathit{sq}_s$, the
+signal would rendezvous with the square's receipt and the line would have played
+the move itself. Perception must not be able to act. That is the separation of
+grades one and two of Table 1 of \cite{scientist}, enforced by the choice of
+namespace.
 
 \begin{definition}[Threat, fork]\label{def:fork}
 For a player $p$,
 \[
-\Thr(p) \;:=\; \Hq s.\ \lout(s)@(\text{\texttt{claim}},p) \mid \top,
-\qquad
-\Frk(p) \;:=\; \Thr(p) \mid_0 \Thr(p) .
+\Thr_s(p) := \lout(\mathit{th}_s)@p, \qquad
+\Thr(p) := \Hq s.\ \Thr_s(p) \mid \top, \qquad
+\Frk(p) := \Thr(p) \mid_0 \Thr(p) .
 \]
 \end{definition}
 
-$\Thr(p)$ says some square is offering a completion for $p$; it is a structural
-formula of depth one. $\Frk(p)$ says the term splits into two parts, each
-carrying such an offer, \emph{sharing no restricted square name}. Two threats at
-the same square would share that square's name and are excluded by $k=0$. This
-is the graded separation of \cite{classifier}, \S2.3.2, used at the bottom of its
-grading, and it was not introduced for this purpose.
+$\Frk(p)$ says the term splits into two parts, each carrying an offer,
+\emph{sharing no restricted name}. Two threats at the same square---two lines
+with a common gap---both deposit on $\mathit{th}_s$, so the two parands share
+that name, $k \geq 1$, and $\mid_0$ excludes them. This is the graded separation
+of \cite{classifier}, \S2.3.2, used at the bottom of its grading, and it was not
+introduced for this purpose.
 
 \begin{figure}[t]
 \centering
@@ -422,21 +442,20 @@ excludes once the squares, rather than the lines, are the parands
 \label{fig:fork}
 \end{figure}
 
-\begin{proposition}[The squares must be the parands]\label{prop:parands}
-Let $\llbracket B \rrbracket$ be an encoding of a position under which
-$\Frk(p)$ as given in Definition \ref{def:fork} is satisfied exactly by the
-positions in which $p$ has a fork. Then the restricted names over which
-$\mid_0$ counts sharing must be the square names, not the line names.
+\begin{proposition}[The offers must be indexed by square]\label{prop:parands}
+Let $\llbracket B \rrbracket$ be an encoding under which $\Frk(p)$ as given in
+Definition \ref{def:fork} is satisfied exactly by the positions in which $p$ has
+a fork. Then the names over which $\mid_0$ counts sharing must be indexed by the
+completing square, not by the line.
 \end{proposition}
 \begin{proof}[Proof sketch]
-Two lines of a three-by-three grid meet in at most one square. Suppose the
-parands are line processes and the shared names are line names. Two distinct
-lines share no line name, so $\mid_0$ is satisfied by any two distinct threats,
-including a pair whose gaps coincide---for instance the two diagonals when only
-the centre is empty. That is not a fork, since one move blocks both. Conversely,
-under the square-indexed encoding an offer is a send on the gap's own channel,
-so two threats share a restricted name iff they share their gap, and $k=0$ holds
-iff the gaps are distinct, which is the definition of a fork.
+Two lines of a three-by-three grid meet in at most one square, so distinct lines
+carry distinct line names and share none. Under a line-indexed encoding $\mid_0$
+is therefore satisfied by any two distinct threats---including a pair whose gaps
+coincide, for instance the two diagonals when only the centre is empty. That is
+not a fork, since one move blocks both. Under the square-indexed encoding two
+threats share a name iff they share their completing square, so $k=0$ holds iff
+the gaps are distinct, which is the definition of a fork.
 \end{proof}
 
 \begin{remark}[What just happened]
@@ -451,6 +470,94 @@ note argues that a generated logic is the right hypothesis language on grounds
 of adequacy. This is the same claim cashed out as a design discipline.
 \end{remark}
 
+\subsection{The redex context is the move}\label{sec:K}
+
+The modalities of the generated logic are labelled by contexts: one primitive
+$\langle K_j\rangle$ per rewrite rule \emph{and choice of redex position}, where
+$K_j$ is the one-hole context determined by that position
+(\cite{classifier}, \S2.1). The label is not an action name. It records the
+surroundings in which the step fires, and in this domain those surroundings are
+exactly what carries the content.
+
+The rho calculus has one interaction rule, so all the information in a label is
+in the position. Write a world in play as
+\[
+W \;\equiv\; \Hq \vec b.\ \Big(\ \prod_{k \in \mathrm{empty}} \mathsf{Empty}_k
+\ \Big|\ \prod_{k \notin \mathrm{empty}} \mathsf{Held}_k(m_k)
+\ \Big|\ L \ \Big|\ \mathit{Th} \ \Big|\ M_p \ \Big),
+\]
+with $L$ the line processes, $\mathit{Th}$ the standing offers, and $M_p$ the
+mover's code, which for a move at $s$ contains the send $\mathit{sq}_s!(p)$.
+
+\begin{definition}[The move context]\label{def:K}
+For an empty square $s$, the redex position of the claim at $s$ is the join of
+$\mathit{sq}_s!(p)$ with $\mathsf{Empty}_s$, and the one-hole context
+determined by it is
+\[
+K_s \;:=\; \Hq \vec b.\Big(\ [\,\cdot\,]\ \Big|
+\prod_{k \in \mathrm{empty},\ k \neq s}\!\! \mathsf{Empty}_k \ \Big|
+\prod_{k \notin \mathrm{empty}}\!\! \mathsf{Held}_k(m_k) \ \Big| \ L \ \Big|\
+\mathit{Th} \ \Big| \ M_p' \Big) ,
+\]
+$M_p'$ being the mover's remaining code. We write $\langle K_s\rangle\varphi$
+for the corresponding generated modality.
+\end{definition}
+
+\begin{proposition}[Moves are redex positions]\label{prop:moves}
+The redex positions of $W$ at which a claim can fire are in bijection with the
+empty squares, and the mover is determined by the context. Hence
+\[
+\text{``$p$ has a move $s$ after which $\varphi$''}
+\quad=\quad
+\exists s.\ \langle K_s \rangle \varphi ,
+\]
+where the existential ranges over redex positions, and the branching factor of
+that quantification is the number of legal moves.
+\end{proposition}
+\begin{proof}[Proof sketch]
+An occupied square offers no receipt, so no claim can fire there; each empty
+square offers exactly one, and the mark cells are disjoint, so the receipts do
+not race with each other. Distinct $s$ give distinct contexts, since $K_s$
+retains $\mathsf{Empty}_{s'}$ for every $s' \neq s$ and $K_{s'}$ does not.
+Whose move it is, is fixed by which $M_p$ sits in the context.
+\end{proof}
+
+\begin{remark}[Why an action label would not do]
+Every claim, at every square, by either player, is the same action: a comm on a
+square channel carrying a mark. An action-labelled modal logic in the style of
+Hennessy--Milner sees one label and cannot distinguish nine moves; recovering
+the distinction would mean encoding the square into a name discipline and then
+reasoning about names, which is the manoeuvre \cite{classifier}, \S3.1 declines
+in the knot setting for the same reason. Context-labelling gives it directly:
+the square being claimed is the hole, and everything else is the label.
+\end{remark}
+
+\begin{lemma}[The board settles]\label{lem:settle}
+After a claim fires, the line processes run to a unique normal form in finitely
+many steps, and the resulting family of offers depends only on the marks.
+\end{lemma}
+\begin{proof}[Proof sketch]
+Each of the eight lines performs one join on three mark cells and replaces what
+it took, so no line's output enables another: offers are deposited on the
+$\mathit{th}$ names, which no line reads. The settling is therefore a finite,
+conflict-free sequence of eight steps up to the ordinary races for mark cells,
+and those commute because each restores its cell unchanged. Hence confluence and
+termination.
+\end{proof}
+
+\begin{definition}[The settled modality]
+$\langle\!\langle K_s \rangle\!\rangle \varphi$ holds when the claim at $s$
+fires and $\varphi$ holds of the term after the settling of Lemma
+\ref{lem:settle}. This is the weak diamond, and Lemma \ref{lem:settle} makes it
+deterministic in $s$.
+\end{definition}
+
+We use $\langle\!\langle - \rangle\!\rangle$ throughout, and note that a plain
+$\langle K_s\rangle$ would land the scientist between a move and the world's
+recognition of it---a state in which the threat structure is stale. That the
+distinction has to be drawn at all is a fact about a world in which perception
+is a process rather than a lookup.
+
 \section{The ladder}\label{sec:ladder}
 
 \subsection{Six rungs and a limit}
@@ -462,36 +569,80 @@ generated logic, cumulatively, each rung adding one disjunct above the previous
 ones in priority.
 
 \begin{center}
-\begin{tabular}{@{}clll@{}}
+\begin{tabular}{@{}cll@{}}
 \toprule
-rung & formula added & kind & depth \\
+rung & formula added & kind and depth \\
 \midrule
-0 & $\top$ & --- & 0\\
-1 & $\langle K\rangle \Wn(\text{me})$ & modal, existential & 1\\
-2 & $\langle K\rangle \neg\Thr(\text{them})$ & modal & 2\\
-3 & $\langle K\rangle \Frk(\text{me})$ & \textbf{spatial} ($\mid_0$) & 3\\
-4 & $\langle K\rangle[K]\,\neg\Frk(\text{them})$ & modal, alternating & 4\\
-5 & $\Ctr$ & \textbf{spatial}, no lookahead & 0\\
-6 & $\chi$ & $\nu$-formula & --- \\
+0 & $\top$ & --- \\[3pt]
+1 & $\exists s.\ \mathsf{Emp}(s) \wedge \Thr_s(\text{me})$
+  & spatial, depth 1 \\[3pt]
+2 & $\exists s.\ \mathsf{Emp}(s) \wedge \Thr_s(\text{them})$
+  & spatial, depth 1 \\[3pt]
+3 & $\exists s.\ \langle\!\langle K_s\rangle\!\rangle \Frk(\text{me})$
+  & one modal step over $\mid_0$ \\[3pt]
+4 & $\exists s.\ \forall t.\ \langle\!\langle K_s\rangle\!\rangle
+    [\![K_t]\!]\, \neg\Frk(\text{them})$
+  & box under diamond, depth 2 \\[3pt]
+5 & $\Ctr$ & name-level, depth 0 \\[3pt]
+6 & $\chi := \nu X.\ \forall s.\, [\![K_s]\!]\big(\neg\mathsf{Lost} \wedge
+    \exists t.\ \langle\!\langle K_t\rangle\!\rangle X\big)$
+  & full alternation \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Here $\Wn(p) := \langle K\rangle \lout(\mathit{over})@(\texttt{won},p)$;
-$\Ctr$ is a purely structural preference over squares (centre, then the corner
-opposite an opponent's, then any corner, then a side), containing no modality at
-all; and $\chi$ is the characteristic formula of the arena running against this
-opponent, a $\nu$-formula in the sense of \cite{classifier}, \S3.
+Here $\mathsf{Emp}(s) := \lin(\mathit{sq}_s)\top$---the square still offers a
+receipt, a structural predicate of depth one---and $\Ctr$ is a preference over
+square \emph{names}, read off the reflected structure $@[*b,k]$ by a name
+predicate, containing no modality and requiring no step at all. The quantifiers
+$\exists s$ and $\forall t$ range over redex positions, which by Proposition
+\ref{prop:moves} is to say over legal moves.
+
+Two features of the shape are worth naming, and both were invisible while $K$
+was an uninstantiated placeholder.
+
+\begin{observation}[Winning and blocking are perception, not lookahead]
+Rungs 1 and 2 contain no modality. Having a winning move is not a fact about
+what would happen if one moved; it is the fact that a completing offer stands at
+a square still open, and the line processes deposited that offer when the world
+last settled. The scientist reads it. The behavioural content was pushed into
+the structure of the term by a computation somebody else already paid for.
+\end{observation}
+
+This has a general form, and it is the most useful thing in the section. There
+are two routes to any predicate about the environment: \emph{read} it, if the
+environment has already computed it into legible structure, or \emph{drive} it,
+by taking steps and watching. The first is perception and the second
+interaction---grades one and two of Table 1 of \cite{scientist}---and they are
+priced by different schedules, one by formula depth and one by rendezvous. An
+environment that computes a great deal about itself into structure is one in
+which a poor scientist can nonetheless know much; an environment that computes
+nothing until driven is one where knowledge is available only to those who can
+afford to act. That is a claim about environments rather than about learners,
+and this framework can state it because it prices the two grades separately.
+
+\begin{observation}[The asymmetry has moved to the right place]\label{obs:asym}
+With $K$ instantiated, the existential and universal quantifiers range over
+moves, and the ladder's one genuinely alternating rung is rung 4:
+$\exists s \forall t$, a box under a diamond. By Proposition 6 of
+\cite{scientist} the diamond has a finite confirming witness and the box has
+none, so rung 4 is the rung whose confirmation is unbounded and whose refutation
+is cheap. Section \ref{sec:measure} finds that it is also, by a wide margin, the
+worst purchase on the ladder: $+0.005$ of win probability for $111$ metered
+units. Making a fork is establishing an existential; preventing one is
+discharging a universal, and the framework prices that difference before
+measuring it.
+\end{observation}
 
 \begin{remark}[Why $\chi$ is reachable here, and what that costs later]
 Proposition 9 of \cite{scientist} says the complete theory of an environment is
-unaffordable when the environment's recursion follows the reduction rather than a
-finite structural cycle. Noughts-and-crosses is the converse case of Remark 10
-there: the game tree is finite, the recursion follows the structure, and $\nu$ is
-exact at a finite unfolding. So this is a \emph{closed} science---one of the
-subject matters that admit a complete finite theory. That is what makes the
-domain a good demonstration and, as \S\ref{sec:death} shows, what kills the
-ecology.
+unaffordable when its recursion follows the reduction rather than a finite
+structural cycle. Noughts-and-crosses is the converse case of Remark 10 there:
+the board loses a square at every step, so the alternation in $\chi$ bottoms out
+and $\nu$ is exact at a finite unfolding---nine, in fact. This is a \emph{closed}
+science, one of the subject matters admitting a complete finite theory. That is
+what makes the domain a good demonstration and, as \S\ref{sec:death} shows, what
+kills the ecology.
 \end{remark}
 
 \subsection{The rungs are the $\nu$-approximants}
@@ -499,11 +650,15 @@ ecology.
 The ladder is not merely ordered; it is metrically graded, and by the metric the
 companion note already fixed.
 
-\begin{proposition}[The ladder is a geodesic-free chain]
-Under the stratified distance of \cite{scientist}, Definition 8,
-$d(\varphi_r,\varphi_{r+1}) = 2^{-r}$ for $r=1,\dots,4$: the rungs agree on all
-approximants below stage $r$ and differ at stage $r$, because rung $r$'s added
-disjunct is a formula of modal depth exactly $r$.
+\begin{proposition}[The ladder is a chain of shrinking steps]
+Under the stratified distance of \cite{scientist}, Definition 8, the rungs
+agree on every approximant below the stage at which the added conjunct first
+looks and differ at that stage. Rungs 1 and 2 add conjuncts that inspect the
+settled term without stepping, and so sit at stage 1; rung 3 adds one
+$\langle\!\langle K_s \rangle\!\rangle$, reaching stage 2; rung 4 adds a box
+beneath it, reaching stage 3; and $\chi$ is the limit of the sequence. Hence
+$d(\varphi_r,\varphi_{r+1}) = 2^{-r}$ for $r = 1, \dots, 4$, and the steps
+shrink as one climbs.
 \end{proposition}
 
 Two consequences follow immediately and they are the ones that structure
@@ -513,37 +668,43 @@ scientist that only ever deepens can never leave the ball its early commitments
 placed it in. Second, by Proposition 14 of \cite{scientist}, cost is monotone in
 distance, so the cheap moves are exactly the confined ones.
 
-\subsection{The modal asymmetry, and the order of learning}
+\subsection{The modal asymmetry, and what it predicts}
 
-Proposition 6 of \cite{scientist} says a diamond formula has a finite
-confirming witness and no finite refuting one, and dually for a box. Read on
-this ladder:
+Observation \ref{obs:asym} located the ladder's one alternating rung. It is
+worth writing the asymmetry out, now that the quantifiers have something to
+range over:
 \[
-\underbrace{\langle K\rangle \Wn(\text{me})}_{\text{cheap to confirm}}
+\underbrace{\exists s.\ \langle\!\langle K_s\rangle\!\rangle \Frk(\text{me})}
+_{\text{a finite witness: exhibit the square}}
 \qquad\text{versus}\qquad
-\underbrace{[K]\,\neg\Wn(\text{them})}_{\text{cheap to refute}} .
+\underbrace{\exists s.\ \forall t.\ \langle\!\langle K_s\rangle\!\rangle
+[\![K_t]\!]\,\neg\Frk(\text{them})}
+_{\text{no finite witness: every reply must be checked}} .
 \]
-Establishing that one \emph{has} a winning move requires exhibiting it.
-Establishing that a move is \emph{safe} requires quantifying over every reply.
-The framework therefore predicts, from the cost structure alone, that a mortal
-learner acquires attack before defence---which is what every human learner of
-the game in fact does, and what our rung ordering was independently obliged to
-encode, since rung 1 is offensive and rung 2 defensive.
+Establishing that one \emph{can} fork requires producing the move. Establishing
+that a move is \emph{safe} requires discharging a universal over the opponent's
+replies, and by Proposition 6 of \cite{scientist} no finite run witnesses that;
+only a counterexample is finite. The framework therefore predicts, from the
+shape of the formula rather than from anything about games, that offensive
+knowledge is the cheaper acquisition---which is what every human learner of the
+game in fact does, and which \S\ref{sec:measure} confirms in the currency that
+matters here: rung 4 is the worst purchase on the ladder.
 
-We can put a number on the asymmetry. Restricting the top heuristic rung to
-each colour separately: as the first player it achieves the game-theoretic value
-against a perfect opponent, drawing every game; as the second player it loses
-$6.3\%$ of games against a perfect opponent. The same policy is complete on
+There is a second, independent measurement of the same asymmetry. Restricting
+the top heuristic rung to each colour separately: as the first player it
+achieves the game-theoretic value against a perfect opponent, drawing every
+game; as the second player it loses $6.3\%$. The same policy is complete on
 offence and incomplete on defence.
 
 \begin{remark}[A reading, offered as such]
-We resist over-claiming here. The first player has the initiative, so
-existential reasoning is more nearly sufficient for it, and one could attribute
-the asymmetry to that alone. What the framework adds is a reason the two are not
-symmetric \emph{in price}: the universal formula is the one whose confirmation
-has no finite witness, so a budget-bounded learner confirms attacks and can only
-ever refute claims of safety. We take the measurement as consistent with
-Proposition 6 rather than as a demonstration of it.
+We resist over-claiming on the second measurement. The first player has the
+initiative, so existential reasoning is more nearly sufficient for it, and one
+could attribute the colour asymmetry to that alone. What the framework adds is a
+reason the two are not symmetric \emph{in price}: the universal formula is the
+one whose confirmation has no finite witness, so a budget-bounded learner
+confirms attacks and can only ever refute claims of safety. We take the colour
+measurement as consistent with Proposition 6; the rung-4 cost is the
+demonstration.
 \end{remark}
 
 \section{The assay}\label{sec:assay}
@@ -588,15 +749,18 @@ concrete form of that constraint.
 
 \subsection{Pricing}\label{sec:price}
 
-We charge each rule the modal depth of the formula it installs, times the number
-of candidate moves it must examine:
+We charge each rule the depth of the formula it installs, times the number of
+candidate moves it must examine:
 \[
 \kappa(d) = 2^{d}, \qquad
 \text{cost of a decision at rung } r \;=\; |M| \cdot \!\!\sum_{\text{rules } 1..r}\!\! \kappa(d_{\text{rule}}) ,
 \]
-with $|M|$ the number of legal moves. So rung 1 costs $2$ per candidate, rung 2
-adds $4$, rung 3 adds $8$, rung 4 adds $16$, and $\chi$ costs $32$; the
-positional rung, being depth zero, adds $1$.
+with $|M|$ the number of legal moves---which by Proposition \ref{prop:moves} is
+the branching factor of the quantification over redex positions, so the two
+readings of $|M|$ agree. Rungs 1 and 2, being structural at depth 1, cost $2$
+per candidate each; rung 3 adds $4$ for its single settled step over a
+separation; rung 4 adds $8$ for the box beneath the diamond; $\Ctr$, being
+name-level at depth 0, adds $1$; and $\chi$ costs $32$.
 
 Three comments. The schedule is a \emph{choice}, and \S\ref{sec:measure} varies
 it. The exponential shape is not arbitrary: it is what makes distance, depth,
@@ -656,12 +820,12 @@ time.
 rung & added conjunct & win & draw & loss & cost & $\Delta$win & return \\
 \midrule
 0 & $\top$                                  & 0.437 & 0.127 & 0.437 & 0.0 & --- & --- \\
-1 & $\langle K\rangle\Wn$                   & 0.668 & 0.075 & 0.258 & 40.9 & $+0.231$ & $+0.0057$ \\
-2 & $\langle K\rangle\neg\Thr$              & 0.798 & 0.165 & 0.037 & 113.8 & $+0.130$ & $+0.0018$ \\
-3 & $\langle K\rangle\Frk$                  & 0.831 & 0.135 & 0.035 & 228.1 & $+0.033$ & $+0.0003$ \\
-4 & $\langle K\rangle[K]\neg\Frk$           & 0.836 & 0.138 & 0.027 & 449.8 & $+0.005$ & $+0.00002$ \\
-5 & $\Ctr$                                  & \textbf{0.918} & 0.080 & 0.002 & 457.9 & $+0.083$ & $\mathbf{+0.0102}$ \\
-6 & $\chi$                                  & 0.873 & 0.127 & \textbf{0.000} & 679.2 & $-0.046$ & $-0.0002$ \\
+1 & $\Thr_s(\text{me})$                     & 0.668 & 0.075 & 0.258 & 40.9 & $+0.231$ & $+0.0057$ \\
+2 & $\Thr_s(\text{them})$                   & 0.798 & 0.165 & 0.037 & 77.8 & $+0.130$ & $+0.0035$ \\
+3 & $\langle\!\langle K_s\rangle\!\rangle\Frk$ & 0.831 & 0.135 & 0.035 & 134.9 & $+0.033$ & $+0.0006$ \\
+4 & $\forall t.[\![K_t]\!]\neg\Frk$         & 0.836 & 0.138 & 0.027 & 245.7 & $+0.005$ & $+0.00005$ \\
+5 & $\Ctr$                                  & \textbf{0.918} & 0.080 & 0.002 & 255.9 & $+0.083$ & $\mathbf{+0.0082}$ \\
+6 & $\chi$                                  & 0.873 & 0.127 & \textbf{0.000} & 679.2 & $-0.046$ & $-0.0001$ \\
 \bottomrule
 \end{tabular}
 \caption{The ladder against a uniform-random opponent. ``cost'' is expected
@@ -676,27 +840,28 @@ it peaks at rung 5.}
 \begin{tikzpicture}[x=0.0155cm,y=13cm]
 % axes
 \draw[->] (0,0.40) -- (740,0.40) node[below right,font=\small] {expected metering per game};
-\draw[->] (0,0.40) -- (0,0.96) node[above left,font=\small,rotate=0] {win rate};
+\draw[->] (0,0.40) -- (0,0.96) node[above left,font=\small] {win rate};
 \foreach \x in {0,200,400,600} \draw (\x,0.40) -- (\x,0.393) node[below,font=\tiny] {\x};
 \foreach \y in {0.5,0.6,0.7,0.8,0.9} \draw (0,\y) -- (-12,\y) node[left,font=\tiny] {\y};
 % ladder path
-\draw[thick,gray!70] (0,0.437) -- (40.9,0.668) -- (113.8,0.798) -- (228.1,0.831) -- (449.8,0.836) -- (457.9,0.918);
-\draw[thick,gray!70,dashed] (457.9,0.918) -- (679.2,0.873);
+\draw[thick,gray!70] (0,0.437) -- (40.9,0.668) -- (77.8,0.798) -- (134.9,0.831) -- (245.7,0.836) -- (255.9,0.918);
+\draw[thick,gray!70,dashed] (255.9,0.918) -- (679.2,0.873);
 % dominated region for rung 5
-\fill[gray!18] (457.9,0.40) rectangle (740,0.918);
-\draw[gray!55] (457.9,0.918) -- (740,0.918);
-\draw[gray!55] (457.9,0.40) -- (457.9,0.918);
+\fill[gray!18] (255.9,0.40) rectangle (740,0.918);
+\draw[gray!55] (255.9,0.918) -- (740,0.918);
+\draw[gray!55] (255.9,0.40) -- (255.9,0.918);
 % points
-\foreach \x/\y/\l in {0/0.437/0,40.9/0.668/1,113.8/0.798/2,228.1/0.831/3,449.8/0.836/4}
+\foreach \x/\y/\l in {0/0.437/0,40.9/0.668/1,77.8/0.798/2,134.9/0.831/3}
   {\fill (\x,\y) circle (2.2pt); \node[font=\small,above left=-1pt] at (\x,\y) {\l};}
-\fill (457.9,0.918) circle (2.6pt); \node[font=\small,above=1pt] at (457.9,0.918) {5};
+\fill (245.7,0.836) circle (2.2pt); \node[font=\small,below right=-1pt] at (245.7,0.836) {4};
+\fill (255.9,0.918) circle (2.6pt); \node[font=\small,above=1pt] at (255.9,0.918) {5};
 \fill (679.2,0.873) circle (2.6pt); \node[font=\small,above right=-1pt] at (679.2,0.873) {$6=\chi$};
 \node[font=\small,anchor=north east] at (735,0.53) {dominated by rung 5};
 \end{tikzpicture}
 \caption{The ladder as a cost--yield curve, against a uniform-random opponent.
-Rungs 1--4 show sharply diminishing returns for a roughly doubling price. Rung
-5---the spatial conjunct, of modal depth zero---is nearly free and delivers the
-largest jump on the ladder. The complete theory $\chi$ lies inside the shaded
+Rungs 1--4 show sharply diminishing returns for a roughly doubling price, rung 4
+---the alternating one---being the flattest. Rung 5, a predicate on square names
+of depth zero, is nearly free and delivers the largest jump on the ladder. The complete theory $\chi$ lies inside the shaded
 region: it costs more than rung 5 and wins less, so it is dominated on both
 axes.}
 \label{fig:pareto}
@@ -706,41 +871,57 @@ Three features of Table \ref{tab:ladder} deserve separate statements.
 
 \begin{observation}[Diminishing returns, until they don't]
 Marginal return falls by more than two orders of magnitude from rung 1 to rung
-4---$+0.0057$, $+0.0018$, $+0.0003$, $+0.00002$---while cost roughly doubles at
-each step. Rung 4 in particular buys $+0.005$ of win probability for $222$
-metered units. A budget-bounded learner would stop there, and the foraging
+4---$+0.0057$, $+0.0035$, $+0.0006$, $+0.00005$---while cost roughly doubles at
+each step. Rung 4 in particular buys $+0.005$ of win probability for $111$
+metered units, and it is the alternating rung of Observation \ref{obs:asym}: the
+one whose formula has no finite confirming witness. A budget-bounded learner
+would stop before it, and the foraging
 inequality of \cite{scientist}, Proposition 27, says exactly when: harvest
 credits the scientist only if the prey's stack exceeds what finding and opening
 it cost.
 \end{observation}
 
-\begin{observation}[The spatial rung is the profitable one]\label{obs:spatial}
-Rung 5 returns $+0.0102$ per metered unit: the best marginal return anywhere on
-the ladder, nearly twice that of the first rung and some five hundred times that
-of rung 4 beneath it. It achieves this because $\Ctr$ has modal depth zero---it
-is a structural predicate on the current position, requiring no lookahead---and
-because what it encodes, the differential value of squares by their line
-membership, is a fact about the \emph{shape} of the board rather than about the
-game's dynamics.
+\begin{observation}[The non-modal rungs carry the ladder]\label{obs:spatial}
+Once $K$ is instantiated, three of the five useful rungs turn out to contain no
+modality: rungs 1 and 2, which read standing offers, and rung 5, which reads
+square names. Together they deliver $+0.444$ of the ladder's total $+0.481$ gain
+---$92.3\%$ of the yield---for $87.9$ of its $255.9$ metered units, or $34.3\%$
+of the cost. The two modal rungs deliver the remaining $+0.038$ for $168.0$
+units. Rung 5 alone returns $+0.0082$ per unit, the best figure on the ladder
+and some one hundred and sixty times rung 4's.
 \end{observation}
 
-This is the result we would lead with. The classifier note argues, in the knot
-setting, that the spatial layer is where the generated logic earns its name and
-that a purely behavioural logic simply cannot state the properties that matter
-(\cite{classifier}, Remark 5). That argument is made there on expressiveness
-grounds. Here the same claim is cashed in an ecological currency: the spatial
-conjunct is not merely expressible-and-useful, it is the \emph{cheapest useful
-thing on the ladder}, and a mortal learner that priced its own hypotheses would
-find it first among the deep options and last among the cheap ones. A modal
-logic could not have offered it.
+This is the result we would lead with, and it is one we could not have stated
+before the correction: with $\langle K\rangle$ standing in as a placeholder,
+rungs 1 and 2 looked modal, and the split between reading and driving was
+invisible. The classifier note argues, in the knot setting, that the spatial
+layer is where the generated logic earns its name and that a purely behavioural
+logic cannot state the properties that matter (\cite{classifier}, Remark 5).
+That argument is made there on expressiveness grounds. Here it is cashed in an
+ecological currency: the non-behavioural fragment is not merely
+expressible-and-useful, it is where nearly all the yield per token lives, and a
+mortal learner that priced its own hypotheses would find it first. A modal logic
+could not have offered any of it.
+
+\begin{remark}[Why this is not an artefact of the encoding]
+One might object that we simply put the threats into the term, so of course
+reading them is cheap. The objection has force and the answer is that somebody
+paid: the line processes run on every settling, and \S\ref{sec:price} charges
+that scan. What the encoding does is \emph{relocate} the cost, from the
+scientist's budget to the world's---and that relocation is precisely the
+distinction between an environment one can perceive and one that must be driven.
+The interesting quantity is not whether the work is done but who is billed for
+it, which is a question this framework can pose because both parties have
+stacks.
+\end{remark}
 
 \begin{observation}[The true theory is dominated]\label{obs:chi}
 $\chi$ is the complete theory: it never loses, from either colour, against any
 opponent. It is also, against fallible prey, strictly worse than the heuristic
 rung below it on both axes at once. Against a random opponent rung 5 wins
-$0.918$ at cost $457.9$ while $\chi$ wins $0.873$ at cost $679.2$; against a
-rung-4 opponent, $0.448$ at $503.2$ versus $0.418$ at $708.8$. Fewer wins, half
-again the price.
+$0.918$ at cost $255.9$ while $\chi$ wins $0.873$ at cost $679.2$; against a
+rung-4 opponent, $0.448$ at $280.3$ versus $0.418$ at $708.8$. Fewer wins, and
+between one and a half and two and a half times the price.
 \end{observation}
 
 The mechanism is not mysterious and is well known to anyone who has implemented
@@ -765,14 +946,14 @@ are large enough to matter, which is the next calculation.
 
 Take a population fixed at rung 5 and ask when a $\chi$-holding mutant invades.
 Head to head, $\chi$ wins $3.17\%$ and never loses; it costs $720.0$ per game
-against the resident's $585.0$. The mutant is favoured when $\sigma \cdot
-0.0317 > \text{price} \cdot 135.0$, that is when
+against the resident's $324.0$. The mutant is favoured when $\sigma \cdot
+0.0317 > \text{price} \cdot 396.0$, that is when
 \[
-\sigma \;>\; 4252 \cdot \text{price},
+\sigma \;>\; 12474 \cdot \text{price},
 \]
 where $\sigma$ is the prey stack won and \emph{price} converts metered units
 into tokens. The complete theory is therefore a luxury good, purchasable only
-where the stakes are some four thousand times the unit cost of thought.
+where the stakes are some twelve thousand times the unit cost of thought.
 
 \begin{remark}[Basic research, priced]
 Remark 80 of \cite{scientist} concedes the pragmatist's objection---this
@@ -781,7 +962,10 @@ unfunded---and answers with surplus: a scientist holding more than its foraging
 horizon requires can afford inquiry that does not pay. The number above is that
 remark made quantitative for one domain. Truth is affordable here, and only
 here, above a threshold; below it, the ecology selects for a theory that is
-known to be wrong and known to be more profitable.
+known to be wrong and known to be more profitable. Pricing the ladder by the
+instantiated formulae rather than by rung index raises that threshold by a
+factor of three, because the cheap rungs turn out to be cheaper than a
+placeholder $\langle K\rangle$ made them look.
 \end{remark}
 
 \subsection{The phase band}
@@ -795,13 +979,13 @@ rung maximises $\sigma\cdot P(\text{win}) - \text{price}\cdot \mathbb{E}[\text{c
 \toprule
 $\sigma$ & vs r0 & vs r1 & vs r2 & vs r3 & vs r4 & vs r5 & vs r6 \\
 \midrule
-20   & 1 & 2 & 0 & 0 & 0 & 0 & 0 \\
-50   & 2 & 2 & 5 & 5 & 5 & 0 & 0 \\
-100  & 2 & 2 & 5 & 5 & 5 & 0 & 0 \\
-200  & 3 & 3 & 5 & 5 & 5 & 2 & 0 \\
-400  & 3 & 3 & 5 & 5 & 5 & 2 & 0 \\
+20   & 2 & 2 & 0 & 0 & 0 & 0 & 0 \\
+50   & 2 & 2 & 3 & 3 & 5 & 0 & 0 \\
+100  & 5 & 5 & 5 & 5 & 5 & 0 & 0 \\
+200  & 5 & 5 & 5 & 5 & 5 & 2 & 0 \\
+400  & 5 & 5 & 5 & 5 & 5 & 2 & 0 \\
 800  & 5 & 5 & 5 & 5 & 5 & 2 & 0 \\
-1600 & \textbf{6} & \textbf{6} & 5 & 5 & 5 & 2 & 0 \\
+1600 & 5 & 5 & \textbf{6} & \textbf{6} & 5 & 2 & 0 \\
 \bottomrule
 \end{tabular}
 \caption{Optimal rung, at price $0.05$ per metered unit, as a function of the
@@ -826,10 +1010,12 @@ budget, the correct scientific policy is not to try.
 interior rung is optimal---mostly rung 5, the heuristic, not rung 6, the truth.
 \end{itemize}
 
-Raising the price to $0.2$ and to $1.0$ shifts the band toward the cheap rungs
-without changing its shape: at price $1.0$ the optimal rung is $0$ or $1$ over
-most of the table and never $6$. The qualitative structure---interior optimum,
-degenerate at both ends---is robust; the boundaries are not.
+$\chi$ is optimal in exactly two cells of the whole grid, both at the cheapest
+price and the largest stake. Raising the price to $0.2$ and to $1.0$ shifts the
+band toward the cheap rungs without changing its shape: at price $1.0$ the
+optimal rung is $0$ over most of the table and never $6$ anywhere. The
+qualitative structure---interior optimum, degenerate at both ends---is robust;
+the boundaries are not.
 
 \section{Confinement, measured}\label{sec:confine}
 
