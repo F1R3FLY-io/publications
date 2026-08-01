@@ -1,0 +1,409 @@
+// =============================================================================
+//  A WORLD OF MORTAL SCIENTISTS THAT PLAY NOUGHTS-AND-CROSSES
+// =============================================================================
+//
+//  Companion listing to "Learning to Play". Every construction of the
+//  mortal-scientist note appears here as ordinary code:
+//
+//    Sec. 3   the arena        -- Arena, Turn, Harvest   (the admitted context class)
+//    Sec. 4   the board        -- Board, Cells, Line     (squares are the parands)
+//    Sec. 5   the ladder       -- Ladder                 (hypotheses as formulae)
+//    Sec. 6   the assay        -- Move                   (a move IS an experiment)
+//    Sec. 6.1 metabolism       -- Live, Wall
+//    Sec. 9   the two loci     -- Beget, Crossover       (opening x rung)
+//    Sec. 10  the world        -- the bottom block
+//
+//  CONVENTION. A parameter written `c` is a NAME (a channel); a parameter
+//  written `@d` is DATA. To pass a channel one sends `*c`, since @(*c) = c.
+//
+//  NOTATION. Guards are written in the generated spatial-behavioural logic:
+//  out(n)phi, in(n)phi, phi | psi, the graded separation phi |_k psi, the
+//  hidden-name quantifier H x. phi, the name predicate @phi, the context-
+//  labelled modality <K>phi, and the greatest fixed point nu X. phi. The
+//  current interpreter accepts only the arithmetic and pattern fragment of
+//  `where`; guards using a structural or modal connective are marked
+//  `//! ideal` and are specifications of a check rather than a check the
+//  reducer performs. Everything else runs.
+//
+//  CONSERVATION. Nothing here mints. Wall moves reserve into a player;
+//  Harvest moves a loser's stack into a winner's; Beget moves a parent's stack
+//  into a child's; every Live debit moves a token from sigma into kappa. So
+//  sigma + kappa = Theta throughout, with Theta the wall's opening reserve plus
+//  the players' opening stacks.
+// =============================================================================
+
+new stdout(`rho:io:stdout`), display, arena, wall, mate, ladder,
+    Live, Wall, Board, Cells, Line, Scan, Arena, Turn, Adjudicate, Harvest,
+    Move, Revise, Ladder, Pick, Crossover, Beget, Body, PlayOne, Mate
+in {
+
+  for (@line <= display) { stdout!(line) }
+
+  // ===========================================================================
+  //  METABOLISM  --  reclaim, debit, reissue.  (Companion note, Def. 20.)
+  //  Between the receipt and the send the stack is a message in flight: living
+  //  is racing others to your own stack, and the metabolic channel m is exactly
+  //  the vulnerability that Harvest exploits.
+  // ===========================================================================
+
+  | contract Live(m, @burn, step) = {
+      for (@sigma <- m) {
+        match sigma > burn {
+          true  => { m!(sigma - burn) | *step | Live!(*m, burn, *step) }
+          false => { display!(("DIED", "could not fund a step")) }
+        }
+      }
+    }
+
+  // ===========================================================================
+  //  THE PRACTICE WALL  --  a source, not a prey.
+  //  Rate-limited (one contract), non-exclusive (anyone may call it),
+  //  non-adaptive (its policy never revises), and finite. That access profile
+  //  is what makes it a SOURCE in the sense of the companion note, Sec. 11.2,
+  //  and what makes this world mixotrophic rather than purely predatory.
+  // ===========================================================================
+
+  | contract Wall(w, @quantum, @reserve) = {
+      for (ret <- w) {
+        match reserve >= quantum {
+          true  => { ret!(quantum) | Wall!(*w, quantum, reserve - quantum) }
+          false => { ret!(0) | Wall!(*w, quantum, 0) }   // exhausted
+        }
+      }
+    }
+
+  // ===========================================================================
+  //  THE BOARD  --  nine squares in parallel, and eight lines that watch them.
+  //
+  //  The squares are the parands. This is FORCED, not chosen: Sec. 5 needs
+  //  "fork" to be a separating conjunction at k = 0, and a fork is two threats
+  //  whose COMPLETING SQUARES differ. Under a line-indexed encoding two threats
+  //  with a common gap would satisfy the same formula, and that is not a fork.
+  //  The logic dictated the layout (Prop. 4).
+  //
+  //  Square k of board b is the reflected name @[*b, k] -- a structured name
+  //  carrying the board's unforgeable token and the square's index, so a name
+  //  predicate can recover both without observing any traffic. Same device as
+  //  the arcs of the knot encoding.
+  // ===========================================================================
+
+  | contract Board(b, @marks) = { Cells!(*b, marks, 0) | Scan!(*b) }
+
+  | contract Cells(b, @marks, @k) = {
+      match k < 9 {
+        true  => { @[*b, k]!(marks.nth(k)) | Cells!(*b, marks, k + 1) }
+        false => { Nil }
+      }
+    }
+
+  // A line reads its three squares and, when it holds two marks of one player
+  // and one empty square, reinstates a standing OFFER on the empty square's
+  // channel. A threat is therefore not computed on demand: it is a piece of
+  // the term, and so visible to the structural layer.
+  | contract Line(b, @i, @j, @k) = {
+      for (@x <- @[*b,i] & @y <- @[*b,j] & @z <- @[*b,k]) {
+          @[*b,i]!(x) | @[*b,j]!(y) | @[*b,k]!(z)
+        | match (x, y, z) {
+            (p, q, 0) where p == q and p > 0 => { @[*b,k]!(("claim", p)) }
+            (p, 0, q) where p == q and p > 0 => { @[*b,j]!(("claim", p)) }
+            (0, p, q) where p == q and p > 0 => { @[*b,i]!(("claim", p)) }
+            _                                => { Nil }
+          }
+      }
+    }
+
+  // The eight lines, re-run after each move. Scanning is metered like anything
+  // else: perception is priced (Def. 3), and this is where the price is paid.
+  | contract Scan(b) = {
+        Line!(*b,0,1,2) | Line!(*b,3,4,5) | Line!(*b,6,7,8)
+      | Line!(*b,0,3,6) | Line!(*b,1,4,7) | Line!(*b,2,5,8)
+      | Line!(*b,0,4,8) | Line!(*b,2,4,6)
+    }
+
+  // ===========================================================================
+  //  THE LADDER  --  six hypotheses about the position, and chi.
+  //
+  //  Each rung is a formula in the generated logic; the rung index is the modal
+  //  depth of the conjunct it adds, hence by Def. 8 of the companion note the
+  //  ultrametric stage:  d(Phi_r, Phi_{r+1}) = 2^-r.
+  //
+  //    Threat(p) := H s. out(s)@("claim", p) | TOP            spatial, depth 1
+  //    Fork(p)   := Threat(p) |_0 Threat(p)                   spatial, k = 0
+  //    Win(p)    := <K> out(over)@("won", p)                  modal,   depth 1
+  //    Central   := a pure preference over squares            spatial, depth 0
+  //
+  //  Note the shape of rungs 1 and 2. Win is existential and the safety
+  //  conjunct universal, so by Prop. 6 of the companion note Win is finitely
+  //  confirmable while safety is only finitely refutable: attack is cheap to
+  //  establish, defence cheap only to destroy.
+  // ===========================================================================
+
+  //! ideal -- cumulative, highest priority first
+  | contract Ladder(@r, ret) = {
+      match r {
+        0 => { ret!( @{ TOP } ) }
+        1 => { ret!( @{ <K> Win(me) } ) }
+        2 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) } ) }
+        3 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) or <K> Fork(me) } ) }
+        4 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) or <K> Fork(me)
+                                    or <K>[K] ~Fork(them) } ) }
+        5 => { ret!( @{ <K> Win(me) or <K> ~Threat(them) or <K> Fork(me)
+                                    or <K>[K] ~Fork(them) or Central } ) }
+        // chi: the characteristic formula of the arena running this opponent.
+        // A nu-formula, exact at a finite unfolding because the game tree is
+        // finite -- the recursion follows the STRUCTURE, not the reduction.
+        // This is the closed-science case (companion note, Rem. 10), and
+        // Sec. 10 is where that turns out to be fatal.
+        6 => { ret!( @{ nu X. ( <K> X and ~ <K>[K] Lost ) } ) }
+      }
+    }
+
+  // ===========================================================================
+  //  THE ASSAY  --  a move is an experiment.
+  //
+  //  The complementary guard pair of Def. 4, verbatim. The hypothesis is not
+  //  consulted and then acted on: it sits in guard position, so playing the
+  //  move IS testing it and confirmation IS the rendezvous. The three outcomes
+  //  of Prop. 5 are three code paths, and the third is empty -- if the world
+  //  does not answer within budget the scientist has paid and learned nothing,
+  //  which is ignorance, not refutation.
+  // ===========================================================================
+
+  | contract Move(b, @hyp, @me, ret) = {
+      new probe in {
+          @[*b, "offer"]!(*probe, me)             // the probe perturbs the world
+                                                  //! ideal: structural guards
+        | for (@pos <- probe where pos |= hyp)    { ret!(("confirm", pos)) }
+        | for (@pos <- probe where ~(pos |= hyp)) { ret!(("refute",  pos)) }
+      }
+    }
+
+  // Revision walks the lattice. The move has the two parameters the metric
+  // grades (Def. 13): a LOCUS and a DIRECTION. Here refutation rate is the
+  // temperature, which is the companion note's own default policy -- and it is
+  // an observable the assays already emit, not a schedule imposed from outside.
+  | contract Revise(@rung, @refutes, @confirms, ret) = {
+      match refutes * 4 > confirms {
+        true  => { ret!(rung + 1) }        // deepen: a move of distance 2^-rung
+        false => { ret!(rung) }
+      }
+      // NB no case touches the OPENING. By Prop. 12 that is not an oversight:
+      // the opening is the stage-1 approximant, a move of distance 2^-1, and an
+      // individual can neither reach it by deepening nor afford it if it could.
+      // Sec. 9 is where the opening changes, and it is not here.
+    }
+
+  // ===========================================================================
+  //  THE ARENA  --  the rules, holding no stack of its own.
+  //
+  //  On a win the arena hands the winner the loser's metabolic NAME. It mints
+  //  nothing; it ROUTES, which is what keeps Sec. 16 of the companion note
+  //  intact -- an exogenous reward would need a referee with a mint, and a
+  //  referee with a mint destroys conservation.
+  //
+  //  In the vocabulary of Def. 25 the arena IS the choice of admitted context
+  //  class A: the contexts it admits to hold m_P are exactly those that have
+  //  completed a line against P, and by Thm. 24 those are non-image contexts.
+  //  Predation is legal here for precisely one reason, and it is that somebody
+  //  won.
+  // ===========================================================================
+
+  | contract Arena(@hX, mX, @hO, mO, ret) = {
+      new b, over in {
+          Board!(*b, [0,0,0,0,0,0,0,0,0])
+        | Turn!(*b, hX, *mX, hO, *mO, *over, 1)
+        | for (@result <- over) {
+            match result {
+              ("won", 1) => { Harvest!(*mO, *mX, *ret) }   // crosses eat noughts
+              ("won", 2) => { Harvest!(*mX, *mO, *ret) }
+              "draw"     => { ret!("draw") }               // nobody eats
+            }
+          }
+      }
+    }
+
+  | contract Turn(b, @hX, mX, @hO, mO, over, @who) = {
+      new played in {
+          Move!(*b, if (who == 1) { hX } else { hO }, who, *played)
+        | for (@outcome <- played) {
+            Scan!(*b)                            // perception, and it is priced
+          | Adjudicate!(*b, *over, who)
+          | Turn!(*b, hX, *mX, hO, *mO, *over, 3 - who)
+        }
+      }
+    }
+
+  //! ideal -- the win test is a modal formula, not a scan of a list
+  | contract Adjudicate(b, over, @who) = {
+      new r in {
+          @[*b, "state"]!(*r)
+        | for (@pos <- r where pos |= @{ <K> out(over)@("won", who) }) {
+            over!(("won", who))
+          }
+        | for (@pos <- r where pos |= @{ Full and ~ <K> out(over)@("won", who) }) {
+            over!("draw")
+          }
+      }
+    }
+
+  // Harvest (Def. 22): an ordinary receipt on the loser's metabolic channel.
+  // No new rewrite rule is needed. The loser dies because the message it was
+  // going to reclaim has been consumed.
+  | contract Harvest(mPrey, mPredator, ret) = {
+      for (@sigma <- mPrey) {
+        for (@own <- mPredator) {
+            mPredator!(own + sigma)
+          | ret!(("harvest", sigma))
+          | display!(("HARVEST", sigma, "tokens"))
+        }
+      }
+    }
+
+  // ===========================================================================
+  //  REPRODUCTION  --  two loci, and why that is the whole point.
+  //
+  //  The genome is a quotation: inert, transmissible, inspectable, and free
+  //  until dropped. Two loci are exposed and they are not arbitrary -- they are
+  //  the two parameters of Def. 13. The RUNG allele is the depth of the theory;
+  //  the OPENING allele is the stage-1 commitment.
+  //
+  //  Crossover exchanges them independently, and a swap at the opening locus is
+  //  a move of distance 2^-1 -- exactly the move Prop. 12 forbids to any
+  //  individual walking incrementally. It is free to the lineage because the
+  //  cost falls on an offspring that has no confirmations to invalidate. This
+  //  is the escape of Sec. 6.5, and Sec. 9 measures that it invades.
+  // ===========================================================================
+
+  | contract Pick(@a, @b, @bit, ret) = {
+      match bit { 0 => { ret!(a) } 1 => { ret!(b) } }
+    }
+
+  | contract Crossover(@mother, @father, @chi, ret) = {
+      match (mother, father, chi) {
+        ([om, rm], [of, rf], [b1, b2]) => {
+          new r1, r2 in {
+              Pick!(om, of, b1, *r1)        // the opening locus  -- stage 1
+            | Pick!(rm, rf, b2, *r2)        // the rung locus     -- deeper
+            | for (@o <- r1 & @r <- r2) { ret!([o, r]) }
+          }
+        }
+      }
+    }
+
+  // Birth. The child's code is CONSTRUCTED as a name and rests inert on `code`:
+  // it does not reduce, does not age, and burns nothing. Dropping it with * is
+  // what makes it a phenotype and what starts the meter. The guard enforces the
+  // minimum viable endowment -- a parent may not endow below what a child needs
+  // to fund a first game.
+  | contract Beget(m, @alleles, @endow, ret) = {
+      for (@sigma <- m where sigma > endow + 40) {
+          m!(sigma - endow)
+        | match alleles {
+            [o, r] => {
+              new childM, code in {
+                  code!( @{ Body!(*childM, o, r, endow) } )   // the germ: inert
+                | for (g <- code) { *g | childM!(endow) }     // the soma: metered
+                | ret!(("born", o, r))
+              }
+            }
+          }
+      }
+    }
+
+  // ===========================================================================
+  //  THE SCIENTIST  --  a metered loop of games and matings.
+  //  Alleles vary; this does not.
+  // ===========================================================================
+
+  | contract Body(m, @opening, @rung, @endow) = {
+      new hyp, score in {
+          score!(0, 0)
+        | Ladder!(rung, *hyp)
+          // The burn rate is the cost of HOLDING the theory, paid before any
+          // assay is run. It is why the top rung is not free, and why Sec. 8
+          // finds the exact theory chi dominated by the rung beneath it.
+        | Live!(*m, 2 + rung, @{
+              PlayOne!(*m, opening, *hyp, *score)
+            | Mate!(*m, [opening, rung], endow)
+          })
+      }
+    }
+
+  | contract PlayOne(m, @opening, hyp, score) = {
+      new ret in {
+          for (@h <- hyp) { hyp!(h) | Arena!(h, *m, "wall", *wall, *ret) }
+        | for (@outcome <- ret) {
+            for (@c, @f <- score) {
+              match outcome {
+                ("harvest", _) => { score!(c + 1, f) }
+                "draw"         => { score!(c, f) }
+                _              => { score!(c, f + 1) }
+              }
+            }
+          }
+      }
+    }
+
+  // Mating requires DISCLOSURE: the genome goes out on a public channel where
+  // anything able to read it can. Nothing declares a species; the `where` guard
+  // is the only thing keeping two lineages apart, and deleting it hybridises
+  // them.
+  | contract Mate(m, @alleles, @endow) = {
+      mate!(alleles)
+    | for (@partner <- mate where Conspecific(partner, alleles)) {   //! ideal
+        new ret in {
+            Crossover!(alleles, partner, [0, 1], *ret)
+          | for (@kid <- ret) { Beget!(*m, kid, endow, *display) }
+        }
+      }
+    }
+
+  // ===========================================================================
+  //  THE WORLD
+  //  Theta = 12000 (wall reserve) + 4 x 400 (players) = 13600 tokens. No more.
+  // ===========================================================================
+
+  | Wall!(*wall, 6, 12000)
+
+  //  Four lineages, differing only at the two loci. The pair that shares a rung
+  //  and differs at the opening is the whole experiment: Sec. 9 measures that
+  //  the corner opener strictly invades the centre opener at IDENTICAL metering
+  //  cost, and that no amount of deepening lets the centre opener reply.
+  | new a1, a2, b1, b2 in {
+        a1!(400) | Body!(*a1, 4, 5, 120)      // centre opening, top heuristic
+      | a2!(400) | Body!(*a2, 4, 6, 120)      // centre opening, the exact theory
+      | b1!(400) | Body!(*b1, 0, 5, 120)      // corner opening, top heuristic
+      | b2!(400) | Body!(*b2, 0, 2, 120)      // corner opening, shallow theory
+    }
+
+  // ---------------------------------------------------------------------------
+  //  WHAT TO WATCH
+  //
+  //  * Conservation is checkable by inspection. Wall, Harvest and Beget move
+  //    tokens; Live debits them. Nothing mints.
+  //
+  //  * The hypothesis is never consulted. It is a guard. No line of code
+  //    evaluates a theory and then decides -- deciding is the comm.
+  //
+  //  * Perception is priced twice over: Scan runs after every move, and the
+  //    burn rate rises with the rung held. Both are the same schedule.
+  //
+  //  * Nobody screens an embryo. Crossover produces a genome and Beget drops
+  //    it. A parent could model-check the recombinant against a viability
+  //    formula and does not, because the check is priced against the same
+  //    stack -- selection is post hoc because screening costs.
+  //
+  //  * No scientist revises its opening. Revise only ever increments the rung.
+  //    The opening changes exactly once per lineage, at Crossover, and free.
+  //
+  //  * a2 holds the TRUE theory and is the one to watch starve. It burns 8 per
+  //    step against b1's 7, wins no more often against fallible opponents, and
+  //    draws every game against a1. Truth buys it safety and no food.
+  //
+  //  * And it ends. When the wall's reserve reaches zero the only credit left
+  //    is another player's stack; when the survivors converge on theories that
+  //    draw against one another, Arena returns "draw", Harvest never fires, and
+  //    the remaining tokens sit in metabolic channels until the burn takes
+  //    them. A solved game is a dead ecology.
+  // ---------------------------------------------------------------------------
+}
