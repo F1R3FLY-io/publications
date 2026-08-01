@@ -200,7 +200,7 @@ interpreter accepts only the arithmetic and pattern fragment of the
 a specification of a check rather than a check the reducer performs, and we mark
 each such occurrence.
 
-\section{What is imported}
+\section{What is imported}\label{sec:import}
 
 We recapitulate only enough to orient a reader who has not just read
 \cite{scientist,classifier}, and refer to those notes for everything else.
@@ -227,17 +227,56 @@ P \models \varphi \mid \psi \iff P \equiv Q \mid R \text{ with } Q \models
 \]
 Because a name is a quoted process, the name predicate $n \models @\varphi \iff
 n = @P$ with $P \models \varphi$ sees into the structure of a name; this is
-namespace logic \cite{nslogic}. The classifier note \cite{classifier} adds two
-features we use: a greatest fixed point $\nu X.\varphi$, and \emph{graded
-separation}
+namespace logic \cite{nslogic}, in which one describes a namespace by a property
+rather than enumerating it. The classifier note \cite{classifier} adds a
+greatest fixed point $\nu X.\varphi$ and a \emph{graded separation} counting how
+much of an interface two halves of a term share. We use both, but we take the
+second in a form the next paragraph explains.
+
+\paragraph{There is no restriction, so there is no hidden-name quantifier.}
+The classifier note grades its separation over a vector of \emph{restricted}
+names and reaches under the binder with a hidden-name quantifier $\Hq$. We do
+not, because in this setting there is no binder. Restriction is syntactic sugar
+(\cite{scientist}, Remark 1): a name is a quoted process, and the calculus has a
+standing theorem that no process ever contains the name that codes it.
+
+\begin{proposition}[Freshness by quotation]\label{prop:fresh}
+Let $P$ be a process and $C[-]$ any context with $C[P] \neq P$. Then
+$@C[P] \notin \mathrm{n}(P)$. Hence a name fresh in $P$ may be manufactured by
+quoting any term properly containing $P$, with no registry and no consultation.
+\end{proposition}
+\begin{proof}[Proof sketch]
+The no-self-code theorem gives $@Q \notin \mathrm{n}(Q)$ for every $Q$, and the
+argument is a well-foundedness one: a name occurring in a term codes a strictly
+smaller term. $C[P]$ properly contains $P$, so $@C[P]$ codes something larger
+than $P$ and cannot occur among the names of $P$.
+\end{proof}
+
+Two things follow that the rest of the note uses. Freshness is
+\emph{relative to a scope} rather than global, which is all any practical use
+requires and which keeps the scheme decentralised---a central name server would
+be an oracle sitting across the cut, contradicting isolation outright. And since
+nothing is bound, nothing is hidden from description: $\Hq$ has no work to do,
+and where the classifier note grades separation over a restriction vector we
+grade it over a namespace given by a name predicate,
 \[
-P \models \varphi \mid_k \psi \iff P \equiv \Hq \vec{a}.(Q\mid R),\quad Q\models
-\varphi,\ R \models \psi,\quad |\,\mathrm{fn}(Q)\cap \mathrm{fn}(R) \cap \vec a\,|
-= k ,
+P \models \varphi \mid_k^{N} \psi \iff P \equiv Q\mid R,\ \ Q \models \varphi,\
+R \models \psi,\ \ |\,\mathrm{fn}(Q)\cap \mathrm{fn}(R) \cap N\,| = k ,
 \]
-which splits a term under restriction while counting the names the two halves
-share. Everything this note does that a modal logic cannot do is done with
-$\mid_k$.
+with $N$ described rather than enumerated. Everything this note does that a
+modal logic cannot do is done with $\mid_k^N$, and \S\ref{sec:board} turns on
+the choice of $N$.
+
+\begin{remark}[Concealment is a price, not a wall]
+Removing restriction removes the only mechanism by which a computation could be
+\emph{unobservable} rather than merely expensive to observe. That is not a loss;
+it is the position \cite{scientist} already takes when it prices concealment by
+a depth parameter $\delta$ instead of a barrier. It also settles a reading we
+would otherwise have had to argue for: in \S\ref{sec:world} we take $\delta$ to
+be the number of plies of lookahead needed to model an opponent, and with no
+restriction available that is the only thing $\delta$ \emph{can} be. A player's
+strategy is never hidden. It is only ever deep.
+\end{remark}
 
 \paragraph{Hypotheses are guards.} The \texttt{where} clause of the \rh{}
 calculus variant \cite{gslt} puts a formula in operational position:
@@ -367,9 +406,15 @@ answer depends on how the board is encoded, and the constraint turns out to be
 tight.
 
 \paragraph{The encoding.} A board $b$ carries, for each square $k$, two names
-built by reflection in the manner of the knot encoding's arcs: a \emph{move
-channel} $\mathit{sq}_k = @[*b,k]$ and a \emph{mark cell} $\mathit{mk}_k =
-@[*b,\texttt{"m"},k]$. An empty square is a \emph{receipt} offering to be
+manufactured by reflection in the manner of the knot encoding's arcs: a
+\emph{move channel} $\mathit{sq}_k = @[*b,k]$ and a \emph{mark cell}
+$\mathit{mk}_k = @[*b,\texttt{"m"},k]$. These are not drawn from a stock of
+atoms and they are not bound by anything. They are Proposition \ref{prop:fresh}
+in use: each is the quote of a term properly containing the board, hence fresh
+in the board, and the family is generated by a decidable predicate on names, so
+the whole namespace can be \emph{described}---which is what
+$\mathit{Th}_b$ below does and what makes the graded separation available at
+all. An empty square is a \emph{receipt} offering to be
 claimed; an occupied square is the absence of that receipt together with a
 resting send on its mark cell:
 \[
@@ -394,18 +439,23 @@ namespace.
 \begin{definition}[Threat, fork]\label{def:fork}
 For a player $p$,
 \[
+\mathit{Th}_b := \{\, n : n \models @[*b,\texttt{"t"},\_\,] \,\}, \qquad
 \Thr_s(p) := \lout(\mathit{th}_s)@p, \qquad
-\Thr(p) := \Hq s.\ \Thr_s(p) \mid \top, \qquad
-\Frk(p) := \Thr(p) \mid_0 \Thr(p) .
+\Thr(p) := \exists s.\ \Thr_s(p) \mid \top,
+\]
+\[
+\Frk(p) := \Thr(p) \mid_0^{\mathit{Th}_b} \Thr(p) .
 \]
 \end{definition}
 
-$\Frk(p)$ says the term splits into two parts, each carrying an offer,
-\emph{sharing no restricted name}. Two threats at the same square---two lines
-with a common gap---both deposit on $\mathit{th}_s$, so the two parands share
-that name, $k \geq 1$, and $\mid_0$ excludes them. This is the graded separation
-of \cite{classifier}, \S2.3.2, used at the bottom of its grading, and it was not
-introduced for this purpose.
+$\mathit{Th}_b$ is the board's threat namespace, described by a name predicate
+rather than listed. $\Frk(p)$ says the term splits into two parts, each carrying
+an offer, \emph{sharing no name of that namespace}. Two threats at the same
+square---two lines with a common gap---both deposit on $\mathit{th}_s$, so the
+two parands share that name, $k \geq 1$, and $\mid_0^{\mathit{Th}_b}$ excludes
+them. This is the graded separation of \cite{classifier}, \S2.3.2, used at the
+bottom of its grading and graded over a described namespace rather than a
+restriction vector; it was not introduced for this purpose.
 
 \begin{figure}[t]
 \centering
@@ -442,11 +492,11 @@ excludes once the squares, rather than the lines, are the parands
 \label{fig:fork}
 \end{figure}
 
-\begin{proposition}[The offers must be indexed by square]\label{prop:parands}
+\begin{proposition}[The grading namespace must be indexed by square]\label{prop:parands}
 Let $\llbracket B \rrbracket$ be an encoding under which $\Frk(p)$ as given in
 Definition \ref{def:fork} is satisfied exactly by the positions in which $p$ has
-a fork. Then the names over which $\mid_0$ counts sharing must be indexed by the
-completing square, not by the line.
+a fork. Then the namespace $N$ over which $\mid_0^N$ counts sharing must be
+indexed by the completing square, not by the line.
 \end{proposition}
 \begin{proof}[Proof sketch]
 Two lines of a three-by-three grid meet in at most one square, so distinct lines
@@ -482,7 +532,7 @@ exactly what carries the content.
 The rho calculus has one interaction rule, so all the information in a label is
 in the position. Write a world in play as
 \[
-W \;\equiv\; \Hq \vec b.\ \Big(\ \prod_{k \in \mathrm{empty}} \mathsf{Empty}_k
+W \;\equiv\; \Big(\ \prod_{k \in \mathrm{empty}} \mathsf{Empty}_k
 \ \Big|\ \prod_{k \notin \mathrm{empty}} \mathsf{Held}_k(m_k)
 \ \Big|\ L \ \Big|\ \mathit{Th} \ \Big|\ M_p \ \Big),
 \]
@@ -494,7 +544,7 @@ For an empty square $s$, the redex position of the claim at $s$ is the join of
 $\mathit{sq}_s!(p)$ with $\mathsf{Empty}_s$, and the one-hole context
 determined by it is
 \[
-K_s \;:=\; \Hq \vec b.\Big(\ [\,\cdot\,]\ \Big|
+K_s \;:=\; \Big(\ [\,\cdot\,]\ \Big|
 \prod_{k \in \mathrm{empty},\ k \neq s}\!\! \mathsf{Empty}_k \ \Big|
 \prod_{k \notin \mathrm{empty}}\!\! \mathsf{Held}_k(m_k) \ \Big| \ L \ \Big|\
 \mathit{Th} \ \Big| \ M_p' \Big) ,
@@ -1184,7 +1234,10 @@ change in the physics.
 
 \paragraph{Shown.} The generated logic contains the game's strategic vocabulary
 as terms rather than as hand-coded features, and the requirement that it do so
-constrains the encoding of the world (\S\ref{sec:board}). Pricing hypotheses by
+constrains the encoding of the world (\S\ref{sec:board})---using less apparatus
+than the classifier note assembles, since with restriction treated as sugar the
+hidden-name quantifier is eliminable and separation grades over a described
+namespace instead. Pricing hypotheses by
 formula depth yields a cost--benefit structure whose shape is neither monotone
 nor obvious, in which the spatial conjunct is the most profitable purchase on
 the ladder and the complete theory is dominated (\S\ref{sec:measure}).
@@ -1239,6 +1292,19 @@ of this game, or is there a general statement---that the optimal shallow
 commitment is a function of the depth of the theory it heads, so that shallow
 and deep revisions cannot be separated? If the latter, it sharpens confinement
 considerably.
+
+\item \textbf{Should $\Hq$ be retired?} \S\ref{sec:import} drops the hidden-name
+quantifier here on the grounds that restriction is sugar and freshness is
+manufactured by quotation (Proposition \ref{prop:fresh}). The question is
+whether the classifier note's rubric should drop it too, and there is a specific
+reason to think it might: that note introduces $\Hq$ to reach under the
+$\texttt{new}\ a_1 \dots a_{2n}$ that closes a knot diagram, and then observes
+two sections later that the arcs are already the manufactured names
+$@[*\mathit{knot},k]$. If the arc names are manufactured, nothing binds them,
+and the name predicates it already has do the work $\Hq$ was brought in for.
+Whether the graded separation $\mid_k$ then survives the translation to
+$\mid_k^N$ on the knot examples---split links, nugatory crossings, Conway
+spheres---is checkable, and if it does the classifier note gets shorter.
 
 \item \textbf{Co-learning.} When both players revise, each is a moving target
 for the other and Table \ref{tab:phase} is a snapshot of a game whose payoffs
