@@ -1,0 +1,314 @@
+\chapter{Generating Type Systems: OSLF and the Hypercube}
+\label{ch:hypercube}
+
+\section{OSLF as a family}
+
+Operational Semantics in Logical Form (OSLF) is not a single algorithm but a
+\emph{family} of them. Each member takes a theory presented as $(\Sigma, E, R)$ together
+with a specification of a target logic, and generates from the two an assignment of
+predicates to terms. The lineage runs through Hennessy--Milner
+logic~\cite{HennessyMilner1985}, Stirling's modal characterisations, and, for the
+reflective setting, the namespace logic of the rho calculus~\cite{NamespaceLogic}.
+
+The member we develop here is the \emph{Hypercube} algorithm of Stay, Meredith and
+Wells, which generates not a modal logic for observing programs but a family of type
+systems for classifying them. Both directions matter, and it is worth saying why they are
+the same construction. A type is a predicate on terms; a modal formula is a predicate on
+terms; the difference is bookkeeping about what one intends to do with the predicate. What
+the family provides is the machinery for reading a rewrite rule as a formation rule for
+predicates.
+
+\section{Adequacy is not automatic}
+\label{ob:subsec:adequacy}
+
+Because the difference between the two directions is bookkeeping, it is tempting to
+suppose that anything the family generates inherits the property one wants from a
+generated modal logic --- \emph{adequacy}, the characterisation of the theory's
+behavioural equivalence by satisfaction. It does not, and the reason is worth stating
+before the construction rather than after it.
+
+Adequacy is a property of the \emph{target logic specification}, not of the generating
+machinery. The classical Hennessy--Milner argument needs a certain minimum of logical
+structure to run: something akin to a conjunction, so that a formula can record several
+observations of the same state at once, and something akin to a negation, so that a
+formula can record the \emph{absence} of an observation. Strip either and the argument
+fails --- without negation one characterises a simulation preorder rather than
+bisimulation; without conjunction one cannot separate states that differ only in how
+their capabilities are bundled. A generated logic lacking either connective will fail to
+have an adequacy theorem, and no amount of care in the generator repairs this, because
+the deficiency is in what one asked the generator to produce.
+
+\begin{remark}[The Hypercube functor offers no adequacy theorem]
+\label{ob:rem:no-adequacy}
+The Hypercube algorithm generates a \emph{type system}, and type systems are not
+generally expected to be adequate. Nobody asks of the simply-typed $\lambda$-calculus
+that its typing judgement characterise observational equivalence; one asks that it be
+sound, decidable, and useful. The same standard applies here. Sections~\ref{ob:subsec:modal}
+onwards should therefore be read as generating a classification discipline, not as
+generating a behavioural characterisation.
+\end{remark}
+
+This is a deliberate trade, and Section~\ref{ob:subsec:dials} describes what is bought with
+it: the user dials which connectives are admitted, precisely in order to expose a surface
+on which a finitely checkable fragment is generable. The cost of that expressiveness and
+control is that not everything generated is necessarily adequate.
+
+\section{Input: rewrites and redex positions}
+
+The Hypercube algorithm takes as input a theory in the classifying form of
+Section~\ref{ob:subsec:classifying}. Its base rewrites have the schematic shape
+\[
+  x_1{:}X_1, \dots, x_n{:}X_n \ \ctxbar\ \emptyset \ \vdash\ L(\vec x) \rsq R(\vec x) ,
+\]
+and --- this is the crucial extra datum --- it also tracks \emph{redex positions}.
+Choosing a subterm occurrence $t_j$ of $L$ with carrier $Y_j$ determines a one-hole
+context $K_j[-]$ with $K_j[t_j] = L$. Write
+\[
+  V_j = \fv(K_j) - \fv(t_j), \qquad W_j = \fv(t_j) - \fv(K_j) .
+\]
+The variables in $V_j$ --- free in the context but not in the chosen subterm --- become
+the \emph{rely parameters} of the modality generated at that position.
+
+\begin{remark}[The relationship to the interaction cut]
+The reader will recognise $K_j$. In a theory presented as an interaction cut, the contact
+site $K$ of $(\dagger)$ \emph{is} a one-hole context in exactly this sense, and the
+distinguished positions are the two introductions. The interaction cut is thus the
+special case in which one privileges a particular family of redex positions, and the
+Hypercube algorithm is what one gets by not privileging them. This is why
+Chapter~\ref{ch:igslt} does real work for the present section: it identifies which
+positions are canonical.
+\end{remark}
+
+\section{The modal layer}
+\label{ob:subsec:modal}
+
+For each base rewrite and each chosen redex position, the algorithm introduces a primitive
+modality
+\[
+  \angles{K_j}{\vec x :: \vec A}{B} ,
+\]
+a type former at carrier $Y_j$, read as a \emph{rely-possibly} specification: under the
+rely assumptions $\vec x :: \vec A$, placing a term into the context $K_j[-]$ takes one
+step to a specified right-hand side inhabiting $B$.
+
+\begin{mathpar}
+\inferrule*[right=M-Form]
+  { \bigl(\Gamma \ctxbar \Delta \vdash A_k :: s_k^{X_k}\bigr)_{x_k \in V_j} \\
+    \Gamma, \vec x{:}\vec X \ctxbar \Delta, \vec x{::}\vec A \vdash B :: s_{\mathrm{out}}^{\Pr} }
+  { \Gamma \ctxbar \Delta \vdash \angles{K_j}{\vec x :: \vec A}{B} :: s_{\mathrm{out}}^{Y_j} }
+\end{mathpar}
+
+\begin{mathpar}
+\inferrule*[right=M-Intro]
+  { \bigl(\Gamma \ctxbar \Delta \vdash A_k :: s_k^{X_k}\bigr)_{x_k \in V_j} \\
+    \Gamma, \vec w{:}\vec W, \vec x{:}\vec X \ctxbar \Delta, \vec x{::}\vec A \vdash B :: s_{\mathrm{out}}^{\Pr} \\
+    \Gamma, \vec w{:}\vec W, \vec x{:}\vec X \ctxbar \Delta, \vec x{::}\vec A \vdash R(\vec x, \vec w) :: B }
+  { \Gamma, \vec w{:}\vec W \ctxbar \Delta \vdash t_j(\vec w) :: \angles{K_j}{\vec x :: \vec A}{B} }
+\end{mathpar}
+
+Elimination is where a rewrite-generated modality differs from an equation-generated one.
+Because the modality comes from a \emph{rewrite}, elimination does not provide full
+conversion; it provides the operational step to the specified right-hand side, and the
+typing of that right-hand side.
+
+\begin{mathpar}
+\inferrule*[right=M-Step]
+  { \Gamma \ctxbar \Delta \vdash t :: \angles{K_j}{\vec x :: \vec A}{B} \\
+    \bigl(\Gamma \ctxbar \Delta \vdash u_k :: A_k\bigr)_{x_k \in V_j} }
+  { \Gamma \ctxbar \Delta \vdash K_j[t][\vec u/\vec x] \rsq R(\vec u) }
+\and
+\inferrule*[right=M-Elim]
+  { \Gamma \ctxbar \Delta \vdash t :: \angles{K_j}{\vec x :: \vec A}{B} \\
+    \bigl(\Gamma \ctxbar \Delta \vdash u_k :: A_k\bigr)_{x_k \in V_j} }
+  { \Gamma \ctxbar \Delta \vdash R(\vec u) :: B[\vec u/\vec x] }
+\end{mathpar}
+
+To recover a conversion-like principle stable under rewriting, the algorithm freely adds
+an \emph{empty-context possibility} operator $\Diamond$ at the carrier of programs, with
+$p :: \Diamond B$ asserting that $p$ can take one step to some reduct of type $B$.
+Equation-generated modalities, by contrast, do support full conversion by the usual rule ---
+they are ``zero-step'' steps.
+
+\section{The structural and propositional layers}
+
+The modal fragment is intentionally behavioural, and this has a consequence that should
+be stated plainly rather than discovered: \emph{terms with no available one-step behaviour
+need not have any modal type at all.} A value, a normal form, a deadlocked process ---
+none of these is classified by a layer whose formation rules are indexed by rewrites.
+
+Two further layers repair this and extend expressivity.
+
+\paragraph{Structural types.} For each term former $f$ the algorithm freely adds a type
+former $f^\sharp$ whose inhabitants are exactly those terms whose root former is $f$.
+These classify by the root of the parse tree, giving a baseline typing for programs which
+can then be combined with the modal layer to express shape and one-step behaviour in the
+same language. When the interaction constructor is read this way it becomes a
+separating-style connective: a term satisfies $K(\varphi_1,\varphi_2)$ when it splits
+across $K$ into a part satisfying $\varphi_1$ and a part satisfying $\varphi_2$. When $K$
+is associative--commutative this is a genuine separating conjunction in the sense of
+spatial and separation logics~\cite{CairesCardelli,Reynolds2002}; when $K$ is free it
+is a positional split.
+
+\paragraph{Propositional operations, stratified.} At each carrier and sort the algorithm
+adds propositional operations on type formers --- but \emph{stratified by the categorical
+strength required to interpret them}. The finite-limits fragment supplies $\top$ and
+$\wedge$. Additional structure is required for $\bot$, for finite joins and
+distributivity, and finally for implication and negation.
+
+\begin{remark}[What a specification must supply]
+\label{ob:rem:stratification}
+The stratification is not a technicality of the metatheory; it is visible to the user of
+a generated logic. A specification whose classifying theory has finite limits and no more
+yields a conjunctive fragment; implication and negation become available only when the
+theory supplies the structure to interpret them. A developer writing a property is
+therefore working in a logic whose connectives are determined by their own specification,
+and a property that fails to elaborate may be failing for this reason rather than because
+it is false.
+\end{remark}
+
+\section{Sort slots and the equational centre}
+
+Why a \emph{hypercube}? Each generated type former carries finitely many sort slots: one
+for each rely input and one for the output. Filling each slot with $\ast$ or $\Box$ yields
+a raw Boolean cube of choices. But equational axioms and rewrite laws force certain slots
+to agree, and only the assignments stable under those laws survive. These form the
+\emph{equational centre} $\Zc$, and the vertices of the resulting hypercube are the
+elements of $\Zc$.
+
+The cube's axes are not postulated. They are determined locally by the free variables of
+operational contexts and the result types demanded by the rules.
+
+\section{Worked example: a rho-calculus modality}
+\label{ob:subsec:rho-modality}
+
+Fix arity $1$. The communication rewrite is
+\[
+  n{:}\Nm,\ p{:}\Pr,\ \lambda x.q : [\Nm \to \Pr] \ \ctxbar\ \emptyset \ \vdash\
+  \mathsf{out}_1(n,p) \mid \mathsf{in}_1(n, \lambda x.q) \ \rsq\ q[@p/x] .
+\]
+Choose the continuation redex position
+\[
+  t_j := \lambda x.q, \qquad K_j([-]) := \mathsf{out}_1(n,p) \mid \mathsf{in}_1(n,[-]) ,
+\]
+so that $K_j[t_j]$ is the left-hand side. The free variables of $K_j$ are
+$V_j = \{n,p\}$, hence the induced modality is $\angles{K_j}{n :: A_n,\ p :: A_p}{B}$ at
+carrier $[\Nm \to \Pr]$, contributing three local sort slots
+\[
+  \{\, s_n^{\Nm},\ s_p^{\Pr},\ s_{\mathrm{out}} \,\} .
+\]
+Relative to the origin assignment $(\ast,\ast,\ast)$, every nonempty subset of the three
+slots can be lifted to $\Box$, yielding $2^3 - 1 = 7$ local axes.
+
+Now hold $s_n = \ast$ fixed. Operationally the channel $n$ serves only to ensure that the
+input and output are co-addressed; the reduct $q[@p/x]$ does not otherwise depend on it.
+The remaining two-slot subgeometry is:
+
+\begin{center}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Vertex (at $s_n = \ast$)} & $s_p^{\Pr}$ & $s_{\mathrm{out}}$ \\
+\midrule
+simply-typed corner        & $\ast$ & $\ast$ \\
+polymorphism direction     & $\Box$ & $\ast$ \\
+dependent-types direction  & $\ast$ & $\Box$ \\
+type-constructors direction& $\Box$ & $\Box$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This is Barendregt's square~\cite{Barendregt1991}, recovered exactly. The three nontrivial
+directions correspond to the three extra edges of the Lambda Cube beyond the simply-typed
+corner. \emph{The Cube is one face of one modality of one rewrite rule.} It arises here
+not because it was postulated but because the communication rule has two rely parameters
+and one output, and the sort slots of a two-parameter modality form a square.
+
+\begin{remark}[Why Barendregt needed no equational centre]
+In the Lambda Cube there are no built-in equations, and the underlying equations of
+$\beta$ add no relations between sorts. The whole raw Boolean cube is therefore
+admissible, $\Zc$ is everything, and the distinction between the raw cube and the centre
+never arises. It arises for us as soon as a specification carries equations --- which, by
+rung two of the ladder, is essentially always.
+\end{remark}
+
+\section{The construction is a monad}
+
+Let $\Lcat$ denote the category of theories in classifying form, with morphisms preserving
+$\Pr$, $\rsq$, and the internal-language structure, and let $\Lcat_\Sigma$ denote the
+category of such theories equipped with the additional structure provided by the modal,
+structural, and propositional layers. On a morphism $F$, the action is by transport:
+\[
+  \angles{K_j}{\vec x :: \vec A}{B} \ \longmapsto\
+  \angles{F(K_j)}{\vec x :: F(\vec A)}{F \cdot B} ,
+  \qquad \Diamond B \longmapsto \Diamond (F \cdot B) .
+\]
+
+\begin{proposition}
+There is a forgetful functor $U : \Lcat_\Sigma \to \Lcat$ and a left adjoint
+$F : \Lcat \to \Lcat_\Sigma$ freely adjoining the layers, and the induced endofunctor
+\[
+  \hypK \;=\; U \circ F \;:\; \Lcat \longrightarrow \Lcat
+\]
+is a monad on $\Lcat$: for each theory $\mathsf{T}$, $\hypK(\mathsf{T})$ is the underlying
+theory of its free extension by generated type formers.
+\end{proposition}
+
+This completes the pattern of Part~III. Three constructions, three monads, three
+free/forgetful resolutions:
+\[
+  \Cost \ \text{(meter it)}, \qquad
+  \Hist \ \text{(log it)}, \qquad
+  \hypK  \ \text{(type it)} .
+\]
+In each case the left adjoint installs apparatus generated from the theory's own
+presentation, and the right adjoint takes it away.
+
+\section{Three dials}
+\label{ob:subsec:dials}
+
+Section~\ref{ob:subsec:adequacy} said that adequacy is a property of the target logic
+specification. This subsection is the other half of that statement: the target logic
+specification is something the \emph{user} supplies, and supplying it is the design
+activity around which the whole apparatus is arranged.
+
+Because the logic is generated from a language specification together with a choice of
+connectives, a user can select \emph{fragments} to dial in finitely checkable properties.
+There are three axes:
+
+\begin{enumerate}[label=(\arabic*),leftmargin=2.5em]
+  \item \textbf{The language fragment.} Restrict the sub-signature over which properties
+    are stated. A property quantifying over a decidable fragment of the terms is a
+    different proposition from the same property over the whole theory.
+  \item \textbf{The connective fragment.} Restrict which of the generated connectives are
+    in play, subject to Remark~\ref{ob:rem:stratification}. The conjunctive--modal fragment
+    behaves very differently from one closed under negation and implication.
+  \item \textbf{The cube vertex.} Choose an element of the equational centre $\Zc$. This
+    is the classical design choice --- how much dependency to admit --- now presented as a
+    coordinate rather than a fork in the literature.
+\end{enumerate}
+
+Each axis trades expressivity for checkability, and the three are independent. In the
+general case, where the user has chosen not to constrain things statically, an
+\emph{inference token budget} prevents runaway property checks. The budget is the backstop,
+not the primary mechanism: the primary mechanism is fragment selection, and the budget
+catches what selection did not.
+
+\begin{remark}[Adequacy and checkability pull against each other]
+\label{ob:rem:tension}
+It would be convenient if the dials traded a property nobody wanted for one everybody did.
+They do not, and the tension is structural rather than incidental. Adequacy requires
+negation (Section~\ref{ob:subsec:adequacy}); negation is among the first connectives a user
+drops when chasing decidability, since it is what turns a search for a witness into a
+search over all possible witnesses. A user who dials down to a finitely checkable fragment
+has, in the typical case, dialled out of the adequate region on the way.
+
+The right conclusion is not that one of the two properties is illusory but that they
+answer different questions. Adequacy asks whether the logic can \emph{distinguish} exactly
+the programs the theory distinguishes --- a question about the logic's resolving power as a
+whole. Checkability asks whether a particular property can be decided of a particular
+program in bounded time. A user guarding a communication with a \texttt{where} clause,
+in the manner of Chapter~\ref{ch:carho}, wants the second and has no use for the first. A user reasoning about when two
+implementations may be substituted wants the first and will accept a semi-decision
+procedure for it. The dials exist so that neither user has to pay for the other's
+requirement.
+\end{remark}
+

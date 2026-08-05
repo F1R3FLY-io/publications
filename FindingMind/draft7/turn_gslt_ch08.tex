@@ -1,0 +1,235 @@
+\chapter{Cost-Accounted Rho}
+\label{ch:carho}
+% ===================================================================
+
+Chapter~\ref{ch:costmonad} constructed a meter in the abstract: given a
+continued interactive GSLT, the cost endofunctor wraps its interaction cut
+so that nothing fires without a charge, and the wrapping is a monad, and
+the monad has adjunctions on either side saying what installing a meter
+and internalising one respectively cost.
+This chapter exhibits the construction on the running example.
+The result is a rho calculus in which a token stack is a term like any
+other, in which authority is carried by signatures rather than by
+position, and in which a computation is not run to completion and billed
+afterwards but \emph{accepted} in advance, on the strength of a linear
+proof that it can pay.
+
+The change of billing model is the substantive one, and it is worth
+stating before the syntax, because everything else in the chapter is
+downstream of it.
+
+\section{Two ways to bill a computation}
+
+The familiar arrangement, and the one the earlier F1R3FLY platform
+inherited, is \emph{run-to-completion}: a deployment arrives with a
+declared budget, the validator executes it, the meter ticks, and if the
+budget runs out the whole thing is rolled back and the deposit
+forfeited.
+It is simple to state and it has two costs, one economic and one
+mathematical.
+
+The economic cost is that work is done which is then thrown away.
+The mathematical cost is worse.
+If execution is speculative, then two deployments which interleave may
+each individually be affordable and jointly not, and deciding whether
+a proposed merge of two histories is admissible requires re-running the
+merge.
+The merge analysis burden is quadratic in the worst case and it is the
+reason concurrency and metering have historically been hard to combine.
+
+The alternative is \emph{acceptance by linear proof}.
+A deployment arrives carrying its token stacks as data.
+Before any reduction, the validator checks a linear proof that the stacks
+suffice for every reduction the term can perform.
+Acceptance is a static judgment; execution afterwards cannot fail for
+want of funds, because a term which cannot pay cannot be accepted.
+Merges become admissible or not on the strength of the proofs, without
+re-execution.
+
+\begin{remark}[Why this is the right shape for the rest of the book]
+\label{rmk:acceptance-shape}
+The learner of Chapter~\ref{ch:sci} does not first run an experiment and
+then discover it could not afford it.
+It decides in advance which experiments are within its means, and the
+whole force of the confinement results there depends on that decision
+being made \emph{before} the interaction rather than after.
+Acceptance by linear proof is what makes that a fact about the calculus
+rather than a modelling convenience.
+\end{remark}
+
+\section{Syntax: stacks and signatures as terms}
+
+The calculus has four mutually defined syntactic categories: processes,
+names, signed terms, and signatures.
+Processes and names are as in Section~\ref{sec:rho-running}, with one
+change: what a for-comprehension continues into, and what a send carries,
+is a \emph{signed} term rather than a bare process.
+\begin{align}
+  P, Q &\;::=\; \nil
+        \;\mid\; \mathtt{for}(y \leftarrow x)\,T
+        \;\mid\; x!(U)
+        \;\mid\; P \Par Q
+        \;\mid\; {*}x \\
+  x, y &\;::=\; @T \;\mid\; s
+\end{align}
+A signed term is a process under a signature, a parallel composition of
+signed terms, or a token stack:
+\begin{align}
+  T, U &\;::=\; \{P\}_{s} \;\mid\; T \Par U \;\mid\; S \\
+  S    &\;::=\; () \;\mid\; s : S
+\end{align}
+and a signature is a ground key drawn from a cryptographic backend $G$, a
+hash of a process, or the composition of two signatures:
+\[
+  s(G) \;::=\; g \;\mid\; \#P \;\mid\; s \ast s .
+\]
+
+Three features deserve comment.
+
+\paragraph{Token stacks are terms.}
+A stack $s_1 : s_2 : \cdots : ()$ is a sequence of signature-indexed
+balance layers, and it is a term of the calculus --- it can be sent,
+received, quoted, and stored on a channel.
+This is not a convenience.
+It is what makes a purse a \emph{located} object, and located purses are
+what Chapter~\ref{ch:cigslt} needed in order for authority to be a fact
+about where a capability sits rather than a global ambient permission.
+The empty stack is a depleted balance, and a term holding the empty stack
+is a computation that has stopped.
+
+\paragraph{There are two axes of reflection.}
+Structural quoting $@T$ turns a signed term into a channel name and
+preserves everything, so that ${*}x$ recovers the term including its
+signature and its cost provenance.
+Cryptographic quoting $\#P$ turns a process into a signature and is
+one-way.
+Both are reflection in the sense that they take a computational entity and
+return a name; they differ in whether the entity can be got back.
+The book uses the first constantly --- crossover in
+Chapter~\ref{ch:com} operates on structurally quoted code --- and the
+second only where authority is at issue.
+
+\paragraph{Parallel composition is parametrically polymorphic.}
+The same $\Par$ appears at the process level and at the signed-term
+level.
+This is not an overloading: it is the statement that composing two
+metered computations is the same operation as composing two unmetered
+ones, and it is what allows the cost functor of
+Chapter~\ref{ch:costmonad} to be a functor at all rather than a
+re-presentation of the calculus.
+
+\section{The rules, and where the charge goes}
+
+The pure calculus has one rule.
+The metered calculus has five, and the multiplication is entirely
+accounted for by the fact that a communication now has to say what
+happened to the money.
+Informally:
+
+\begin{enumerate}[itemsep=3pt]
+  \item \textbf{Comm.}
+    A send meets a matching receive.
+    The payload substitutes, and the head cell of the receiver's stack is
+    consumed.
+    This is the interaction cut of Chapter~\ref{ch:cigslt} with the meter
+    installed on it.
+  \item \textbf{Join.}
+    Several sends meet a receive that requires all of them.
+    The charge is not the sum of the individual charges; joins are priced
+    for the synchronization, which is the only place in the calculus
+    where the cost of an interaction is not local to a single cut.
+  \item \textbf{Drop.}
+    ${*}x$ recovers a signed term from a name, at a charge proportional to
+    what is recovered.
+  \item \textbf{Struct.}
+    Structural congruence is free.
+    Rearranging a term costs nothing, which is the formal content of the
+    claim that the equations $\eqs$ are gauge.
+  \item \textbf{Par.}
+    Reduction propagates under composition, with the stacks of the
+    components independent.
+\end{enumerate}
+
+The rule that matters most for the rest of the book is the guarded form
+of comm.
+A for-comprehension may carry a \texttt{where} clause,
+\[
+  \mathtt{for}(y \leftarrow x)\ \mathtt{where}\ \varphi \ \{ P \}_s ,
+\]
+in which $\varphi$ is a formula of the context-decorated modal logic of
+Chapter~\ref{sec:lts-hml}.
+The communication fires only if the payload satisfies $\varphi$.
+This is the point at which the generated logic stops being a device for
+reasoning \emph{about} programs and becomes a device programs use, and
+it is the single feature the ecology chapters lean on hardest: a
+learner's hypothesis is a formula, and testing a hypothesis is guarding a
+communication on it.
+
+\begin{remark}[Checkability, not adequacy]
+\label{rmk:carho-checkable}
+A \texttt{where} clause must be decided in bounded time on a particular
+payload.
+That is a different demand from the one adequacy makes, which is that the
+logic as a whole distinguish exactly what the theory distinguishes.
+Chapter~\ref{ch:hypercube} separates the two demands and shows that the
+spatial and modal fragment suffices for the first; the discussion there
+is the reason the guard is restricted to that fragment rather than to
+the full logic.
+\end{remark}
+
+\section{From phlogiston to a spectrum}
+
+In the platform's earlier design there was one kind of resource, called
+phlogiston, and a single number measured it.
+The cost-accounted calculus replaces the number with a vector: a stack
+carries balances indexed by signature, and different rewrite rules debit
+different components.
+
+The reason is not bookkeeping fastidiousness.
+A single number presumes that every kind of resource a computation
+consumes is interconvertible at a fixed rate, and that presumption is
+exactly what Chapter~\ref{ch:vtok} shows to be a nontrivial condition
+rather than a definition.
+Storage, computation, bandwidth, and authority are different
+commodities.
+Whether they admit a common unit is a question about the conversion
+structure available, and in general the answer is no.
+Decomposing phlogiston into a spectrum is what makes the question
+askable.
+
+\begin{remark}[The correction from located stacks]
+\label{rmk:located-correction}
+An earlier presentation allowed a term to draw on any stack in scope.
+That is ambient authority in the sense of
+Chapter~\ref{ch:cigslt}, and it re-admits precisely the leak the
+capability discipline was introduced to close: a subterm could spend
+funds it was never handed.
+The correction is that a purse is located --- a stack sits at a name, and
+drawing on it requires holding that name.
+The consequence for the ecology chapters is not incidental.
+It is what makes eating a \emph{local} act, one computation breaking
+another open at a place, rather than a redistribution performed by a
+scheduler standing outside the world.
+\end{remark}
+
+\section{Overcharge and refund}
+
+One awkwardness remains, and it is worth naming because it recurs
+whenever a static discipline meets data-dependent behaviour.
+The linear proof required for acceptance must bound the cost of every
+reduction the term can perform.
+When the cost depends on data not available until run time --- the size
+of a received payload, say --- the bound must be taken over the worst
+case.
+The term is therefore overcharged at acceptance, and the difference
+refunded on completion.
+
+The refund is not a patch.
+It is the visible trace of the gap between what can be proved in advance
+and what actually happens, and the gap is the same one the learner faces
+in Chapter~\ref{ch:sci} when it must budget for an experiment whose
+informativeness it cannot know until the experiment is done.
+A framework in which acceptance were exact would be one in which
+prediction were free.
+
+% ===================================================================

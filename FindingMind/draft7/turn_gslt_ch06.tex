@@ -1,0 +1,206 @@
+\chapter{The Cost Monad}
+\label{ch:costmonad}
+
+\section{What is being built}
+
+Given a continued interactive GSLT $G$, the cost endofunctor $\Cost$ produces a calculus
+$\Cost(G)$ in which every interaction is gated on the consumption of a token. The design
+question is where the gating lives, and the answer that makes the construction work is:
+\emph{in the grammar of the image}.
+
+In $\Cost(G)$ the functor adjoins a sort $\SigCat$ of signatures, a wrapped-term sort $\Tw$
+with the wrapper $\{\cdot\}_s : P \times \SigCat \to \Tw$, and a sort $\Stk$ of token stacks
+\[
+  S ::= (\,) \mid s :: S, \qquad s \in \SigCat .
+\]
+The pivotal discipline is grammatical: in $\Cost(G)$ every continuation slot of $K_p$ and
+$K_e$ has sort $\Tw$. A continuation in the metered calculus is therefore not a bare
+process awaiting metering; it is a \emph{metered thunk} $\{P\}_s$, whose activation is
+gated by a token keyed to $s$, and whose own continuations are again thunks.
+
+The signature constructor is $\# = \mathrm{digest} \circ \cf$: the section of
+Definition~\ref{ob:def:section} chooses a canonical representative, and a collision-resistant
+digest commits to it. Note that $\#$ does \emph{not} respect $\equiv$, and must not,
+since a commitment identifying congruent-but-distinct representatives would be no
+commitment. Signatures never reduce; they are a rewrite-free sub-theory meeting the
+behavioural theory only at the matching guard, so the $\equiv$-incoherence of $\#$ is
+harmless for bisimulation, which factors as ``$P$-bisimulation gated by key matching.''
+
+\section{The gated rules}
+
+A wrapped redex is forced by consuming a matching token. The single-signature rule seals
+the whole redex under one $s$ and funds it from a purse located at the surface
+$L = \near(I,J)$:
+\[
+  \frac{L = \near(I,J) \qquad
+        (\{C_p'\}_{t_1}, \{C_e'\}_{t_2}) = \compute(I,J,\{C_p\}_{t_1},\{C_e\}_{t_2})}
+       {K\bigl(\{K(K_p(I,\{C_p\}_{t_1}), K_e(J,\{C_e\}_{t_2}))\}_s,\ S(L, s::p)\bigr)
+        \longrightarrow
+        K\bigl(K'(\{C_p'\}_{t_1}, \{C_e'\}_{t_2}),\ S(L,p)\bigr)}
+  \tag{R1}
+\]
+The remaining cases seal the two interaction surfaces rather than the whole redex,
+funding per surface, and are what the associative--commutative structure of $\mid$
+requires when a redex is split across the bag or its tokens are supplied separately. We
+write them as (R2) and (R3) and do not reproduce them here.
+
+The decisive point is what is \emph{absent}. There is no re-wrapping step and no lifted
+contraction. By the typing of $\compute$, the residual $K'(\{C_p'\}_{t_1},
+\{C_e'\}_{t_2})$ is already built from wrapped terms.
+
+\begin{definition}[Well-wrapped]
+A configuration of $\Cost(G)$ is \emph{well-wrapped} when it is well-sorted in the
+grammar of $\Cost(G)$ --- in particular, every continuation occupies a slot of sort
+$\Tw$, so every redex occurrence lies inside a wrapper.
+\end{definition}
+
+\begin{lemma}[Subject reduction for wrapping]
+Well-wrapping is preserved by (R1)--(R3).
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+Each rule replaces a wrapped redex by $K'(C_p',C_e')$ with $(C_p',C_e') = \compute(\dots)$.
+Since $\compute$ lands in $\Tw \times \Tw$ and $K'$ packages terms of sort $\Tw$, the
+residual is well-sorted; the consumed cell leaves a well-sorted stack; redexes elsewhere
+are untouched.
+\end{proof}
+
+\begin{corollary}[No leak, by construction]
+In a well-wrapped configuration no redex can fire without being unwrapped, i.e.\ without
+consuming a token. There is no dynamic wrapping operation; the cost-accounting steps only
+ever unwrap.
+\end{corollary}
+
+\begin{remark}[Eager versus lazy metering]
+An alternative discipline re-wraps the contractum at contraction time, traversing it to
+sign each exposed redex --- charging eagerly for every redex a step exposes. Wrapping by
+construction charges lazily: each redex is born wrapped and is charged only when actually
+forced. Lazy metering pays for work performed, not work merely exposed; redexes beneath a
+discarded binder are never charged. The token stack drains exactly in step with the
+reductions performed, which is also the operational reality of fuel consumption.
+\end{remark}
+
+\begin{remark}[Duplication needs no fresh signatures]
+Because multiplicity is carried by the stack and not by key distinctness, copying a
+wrapped term $\{Q\}_s$ copies its key but not its tokens: $n$ copies of an $s$-redex
+require $n$ cells keyed to $s$. Created redexes --- where a substituted wrapped term
+lands in head position --- are guarded for the same reason, since the substituted
+material carries its own wrapper. One mechanism handles duplicated and created redexes
+alike.
+\end{remark}
+
+\section{Two monoids: space and time}
+
+The construction places two combination operators side by side, of different character.
+
+The interaction constructor $K$ is \emph{spatial}: it records what is in contact with
+what, and may carry equations --- associative--commutative in rho, free in $\lambda$.
+
+The cons operator $::$ is \emph{temporal}: it records what is spent next, then next. It
+is a free monoid, never commutative, because reduction is sequential even when
+interaction is parallel. Each forcing pops a cell; the order of popping is the order of
+steps. The stack is the time axis of the computation reified as a term: $\equiv$ leaves
+it invariant, $\longrightarrow$ pops it, and its ordering is the arrow of the computation.
+
+\begin{proposition}[Stack consumption is the modulus]
+For a terminating reduction in $\Cost(G)$, the number of cells consumed equals the number
+of forced redexes, which equals the number of cuts eliminated --- including those
+introduced by duplication, each charged when forced. The consumed prefix of the temporal
+stack is an exact operational modulus for the cut elimination, realised by running the
+reduction rather than by a separate traversal.
+\end{proposition}
+
+\section{The monad and its resolution}
+
+\begin{construction}[Unit and multiplication]
+Define $\eta_G(P) = \{P\}_{(\,)}$, wrapping each term with the unit signature. Since
+$(\,)$ is the unit of the signature monoid, a $(\,)$-keyed redex fires without net
+resource, so $\eta_G$ embeds $G$ as the cost-free fragment of $\Cost(G)$. Define
+$\mu_G : \Cost^2(G) \to \Cost(G)$ by multiplying nested signatures,
+$\{\{P\}_{s_2}\}_{s_1} \mapsto \{P\}_{s_1 * s_2}$, and concatenating the stack-of-stacks
+into a single stack.
+\end{construction}
+
+\begin{proposition}[The cost monad]
+$(\Cost, \eta, \mu)$ is a monad on $\catciGSLT$. Its laws descend from the laws of the two
+constituent monoids: the unit laws from $s * (\,) = s = (\,) * s$ together with the
+singleton/empty laws of the list monad, and associativity from associativity of $*$ and
+of concatenation.
+\end{proposition}
+
+\begin{remark}[A genuine, non-idempotent resource monad]
+$\Cost$ is not idempotent: $\mu_G$ is no isomorphism, because concatenating two stacks
+forgets the boundary between them and multiplying two grades forgets the factorisation.
+Flattening is a true merge of two resource accounts, not the collapse of a redundant
+copy. This is the expected signature of a resource monad, and it distinguishes $\Cost$
+from idempotent closure monads.
+\end{remark}
+
+\begin{proposition}[Free--forgetful resolution]
+\label{ob:prop:cost-adjunction}
+Let $\mathrm{Cost}\text{-}\catciGSLT$ be the category of cost-accounted continued
+interactive GSLTs. The functor $\mathrm{Install}$ that adjoins the apparatus is left
+adjoint to the functor $\mathrm{Forget}$ that strips it, and the induced monad on
+$\catciGSLT$ is $\Cost$.
+\end{proposition}
+
+The embedding is structural and strict: $\mathrm{Install}$ adjoins sorts and rules,
+$\mathrm{Forget}$ erases them on the nose. Crucially, forgetting is not
+behaviour-preserving in the metering sense --- erasing the apparatus removes the gating,
+so the forgotten theory runs its interactions without friction. The resolution answers
+``what apparatus was added?'' and lets us remove it; it does not claim the metered and
+un-metered dynamics agree.
+
+\begin{remark}[Internalisation]
+\label{ob:rem:internalise-cost}
+When the base theory is sufficiently expressive --- enough to code its own higher-order
+syntax, whether by binding or by reflection --- the entire metering apparatus is itself
+expressible in the base. Tokens become encoded data and the gated rules become an
+interpreter loop, so that the base performs the metering with its own computation. This
+is a second and quite different erasure from forgetting: rather than stripping the
+apparatus it dissolves it into the base. We record its availability and do not develop
+it here.
+\end{remark}
+
+\section{Capabilities and located purses}
+\label{ob:subsec:capabilities}
+
+A cost-accounted calculus is a calculus in which the right to draw on a resource stack is
+itself an authority. We must therefore ask what confers that authority, and ensure the
+construction does not silently grant it. The answer turns entirely on the equational
+theory of $K$, in the manner already anticipated in Section~\ref{ob:subsec:surfaces}.
+
+\paragraph{Free $K$: position is the capability.} When $K$ carries no equations, nothing
+can drift into contact with a stack it does not already neighbour. A capability to draw
+on a stack $S$ is then literally the context $K([\,], S)$ --- the right to occupy the hole
+adjacent to $S$. Because $K$ is rigid, occupying that position is the whole of the
+authority, and confinement is automatic. This is the $\lambda$-calculus regime and it is
+the object-capability ideal: authority is structural, held by reference, and unforgeable
+by construction.
+
+\paragraph{Non-free $K$: the leak.} The moment $K$ carries any equation, position is no
+longer exclusive. An equation is a congruence step that changes adjacency without firing
+a cut, so it lets a program drift into contact with a stack it did not structurally
+neighbour. Associative--commutativity is the limit: the bag is a freely mixed soup, every
+program adjacent to every stack, and rho lives exactly here. Taking proximity as
+authority in that regime is precisely \emph{ambient authority}~\cite{MillerYeeShapiro2003},
+and it is a leak.
+
+\paragraph{The repair: nominal surfaces and located stacks.} To recover an
+object-capability discipline under a non-free $K$, carry the surface nominally and gate on
+a nearness operator $\near(I,J)$, which when defined returns the surface at which the two
+meet. Interaction is licensed not by position but by the matchability of the surfaces.
+Then locate the stack at a surface,
+\[
+  S(I,\ s :: S') ,
+\]
+so that the cookie jar carries a label naming which hands may reach in. Authority over a
+resource is thereby named in the term rather than conferred by the geometry of the bag.
+
+\begin{remark}[Nearness bounds but does not eliminate competition]
+$\near(I,J)$ does not by itself make access exclusive: two receivers may both be near the
+same surface. What it guarantees is that only holders of a matching surface may compete
+at all --- it replaces ``anyone adjacent'' with ``anyone holding a matching surface.''
+Exclusivity, where required, is a matter for the type discipline of
+Chapter~\ref{ch:hypercube}.
+\end{remark}
