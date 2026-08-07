@@ -1,0 +1,417 @@
+\chapter{A Network That Learns by Rewriting}
+\label{ch:spiking}
+
+The four preceding chapters built learners at four sizes: the individual with its
+budget, the game it plays, the composite that a population of individuals is, and the
+engine that individuates one from another. Each was argued at the scale where the
+argument is interesting and none was small enough to watch run.
+
+This chapter is the small one. It takes the weighting construction of
+Chapter~\ref{ch:weight} and points it at the smallest system in which the whole
+apparatus is visible at once --- rate constants, multiplicity, plasticity, and the
+funding gate --- and what comes out is a spiking neural network with learning in it. The
+network is not an analogy and it is not an encoding. It is what
+Definition~\ref{wt:def:propensity} computes when the theory is a handful of
+for-comprehensions.
+
+The reason it belongs in this part rather than beside the construction is the last of
+those four factors. A neuron here has an energy budget, because the funding gate of
+Proposition~\ref{wt:prop:gate} applies to it like anything else, and a neuron whose local
+supply is exhausted is silent regardless of how strong its synapses are. Weight is what a
+synapse is worth; cost is what a spike costs. That a strong synapse on a starving neuron
+transmits nothing is a statement neither decoration makes alone, and it is the mortal
+computation of \chSci\ arriving at a scale where one can count the tokens.
+
+\section{The design decision that makes the example an example}
+
+One can always model a neural network in a process calculus by writing the arithmetic
+into the payloads: send a real number down a channel, multiply it by a stored weight,
+sum, squash, forward. Nothing in Chapter~\ref{ch:weight} would be doing any work; the
+calculus would be a programming language and the network a program written in it.
+
+We do the opposite. The synaptic efficacies are \emph{not} in the terms. They are the
+values of the weight map, keyed by formulae picking out the synapses. In one sentence:
+
+\begin{quote}
+\emph{Synaptic efficacy is represented as transition intensity in the operational
+semantics, and the same transition updates that intensity.}
+\end{quote}
+
+Three consequences follow, and the third is the one the chapter exists for. Firing is a
+stochastic event rather than an arithmetic one. The network's response nonlinearity is a
+property of the chain rather than a function written down anywhere. And synaptic
+plasticity is literally the update functions of Definition~\ref{wt:def:augmented}, so
+that a network which learns and a network which infers are the same weighted theory
+running the same transition relation.
+
+It is worth being careful about what the object is, since the temptation to overname it
+is strong. It is an asynchronous stochastic spiking recurrent network with plastic
+transition rates. It is not a recurrent neural network in the machine-learning sense:
+there is no backpropagation, no membrane potential, no refractory period, no global clock
+and no discrete timestep, and the quantity compared below with a textbook neuron's
+pre-activation is a hazard rate rather than an affine form awaiting an activation
+function. Nothing in the argument needs the stronger name, and the claim it does support
+is the more interesting one.
+
+\section{Neurons are persistent for-comprehensions}
+
+\begin{definition}[Neuron]
+\label{spk:def:neuron}
+Let neuron $i$ have presynaptic channels $a_{1i}, \ldots, a_{k_i i}$ --- its dendrites ---
+and postsynaptic targets $\mathrm{post}(i)$. Its \emph{threshold presentation at
+$\theta_i$} is the persistent for-comprehension
+\[
+  N_i \;\triangleq\;
+  \texttt{for}\bigl(\,
+    \underbrace{x_{s_1} \Leftarrow a_{s_1 i} \;\&\; \cdots \;\&\; x_{s_\theta} \Leftarrow a_{s_\theta i}}
+    _{\text{one group per }\theta_i\text{-subset } S}
+  \;;\; \cdots \,\bigr)
+  \;\bigl\{\; \textstyle\prod_{j \in \mathrm{post}(i)} a_{ij}!(\mathrm{spk}) \;\bigr\},
+\]
+with one join group per $\theta_i$-element subset of the dendrites, $\&$ joining within a
+group and $;$ separating groups. The network is
+$\mathsf{Net} \triangleq \texttt{new}\ \vec{a}\ \texttt{in}\ \{\prod_i N_i \mid M_0\}$,
+with $M_0$ an initial multiset of pending spikes.
+\end{definition}
+
+Three points, in increasing order of importance.
+
+The receipts are \emph{persistent}. A linear receipt evaporates after one firing, so a
+network built from linear receipts models a single sweep and not a network. Persistence
+is what makes the object a standing structure rather than a trace through one. The
+pending spikes are still consumed per firing; it is the neuron that survives.
+
+Recurrence is not an additional construct. It is the statement that some $a_{ij}$ for
+$j \in \mathrm{post}(i)$ feeds a dendrite of a neuron from which $i$ is reachable, $i$
+itself included. The unrolled network in the machine-learning sense is the reduction
+graph; the hidden state at a given moment is the \emph{marking}, the standing multiset of
+pending spikes on the restricted channels. Since the marking is part of the term and the
+term is part of the configuration, hidden state, weights and time are carried by one
+object. That is Definition~\ref{wt:def:config} paying for itself.
+
+And the threshold is in the join structure.
+
+\subsection{The keys, and why they form a partition}
+
+\begin{definition}[Synaptic keys]
+\label{spk:def:keys}
+For each synapse $(j,i)$ let $\varphi_{ji}$ be the structural formula holding of a
+communication redex on the channel $a_{ji}$ --- an input on $a_{ji}$ separated from an
+output on $a_{ji}$ --- and put
+$\Phi_{\textsc{comm}} = \{\varphi_{ji}\} \cup \{\varphi_{\bot}\}$ with $\varphi_{\bot}$
+the default class of Remark~\ref{wt:rmk:default}.
+\end{definition}
+
+\begin{proposition}
+\label{spk:prop:admissible}
+$\Phi_{\textsc{comm}}$ is admissible in the sense of Definition~\ref{wt:def:reqs}, with
+depth bound $\alpha = 2$.
+\end{proposition}
+
+\begin{proof}
+Distinct synapses are distinct channels and a communication redex is on exactly one
+channel, so (P1) holds; $\varphi_{\bot}$ gives (P2) by Remark~\ref{wt:rmk:default}. Each
+key has depth $2$, and checking it against a term is a lookup in the bag, so
+\ref{wt:req:dec}, \ref{wt:req:loc} and \ref{wt:req:str} hold.
+\end{proof}
+
+The value $\dec(\varphi_{ji})$ is the efficacy of synapse $(j,i)$. Nothing else in the
+presentation mentions it.
+
+\subsection{Threshold is join structure}
+
+\begin{proposition}[McCulloch--Pitts, as an expressivity lemma]
+\label{spk:prop:mcp}
+The threshold presentation of Definition~\ref{spk:def:neuron} realises the monotone
+Boolean threshold function ``at least $\theta_i$ of the dendrites carry a pending
+spike''. It uses $\binom{k_i}{\theta_i}$ join groups.
+\end{proposition}
+
+\begin{proof}
+A group is enabled exactly when every channel it binds carries a spike, since $\&$
+requires simultaneous availability of all its binds; the receipt is enabled exactly when
+some group is, since $;$ separates alternatives. Some $\theta_i$-subset is fully
+populated exactly when at least $\theta_i$ dendrites are.
+\end{proof}
+
+So the historical origin of the neuron model --- McCulloch and Pitts' threshold
+unit~\cite{mcp} --- is not encoded in a weighted theory but \emph{is} a
+for-comprehension, with the threshold appearing as the arity of the joins and the
+alternatives as the group separator. The qualification ``expressivity lemma'' is not
+cosmetic: $\binom{k}{\theta}$ groups is unusable at realistic fan-in, so the scalable
+presentation is the one at $\theta = 1$, where threshold behaviour is trivial and the
+join structure carries no weight. What the lemma establishes is that no apparatus beyond
+the for-comprehension is needed to \emph{express} a threshold. What it does not establish
+is that this is how one would build a large network.
+
+\begin{remark}[Coincidence versus rate]
+\label{spk:rmk:dial}
+$\theta_i = k_i$ gives a pure coincidence detector: the neuron fires only on simultaneous
+arrival at every dendrite. $\theta_i = 1$ gives a pure rate integrator: any arrival can
+trigger it, and the weights determine how fast. Real cortical neurons sit between, and so
+does the presentation, with $\theta$ as the dial. This is a rare case in which a
+biological parameter and a syntactic parameter are the same parameter.
+\end{remark}
+
+\section{The weighted sum, and where the squashing function went}
+\label{spk:sec:squash}
+
+Take $\theta_i = 1$, so $N_i$ has $k_i$ single-bind alternatives, and let the marking
+assign $m_{ji}$ pending spikes to dendrite $a_{ji}$.
+
+\begin{proposition}[Propensity of a neuron]
+\label{spk:prop:sum}
+With every geometric factor $1$ and every redex funded, the total propensity of the
+redexes belonging to neuron $i$ is
+\[
+  \prop_i \;=\; \sum_j \dec(\varphi_{ji}) \cdot m_{ji} .
+\]
+\end{proposition}
+
+\begin{proof}
+The receipt is persistent, so exactly one input is available on each $a_{ji}$, and the
+marking supplies $m_{ji}$ outputs; the number of redexes classified $\varphi_{ji}$ is
+therefore $m_{ji}$. Definition~\ref{wt:def:propensity} gives $\dec(\varphi_{ji})m_{ji}$
+per synapse, and the classes are disjoint by Proposition~\ref{spk:prop:admissible}, so
+they may be summed.
+\end{proof}
+
+Formally this is the weighted sum $\sum_j w_{ji}m_{ji}$ of the textbook artificial
+neuron, with presynaptic activity read as the marking --- and it has not been written
+into any term. It is what Definition~\ref{wt:def:propensity} computes.
+
+The comparison should nevertheless be made carefully, because the two quantities are not
+the same kind of thing. $\prop_i$ is a hazard rate, with units of inverse time, governing
+a race between exponential clocks. It is not an affine pre-activation waiting to be
+passed through an activation function. What the next result shows is that a saturating
+nonlinearity nevertheless appears, and appears without being supplied.
+
+\begin{corollary}[The response saturates and nobody wrote it]
+\label{spk:cor:saturate}
+Hold the marking on $i$'s dendrites fixed over a window $[0,\Delta]$. The probability
+that neuron $i$ fires at least once in the window is
+\[
+  \Pr[\,i \text{ fires}\,] \;=\; 1 - \exp\bigl(-\Delta \textstyle\sum_j \dec(\varphi_{ji})m_{ji}\bigr),
+\]
+a monotone function of the weighted sum, with slope $\Delta$ at the origin and asymptote
+$1$.
+\end{corollary}
+
+\begin{proof}
+Under a marking held fixed the propensity $\prop_i$ is constant, so firings of $i$ within
+the window are the events of a homogeneous Poisson process of rate $\prop_i$, by
+Theorem~\ref{wt:thm:markov} restricted to the sub-chain along which the marking on $i$'s
+dendrites does not change. The probability of at least one event in $[0,\Delta]$ is
+$1 - e^{-\prop_i \Delta}$.
+\end{proof}
+
+Two provisos, one standard and one easy to miss. The standard one is that the marking is
+not in fact frozen, since other neurons are firing into it; the corollary is a statement
+about a window short enough that the input has not moved, which is the usual
+justification for a rate-coded neuron and the usual approximation. The one easy to miss
+is that $i$'s \emph{own} firings change the marking, since a firing consumes the spike it
+fired on. The hypothesis must be read as freezing the marking against all sources of
+change, $i$'s own consumption included, which is why the statement is about the first
+event rather than about a count.
+
+\begin{remark}[Saturating, not logistic]
+\label{spk:rmk:notlogistic}
+$1 - e^{-\Delta x}$ is an exponential saturation function and not the logistic
+$\sigma(x) = (1+e^{-x})^{-1}$; the distinction is worth keeping because the claim is
+worth as much either way and should be stated exactly. \emph{A saturating nonlinear
+activation emerges from exponential race semantics without being programmed into the
+term.} No squashing function was supplied and none is needed. A neuron under enormous
+drive still cannot fire more than once per event, so its firing probability per window is
+bounded by $1$ however large the weighted sum grows, and that bound is the waiting-time
+law of the chain rather than a modelling choice.
+\end{remark}
+
+\subsection{Boundedness}
+
+\begin{lemma}[Boundedness]
+\label{spk:lem:bounded}
+Let $f_i = |\mathrm{post}(i)|$ be the fan-out of neuron $i$. If $f_i \leq \theta_i$ for
+every $i$, the total number of pending spikes is non-increasing along every run and the
+reachable term set is finite.
+\end{lemma}
+
+\begin{proof}
+Firing $N_i$ consumes $\theta_i$ pending spikes, one per bind in the selected group, and
+produces $f_i$, so the total marking changes by $f_i - \theta_i \leq 0$. The neurons are
+persistent and the channel set is fixed, so a reachable term is determined by its
+marking, and markings with at most $|M_0|$ tokens over finitely many channels are finite
+in number.
+\end{proof}
+
+The hypothesis forbids fan-out exceeding threshold, which most networks want. The repair
+we take is a \emph{capacity} guard: bound the occupancy of a target channel after the
+firing, which is a saturating synapse and is what a real one does. The marking is then
+bounded per channel and the reachable state space is finite unconditionally. It matters
+that the bound is read \emph{after} the firing rather than before; the obvious
+alternative, refusing a send when the target is already full, blocks the consumer and
+deadlocks the network. The other standard repair --- a leak rule discarding a pending
+spike at its own rate --- does not bound the state space but makes the marking
+positive-recurrent, which is enough for stationary analysis and for classical simulation.
+
+\section{Plasticity is the update function}
+
+\begin{definition}[Local potentiation entry]
+\label{spk:def:hebb}
+Equip the communication rule's entry at $\varphi_{ji}$ with
+\[
+  u_{ji}(\dec) \;=\; \dec\bigl[\,\varphi_{ji} \mapsto \min\{\,w_{\max},\ \dec(\varphi_{ji}) + \eta\,\}\,\bigr]
+\]
+for a potentiation increment $\eta > 0$ and ceiling $w_{\max}$.
+\end{definition}
+
+The ceiling is not cosmetic. With a quantised increment it is what makes the reachable
+weight-map set finite, which is the hypothesis Definition~\ref{wt:def:hilbert} requires,
+and it is a case where a modelling convenience and a mathematical necessity happen to be
+the same stipulation.
+
+\begin{theorem}[Learning and inference are one relation]
+\label{spk:thm:one}
+The transition relation of Construction~\ref{wt:con:functor} on $\Cfg$ has two marginals:
+the projection to terms is the network's inference dynamics, and the projection to weight
+maps is its learning dynamics. Neither is a separate process. In particular there is no
+training schedule, no separate learning clock and no distinguished learning phase, and
+the learning rate $\eta$ is not a hyperparameter of an outer loop but a component of the
+theory, sitting in the same refinement entry as the weight it modifies.
+\end{theorem}
+
+\begin{proof}
+Immediate from Definition~\ref{wt:def:config} and Construction~\ref{wt:con:functor}: a
+single step produces $(P',\dec')$ with $P'$ obtained by the rewrite and $\dec'$ by the
+fold of the update function.
+\end{proof}
+
+This is the claim the chapter exists to make, and it is exactly what a static-rate
+calculus cannot express. In the Stochastic Pi Machine a rate is fixed at declaration, so
+a stochastic $\pi$ model of a neural network can model the firing but not the learning:
+one must step outside the calculus, adjust the rates, and re-run. Here the adjustment is
+a transition of the same system. Theorem~\ref{wt:thm:spim} says precisely which
+restriction is being lifted.
+
+\begin{remark}[How Hebbian this is]
+\label{spk:rmk:hebbian}
+Definition~\ref{spk:def:hebb} potentiates $\varphi_{ji}$ when a communication on $a_{ji}$
+fires --- that is, when a presynaptic spike is consumed by an enabled postsynaptic
+receipt. The event is local and activity-dependent, and the condition ``pre and post were
+jointly involved'' is not a correlation computed by an observer but the firing of a
+single rewrite, which by construction requires both parties. That much is the structural
+content of Hebb's proposal~\cite{hebb}, and it is the part worth having: the event which
+transmits is the event which potentiates, because a communication is one rewrite.
+
+It is nevertheless less than Hebbian learning as usually meant. Hebbian plasticity
+invokes a correlation between pre- and \emph{postsynaptic firing}, and successful
+transmission into an enabled receipt is not by itself postsynaptic firing, since the
+receiving neuron may not reach threshold. What we have is a minimal local potentiation
+rule, and the timing-dependent version costs something specific.
+\end{remark}
+
+\begin{remark}[What spike-timing dependence costs]
+\label{spk:rmk:stdp}
+Spike-timing-dependent plasticity makes the weight change a function of the interval
+between pre- and postsynaptic spikes~\cite{stdp}. The ingredients are available, since
+the simulator produces a timestamp at every step, but the update function of
+Definition~\ref{wt:def:augmented} cannot see them: its type is too narrow. Widening it to
+take additionally the matched substitution, the position, the current time and a bounded
+\emph{trace summary} --- for this purpose, one decaying eligibility trace per synapse ---
+suffices. Theorem~\ref{wt:thm:markov} survives the widening provided the trace summary is
+finite-dimensional and updated deterministically, since one simply enlarges the
+configuration to carry it. It does \emph{not} survive an update function reading unbounded
+history, which would make the process genuinely non-Markovian and put exact simulation out
+of reach. The eligibility-trace formulation is precisely the standard device for staying
+inside the bounded case, and it is pleasant that the constraint arrives here from the
+requirement that the chain be a chain rather than from computational convenience.
+\end{remark}
+
+\section{Uniformity: one theory for every network}
+\label{spk:sec:uniform}
+
+Definition~\ref{spk:def:keys} gives one key per synapse, so a network with $10^4$
+synapses has $10^4$ keys and a network that grows needs a new theory. Reflection removes
+both problems. Take the synapse channels to be \emph{structured names} built from the
+network's own name and the two endpoint indices, so that a name predicate can recover the
+endpoints. Then
+\[
+  \varphi_{\mathrm{syn}} \;\triangleq\;
+  \exists j, i.\ \text{a communication redex on the synapse channel of } (j,i)
+\]
+is a \emph{single} key describing the whole \emph{namespace} of this network's synapses,
+which is namespace logic doing what it was built for~\cite{NamespaceLogic}. The weight map
+then has one entry per network rather than per synapse, and per-synapse efficacies are
+recovered by letting the entry's value be a function of the recovered indices --- the
+standard move of trading a large map for a small map with structured keys.
+
+The point generalises well beyond bookkeeping, and it is the reason this chapter sits in
+this part of the book. A namespace is the computationally coherent notion of scope
+(Chapter~\ref{ch:scope}), and what the reflective calculus buys here is that a
+\emph{population} of synapses can be priced by one formula because the population is a
+nameable thing. In an atomic-name calculus none of this is available: the indices would
+have to travel as message payloads, and the logic could reach them only by observing
+traffic. This is the same manoeuvre by which \chComp\ takes a learner to be a weighted
+population and hence a namespace, run at the scale of a synapse instead of the scale of a
+scientific community.
+
+\section{The complex instance, and an honest negative}
+
+Replace the efficacies by amplitudes, keeping the keys, the neurons and the capacity
+bound. Definition~\ref{wt:def:jump} gives a jump operator per synapse and
+Definition~\ref{wt:def:hamiltonian} a Lindbladian. The example satisfies the finiteness
+hypothesis in both components, which is part of why it is the example: the capacity bound
+makes the reachable term set finite and the ceiling $w_{\max}$ with a quantised increment
+makes the reachable map set finite. So the space is finite-dimensional over
+\emph{configurations}, and the projectors supplied by the generated logic have a reading
+--- the projector at $\varphi_{\mathrm{syn}}$ has expectation the probability that the
+network has an available synaptic transmission at time $t$.
+
+\begin{remark}[Indistinguishable spikes do not interfere]
+\label{spk:rmk:bosonic}
+$m$ indistinguishable pending spikes on $a_{ji}$ give $m$ redexes with a common
+contractum. It is tempting to conclude that the quantum network is superlinear in
+presynaptic multiplicity, transmitting at $m^2$ times the single-spike rate where the
+classical network transmits at $m$ times. Under the normalisation of
+Definition~\ref{wt:def:jump} it is not: the amplitude of the synaptic jump channel is
+$\sqrt{m}$ times the single-spike amplitude, its weight is $m$ times the single-spike
+rate, and at $H = 0$ the quantum network's population dynamics is exactly the classical
+network's.
+
+What the complex reading adds is therefore not an enhancement of transmission but a
+coherent channel between configurations that the equational presentation declines to
+quotient --- and Definition~\ref{spk:def:neuron} quotients everything, so as written it
+adds nothing at all. This is worth stating plainly because it is the negative instance of
+Principle~\ref{wt:prin:slogan}, and a principle whose negative instances are never
+displayed is not doing any work. It also names what would have to be done: construct a
+spiking network whose equational theory leaves something coherent, so that
+Definition~\ref{wt:def:hamiltonian} has material to work with. We have not done it, and we
+do not claim that concurrency supplies it for free.
+\end{remark}
+
+\section{What this example does not show}
+
+The learning here is local. Nothing above implements backpropagation, which needs a
+global error signal propagated against the direction of inference. One can encode such a
+signal as traffic on a second family of channels with its own keys, and the apparatus does
+not forbid it, but the result would no longer have the property that makes
+Theorem~\ref{spk:thm:one} interesting --- the error channel is an outer loop wearing a
+costume. Whether a genuinely local learning rule of this kind can match backpropagation is
+not a question answered here, and the honest statement is that the example demonstrates a
+\emph{mechanism} for plasticity inside the calculus, not a competitive learning algorithm.
+
+Nor is biological fidelity claimed. The neuron of Definition~\ref{spk:def:neuron} has no
+membrane potential, no refractory period and no dendritic geometry. The first two are easy
+additions --- a potential is a payload, a refractory period is a guard --- and the third is
+what the geometric factor of Remark~\ref{wt:rmk:geometric} is for, which is a use we have
+not developed.
+
+What the example does show is worth restating against the four chapters that precede it.
+Those chapters argued that a learner is a population with a budget, that its inquiry
+terminates because assays are paid for, and that a community of such learners composes.
+This one exhibits the same architecture at a scale where every quantity is countable: the
+population is a marking, the budget is a funding gate, the inquiry is a race between
+exponential clocks, and the learning is the same relation as the inference. It is the
+smallest thing in this book that is recognisably a mind-shaped object, and nothing in it
+was put there by hand except the rules.
+
+% ===================================================================
