@@ -17,14 +17,14 @@
 //! resolution of the identity, hence a projective measurement.
 
 use crate::logic::check::sat_struct;
-use crate::logic::formula::{Budget, Checkable, Formula};
+use crate::logic::formula::{Budget, Checkable, Formula, WhyNot};
 use crate::syntax::Term;
 
 #[derive(Clone, Debug)]
 pub struct Partition {
-    pub keys: Vec<Checkable>,
+    keys: Vec<Checkable>,
     /// Index of the synthesised `default` key, if one was added.
-    pub default_index: Option<usize>,
+    default_index: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -66,11 +66,60 @@ impl std::fmt::Display for PartitionError {
 }
 
 impl Partition {
+    /// The keys, in classification order.
+    ///
+    /// Read-only by design. The fields of `Partition` are private so that
+    /// (R3) cannot be bypassed with a struct literal — see
+    /// [`Partition::from_checked_keys`], which is the only constructor.
+    pub fn keys(&self) -> &[Checkable] {
+        &self.keys
+    }
+
+    /// The index of the synthesised `default` key, if one was added.
+    pub fn default_index(&self) -> Option<usize> {
+        self.default_index
+    }
+
+    /// The only public constructor. Applies (R3) to every key, so a modal or
+    /// fixed-point formula cannot reach a theory by any route.
+    ///
+    /// v0.3.0 enforced (R3) in [`complete_with_default_checked`] and described
+    /// that as the single funnel every partition is built through. It was not
+    /// quite: `Partition`'s fields were public, so a struct literal bypassed the
+    /// check. Closing that is what makes the claim true.
+    pub fn from_checked_keys(
+        keys: Vec<Checkable>,
+        default_index: Option<usize>,
+    ) -> Result<Partition, WhyNot> {
+        for k in &keys {
+            if let Some(at) = k.formula().nonstructural_at() {
+                return Err(WhyNot::NotStructural { at });
+            }
+        }
+        Ok(Partition {
+            keys,
+            default_index,
+        })
+    }
+
     pub fn len(&self) -> usize {
         self.keys.len()
     }
     pub fn is_empty(&self) -> bool {
         self.keys.is_empty()
+    }
+
+    /// Whether every key lies in the structural fragment (R3).
+    ///
+    /// Partitions built through [`complete_with_default`] satisfy this by
+    /// construction; this is for partitions assembled by hand.
+    pub fn check_key_fragment(&self) -> Result<(), WhyNot> {
+        for k in &self.keys {
+            if let Some(at) = k.formula().nonstructural_at() {
+                return Err(WhyNot::NotStructural { at });
+            }
+        }
+        Ok(())
     }
 
     /// Classify a witness: the unique index whose key it satisfies.
@@ -92,19 +141,39 @@ impl Partition {
 /// exclusive keys and gets a partition (note, Remark 8). Exclusivity is the
 /// real constraint; exhaustiveness is a completion.
 pub fn complete_with_default(keys: Vec<Checkable>, lhs: &Formula) -> Partition {
+    complete_with_default_checked(keys, lhs)
+        .expect("keys must lie in the structural fragment (R3)")
+}
+
+/// As [`complete_with_default`], but returns the (R3) diagnostic instead of
+/// panicking.
+///
+/// This is the funnel every partition in the crate is built through, so
+/// applying (R3) here is what makes the requirement *elaboration-time* rather
+/// than aspirational: a modal or fixed-point key is refused when the theory is
+/// assembled, with a message naming the offending subformula, instead of
+/// silently costing a global reclassification on every step of every run.
+pub fn complete_with_default_checked(
+    keys: Vec<Checkable>,
+    lhs: &Formula,
+) -> Result<Partition, WhyNot> {
+    for k in &keys {
+        if let Some(at) = k.formula().nonstructural_at() {
+            return Err(WhyNot::NotStructural { at });
+        }
+    }
     let disj = keys
         .iter()
         .map(|k| k.formula().clone())
         .reduce(Formula::or)
         .unwrap_or(Formula::Bot);
     let default = Formula::and(lhs.clone(), Formula::not(disj));
+    // `default` is structural whenever the keys and the left-hand side are,
+    // being a conjunction of them under a negation.
     let idx = keys.len();
     let mut keys = keys;
     keys.push(Checkable::trusted(default));
-    Partition {
-        keys,
-        default_index: Some(idx),
-    }
+    Partition::from_checked_keys(keys, Some(idx))
 }
 
 /// Check (P1) and (P2) against a supplied set of witnesses.

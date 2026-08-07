@@ -1,0 +1,286 @@
+// engine.rho -- an inventory engine, its reflexive observable, and the
+// SPJ combinators that name its reactions.  Companion to "Engines and
+// Individuals".  Conventions follow the game note: a parameter written
+// `c` is a NAME and `@d` is DATA; a channel is passed as `*c`, since
+// @(*c) = c.  Persistent receipts use `<=`; a linear receipt is `<-`.
+// Guards marked `//! ideal` use the where-clause of rholang 1.4 in a
+// form the current transpiler does not yet accept.
+
+new Engine, Observable, Reserve, Reserves,
+    One, Give, Scale, And, Swap,
+    Gate, Spend, Trade, Wall, Boot in {
+
+  // ------------------------------------------------------------------
+  // 1.  Located reserves.
+  //
+  // A reserve is a stack held ON A CHANNEL, never floating in the soup.
+  // The right to draw is the right to receive on that channel.  Two
+  // reserves, one per colour, constitute an engine's inventory.
+  // ------------------------------------------------------------------
+
+  contract Reserve(@lbl, @sig, @n, ret) = {
+    new slot in {
+      slot!((sig, n)) | ret!(*slot)
+    }
+  } |
+
+  // ------------------------------------------------------------------
+  // 2.  The reflexive observable.
+  //
+  // In Peyton-Jones's combinators an observable is an exogenous
+  // quantity both parties agree on.  Here it reads the issuer's own
+  // inventory: the rate IS a function of the marking.  This is the one
+  // place the combinator language had to be extended.
+  // ------------------------------------------------------------------
+
+  contract Observable(slotA, slotB, ret) = {
+    for (@(sa, na) <= *slotA & @(sb, nb) <= *slotB) {
+      // constant-product quote: r(a -> b) = R_b / R_a
+      slotA!((sa, na)) | slotB!((sb, nb)) | ret!(nb * 1.0 / na)
+    }
+  } |
+
+  // ------------------------------------------------------------------
+  // 3.  The acceptance gate.
+  //
+  // Peel k tokens of a given signature off a located slot, all or
+  // nothing.  Either a committed private purse comes back, or the slot
+  // is left exactly as it was.  This is the operational content of the
+  // linear resource proof: supply at least demand, decided BEFORE any
+  // leg fires.
+  // ------------------------------------------------------------------
+
+  contract Gate(slot, @sig, @k, ret) = {
+    for (@(s, n) <- *slot) {
+      match (s == sig) and (n >= k) {
+        true  => {
+          slot!((s, n - k)) |
+          new purse in { purse!((sig, k)) | ret!((true, *purse)) }
+        }
+        false => { slot!((s, n)) | ret!((false, "insufficient")) }
+      }
+    }
+  } |
+
+  contract Spend(purse, @k, ret) = {
+    for (@(s, n) <- *purse) {
+      match n >= k {
+        true  => { purse!((s, n - k)) | ret!((true, s)) }
+        false => { purse!((s, n)) | ret!((false, Nil)) }
+      }
+    }
+  } |
+
+  // ------------------------------------------------------------------
+  // 4.  The combinators.
+  //
+  // A contract is a channel that, sent an acquisition message,
+  // discharges what it denotes.  `one` moves a unit and is funded by
+  // the payer; `give` swaps which side funds; `scale` multiplies the
+  // amount by an observable, NOT the fuel demand -- cost counts funded
+  // rendezvous, not magnitude; `and` is the atomic join.
+  // ------------------------------------------------------------------
+
+  contract One(@colour, src, dst, purse, ret) = {
+    new ok in {
+      Spend!(*purse, 1, *ok) |
+      for (@(fired, _) <- ok) {
+        match fired {
+          true  => for (@(c, n) <- *src) {
+                     src!((c, n - 1)) |
+                     for (@(d, m) <- *dst) { dst!((d, m + 1)) | ret!(true) }
+                   }
+          false => ret!(false)
+        }
+      }
+    }
+  } |
+
+  contract Give(@colour, src, dst, purse, ret) = {
+    // the two-sided surface of the cut, made operational: swapping
+    // which signature funds the leg is the whole of `give`.
+    One!(colour, *dst, *src, *purse, *ret)
+  } |
+
+  contract Scale(obs, @base, ret) = {
+    new q in { obs!(*q) | for (@r <- q) { ret!(base * r) } }
+  } |
+
+  contract And(c1, c2, purse, ret) = {
+    // reserve the JOINT demand first, then fire both legs under one
+    // gate.  Half-settlement is structurally impossible inside a join.
+    new g, r1, r2 in {
+      Gate!(*purse, "fuel", 2, *g) |
+      for (@(okg, joint) <- g) {
+        match okg {
+          true  => { c1!(joint, *r1) | c2!(joint, *r2) |
+                     for (@a <- r1 & @b <- r2) { ret!(a and b) } }
+          false => ret!(false)
+        }
+      }
+    }
+  } |
+
+  // ------------------------------------------------------------------
+  // 5.  The engine.
+  //
+  // A PERSISTENT issuer standing over two located reserves, offering a
+  // linear swap contract on demand.  The persistence is not cosmetic:
+  // a linear receipt here would model one conversion, not a converter.
+  // The enzyme persists; the substrate binding is linear.
+  //
+  // The swap is the netted futures shape of the finance note:
+  //     and( scale(o, one(a)), give(one(b)) )
+  // performed as ONE transfer in the data-dependent direction, which
+  // costs one token instead of two and cannot half-settle.
+  // ------------------------------------------------------------------
+
+  contract Engine(slotA, slotB, tollSlot, quote, swap) = {
+    // the quote face: anyone may read the rate.  Perception is grade
+    // one and must not be able to act, so `quote` is a different name
+    // from `swap`.
+    contract quote(ret) = { Observable!(*slotA, *slotB, *ret) } |
+
+    // the trade face: a linear acquisition, funded by the taker, with
+    // the toll accruing to the engine's own stack.  The engine eats.
+    contract swap(@dir, @amt, takerPurse, ret) = {
+      new g, q in {
+        Gate!(*takerPurse, "fuel", 1, *g) |
+        for (@(okg, purse) <- g) {
+          match okg {
+            true => {
+              quote!(*q) |
+              for (@r <- q) {
+                match dir {
+                  "ab" => {
+                    for (@(sa, na) <- *slotA & @(sb, nb) <- *slotB) {
+                      // theta is not a parameter: it is this rendezvous.
+                      slotA!((sa, na + amt)) |
+                      slotB!((sb, nb - amt * r)) |
+                      for (@(t, k) <- *tollSlot) { tollSlot!((t, k + 1)) } |
+                      ret!((true, amt * r))
+                    }
+                  }
+                  _ => {
+                    for (@(sa, na) <- *slotA & @(sb, nb) <- *slotB) {
+                      slotA!((sa, na - amt * 1.0 / r)) |
+                      slotB!((sb, nb + amt)) |
+                      for (@(t, k) <- *tollSlot) { tollSlot!((t, k + 1)) } |
+                      ret!((true, amt * 1.0 / r))
+                    }
+                  }
+                }
+              }
+            }
+            false => ret!((false, Nil))
+          }
+        }
+      }
+    }
+  } |
+
+  // ------------------------------------------------------------------
+  // 6.  A wall, two communities, one engine.
+  //
+  // The wall is the shared rate-limited source of the composition note:
+  // persistent, non-exclusive, non-adaptive, finite.  The engine is the
+  // fourth access profile: persistent and non-exclusive like a source,
+  // exhaustible per colour like prey, and adaptive in its rate --- the
+  // only one of the four whose terms respond to who is trading.
+  // ------------------------------------------------------------------
+
+  contract Wall(@remaining, out) = {
+    match remaining > 0 {
+      true  => { out!(1) | Wall!(remaining - 1, *out) }
+      false => Nil                       // heat death, on schedule
+    }
+  } |
+
+  contract Trade(swap, @dir, @amt, purse, ret) = {
+    //! ideal: only trade when the quote leaves us solvent
+    //! for (@r <= quote where r * amt > minAcceptable) { ... }
+    swap!(dir, amt, *purse, *ret)
+  } |
+
+  contract Boot(ret) = {
+    new rA, rB, rT, q, sw, w in {
+      Reserve!("engine-a", "a", 100, *rA) |
+      Reserve!("engine-b", "b", 100, *rB) |
+      Reserve!("engine-toll", "fuel", 0, *rT) |
+      for (@slotA <- rA & @slotB <- rB & @slotT <- rT) {
+        Engine!(@slotA, @slotB, @slotT, *q, *sw) |
+        Wall!(12000, *w) |
+        ret!((*q, *sw))
+      }
+    }
+  } |
+
+  Boot!(*Reserves)
+}
+
+// ---------------------------------------------------------------------
+// 7.  Media.
+//
+// Rho's communication is perfect, and that is without loss of
+// generality: a pathway is a PROCESS interposed between the endpoints.
+//     for (y <- x)P | x!(Q)
+// generalises to
+//     for (y <- x1)P | C(x1, x2) | x2!(Q)
+// and C may do arbitrarily more than relay.  The rungs below are the
+// behaviour axis of the ladder; whether a given C's quote lies inside a
+// region's namespace is the ownership axis, and it is the second that
+// individuates.
+// ---------------------------------------------------------------------
+
+new Relay, Lossy, Corrupting, Reading, Chain in {
+
+  // rung 1: the identity medium.  PERSISTENT -- a linear forwarder
+  // relays once and is then not a channel at all.
+  contract Relay(in, out) = {
+    for (@m <= *in) { out!(m) }
+  } |
+
+  // rung 2: drops with probability 1 - p.  A dropped message is not
+  // destroyed; it is left resting on a channel nothing receives on.
+  // Conservation survives; availability does not.  That gap is exergy.
+  contract Lossy(in, out, @p, coin) = {
+    new strand in {
+      for (@m <= *in) {
+        new r in {
+          coin!(*r) |
+          for (@u <- r) {
+            match u < p {
+              true  => out!(m)
+              false => strand!(m)          //! stranded, not annihilated
+            }
+          }
+        }
+      }
+    }
+  } |
+
+  // rung 3: emits a value other than the one received.  On a quote path
+  // this is exactly the single-edge fault the price code detects.
+  contract Corrupting(in, out, noise) = {
+    for (@m <= *in & @d <= *noise) { out!(m + d) }
+  } |
+
+  // rung 4: forwards and retains.  Grade-one access to all traffic --
+  // the intermediary learns most, and on a bridge it learns everything.
+  contract Reading(in, out, log) = {
+    for (@m <= *in) { out!(m) | log!(m) }
+  } |
+
+  // rung 5 is Engine, above: a medium that swaps colour against its own
+  // inventory.  The ladder is one construction throughout.
+
+  // a pathway of length d, with reliability p^d and toll d.  This is
+  // what "distance" means here; there is no other geometry.
+  contract Chain(in, out, @d, @p, coin) = {
+    match d {
+      0 => Relay!(*in, *out)
+      _ => new mid in { Lossy!(*in, *mid, p, *coin) |
+                        Chain!(*mid, *out, d - 1, p, *coin) }
+    }
+  }
+}

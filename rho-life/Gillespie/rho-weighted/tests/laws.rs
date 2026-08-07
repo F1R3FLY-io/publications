@@ -67,7 +67,7 @@ fn law_partition_total() {
 fn law_default_completes() {
     let keys = vec![Checkable::trusted(Formula::comm_on(chan("a")))];
     let p = complete_with_default(keys, &comm_lhs());
-    assert_eq!(p.default_index, Some(1));
+    assert_eq!(p.default_index(), Some(1));
 
     // A redex on a channel with no key of its own lands in `default`.
     let t = Term::par(vec![
@@ -335,9 +335,40 @@ fn law_rates_are_nonnegative_reals_not_probabilities() {
         RateValue::real(f64::INFINITY),
         Err(RateError::NotFinite(_))
     ));
-    // Amplitudes, by contrast, are bounded.
+    // Amplitudes are NOT bounded, and an earlier version of this crate required
+    // |z| <= 1. On a finite-dimensional space every operator is bounded
+    // outright, GKSL imposes no norm condition on jump operators, and the bound
+    // manufactured a dimensional inconsistency between unbounded inverse-time
+    // rates and bounded dimensionless amplitudes.
     assert!(RateValue::complex(0.5, 0.5).is_ok());
-    assert!(RateValue::complex(1.0, 1.0).is_err());
+    assert!(
+        RateValue::complex(3.0, 4.0).is_ok(),
+        "|z| = 5 is an ordinary amplitude denoting a rate of 25"
+    );
+    assert!((RateValue::complex(3.0, 4.0).unwrap().rate() - 25.0).abs() < 1e-12);
+    assert!(matches!(
+        RateValue::complex(f64::NAN, 0.0),
+        Err(RateError::NotFinite(_))
+    ));
+}
+
+/// The interpretation map `lambda(z) = |z|^2` is the only relation between the
+/// two codomains, and the classical layer reads a complex entry through it.
+/// They are not interchangeable instantiations of one semiring parameter: a
+/// real weight is a rate with units of inverse time, a complex weight is a
+/// dimensionless amplitude.
+#[test]
+fn law_lambda_is_the_interpretation_map() {
+    use rho_weighted::theory::RateValue;
+    for (re, im) in [(0.0, 0.0), (1.0, 0.0), (0.6, 0.8), (3.0, -4.0)] {
+        let z = RateValue::complex(re, im).unwrap();
+        assert!((z.rate() - (re * re + im * im)).abs() < 1e-12);
+    }
+    // A phase is exactly what lambda discards, which is why it can only act
+    // inside the quantum construction and never on a propensity.
+    let a = RateValue::complex(1.0, 0.0).unwrap();
+    let b = RateValue::complex(0.0, 1.0).unwrap();
+    assert!((a.rate() - b.rate()).abs() < 1e-12, "lambda is phase-blind");
 }
 
 // ---------------------------------------------------------------------------
@@ -393,4 +424,91 @@ fn law_successors_are_the_redexes() {
         assert_eq!(*label, r.position());
         assert_eq!(r.position(), e[i].position());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Self-transitions
+// ---------------------------------------------------------------------------
+
+/// A rule whose firing returns the configuration it fired in contributes to
+/// `a₀` but to no off-diagonal entry of `Q`.
+///
+/// So the generator's diagonal must be `-Σ_{j≠i} Q(i,j)` and not `-a₀`; an
+/// earlier version of the note wrote the latter, which gives rows that do not
+/// sum to zero whenever a self-transition is enabled.
+///
+/// The sampler keeps the self-loop in `a₀` and fires it, which is a fictitious
+/// jump in the sense of uniformisation: same distribution of the state at every
+/// time, different event counts and sojourns. This test records both halves of
+/// the convention so a change to either is visible.
+#[test]
+fn law_self_transitions_are_fictitious_jumps() {
+    use rho_weighted::explore::exhaustive_graph;
+
+    // A persistent receipt on `a` whose body restores the send it consumed.
+    // Firing changes nothing: same marking, same weight map, same node.
+    let term = Term::par(vec![
+        Term::recv_persistent(
+            chan("a"),
+            vec![Pattern::Wildcard],
+            Term::send(chan("a"), vec![Term::Zero]),
+        ),
+        Term::send(chan("a"), vec![Term::Zero]),
+    ]);
+    let rate = 2.0;
+    let theory = rho_weighted::examples::channel_keyed(
+        &[(chan("a"), rate)],
+        rho_weighted::theory::unit_geometry(),
+        rho_weighted::theory::open_gate(),
+    );
+    let cfg = Configuration::new(Space::install(&term), theory.initial_weights());
+
+    // The propensity keeps it: there is an enabled redex and it has a rate.
+    let p = propensities(&theory, &cfg, &SimpleMatcher, &mut b());
+    assert!(
+        (p.total - rate).abs() < 1e-12,
+        "a0 must include the self-transition, got {}",
+        p.total
+    );
+    assert!(!p.is_absorbing(), "a self-loop is live, not a halt");
+
+    let ex = exhaustive_graph(&theory, &cfg, &SimpleMatcher, 50);
+    assert_eq!(ex.graph.node_count(), 1, "the fixture must not leave the node");
+    assert!(
+        ex.graph.edges.iter().all(|e| e.from == e.to),
+        "and every edge must be the self-loop"
+    );
+
+    // The generator drops it, and its row sums to zero.
+    assert!(
+        ex.generator.total_exit_rate(0).abs() < 1e-12,
+        "Q has no off-diagonal mass, so the diagonal must be zero — not -a0"
+    );
+    let row_sum: f64 = (0..ex.generator.n).map(|j| ex.generator.q[0][j]).sum();
+    assert!(row_sum.abs() < 1e-12, "the generator row must sum to zero");
+}
+
+/// (R3) cannot be bypassed by a struct literal.
+///
+/// v0.3.0 enforced structurality in `complete_with_default_checked` and
+/// described it as the single funnel every partition is built through. It was
+/// not quite: `Partition`'s fields were public. They are private as of v0.3.1,
+/// and `from_checked_keys` is the only constructor, so the claim now holds by
+/// construction rather than by convention.
+#[test]
+fn law_r3_cannot_be_bypassed_by_a_struct_literal() {
+    use rho_weighted::logic::formula::WhyNot;
+    use rho_weighted::logic::Partition;
+
+    let modal = Checkable::trusted(Formula::dia(Formula::Top));
+    match Partition::from_checked_keys(vec![modal], None) {
+        Err(WhyNot::NotStructural { at }) => {
+            assert!(at.contains("<K>"), "the diagnostic must name it: {at}")
+        }
+        other => panic!("a modal key must be refused, got {other:?}"),
+    }
+
+    // And a structural one is admitted.
+    let ok = Checkable::trusted(Formula::comm_on(chan("a")));
+    assert!(Partition::from_checked_keys(vec![ok], None).is_ok());
 }

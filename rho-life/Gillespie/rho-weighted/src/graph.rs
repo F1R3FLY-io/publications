@@ -135,11 +135,28 @@ impl LabelledTransitionGraph {
 }
 
 /// The CTMC generator `Q`: off-diagonal entries are summed transition rates,
-/// diagonal entries are the negated total propensity.
+/// diagonal entries are `-Σ_{j≠i} Q(i,j)`.
 ///
-/// Summing over *derivations* rather than targets is the classical reading; in
-/// the complex case the same sum is over amplitudes, which is where
-/// interference lives.
+/// # Self-transitions, and why the diagonal is not `-a₀`
+///
+/// Nothing forbids a rule whose firing returns a configuration equal to the one
+/// it fired in — a persistent receipt whose body restores what it consumed, for
+/// instance. Such a redex contributes to `a₀` but to no off-diagonal entry, so
+/// setting the diagonal to `-a₀` gives a generator whose rows do not sum to
+/// zero. The formula above is the correct one, and it is what this assembles.
+///
+/// The sampler does not agree, and deliberately. [`crate::propensity`] leaves
+/// self-loop redexes in `a₀`, so [`crate::explore::ssa`] fires them and advances
+/// the clock. A self-loop of rate `λ` is a *fictitious jump* in the sense of
+/// uniformisation, so the two conventions induce the same distribution of the
+/// state at every time and differ only in the number of recorded events, hence
+/// in sojourn statistics. Neither is wrong; mixing them silently would be. The
+/// crate reports `Q` by the formula above and samples with self-transitions
+/// retained, and `law_self_transitions_are_fictitious_jumps` pins it.
+///
+/// Summing over *derivations* rather than targets is the classical reading. In
+/// the complex case the same aggregation happens under a square root — see
+/// [`crate::quantum`] — which is what makes the two readings agree.
 #[derive(Clone, Debug, Default)]
 pub struct Generator {
     pub n: usize,

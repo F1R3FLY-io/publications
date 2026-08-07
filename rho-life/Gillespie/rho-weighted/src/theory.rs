@@ -27,7 +27,8 @@ use crate::space::Space;
 pub enum RateValue {
     /// A rate in `ℝ≥0`, units of inverse time.
     Real(f64),
-    /// An amplitude `z` with `|z| ≤ 1`, for the quantum reading.
+    /// An amplitude `z`, for the quantum reading. Dimensionless; the rate it
+    /// denotes is `λ(z) = |z|²`. **Unbounded** — see [`RateValue::complex`].
     Complex(f64, f64),
 }
 
@@ -35,7 +36,6 @@ pub enum RateValue {
 pub enum RateError {
     Negative(f64),
     NotFinite(f64),
-    AmplitudeTooLarge(f64),
 }
 
 impl RateValue {
@@ -49,16 +49,37 @@ impl RateValue {
         }
     }
 
+    /// An amplitude. No bound is imposed on `|z|`, and an earlier version of
+    /// this crate imposed `|z| ≤ 1`.
+    ///
+    /// That bound was imported from discrete quantum-operation intuition and
+    /// belongs to neither of the two things it was supposed to protect. On the
+    /// finite-dimensional space `ℓ²(B)` every operator is bounded outright, so
+    /// nothing has to be assumed to make it so; and the GKSL theorem imposes no
+    /// norm condition on jump operators, scaling one by ten being an increase
+    /// of a dissipation rate and not a violation. It also manufactured a
+    /// dimensional inconsistency, since classical weights are unbounded
+    /// inverse-time rates while `|z| ≤ 1` made amplitudes bounded dimensionless
+    /// numbers with no stated relation between them. [`RateValue::rate`] is
+    /// that relation.
     pub fn complex(re: f64, im: f64) -> Result<RateValue, RateError> {
-        let n = re * re + im * im;
-        if n > 1.0 + 1e-12 {
-            Err(RateError::AmplitudeTooLarge(n.sqrt()))
+        if !re.is_finite() {
+            Err(RateError::NotFinite(re))
+        } else if !im.is_finite() {
+            Err(RateError::NotFinite(im))
         } else {
             Ok(RateValue::Complex(re, im))
         }
     }
 
-    /// The classical rate. For an amplitude this is `|z|²`.
+    /// The classical rate an entry denotes.
+    ///
+    /// This is the interpretation map `λ : ℂ → ℝ≥0`, `λ(z) = |z|²`, of the note
+    /// (Remark 12). The two codomains are *not* interchangeable instantiations
+    /// of one semiring parameter: a real weight is a rate with units of inverse
+    /// time, a complex weight is a dimensionless amplitude, and `λ` is what
+    /// relates them. Everything in the classical layer is stated for a rate and
+    /// reads a complex entry through here.
     pub fn rate(&self) -> f64 {
         match self {
             RateValue::Real(r) => *r,
@@ -287,7 +308,7 @@ impl WeightedTheory {
                 s.push_str(&format!(
                     "{}={}:{:.6};",
                     i,
-                    r.partition.keys[i].render(),
+                    r.partition.keys()[i].render(),
                     e.weight.rate()
                 ));
             }

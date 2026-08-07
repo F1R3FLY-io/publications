@@ -7,12 +7,20 @@
 //! # The construction
 //!
 //! The configuration Hilbert space is `ℓ²(B)` for `B` the reachable
-//! configurations modulo structural congruence — finite only for a term-finite
-//! model, which is why [`crate::theory::capacity`] exists. Each refinement
-//! entry becomes a **jump operator**
+//! **configurations** modulo structural congruence — terms paired with weight
+//! maps, not terms alone. That is what keeps the generator fixed: after
+//! trajectories bifurcate into histories carrying different maps, no single
+//! Lindbladian on `ℓ²(Terms)` generates the evolution, and "`e^{tℒ}` with `ℒ`
+//! rebuilt at each jump" is a history-dependent switching process rather than
+//! the solution of a master equation. `B` is finite only when the model is
+//! term-finite *and* map-finite, which is why [`crate::theory::capacity`] and
+//! [`crate::theory::saturating_add`] both exist and why the worked example uses
+//! both.
+//!
+//! Each refinement entry becomes a **jump operator**
 //!
 //! ```text
-//! L_{r,φ} = z · Σ_P Σ_{k ∈ K(r,φ,P)} √(g(k)·χ) |k[Rσ]⟩⟨P|
+//! L_{r,φ} = e^{iθ} · Σ_c Σ_{c''} √( Σ_{k ∈ K(c,c'',r,φ)} λ(z)·g(k)·χ ) |c''⟩⟨c|
 //! ```
 //!
 //! and the generator is the Lindbladian
@@ -21,10 +29,30 @@
 //! ℒ(ρ) = -i[H, ρ] + Σ (L ρ L† - ½{L†L, ρ}).
 //! ```
 //!
-//! Amplitudes are the square roots of the per-redex classical rates, which is
-//! the normalisation under which `‖L_{r,φ}|P⟩‖²` recovers the classical
-//! propensity in the diagonal case — and fails to, instructively, when it is
-//! not diagonal (see [`interference`] and `Remark` below).
+//! # The normalisation, and why it is this one
+//!
+//! Note the placement of the square root: rates are **aggregated over
+//! derivations first**, and the root is taken once, per jump channel. An
+//! earlier version of this crate summed the roots instead, which for `m`
+//! indistinguishable reactants gave an amplitude `m√λ` and a transition weight
+//! `m²λ` where the classical rate is `mλ`. That superlinearity was reported as
+//! an open question — feature of the physics, or artefact of the presentation?
+//! It is an artefact. `|c⟩` is a single *normalised* basis vector for a
+//! configuration whose parallel composition is a multiset; the `m` redexes are
+//! not `m` distinguishable routes but one route with degeneracy `m`, and
+//! summing roots charges for the degeneracy twice. Second quantisation fixes
+//! the factor for exactly this case: `a|m⟩ = √m |m-1⟩`, so the matrix element
+//! carries `√m` and the rate carries `m`.
+//!
+//! The criterion that selects the normalisation is **conservativity**: at
+//! `H = 0` the populations must solve the forward equation of the classical
+//! chain. Root-of-sum is conservative, sum-of-roots is not, and
+//! `tests/quantum.rs` checks it rather than asserting it.
+//!
+//! The consequence is that no coherence arises from the rewrite relation at
+//! all: within a channel the amplitude is fixed by the aggregate rate, and
+//! distinct classes give distinct jump operators whose dissipators add as
+//! operations rather than as amplitudes. All coherence is carried by `H`.
 //!
 //! # Where the coherent part comes from
 //!
@@ -35,18 +63,23 @@
 //! naturally unitary and become the Hamiltonian. Most presentations quotient
 //! every equation into the basis — as [`crate::syntax::Term::canonical`] does —
 //! so `H = 0` by default, and [`QctmcModel::with_hamiltonian`] is how a
-//! modeller puts an equation back as coherent hopping instead.
+//! modeller puts an equation back as coherent hopping instead. Combined with
+//! the normalisation above, this gives the slogan: *a weighted GSLT is quantum
+//! exactly to the extent that its presentation withholds equations from the
+//! quotient.*
 //!
 //! # Gillespie as a degenerate quantum jump
 //!
 //! The trajectory sampler ([`Unravelling`]) is the quantum-jump or
 //! Monte-Carlo-wavefunction method: deterministic non-Hermitian evolution under
 //! `H_eff = H - (i/2)ΣL†L`, punctuated by jumps, with the waiting time drawn
-//! from the *decaying norm* `‖ψ̃(τ)‖²`. At `H = 0` with a diagonal jump
-//! structure the norm decays as `e^{-a₀τ}` and the whole thing collapses to the
-//! stochastic simulation algorithm. That is the precise sense in which the
-//! quantum simulator is Gillespie-*inspired*: not an analogy, a degeneration.
-//! `tests/quantum.rs` checks it numerically.
+//! from the *decaying norm* `‖ψ̃(τ)‖²`. At `H = 0` the norm decays as `e^{-a₀τ}`
+//! and the whole thing collapses to the stochastic simulation algorithm. That
+//! is the precise sense in which the quantum simulator is Gillespie-*inspired*:
+//! not an analogy, a degeneration. No hypothesis on the jump structure is
+//! needed — the diagonality the earlier version required is exactly what the
+//! normalisation above made unnecessary. `tests/quantum.rs` checks it
+//! numerically.
 
 pub mod linalg;
 
@@ -61,8 +94,17 @@ use linalg::{norm_sqr, normalize, Matrix, C};
 /// A quantum continuous-time Markov chain over a reachable configuration set.
 #[derive(Clone, Debug)]
 pub struct QctmcModel {
-    /// Basis labels — the markings, in index order.
+    /// Basis **identity** — one entry per reachable configuration, in index
+    /// order, keyed by marking *and* weight-map fingerprint.
+    ///
+    /// This must be the configuration key and not the marking. Under a plastic
+    /// theory several configurations share a marking, and an earlier version of
+    /// this crate stored the marking here, so [`QctmcModel::index_of`] silently
+    /// returned whichever of them happened to come first.
     pub basis: Vec<String>,
+    /// Display labels — the marking of each configuration. Not unique under a
+    /// plastic theory; use [`QctmcModel::index_of_term`] to resolve one.
+    pub labels: Vec<String>,
     /// One jump operator per refinement class that has any transition.
     pub jumps: Vec<((RuleId, usize), Matrix)>,
     /// The coherent part. Zero unless a modeller supplies equations as
@@ -90,21 +132,56 @@ impl QctmcModel {
     /// is known by construction.
     pub fn from_graph_unchecked(g: &LabelledTransitionGraph) -> QctmcModel {
         let n = g.node_count();
-        let mut per_class: BTreeMap<(RuleId, usize), Matrix> = BTreeMap::new();
+
+        // Aggregate the CLASSICAL RATES of every derivation belonging to one
+        // jump channel `(rule, class, source, target)`, and only then take a
+        // single square root.
+        //
+        // The order matters and is the whole of the difference from the earlier
+        // version, which took a root per derivation and summed those. For `m`
+        // indistinguishable reactants that gave `m√λ`, hence a weight `m²λ`
+        // against a classical rate of `mλ`. `|c⟩` is one normalised vector for
+        // a configuration whose parallel composition is a multiset, so the `m`
+        // derivations are one route with degeneracy `m`, and summing roots
+        // charges for the degeneracy twice. Root-of-sum is the bosonic
+        // normalisation (`a|m⟩ = √m|m-1⟩`) and it is the unique choice under
+        // which `‖L|c⟩‖²` is the classical propensity — with no hypothesis on
+        // the jump structure, which is why the degeneration theorem no longer
+        // needs one.
+        let mut rates: BTreeMap<(RuleId, usize), BTreeMap<(usize, usize), f64>> = BTreeMap::new();
         for e in &g.edges {
             if e.rate <= 0.0 {
                 continue;
             }
-            let m = per_class
+            *rates
                 .entry((e.rule, e.class))
-                .or_insert_with(|| Matrix::zeros(n));
-            // The amplitude of one redex is the square root of its classical
-            // rate. Amplitudes of distinct redexes with the same contractum
-            // ADD — which is the entire difference from the classical case.
-            m.add_to(e.to, e.from, C::real(e.rate.sqrt()));
+                .or_default()
+                .entry((e.to, e.from))
+                .or_insert(0.0) += e.rate;
         }
+
+        let mut per_class: BTreeMap<(RuleId, usize), Matrix> = BTreeMap::new();
+        for (key, channel) in rates {
+            let m = per_class.entry(key).or_insert_with(|| Matrix::zeros(n));
+            for ((to, from), rate) in channel {
+                m.add_to(to, from, C::real(rate.sqrt()));
+            }
+        }
+
+        // Self-transitions are kept, unlike in the classical `Generator`, where
+        // they cannot appear off-diagonal. A self-loop is a real jump channel:
+        // it damps the norm and it can fire. This is the same convention the
+        // sampler uses, and the reason the two agree on `a₀` while `Q` does not.
+        let basis = if g.node_keys.len() == n {
+            g.node_keys.clone()
+        } else {
+            // A graph assembled without configuration keys — a term projection,
+            // for instance. Markings are then the identity, correctly.
+            g.node_labels.clone()
+        };
         QctmcModel {
-            basis: g.node_labels.clone(),
+            basis,
+            labels: g.node_labels.clone(),
             jumps: per_class.into_iter().collect(),
             hamiltonian: Matrix::zeros(n),
         }
@@ -125,9 +202,26 @@ impl QctmcModel {
         Ok(self)
     }
 
-    /// Apply an overall phase to a class's jump operator. Phases are invisible
-    /// classically and are exactly what makes cancellation possible, so this is
-    /// the knob that turns a classical-looking model into one that interferes.
+    /// Apply an overall phase to a class's jump operator.
+    ///
+    /// This is a **carrier check**, not an interference knob, and an earlier
+    /// version of this comment claimed otherwise — that it "turns a
+    /// classical-looking model into one that interferes." It does not, and the
+    /// suite has always said so: `an_overall_phase_leaves_populations_invariant`
+    /// asserts that the populations are untouched, which is elementary, since a
+    /// global phase on a jump operator cancels in `LρL†`.
+    ///
+    /// Nor could a per-class phase ever produce cancellation. Within one
+    /// `L_{r,φ}` every derivation carries the same `z`, while `g` and `χ` are
+    /// non-negative reals; distinct classes are distinct operators whose
+    /// dissipators add as operations. There is no relative phase in the
+    /// formalism for a cancellation to come from. Obtaining one needs
+    /// amplitudes indexed by *derivations* rather than by refinement classes,
+    /// which is a strictly larger construction and not a repair of this one.
+    ///
+    /// What this is good for: confirming that phases are carried through the
+    /// pipeline rather than dropped on construction, and supplying a nonzero
+    /// off-diagonal to [`QctmcModel::with_hamiltonian`] experiments.
     pub fn with_phase(mut self, key: (RuleId, usize), theta: f64) -> QctmcModel {
         let z = C::new(theta.cos(), theta.sin());
         for (k, m) in self.jumps.iter_mut() {
@@ -212,8 +306,36 @@ impl QctmcModel {
         rho
     }
 
-    pub fn index_of(&self, marking: &str) -> Option<usize> {
-        self.basis.iter().position(|b| b == marking)
+    /// Resolve a **configuration key** (marking and weight fingerprint) to its
+    /// basis index. Unique by construction.
+    pub fn index_of(&self, configuration_key: &str) -> Option<usize> {
+        self.basis.iter().position(|b| b == configuration_key)
+    }
+
+    /// Resolve a **marking** to every basis index carrying it.
+    ///
+    /// Returns a set rather than an option because it genuinely is one: under a
+    /// plastic theory the same term is reached with different weight maps, and
+    /// those are different configurations with different futures. A caller that
+    /// wants a single index wants a configuration key, so it should be using
+    /// [`QctmcModel::index_of`]; a caller that wants the term-marginal
+    /// population should sum over what this returns.
+    pub fn index_of_term(&self, marking: &str) -> Vec<usize> {
+        self.labels
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.as_str() == marking)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// The population of a *term*, summed over the configurations carrying it.
+    /// The honest term-marginal of a plastic model.
+    pub fn term_population(&self, rho: &Matrix, marking: &str) -> f64 {
+        self.index_of_term(marking)
+            .into_iter()
+            .map(|i| rho.get(i, i).re)
+            .sum()
     }
 }
 
@@ -421,11 +543,14 @@ pub fn basis_index(psi: &[C]) -> Option<usize> {
 }
 
 /// Whether the jump structure is **diagonal**: within each class, distinct
-/// redexes out of a state reach distinct targets.
+/// derivations out of a state reach distinct targets.
 ///
-/// This is one of the two hypotheses of the degeneration theorem, and it is
-/// exactly the condition under which no interference can occur. A model that
-/// fails it is not the classical one with phases attached.
+/// This is a *diagnostic*, and no longer a hypothesis of anything. Under the
+/// earlier sum-of-roots normalisation the degeneration theorem needed it,
+/// because without it `‖L|c⟩‖²` was not the classical propensity. Under
+/// root-of-sum the identity is exact regardless, so what this now reports is a
+/// structural fact about the model — how much multiset degeneracy the
+/// presentation carries — and not a precondition for using it.
 pub fn is_diagonal(g: &LabelledTransitionGraph) -> bool {
     let mut seen: BTreeMap<(usize, usize, RuleId, usize), usize> = BTreeMap::new();
     for e in &g.edges {
@@ -439,17 +564,22 @@ pub fn is_diagonal(g: &LabelledTransitionGraph) -> bool {
     seen.values().all(|c| *c == 1)
 }
 
-/// The interference budget at a state: for each class, the number of distinct
-/// redexes reaching each target.
+/// The **degeneracy** map: for each class, the number of distinct derivations
+/// reaching each target, where that number exceeds one.
 ///
-/// `m` indistinguishable reactants give `m` redexes and one target, so the
-/// amplitude is `m·z` and the transition weight `m²|z|²` where the classical
-/// rate is `m|z|²`. The quantum network is superlinear in multiplicity, and the
-/// enhancement comes entirely from the reactants living in a bag rather than a
-/// list. Whether that is a feature of the physics or an artefact of the
-/// presentation is open — tagging the reactants would break the degeneracy and
-/// restore linearity.
-pub fn interference(g: &LabelledTransitionGraph) -> BTreeMap<(usize, usize, usize), usize> {
+/// Formerly called an interference budget, on the view that `m`
+/// indistinguishable reactants give an amplitude `m·z` and hence a weight `m²|z|²` against a
+/// classical rate of `m|z|²`. They do not, under the normalisation this crate
+/// now uses: the amplitude is `√m·|z|`, the weight is `m|z|²`, and the two
+/// readings agree. See the module documentation for why summing roots was the
+/// error rather than the discovery.
+///
+/// What the map is still worth reporting: it is exactly the multiset degeneracy
+/// of the presentation, so a nonempty result tells a modeller that the
+/// classical multiplicity factor `h` is doing real work at these transitions —
+/// which is the place where omitting it would silently halve a rate, and the
+/// hardest kind of error to see in a trace.
+pub fn degeneracy(g: &LabelledTransitionGraph) -> BTreeMap<(usize, usize, usize), usize> {
     let mut out: BTreeMap<(usize, usize, usize), usize> = BTreeMap::new();
     for e in &g.edges {
         if e.rate <= 0.0 {
@@ -459,4 +589,11 @@ pub fn interference(g: &LabelledTransitionGraph) -> BTreeMap<(usize, usize, usiz
     }
     out.retain(|_, v| *v > 1);
     out
+}
+
+/// Former name of [`degeneracy`]. Kept so external callers break loudly at the
+/// name rather than quietly at the semantics.
+#[deprecated(note = "renamed to `degeneracy`: these counts are not interference")]
+pub fn interference(g: &LabelledTransitionGraph) -> BTreeMap<(usize, usize, usize), usize> {
+    degeneracy(g)
 }

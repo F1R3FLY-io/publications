@@ -270,6 +270,17 @@ impl Formula {
         }
     }
 
+    /// See the free function [`nonstructural_at`]; requirement (R3).
+    pub fn nonstructural_at(&self) -> Option<String> {
+        nonstructural_at(self)
+    }
+
+    /// Whether the formula lies in the structural fragment, hence whether it is
+    /// admissible as a refinement key.
+    pub fn is_structural(&self) -> bool {
+        self.nonstructural_at().is_none()
+    }
+
     pub fn render(&self) -> String {
         match self {
             Formula::Top => "T".into(),
@@ -387,6 +398,9 @@ pub enum WhyNot {
     TooDeep { got: usize, budget: u8, at: String },
     UnboundedFixpoint { at: String },
     NegativeFixpointVariable { var: String, at: String },
+    /// The formula leaves the structural fragment, so it may be a *property*
+    /// but not a *key*. See [`Checkable::try_key`] and requirement (R3).
+    NotStructural { at: String },
 }
 
 impl std::fmt::Display for WhyNot {
@@ -404,6 +418,13 @@ impl std::fmt::Display for WhyNot {
                 f,
                 "fixed-point variable `{var}` occurs negatively, in `{at}`"
             ),
+            WhyNot::NotStructural { at } => write!(
+                f,
+                "`{at}` is outside the structural fragment, so it cannot be a key: \
+                 a rate that depends on what a redex can do next cannot be recomputed \
+                 locally when something elsewhere in the term changes. It remains \
+                 usable as a property"
+            ),
         }
     }
 }
@@ -414,6 +435,12 @@ impl std::fmt::Display for WhyNot {
 pub struct Checkable(Formula);
 
 impl Checkable {
+    /// Admit a formula as a **property**: bounded modal depth, no fixed point
+    /// over an unknown-finite state space, no negative fixed-point variable.
+    /// Modalities and `ν` are permitted.
+    ///
+    /// Use [`Checkable::try_key`] for a refinement key, which is strictly
+    /// stronger.
     pub fn try_new(f: Formula, b: &Budget, finite_state_space: bool) -> Result<Checkable, WhyNot> {
         let md = f.modal_depth();
         if md > b.modal_depth as usize {
@@ -435,10 +462,45 @@ impl Checkable {
         Ok(Checkable(f))
     }
 
-    /// Escape hatch for keys whose checkability is guaranteed by construction
-    /// (depth-2 channel predicates, for instance).
+    /// Admit a formula as a **refinement key**.
+    ///
+    /// Everything [`Checkable::try_new`] requires, plus requirement (R3),
+    /// *structurality*: a key must lie in the structural fragment. This is not
+    /// a matter of taste. The locality lemma the incremental propensity scheme
+    /// rests on is true of the structural fragment and false of the logic as a
+    /// whole: `⟨K_j⟩φ` inspects the *successors* of a term rather than a bounded
+    /// syntactic neighbourhood of a position, and a greatest fixed point may be
+    /// refuted only by unbounded inspection, so neither is confined by a depth
+    /// bound. Admitting them as keys silently costs a global reclassification
+    /// at every step — which is what an earlier version of this crate did,
+    /// while the note claimed locality for keys in general.
+    ///
+    /// The restriction is on keys alone. Modalities and `ν` remain available
+    /// for stating and checking properties of the resulting chain.
+    pub fn try_key(f: Formula, b: &Budget, finite_state_space: bool) -> Result<Checkable, WhyNot> {
+        if let Some(at) = f.nonstructural_at() {
+            return Err(WhyNot::NotStructural { at });
+        }
+        Checkable::try_new(f, b, finite_state_space)
+    }
+
+    /// Escape hatch for formulae whose checkability is guaranteed by
+    /// construction (depth-2 channel predicates, for instance).
+    ///
+    /// This bypasses (R3) as well, so prefer [`Checkable::trusted_key`] when the
+    /// formula is destined for a key set; the partition builder applies (R3)
+    /// regardless, so a modal key cannot reach a theory by this route either.
     pub fn trusted(f: Formula) -> Checkable {
         Checkable(f)
+    }
+
+    /// As [`Checkable::trusted`], but refuses a non-structural formula. Cheap:
+    /// a syntactic walk, no satisfaction checking.
+    pub fn trusted_key(f: Formula) -> Result<Checkable, WhyNot> {
+        match f.nonstructural_at() {
+            Some(at) => Err(WhyNot::NotStructural { at }),
+            None => Ok(Checkable(f)),
+        }
     }
 
     pub fn formula(&self) -> &Formula {
@@ -447,6 +509,44 @@ impl Checkable {
 
     pub fn render(&self) -> String {
         self.0.render()
+    }
+}
+
+/// The first subformula outside the **structural fragment**, rendered, or
+/// `None` if there is none.
+///
+/// The structural fragment is one connective per term former — `out`, `in`,
+/// `@`, the separating conjunction, `Zero`, `Eq`, `ListAt`, `Count` — together
+/// with the propositional connectives. Outside it lie the behavioural
+/// modalities `⟨K_j⟩` and `[K_j]`, the greatest fixed point, and fixed-point
+/// variables.
+///
+/// The line is drawn where the locality lemma stops holding, not where the
+/// logic stops being interesting: every connective here is satisfied or refuted
+/// by inspecting a bounded neighbourhood of a position in the term, and every
+/// connective excluded is not.
+pub fn nonstructural_at(f: &Formula) -> Option<String> {
+    match f {
+        Formula::Dia { .. } | Formula::Boxm { .. } | Formula::Nu { .. } | Formula::Var(_) => {
+            Some(f.render())
+        }
+        Formula::And(a, b) | Formula::Or(a, b) | Formula::Sep(a, b) => {
+            nonstructural_at(a).or_else(|| nonstructural_at(b))
+        }
+        Formula::Not(a) => nonstructural_at(a),
+        Formula::Out { chan, body } | Formula::In { chan, body } => {
+            namepred_nonstructural(chan).or_else(|| nonstructural_at(body))
+        }
+        Formula::Count { chan, .. } => namepred_nonstructural(chan),
+        Formula::ListAt { body, .. } => nonstructural_at(body),
+        Formula::Top | Formula::Bot | Formula::Zero | Formula::Eq(_) => None,
+    }
+}
+
+fn namepred_nonstructural(p: &NamePred) -> Option<String> {
+    match p {
+        NamePred::Quote(f) => nonstructural_at(f),
+        NamePred::Exactly(_) | NamePred::Any => None,
     }
 }
 

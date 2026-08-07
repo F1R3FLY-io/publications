@@ -1,10 +1,15 @@
 //! The quantum reading, checked numerically.
 //!
 //! The headline is `the_ssa_is_the_quantum_jump_algorithm_at_zero_hamiltonian`:
-//! "Gillespie-inspired" is a *degeneration*, not an analogy, and the two
-//! hypotheses one has to drop to get there — a nonzero Hamiltonian and a
-//! non-diagonal jump structure — are precisely the two features that make a
-//! system quantum.
+//! "Gillespie-inspired" is a *degeneration*, not an analogy. It now holds with
+//! `H = 0` as the only hypothesis; the diagonality of the jump structure that an
+//! earlier version also required was an artefact of the old normalisation, and
+//! `indistinguishable_reactants_do_not_interfere` together with
+//! `sum_of_roots_would_have_given_m_squared` is the pair that establishes it.
+//!
+//! Which leaves exactly one feature that makes a model quantum: a nonzero
+//! Hamiltonian, supplied by equations the presentation withholds from the
+//! quotient.
 //!
 //! Run with `cargo test --features quantum`.
 
@@ -15,7 +20,7 @@ use rho_weighted::explore::exhaustive_graph;
 use rho_weighted::matching::SimpleMatcher;
 use rho_weighted::quantum::linalg::{norm_sqr, Matrix, C};
 use rho_weighted::quantum::{
-    basis_index, interference, is_diagonal, QctmcModel, QuantumError, Unravelling,
+    basis_index, degeneracy, is_diagonal, QctmcModel, QuantumError, Unravelling,
 };
 use rho_weighted::space::Space;
 use rho_weighted::syntax::{chan, Pattern, Term};
@@ -153,7 +158,7 @@ fn the_jump_structure_of_a_simple_chain_is_diagonal() {
     let cfg = Configuration::new(Space::install(&term), theory.initial_weights());
     let ex = exhaustive_graph(&theory, &cfg, &SimpleMatcher, 100);
     assert!(is_diagonal(&ex.graph));
-    assert!(interference(&ex.graph).is_empty());
+    assert!(degeneracy(&ex.graph).is_empty());
 }
 
 /// (i) The norm decays as `exp(-a₀ s)`, so (ii) the waiting time is exponential
@@ -165,13 +170,16 @@ fn the_ssa_is_the_quantum_jump_algorithm_at_zero_hamiltonian() {
     let (theory, term) = two_state(r_ab, r_ba);
     let cfg = Configuration::new(Space::install(&term), theory.initial_weights());
     let ex = exhaustive_graph(&theory, &cfg, &SimpleMatcher, 100);
-    assert!(is_diagonal(&ex.graph), "hypothesis of the theorem");
+    // Recorded, not required. Under root-of-sum the theorem holds whether or
+    // not the jump structure is diagonal; see
+    // `the_degeneration_holds_without_diagonality` below.
+    assert!(is_diagonal(&ex.graph), "this particular model happens to be");
 
     let m = QctmcModel::from_exploration(&ex).unwrap();
     assert_eq!(
         m.hamiltonian.trace(),
         C::ZERO,
-        "the other hypothesis: no coherent part"
+        "the hypothesis: no coherent part"
     );
 
     // (i) ‖ψ̃(s)‖² = exp(-Γ s) with Γ = a₀, the classical exit rate.
@@ -257,67 +265,165 @@ fn unravelling_occupancy_matches_the_classical_chain() {
 // Where the two readings part company
 // ---------------------------------------------------------------------------
 
-/// Indistinguishable reactants give several redexes and one target, so their
-/// *amplitudes* add before being squared. The transition weight is `m²|z|²`
-/// where the classical rate is `m|z|²`: the quantum model is **superlinear in
-/// multiplicity**, and the enhancement comes entirely from the reactants living
-/// in a bag rather than a list.
-#[test]
-fn indistinguishable_reactants_interfere() {
-    for m_count in 2..=4usize {
-        let mut parts = vec![Term::recv_persistent(
-            chan("a"),
-            vec![Pattern::Wildcard],
-            Term::send(chan("b"), vec![Term::Zero]),
-        )];
-        for _ in 0..m_count {
-            parts.push(Term::send(chan("a"), vec![Term::Zero]));
-        }
-        let term = Term::par(parts);
-        let rate = 0.5;
-        let theory = rho_weighted::examples::channel_keyed(
-            &[(chan("a"), rate)],
-            rho_weighted::theory::unit_geometry(),
-            rho_weighted::theory::open_gate(),
-        );
-        let cfg = Configuration::new(Space::install(&term), theory.initial_weights());
-        let ex = exhaustive_graph(&theory, &cfg, &SimpleMatcher, 200);
+/// Build the `m`-degenerate model: one persistent receipt on `a` and `m`
+/// indistinguishable pending sends, so there are `m` derivations and one
+/// contractum.
+fn degenerate_model(m_count: usize, rate: f64) -> (rho_weighted::explore::Exploration, f64) {
+    let mut parts = vec![Term::recv_persistent(
+        chan("a"),
+        vec![Pattern::Wildcard],
+        Term::send(chan("b"), vec![Term::Zero]),
+    )];
+    for _ in 0..m_count {
+        parts.push(Term::send(chan("a"), vec![Term::Zero]));
+    }
+    let term = Term::par(parts);
+    let theory = rho_weighted::examples::channel_keyed(
+        &[(chan("a"), rate)],
+        rho_weighted::theory::unit_geometry(),
+        rho_weighted::theory::open_gate(),
+    );
+    let cfg = Configuration::new(Space::install(&term), theory.initial_weights());
+    let ex = exhaustive_graph(&theory, &cfg, &SimpleMatcher, 200);
+    let classical = ex.generator.total_exit_rate(0);
+    (ex, classical)
+}
 
-        // Classically: m redexes to one target, rates add.
-        let classical = ex.generator.total_exit_rate(0);
+/// Indistinguishable reactants give several derivations and one target, and
+/// they do **not** interfere.
+///
+/// This inverts a test that used to assert the opposite. Under the earlier
+/// normalisation — a square root per derivation, summed — the transition weight
+/// came out `m²|z|²` against a classical rate of `m|z|²`, and that
+/// superlinearity was reported as an open question about the physics. It was a
+/// normalisation artefact. `|c⟩` is one normalised basis vector for a
+/// configuration whose parallel composition is a multiset, so the `m`
+/// derivations are one route with degeneracy `m`; summing roots charges for the
+/// degeneracy twice. Aggregating rates and taking one root gives `√m·|z|` and
+/// hence `m|z|²`, which is the classical answer and the bosonic one
+/// (`a|m⟩ = √m|m-1⟩`).
+#[test]
+fn indistinguishable_reactants_do_not_interfere() {
+    for m_count in 2..=4usize {
+        let rate = 0.5;
+        let (ex, classical) = degenerate_model(m_count, rate);
+
         assert!(
             (classical - rate * m_count as f64).abs() < 1e-12,
             "classical exit rate should be m*rate"
         );
 
-        // The jump structure is NOT diagonal, which is exactly the hypothesis
-        // the degeneration theorem needs and does not have here.
+        // The degeneracy is real and is what the classical multiplicity factor
+        // `h` is counting. It is simply not interference.
         assert!(!is_diagonal(&ex.graph), "m={m_count}");
-        let inter = interference(&ex.graph);
-        assert!(inter.values().any(|c| *c == m_count));
+        assert!(degeneracy(&ex.graph).values().any(|c| *c == m_count));
 
-        // Quantum: amplitudes add, so the weight is m^2 |z|^2.
         let qm = QctmcModel::from_exploration(&ex).unwrap();
         let l = &qm.jumps[0].1;
-        let start = 0usize;
         let mut psi = vec![C::ZERO; qm.dimension()];
-        psi[start] = C::ONE;
+        psi[0] = C::ONE;
         let quantum = norm_sqr(&l.apply(&psi));
-        let expected = (m_count as f64).powi(2) * rate;
         assert!(
-            (quantum - expected).abs() < 1e-9,
-            "m={m_count}: quantum weight {quantum:.6}, expected m^2*rate {expected:.6}"
+            (quantum - classical).abs() < 1e-9,
+            "m={m_count}: quantum weight {quantum:.6} must equal the classical rate {classical:.6}"
         );
+
+        // And the single nonzero entry is √(m·rate), not m·√rate. Resolve the
+        // target rather than assuming its index: the fixture has one successor
+        // of node 0, but the test should say so rather than rely on it.
+        let targets: std::collections::BTreeSet<usize> = ex
+            .graph
+            .edges
+            .iter()
+            .filter(|e| e.from == 0 && e.rate > 0.0)
+            .map(|e| e.to)
+            .collect();
+        assert_eq!(targets.len(), 1, "m={m_count}: one contractum, m derivations");
+        let to = *targets.iter().next().unwrap();
+        let entry = l.get(to, 0).norm_sqr().sqrt();
         assert!(
-            quantum > classical + 1e-9,
-            "and it must exceed the classical rate {classical:.6}"
+            (entry - (m_count as f64 * rate).sqrt()).abs() < 1e-9,
+            "m={m_count}: entry {entry:.6}, expected sqrt(m*rate) {:.6}",
+            (m_count as f64 * rate).sqrt()
         );
     }
 }
 
-/// A phase is invisible classically and is what makes cancellation possible.
-/// Applying an overall phase to a class leaves the populations untouched —
-/// which is the sanity check that phases are being carried, not dropped.
+/// The negative control for the test above.
+///
+/// A regression that quietly restored sum-of-roots would leave
+/// `indistinguishable_reactants_do_not_interfere` as the only guard, and a test
+/// asserting that two numbers are equal cannot say how far apart the wrong
+/// answer would have been. This computes the old construction by hand and
+/// checks that it differs by the factor `m` — so the assertion above is known
+/// to be discriminating rather than vacuous.
+#[test]
+fn sum_of_roots_would_have_given_m_squared() {
+    for m_count in 2..=4usize {
+        let rate = 0.5;
+        let (ex, classical) = degenerate_model(m_count, rate);
+
+        // The old normalisation, reconstructed from the same graph: one root
+        // per derivation, summed into the matrix entry.
+        let mut old_entry = 0.0f64;
+        for e in &ex.graph.edges {
+            if e.rate > 0.0 && e.from == 0 {
+                old_entry += e.rate.sqrt();
+            }
+        }
+        let old_weight = old_entry * old_entry;
+
+        assert!(
+            (old_weight - (m_count as f64) * classical).abs() < 1e-9,
+            "m={m_count}: sum-of-roots gives {old_weight:.6}, which is m times the classical \
+             rate {classical:.6} — the factor this crate no longer carries"
+        );
+        assert!(
+            old_weight > classical + 1e-9,
+            "and the two normalisations must actually disagree, or this control proves nothing"
+        );
+    }
+}
+
+/// The degeneration theorem, on a model whose jump structure is **not**
+/// diagonal.
+///
+/// This is the hypothesis the normalisation change bought back. Under
+/// sum-of-roots the total jump rate exceeded the classical exit rate here, so
+/// the sampled waiting times were wrong and the theorem had to exclude the
+/// case. Under root-of-sum `Σ‖L|c⟩‖² = a₀` identically.
+#[test]
+fn the_degeneration_holds_without_diagonality() {
+    let (ex, classical) = degenerate_model(3, 0.7);
+    assert!(!is_diagonal(&ex.graph), "the point of the fixture");
+
+    let m = QctmcModel::from_exploration(&ex).unwrap();
+    let mut psi = vec![C::ZERO; m.dimension()];
+    psi[0] = C::ONE;
+    let total: f64 = m.jumps.iter().map(|(_k, l)| norm_sqr(&l.apply(&psi))).sum();
+    assert!(
+        (total - classical).abs() < 1e-9,
+        "total jump rate {total:.6} must be the classical a0 {classical:.6}"
+    );
+
+    // Which is to say the norm still decays at exactly the classical rate.
+    let damping = m.total_jump_operator();
+    assert!(
+        (damping.get(0, 0).re - classical).abs() < 1e-9,
+        "(ΣL†L)_00 must be a0"
+    );
+}
+
+/// Applying an overall phase to a class leaves the populations untouched.
+///
+/// This test has not changed, but what it is evidence *for* has. It used to sit
+/// under a claim that a phase "is what makes cancellation possible," which it
+/// contradicted: a global phase on a jump operator cancels in `LρL†`, so the
+/// only phase knob the crate offers was already provably inert, and no relative
+/// phase exists anywhere in the formalism for a cancellation to come from.
+///
+/// Read now as what it is: a carrier check. Phases survive construction rather
+/// than being dropped, which matters because `with_hamiltonian` needs them.
 #[test]
 fn an_overall_phase_leaves_populations_invariant() {
     let (theory, term) = two_state(2.0, 1.0);

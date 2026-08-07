@@ -10,6 +10,7 @@
 use rho_weighted::examples::two_state;
 use rho_weighted::logic::check::{sat, sat_struct, successors};
 use rho_weighted::logic::formula::{Checkable, Cmp, NamePred, WhyNot};
+use rho_weighted::logic::partition::complete_with_default_checked;
 use rho_weighted::logic::{Budget, Formula};
 use rho_weighted::matching::SimpleMatcher;
 use rho_weighted::space::Space;
@@ -287,5 +288,117 @@ fn one_namespace_key_covers_a_growing_family() {
             Term::send(c, vec![Term::Zero]),
         ]);
         assert!(sat_struct(&t, &f, &mut budget()).unwrap(), "syn({j},{i})");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// (R3), structurality: what may be a key, as against what may be a property
+// ---------------------------------------------------------------------------
+
+/// The structural fragment is where the locality lemma is true.
+///
+/// `⟨K_j⟩φ` inspects the *successors* of a term, and `ν` may be refuted only by
+/// unbounded inspection, so neither is confined by a depth bound. Admitting
+/// either as a key silently costs a global reclassification on every step —
+/// which is what this crate used to do, while the note claimed locality for
+/// keys in general. (R3) is the requirement that closes the gap, and it is a
+/// restriction on keys alone: both remain available as properties.
+#[test]
+fn the_structural_fragment_is_exactly_the_local_one() {
+    let structural = [
+        Formula::Top,
+        Formula::comm_on(chan("a")),
+        Formula::not(Formula::comm_on(chan("a"))),
+        Formula::and(Formula::comm_on(chan("a")), Formula::Top),
+        Formula::comm_in_namespace(Term::Ground(Ground::Str("syn".into()))),
+    ];
+    for f in structural {
+        assert!(f.is_structural(), "must be admissible as a key: {}", f.render());
+    }
+
+    let nonstructural = [
+        Formula::dia(Formula::Top),
+        Formula::Nu {
+            var: "X".into(),
+            body: Box::new(Formula::dia(Formula::Var("X".into()))),
+        },
+        // Buried, so the walk has to descend rather than pattern-match the root.
+        Formula::and(Formula::comm_on(chan("a")), Formula::dia(Formula::Top)),
+        Formula::not(Formula::Sep(
+            Box::new(Formula::Top),
+            Box::new(Formula::dia(Formula::Top)),
+        )),
+    ];
+    for f in nonstructural {
+        assert!(!f.is_structural(), "must be refused as a key: {}", f.render());
+        assert!(f.nonstructural_at().is_some());
+    }
+}
+
+/// A modal formula is refused as a key and accepted as a property. Both halves
+/// matter: refusing it everywhere would cost the logic its modalities, which is
+/// not what the requirement says.
+#[test]
+fn a_modal_formula_is_a_property_but_not_a_key() {
+    let f = Formula::dia(Formula::comm_on(chan("a")));
+    let b = Budget::default();
+
+    assert!(
+        Checkable::try_new(f.clone(), &b, true).is_ok(),
+        "still a perfectly good property"
+    );
+    match Checkable::try_key(f, &b, true) {
+        Err(WhyNot::NotStructural { at }) => {
+            assert!(at.contains("<K>"), "diagnostic must name the subformula: {at}");
+        }
+        other => panic!("expected an (R3) refusal, got {other:?}"),
+    }
+}
+
+/// (R3) is enforced where partitions are assembled, which is what makes it an
+/// *elaboration-time* requirement rather than an aspiration. Every partition in
+/// the crate is built through this funnel, so a modal key cannot reach a theory
+/// by any route.
+#[test]
+fn a_modal_key_cannot_reach_a_theory() {
+    let lhs = Formula::comm_on(chan("a"));
+    let good = vec![Checkable::trusted(Formula::comm_on(chan("a")))];
+    assert!(complete_with_default_checked(good, &lhs).is_ok());
+
+    // `trusted` bypasses the fragment check, so this is the adversarial case:
+    // a key that lied about itself on the way in.
+    let bad = vec![Checkable::trusted(Formula::dia(Formula::Top))];
+    match complete_with_default_checked(bad, &lhs) {
+        Err(WhyNot::NotStructural { at }) => assert!(at.contains("<K>"), "{at}"),
+        other => panic!("expected an (R3) refusal at partition construction, got {other:?}"),
+    }
+}
+
+/// The synthesised `default` key is structural whenever the supplied keys and
+/// the left-hand side are, so completion never smuggles in a violation.
+#[test]
+fn completion_preserves_structurality() {
+    let lhs = Formula::comm_on(chan("a"));
+    let p = complete_with_default_checked(
+        vec![Checkable::trusted(Formula::comm_on(chan("a")))],
+        &lhs,
+    )
+    .unwrap();
+    assert!(p.check_key_fragment().is_ok());
+    assert!(p.keys()[p.default_index().unwrap()].formula().is_structural());
+}
+
+/// The shipped example theories satisfy (R3). A regression that introduced a
+/// modal key into `examples.rs` would otherwise only show up as a slow
+/// simulator.
+#[test]
+fn the_shipped_examples_satisfy_r3() {
+    let (theory, _term) = two_state(2.0, 1.0);
+    for r in &theory.rules {
+        assert!(
+            r.partition.check_key_fragment().is_ok(),
+            "rule {} has a non-structural key",
+            r.name
+        );
     }
 }

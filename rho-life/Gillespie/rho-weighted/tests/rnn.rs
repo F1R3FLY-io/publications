@@ -133,13 +133,24 @@ fn distinct_synapses_carry_distinct_weights() {
     assert!((p.total - 2.0 * 3.0).abs() < 1e-12);
 }
 
-/// The logistic response of the artificial neuron is a compressed description
-/// of a Poisson process. Here it *is* the Poisson process: no squashing
-/// function was supplied, and the saturation is the exponential waiting-time
-/// law — a neuron with enormous drive still cannot fire more than once per
-/// event.
+/// The emergent response is `1 - exp(-Delta * x)`: an **exponential saturation**
+/// function, and not the logistic `1/(1+exp(-x))`. An earlier version of this
+/// test, and of the note it checks, called it logistic. It is not, and the
+/// difference is not pedantry: the two have different shapes, and only one of
+/// them is what a race between exponential clocks produces.
+///
+/// The claim worth making survives the correction intact. No squashing function
+/// was supplied anywhere; the saturation is the waiting-time law of the chain,
+/// since a neuron under enormous drive still cannot fire more than once per
+/// event, so its firing probability per window is bounded by 1 however large
+/// the weighted sum grows.
+///
+/// Note also what has to be held fixed. The marking is frozen against *all*
+/// sources of change including the neuron's own consumption, which is why the
+/// statement is about the first firing rather than about a count: after the
+/// first, the neuron has eaten a spike and the hazard has dropped.
 #[test]
-fn the_response_is_logistic_and_nobody_wrote_it() {
+fn the_response_saturates_and_nobody_wrote_it() {
     let delta = 0.25;
     for m in [1usize, 2, 4, 8] {
         let w = 0.9;

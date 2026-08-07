@@ -11,7 +11,10 @@ pub mod formula;
 pub mod partition;
 
 pub use formula::{Budget, Checkable, Cmp, Formula, NamePred, PosQuant, WhyNot};
-pub use partition::{check_partition, complete_with_default, Partition, PartitionError};
+pub use partition::{
+    check_partition, complete_with_default, complete_with_default_checked, Partition,
+    PartitionError,
+};
 
 use crate::matching::Matching;
 use crate::space::Space;
