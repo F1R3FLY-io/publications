@@ -1,0 +1,806 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{stmaryrd}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage[expansion=false]{microtype}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{example}[theorem]{Example}
+
+% --- typography: the rho calculus is NEVER written with the Greek letter ---
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\GSLT}{\mathbf{GSLT}}
+\newcommand{\Kc}{\mathsf{K}}
+\newcommand{\Gg}{\mathbb{G}}
+\newcommand{\Lo}{\mathcal{L}}
+\newcommand{\op}{\mathrm{open}}
+\newcommand{\bd}{\mathrm{build}}
+\newcommand{\bis}{\sim}
+\newcommand{\Terms}{\mathcal{T}}
+
+\title{\bfseries Every Constructor an Interaction\\[.35em]
+\large Spatial structure made visible to bisimulation\\
+in interactive graph-structured lambda theories}
+\author{L.\ G.\ Meredith\\ \small F1R3FLY.io}
+\date{August 7, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Spatial logics separate more than bisimulation does. This is not a defect and it is not news: Caires
+observed two decades ago that the equivalence induced by a spatial logic for the $\pi$-calculus sits
+strictly between structural congruence and strong bisimilarity, and the intensionality of such logics
+was settled shortly afterwards by Sangiorgi and by Hirschkoff, Lozes and Sangiorgi. Yet the same
+observation, restated, is routinely taken to refute any claim that a generated spatial--behavioural
+logic is \emph{adequate} --- that its formulae separate exactly what interaction separates. The two
+claims look incompatible and are not.
+
+They are not incompatible because bisimilarity is not one relation. It is indexed by the theory that
+supplies the contexts, and a theory can be enlarged. We give a uniform, purely syntactic enlargement.
+Given an interactive graph-structured lambda theory $\Gg$ with interaction constructor $\Kc$, adjoin
+for each term constructor $C$ a nullary atom $C_\bullet$, overload $\Kc$ to accept an atom against an
+argument list, and adjoin the two rewrite rules that build $C$ from its parts and open $C$ into its
+parts. Nothing else. In the resulting theory $\Gg^+$ every term former is an interaction, and since
+bisimulation observes interactions it observes every term former: bisimilarity on $\Gg^+$ collapses
+onto the equational theory of $\Gg$, which is where the spatial connectives already were. The two
+disputed propositions are then the two endpoints of one monotone family, indexed by how much of the
+signature one chooses to open.
+
+This is folklore in the spatial logics community. Our contribution is not the phenomenon but its
+handling: earlier results reach extensionality \emph{semantically}, by exhibiting models --- typically
+distributed calculi with failures --- whose observational equivalence happens to be characterised by
+a spatial logic. We reach it \emph{syntactically}, by a transformation of presentations that is
+mechanical in the signature and chooses nothing, and therefore \emph{generally}, for any interactive
+GSLT rather than for a fixed calculus. We record what the construction costs. It is idempotent
+because the adjoined constructors are nullary; it is calibrated, landing on the equational theory
+rather than on raw syntax, because the equations are kept as equations; and it is not
+object-capability safe, since unrestricted opening destroys encapsulation. We describe the shape of
+the capability discipline that repairs this, observe that its factory is the unique constructor
+admitting no destructor, and do not develop it here.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+\subsection{The phenomenon}
+
+A spatial--behavioural logic for a process calculus carries two layers. The behavioural layer is
+modal: formulae speak of the steps a term can take. The structural, or spatial, layer speaks of how
+the term is put together --- that it is a parallel composition of two parts with such-and-such
+properties, that it is a send on a name, that it is empty.
+
+The layers do not have the same separating power, and the direction of the gap surprises people the
+first time they meet it. Behavioural equivalence is coarse by design: it identifies terms that no
+experiment can tell apart. Structural predicates are finer, because they can ask questions no
+experiment can pose. The standard example is as old as CCS. In a calculus with prefix, sum and
+parallel composition,
+\[
+a.\mathbf{0} \mid b.\mathbf{0}
+\qquad\text{and}\qquad
+a.b.\mathbf{0} + b.a.\mathbf{0}
+\]
+are strongly bisimilar --- the expansion law is exactly the statement that they are --- and they are
+not structurally congruent. The first satisfies the separating conjunction
+$\neg\mathbf{0} \mid \neg\mathbf{0}$: it splits into two nonempty parts. The second does not. A logic
+with a separating conjunction therefore distinguishes two terms that bisimulation identifies.
+
+\subsection{The apparent contradiction}
+
+Now put that observation next to a second one. When the logic is not designed but \emph{generated}
+from the presentation of the calculus --- one structural connective per term former, one modality per
+rewrite rule and redex position --- one wants an adequacy theorem: logical equivalence coincides with
+the calculus's observational equivalence. Adequacy is what makes a generated logic worth generating.
+Too coarse and there are observable distinctions the logic cannot state; too fine and the logic
+invites its user to chase differences no experiment could settle.
+
+So one wants to assert both of:
+\begin{align}
+\text{logical equivalence} \;&=\; \text{context-labelled bisimulation}, \tag{A} \\
+\text{the spatial layer} \;&\subsetneq\; \text{context-labelled bisimulation}. \tag{B}
+\end{align}
+Read carelessly these are inconsistent, and a careful reader will say so. We have seen (B) offered as
+a refutation of (A) more than once, by readers who knew the literature well enough to recognise (B)
+and not well enough to know what answers it.
+
+\subsection{The resolution, in one sentence}
+
+Bisimilarity is parameterised by the theory that supplies the contexts. (B) is a statement about
+bisimilarity in $\Gg$. (A) is a statement about bisimilarity in a theory $\Gg^+$ obtained from $\Gg$
+by a construction that makes term formation itself an interaction. Once the parameter is exhibited,
+(A) and (B) are the two endpoints of a monotone family, and there is nothing to reconcile.
+
+The construction is the subject of \S\ref{sec:construction}. Its slogan is:
+
+\begin{quote}
+\itshape Make every term former an interaction. Bisimulation observes interactions. Therefore
+bisimulation observes every term former.
+\end{quote}
+
+\subsection{What is new here, and what is not}
+\label{sec:contribution}
+
+The phenomenon is known. Section~\ref{sec:lineages} sets out three lineages of prior work, of which
+the third --- extensionality of spatial observation --- already establishes that spatial logics need
+not be counted intensional. We claim no priority over any of it.
+
+What we add is a change of method, and the change buys generality. The prior extensionality results
+are \emph{semantic}: they exhibit a calculus, typically a distributed one with local and remote
+communication and partial failures, and show that its observational equivalence is characterised by a
+spatial logic. The extra separating power comes from features of that calculus --- failures, in
+particular --- which are modelling choices about a particular domain.
+
+Our construction is \emph{syntactic}. It is a transformation of presentations. It reads the signature,
+adjoins one nullary atom per constructor and two rules per constructor, and stops. It chooses nothing,
+it is defined for any interactive GSLT rather than for one calculus, and because it is mechanical in
+the presentation it composes with the machinery that generates the logic from the same presentation.
+That last point is the one that matters for our purposes: if both the logic and the enlargement are
+functions of the signature, then adequacy is the statement that two functions of the same argument
+agree, rather than a coincidence to be checked calculus by calculus.
+
+We also record three things about the construction that we have not seen written down: that it is
+idempotent, and why (\S\ref{sec:idempotent}); that its calibration --- landing on the equational
+theory rather than below it --- depends on a presentational choice that is easy to get wrong
+(\S\ref{sec:calibration}); and that it is not object-capability safe (\S\ref{sec:security}).
+
+\subsection{What this note does not do}
+
+It does not develop the capability discipline of \S\ref{sec:security}. It does not treat weak
+equivalences, quantitative refinements, or the interaction with cost accounting beyond the sketch of
+\S\ref{sec:cost}. And it makes no claim that opening a term is a sensible thing to permit in a
+deployed system. The enlarged theory is a measuring instrument. It exists to say what bisimulation
+\emph{can in principle} see; it is not a habitat.
+
+\section{Three lineages}
+\label{sec:lineages}
+
+The literature that bears on this contains three distinguishable strands, and much of the confusion
+we are addressing comes from reading them as one. We set them out in the order they arose.
+
+\paragraph{The observation.} Caires, studying an expressive spatial logic for the synchronous
+$\pi$-calculus with recursion, gives coinductive and equational characterisations of the equivalence
+the logic induces and locates it: strictly between structural congruence and strong bisimilarity
+\cite{CairesObs}. The companion development with Cardelli \cite{CairesCardelliI,CairesCardelliII} is
+explicit that formulae are taken to denote processes up to structural equivalence rather than up to
+bisimulation, precisely because a tensor operator that distinguishes bisimilar processes is difficult
+to reconcile with the latter. This is (B), stated by the people who first had to confront it.
+
+\paragraph{The intensionality results.} Sangiorgi \cite{SangiorgiExtInt} and then Hirschkoff, Lozes
+and Sangiorgi \cite{HLS02,HLS03} settle where the induced equivalence sits: for logics of this kind
+it is essentially structural congruence. Lozes adds the elimination results --- that in the static
+ambient logic the adjuncts contribute no expressive power \cite{LozesAdjunct}, later strengthened by
+Dawar, Gardner and Ghelli through model-comparison games \cite{DGG} --- and the picture is completed
+by Caires and Lozes \cite{CairesLozes}, who show that a minimal dynamic spatial logic already encodes
+action quantification and action modalities, so that the spatial and modal fragments have the same
+separating power, coinciding with structural congruence modulo permutation of actions. Lozes' thesis
+\cite{LozesThesis} is the systematic account.
+
+This strand says the logic is \emph{intensional}: it sees syntax. It is often read, wrongly, as
+saying that nothing can be done about this.
+
+\paragraph{The extensionality results.} Something can be done about it. Caires and Vieira
+\cite{CairesVieira} address the tension directly, showing that there are natural models in which
+extensional observational equivalences \emph{are} characterised by spatial logics, composition and
+void included --- and concluding that spatial observations need not always be counted intensional,
+even when expressive enough to describe structure. Their development is carried out in a minimalist
+distributed calculus with local synchronous communication, local computation, asynchronous remote
+communication, and partial failures. The additional separating power available to an observer in that
+setting is what closes the gap. A related model-theoretic treatment is given by Tuosto and Vieira
+\cite{TuostoVieira}; Caires' tutorial survey \cite{CairesSurvey} is the best single entry point to the
+area.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}p{3.1cm}p{5.2cm}p{5.2cm}@{}}
+\toprule
+\textbf{strand} & \textbf{question settled} & \textbf{what it does not settle} \\
+\midrule
+the observation & where the induced equivalence sits relative to $\bis$ and $\equiv$ &
+whether the gap is intrinsic \\
+intensionality & that the induced equivalence is essentially $\equiv$; which connectives are
+eliminable & whether an observer could be given the missing power \\
+extensionality & that in suitable models observational equivalence is characterised spatially &
+whether this can be obtained uniformly from a presentation \\
+\bottomrule
+\end{tabular}
+\caption{The three strands, and the question each leaves open. The present note addresses the
+right-hand cell of the third row.}
+\label{tab:lineages}
+\end{table}
+
+Table~\ref{tab:lineages} is the summary we wish had been available to us. A reader who knows only the
+second strand will conclude that spatial logics are irreducibly intensional and that any adequacy
+claim about a generated logic is confused. That conclusion does not follow, and the third strand is
+where the answer lives.
+
+\section{Preliminaries}
+\label{sec:prelim}
+
+We recall only what is used. For graph-structured lambda theories in general we refer to
+\cite{Omnibus}.
+
+\begin{definition}[GSLT]
+A \emph{graph-structured lambda theory} is a triple $\Gg = (\Sigma, E, R)$ where $\Sigma$ is the
+signature of a lambda theory --- so constructors may bind, and terms may contain variables --- $E$ is
+a set of equations over $\Sigma$-terms, and $R$ is a set of rewrite rules, the graph of rewrites being
+adjoined to the structure rather than the structure being enriched over graphs. We write $\Terms(\Sigma)$
+for the terms and $=_E$ for the least congruence containing $E$.
+\end{definition}
+
+\begin{definition}[Interactive]
+$\Gg$ is \emph{interactive} when $\Sigma$ carries a distinguished binary constructor $\Kc$, the
+\emph{interaction constructor} or \emph{cut}, such that the left-hand side of every rule in $R$ is of
+the form $\Kc(l_1, l_2)$ up to $=_E$.
+\end{definition}
+
+Parallel composition plays this role for CCS, the $\pi$-calculus, the ambient calculus and the \rhoc\
+calculus; application plays it for the lambda calculus.
+
+\begin{definition}[Context-labelled transitions]
+For $P, P' \in \Terms(\Sigma)$ write $P \xrightarrow{(\rho, D)} P'$ when there are a rule
+$\rho = (l \to r) \in R$, a one-hole context $D[-]$ and a substitution $\sigma$ with
+$P =_E D[l\sigma]$ and $P' =_E D[r\sigma]$. The label records both the rule and the position.
+\emph{Context-labelled bisimulation} $\bis_\Gg$ is the largest symmetric relation closed under
+matching of these labelled steps.
+\end{definition}
+
+\begin{remark}[Notation]
+The scientist note \cite{ScientistNote} writes $K_j$ for what we here call $D$, and $K$ for the cut.
+The coincidence of letters there is not accidental --- for the \rhoc\ calculus the cut and the redex
+context are built from the same constructor --- but it is confusing in a general setting, so we
+separate them: $\Kc$ is a constructor, $D$ is a context.
+\end{remark}
+
+\begin{definition}[The generated logic]
+$\Lo(\Gg)$ has formulae
+\[
+\varphi \;::=\; \top \;\mid\; \neg\varphi \;\mid\; \varphi \wedge \psi
+\;\mid\; C(\varphi_1,\dots,\varphi_n) \;\mid\; \langle \rho, D \rangle \varphi
+\]
+with one \emph{structural} connective $C(-,\dots,-)$ per $n$-ary constructor $C \in \Sigma$ and one
+\emph{behavioural} modality per rule and redex position. Satisfaction for the structural connectives is
+\[
+P \models C(\varphi_1,\dots,\varphi_n)
+\iff
+P =_E C(t_1,\dots,t_n) \text{ with } t_i \models \varphi_i \text{ for each } i,
+\]
+and for the modalities $P \models \langle \rho, D\rangle \varphi$ iff $P \xrightarrow{(\rho,D)} P'$
+with $P' \models \varphi$. We write $=_{\Lo(\Gg)}$ for logical equivalence.
+\end{definition}
+
+Because $\Kc$ is typically subject to associativity, commutativity and a unit in $E$, the connective
+$\Kc(\varphi, \psi)$ is a separating conjunction: it holds of $P$ exactly when $P$ admits \emph{some}
+decomposition into two parts satisfying $\varphi$ and $\psi$ respectively. The existential over
+decompositions is the whole difficulty. It is not a step, so no modality expresses it, and that is
+where (B) comes from.
+
+\begin{remark}[Which connectives are admitted]
+Not every generated logic is adequate for anything, and users of a generator have good reason to
+restrict which connectives are emitted --- typically to obtain a fragment whose model checking
+terminates \cite{Omnibus}. We take the full structural layer as the default and return to the
+restricted case in \S\ref{sec:dial}, where it becomes a parameter rather than a caveat.
+\end{remark}
+
+\section{The construction}
+\label{sec:construction}
+
+Fix an interactive GSLT $\Gg = (\Sigma, E, R)$ with cut $\Kc$, and assume $\Gg$ is Turing complete.
+
+\subsection{Lists, and why Turing completeness is enough for them}
+
+$\Kc$ is binary; constructors have arbitrary arity. To present the arguments of an $n$-ary constructor
+to $\Kc$ we need to tuple them, so we assume list formers $\mathsf{nil}$ and
+$\mathsf{cons}$ with the evident equations, writing $[t_1,\dots,t_n]$ for the obvious term.
+
+\begin{remark}[The lists are not an import]
+\label{rem:lists}
+Turing completeness supplies them: any of the standard encodings will do, and which one is chosen does
+not affect anything below, since all that is used is that $[\,\cdot\,]$ is injective up to $=_E$ and
+that its components are recoverable by the same construction we are about to define. This is worth
+saying because it is the \emph{only} thing Turing completeness is used for in this note, and it is
+worth remembering because in \S\ref{sec:security} we will need something that Turing completeness does
+\emph{not} supply.
+\end{remark}
+
+\subsection{Atoms, overloading, and two rules per constructor}
+
+\begin{definition}[The canonical extension]
+\label{def:ext}
+The \emph{canonical extension} $\Gg^+ = (\Sigma^+, E, R^+)$ of $\Gg$ is given by:
+\begin{itemize}
+\item $\Sigma^+ = \Sigma \uplus \{\, C_\bullet : C \in \Sigma \,\}$, where each $C_\bullet$ is
+\emph{nullary};
+\item $\Kc$ is overloaded so that $\Kc(C_\bullet, [t_1,\dots,t_n])$ is well formed whenever $C$ is
+$n$-ary;
+\item $E$ is unchanged;
+\item $R^+ = R \cup \{\, \bd_C, \op_C : C \in \Sigma \,\}$ where, for $C$ of arity $n$,
+\begin{align*}
+\bd_C &: \;\; \Kc(C_\bullet, [x_1,\dots,x_n]) \;\longrightarrow\; C(x_1,\dots,x_n), \\
+\op_C &: \;\; C(x_1,\dots,x_n) \;\longrightarrow\; \Kc(C_\bullet, [x_1,\dots,x_n]).
+\end{align*}
+\end{itemize}
+We call the rules of $R$ \emph{proper} and those of $R^+ \setminus R$ \emph{administrative}.
+\end{definition}
+
+Three comments on the shape of this definition.
+
+First, the overloading of $\Kc$ rather than the introduction of a fresh application former is the
+point of the whole construction. $\Kc$ is not an arbitrary constructor; it is the one the transition
+relation is indexed on, the one that defines what it means for two things to meet. Putting $C_\bullet$
+into interaction position re-expresses construction as communication, and communication is precisely
+what a context-labelled transition system is built to observe. Nothing is being added to the
+observational apparatus. Syntax is being moved into the part of the theory the apparatus already
+covers.
+
+Second, $\bd_C$ alone would be a term \emph{builder}, and a builder reads nothing it did not build:
+$C_\bullet$ placed beside an opaque $P$ fires only if $P$ is already a list of the right length. It is
+$\op_C$ that makes structure legible, since it applies at any redex position and therefore to terms
+nobody holds.
+
+Third, $\op_C$ and $\bd_C$ are converse. Neither the theory nor any term loses anything by their
+presence; what is gained is that the syntax tree of a term becomes a reachable part of its transition
+behaviour.
+
+\begin{remark}[The equation-free presentation]
+\label{rem:pairs}
+One may prefer a presentation with no equations at all --- for instance to hand the theory to a tool
+that does only rewriting. Then orient each equation of $E$ in both directions, adding both to the
+administrative rules. The two presentations agree up to administrative steps. We keep $E$ as equations
+because doing so makes the calibration of \S\ref{sec:calibration} immediate rather than a proof
+obligation, and because it localises the source of nondeterminism: with $E$ retained, the branching of
+$\op_C$ comes from $E$-matching, which is exactly the existential over decompositions that the
+separating conjunction quantifies. It is worth stressing that these must be \emph{pairs}. Orienting
+the equations in one direction only would let bisimilarity fall below $=_E$ onto raw syntax, which
+overshoots: the structural connectives respect $=_E$, so a relation finer than $=_E$ is finer than the
+logic and adequacy fails from the other side.
+\end{remark}
+
+\begin{proposition}[$\Gg^+$ is an interactive GSLT]
+\label{prop:still}
+$\Gg^+$ is a GSLT, is interactive with the same cut $\Kc$, and the inclusion
+$\Terms(\Sigma) \hookrightarrow \Terms(\Sigma^+)$ reflects proper transitions: for
+$P, P' \in \Terms(\Sigma)$ and $\rho \in R$, $P \xrightarrow{(\rho,D)} P'$ in $\Gg$ iff the same holds
+in $\Gg^+$.
+\end{proposition}
+
+\begin{proof}
+Every rule of $R^+$ has a left-hand side of the form $\Kc(-,-)$ up to $=_E$: those of $R$ by hypothesis,
+$\bd_C$ by construction, and $\op_C$ because $C(x_1,\dots,x_n) =_E \Kc(C(x_1,\dots,x_n), u)$ for the
+unit $u$ of $\Kc$ when $\Kc$ has one. Where $\Kc$ has no unit, replace $\op_C$ by
+$\Kc(\mathrm{Op}_\bullet, [C(x_1,\dots,x_n)]) \to \Kc(C_\bullet, [x_1,\dots,x_n])$ with
+$\mathrm{Op}_\bullet$ a further nullary atom; nothing below changes. Reflection of proper transitions
+holds because $R^+ \supseteq R$ and the added constructors are not mentioned in any rule of $R$, so no
+$R$-redex is created or destroyed by their presence.
+\end{proof}
+
+\section{Basic properties}
+\label{sec:basic}
+
+\subsection{Calibration}
+\label{sec:calibration}
+
+\begin{lemma}[Calibration]
+\label{lem:calib}
+If $P =_E Q$ then $P \bis_{\Gg^+} Q$.
+\end{lemma}
+
+\begin{proof}
+Transitions are defined up to $=_E$, so $=_E$-equal terms have identical labelled transition sets.
+\end{proof}
+
+Trivial as stated, and stated anyway, because it is the property that the alternative presentation of
+Remark~\ref{rem:pairs} has to work for, and because it is the half of the calibration that fixes the
+\emph{lower} bound: the enlargement must not push bisimilarity below the equational theory, or it
+overshoots the logic.
+
+\subsection{Exposure}
+
+\begin{lemma}[Exposure]
+\label{lem:exposure}
+Let $P \in \Terms(\Sigma^+)$ and let $C$ be $n$-ary. Then
+\[
+P \xrightarrow{(\op_C,\, [-])} \Kc(C_\bullet, [t_1,\dots,t_n])
+\quad\text{iff}\quad
+P =_E C(t_1,\dots,t_n).
+\]
+Consequently the set of $\op$-transitions available to $P$ at the empty context enumerates exactly the
+top-level $E$-decompositions of $P$, one transition per decomposition, with the atom in the label
+recording which constructor.
+\end{lemma}
+
+\begin{proof}
+Immediate from Definition~\ref{def:ext} and the definition of context-labelled transitions, which
+matches redexes up to $=_E$.
+\end{proof}
+
+This is the lemma that does the work, and it is worth pausing on what it says in the case that
+motivated the whole difficulty. Take $C = \Kc$ with $E$ containing associativity, commutativity and
+the unit. Then $P$'s $\op_\Kc$-transitions at the empty context are in bijection with the ways of
+writing $P$ as $Q \mid R$ --- including $P \mid \mathbf{0}$ and $\mathbf{0} \mid P$, and every
+rebracketing and permutation of a parallel product. The existential over splits in
+$P \models \varphi \mid \psi$ has become an existential over transitions. That is the entire content of
+the construction, and everything else is bookkeeping.
+
+\subsection{The reconstruction theorem}
+
+\begin{theorem}[Reconstruction]
+\label{thm:main}
+For closed $P, Q \in \Terms(\Sigma)$,
+\[
+P \bis_{\Gg^+} Q \iff P =_E Q .
+\]
+\end{theorem}
+
+\begin{proof}
+($\Leftarrow$) is Lemma~\ref{lem:calib}.
+
+($\Rightarrow$) By induction on the size of $P$, where size is the number of constructor occurrences
+in some (hence any, since $E$ is size-respecting on the presentations we consider) $=_E$-representative
+of least size.
+
+Suppose $P \bis_{\Gg^+} Q$ and $P =_E C(t_1,\dots,t_n)$ for some $C \in \Sigma$. By
+Lemma~\ref{lem:exposure}, $P \xrightarrow{(\op_C, [-])} \Kc(C_\bullet, [t_1,\dots,t_n])$. Since
+$P \bis_{\Gg^+} Q$, the term $Q$ must match that step with the \emph{same} label, so $\op_C$ is the
+rule and the context is empty; by Lemma~\ref{lem:exposure} again, $Q =_E C(s_1,\dots,s_n)$ for some
+$s_i$, and
+\[
+\Kc(C_\bullet, [t_1,\dots,t_n]) \;\bis_{\Gg^+}\; \Kc(C_\bullet, [s_1,\dots,s_n]).
+\]
+The atom $C_\bullet$ appearing in the label is what makes the constructors agree: distinct
+constructors give distinct atoms and hence distinct labels, so no rule other than $\op_C$ could have
+matched.
+
+It remains to descend into the arguments. The list $[t_1,\dots,t_n]$ is itself built from
+$\mathsf{cons}$ and $\mathsf{nil}$, so Lemma~\ref{lem:exposure} applies again at the contexts
+$\Kc(C_\bullet, -)$ and its iterates. Matching those steps pairwise yields
+$t_i \bis_{\Gg^+} s_i$ for each $i$, because the labels record position and therefore align the
+arguments in order. Each $t_i$ is smaller than $P$, so the induction hypothesis gives $t_i =_E s_i$,
+whence $P =_E C(t_1,\dots,t_n) =_E C(s_1,\dots,s_n) =_E Q$.
+\end{proof}
+
+\begin{remark}[Where the lambda theory is used]
+If $C$ binds --- an input prefix, an abstraction --- then opening it exposes an argument that is not
+closed. This is the one place where it matters that a GSLT is built on a lambda \emph{theory} rather
+than on a first-order signature: the argument of a binding constructor is an abstraction, which is a
+term of the theory, and the induction goes through on abstractions as it does on closed terms. For a
+first-order signature the construction is more elementary and the restriction to closed terms in
+Theorem~\ref{thm:main} may be dropped.
+\end{remark}
+
+\begin{remark}[Infinite branching]
+A term with replication has infinitely many $E$-decompositions and therefore infinitely many
+$\op_\Kc$-transitions. Nothing in the proof requires image-finiteness; bisimulation is defined for
+arbitrary branching and the induction is on term size, not on transition depth.
+\end{remark}
+
+\subsection{Idempotence}
+\label{sec:idempotent}
+
+A referee's next move, on seeing Theorem~\ref{thm:main}, is to run the construction again. $\Gg^+$ has
+term formers that $\Gg$ did not; generate the logic over $\Gg^+$ and there will be structural
+connectives for them; are those not again finer than $\bis_{\Gg^+}$, and is one not on a ladder with no
+top?
+
+\begin{proposition}[Idempotence]
+\label{prop:idem}
+$\bis_{\Gg^{++}} \;=\; \bis_{\Gg^+}$, and $=_{\Lo(\Gg^+)}$ adds no separating power over
+$=_{\Lo(\Gg)}$ on $\Terms(\Sigma)$.
+\end{proposition}
+
+\begin{proof}
+The constructors adjoined by Definition~\ref{def:ext} are nullary. A nullary constructor has no
+arguments to conceal: its structural connective is the atomic proposition ``is $C_\bullet$'', and by
+Lemma~\ref{lem:exposure} that proposition is already determined by the $\bd_C$-transitions available
+at the term, hence already behavioural in $\Gg^+$. Adjoining atoms and rules for the atoms therefore
+yields nothing not already present, and by Theorem~\ref{thm:main} both sides equal $=_E$.
+\end{proof}
+
+This is not a side remark. It is the reason $(-)^+$ is a construction rather than the first stage of a
+colimit, and it is a consequence of a design decision that could easily have gone the other way: had
+we introduced a family of $n$-ary destructors, one per constructor, rather than nullary atoms plus an
+overloaded cut, the ladder would be real.
+
+\section{Consequences}
+\label{sec:consequences}
+
+\subsection{Adequacy}
+
+We now import the second strand of \S\ref{sec:lineages}.
+
+\begin{proposition}[Intensionality; known]
+\label{prop:known}
+For the spatial logics considered in \cite{SangiorgiExtInt,HLS02,HLS03,CairesLozes}, logical
+equivalence coincides with structural congruence, possibly modulo a permutation of actions. In the
+present notation: $=_{\Lo(\Gg)}\; = \;=_E$, whenever the target logic specification carries enough
+boolean structure to form characteristic formulae.
+\end{proposition}
+
+We state this as an import rather than prove it. The hypothesis is not decorative: a generated logic
+whose specification omits negation, or omits conjunction, will not separate to $=_E$, and adequacy
+will fail for reasons that have nothing to do with the present construction \cite{Omnibus}.
+
+\begin{corollary}[Adequacy in the extension]
+\label{cor:adequacy}
+Under the hypothesis of Proposition~\ref{prop:known}, for closed $\Sigma$-terms
+\[
+=_{\Lo(\Gg)} \;=\; =_E \;=\; \bis_{\Gg^+} .
+\]
+That is: the logic generated from $\Gg$ is adequate for context-labelled bisimulation in $\Gg^+$.
+\end{corollary}
+
+\begin{corollary}[Strictness, preserved]
+\label{cor:strict}
+$\bis_{\Gg^+} \;\subsetneq\; \bis_{\Gg}$ in general, so the spatial layer does strictly refine
+bisimulation in $\Gg$.
+\end{corollary}
+
+\begin{example}[The witness]
+\label{ex:ccs}
+In CCS, $P = a.\mathbf{0} \mid b.\mathbf{0}$ and $Q = a.b.\mathbf{0} + b.a.\mathbf{0}$ satisfy
+$P \bis_\Gg Q$ by the expansion law. In $\Gg^+$ they are separated at the first step: $P$ has an
+$\op_\Kc$-transition at the empty context to $\Kc(\Kc_\bullet, [a.\mathbf{0}, b.\mathbf{0}])$, and the
+only $\op$-transition $Q$ has at the empty context is $\op_+$, carrying a different atom in its label.
+Correspondingly $P \models \neg\mathbf{0} \mid \neg\mathbf{0}$ and $Q \not\models
+\neg\mathbf{0} \mid \neg\mathbf{0}$.
+\end{example}
+
+Corollaries~\ref{cor:adequacy} and~\ref{cor:strict} are (A) and (B). They are both true, of different
+relations, and the difference is a parameter that was suppressed rather than a disagreement.
+
+\subsection{The dial}
+\label{sec:dial}
+
+Nothing forces the construction to be run on the whole signature.
+
+\begin{definition}[Partial extension]
+For $\mathcal{C} \subseteq \Sigma$ let $\Gg^{+\mathcal{C}}$ be Definition~\ref{def:ext} with atoms and
+rules adjoined only for $C \in \mathcal{C}$.
+\end{definition}
+
+\begin{proposition}[Monotonicity]
+\label{prop:mono}
+If $\mathcal{C} \subseteq \mathcal{C}'$ then $\bis_{\Gg^{+\mathcal{C}'}} \subseteq
+\bis_{\Gg^{+\mathcal{C}}}$, with $\bis_{\Gg^{+\varnothing}} = \bis_\Gg$ and
+$\bis_{\Gg^{+\Sigma}} = {=_E}$.
+\end{proposition}
+
+\begin{proof}
+Adding rules only adds transitions that must be matched, so the largest bisimulation can only shrink.
+The endpoints are Proposition~\ref{prop:still} and Theorem~\ref{thm:main}.
+\end{proof}
+
+\begin{corollary}[Relativised adequacy]
+Let $\Lo_\mathcal{C}(\Gg)$ be the fragment of the generated logic whose structural connectives are
+those of $\mathcal{C}$. Then $=_{\Lo_\mathcal{C}(\Gg)}$ is adequate for $\bis_{\Gg^{+\mathcal{C}}}$
+under the hypothesis of Proposition~\ref{prop:known} relativised to $\mathcal{C}$.
+\end{corollary}
+
+This is the form in which the result is most useful, and it puts the earlier caveat about restricted
+connective sets in its proper place. A user who dials the generator down to a finitely checkable
+fragment is not thereby abandoning adequacy; they are moving along the family of
+Proposition~\ref{prop:mono}, and adequacy holds at every point of it, against the bisimulation of the
+correspondingly partial extension. The logic and the enlargement are indexed by the same parameter,
+and adequacy is the statement that they agree.
+
+A second dial gives the same family without touching the signature: fix $\Gg^{+\Sigma}$ and vary
+instead which administrative labels an observer is permitted to see. Observing none recovers
+$\bis_\Gg$; observing all recovers $=_E$. Whether the two dials give the same family in general we
+have not checked.
+
+\subsection{Cost}
+\label{sec:cost}
+
+We record a direction rather than a result. In a cost-accounted GSLT \cite{CostMonad} every rewrite
+carries a price, and the administrative rules are rewrites like any other. Two consequences suggest
+themselves.
+
+Evaluating a structural formula of depth $d$ against a term corresponds to a path of $d$ nested
+$\op$-steps. So the price of a structural observation, which in \cite{ScientistNote} is stipulated as a
+monotone schedule in formula depth, is on this reading a \emph{step count} --- monotone in depth
+because depth is what it counts. And the separating conjunction is expensive for a reason that is now
+visible rather than asserted: confirming $\varphi \mid \psi$ requires searching the
+$E$-decompositions, which is a walk over administrative transitions rather than a single step.
+
+Whether the induced schedule agrees with the stipulated one, and what the exchange rate between proper
+and administrative steps ought to be, we leave open.
+
+\section{The construction is not capability-safe}
+\label{sec:security}
+
+We state this plainly rather than hedging it, because a reader who knows object-capability discipline
+will see it in the first line of Definition~\ref{def:ext} and will want to know whether we noticed.
+
+Unrestricted $\op$ destroys encapsulation. The rule applies at every redex position, so any subterm of
+any term, held by anybody or by nobody, may be opened; and opening yields the arguments as data. In a
+calculus where an opaque reference is the unit of authority, this is fatal: open the reference and
+harvest whatever authority its contents carry. Confinement fails, and with it every argument that
+depends on it.
+
+The repair is known in outline. Mike Stay's suggestion is that constructors and destructors should
+each take a capability token, so that the right to build and the right to open are held rather than
+ambient. There are two readings of such a token --- a \emph{permission}, licensing the rule, or a
+\emph{brand}, so that $\bd_C$ stamps the term and $\op_C$ checks the stamp --- and the second is the
+more useful, since it makes legibility a property of the term rather than a global property of the
+world, which is what any application to distributed systems will want. Note that the token must gate
+the \emph{pair}: the calibration of Lemma~\ref{lem:calib}, in the equation-free presentation of
+Remark~\ref{rem:pairs}, requires that an observer able to take an administrative step is able to take
+its converse, and an asymmetric gate breaks that.
+
+Tokens require a factory: a constructor that manufactures them. Two observations, and then we stop.
+
+\begin{remark}[The factory is an import]
+Remark~\ref{rem:lists} used Turing completeness to obtain lists. It cannot be used again here.
+Unforgeability is not a claim about what can be computed but about what a context can \emph{write
+down}, and in a signature of free constructors every term is writable by anybody. So a genuine source
+of privacy must be adjoined --- restriction, in the general case, giving a factory of the shape
+$\mathsf{let}\ c = \mathsf{freshCap}()\ \mathsf{in}\ P$, which is essentially $(\nu c)P$. Reflective
+calculi, in which a name is a quoted process, may be able to discharge the import internally; whether
+quotation \emph{originates} privacy or merely propagates it from a seed is a question we do not settle
+here.
+\end{remark}
+
+\begin{remark}[The factory is the unique constructor with no destructor]
+\label{rem:nodestructor}
+Whatever the factory is, it is the one constructor to which the construction of
+Definition~\ref{def:ext} must \emph{not} be applied. Give it an $\op$ rule and a token can be opened;
+if a token can be opened it can be rebuilt by $\bd$; if it can be rebuilt it can be forged; and if it
+can be forged nothing is a capability and the gate collapses. So the capability-safe version of the
+construction is not ``the canonical extension, with a caveat'' but ``the canonical extension, with
+exactly one exception, and the exception is what makes the rest of it safe''. We think this is the
+right way to state unforgeability in this setting: a capability is the output of the unique
+destructor-free constructor.
+\end{remark}
+
+Beyond this the design has real content --- whether the token is conserved or purchased, whether it is
+consumed by use or held, how it interacts with a cost-accounting resource signature --- and we do not
+pursue it. It is worth being clear about the scope of the omission. Nothing in
+\S\S\ref{sec:construction}--\ref{sec:consequences} depends on it, because $\Gg^+$ is used there as an
+instrument for locating an equivalence, not as a calculus in which anything runs. The moment one wants
+to \emph{execute} in $\Gg^+$, the capability discipline stops being optional.
+
+\section{What this settles, and for whom}
+\label{sec:settles}
+
+We collect the consequences for the framework this note was written to serve.
+
+\paragraph{Adequacy claims survive contact with intensionality results.} A generated spatial--behavioural
+logic may be asserted adequate, provided the assertion names the relation: bisimulation in the
+extension, not in the base. Assertions that omit the index are not wrong so much as ambiguous, and the
+ambiguity is what invites the objection.
+
+\paragraph{Structural observation is not a second channel.} An architecture that lists structural
+inspection alongside interaction as a separate mode of access is, on this reading, double-counting.
+Structural inspection \emph{is} interaction --- with administrative redexes --- and what distinguishes
+the modes is not which channel they use but what they cost and what they destroy. That is a better
+distinction, since it is the one that does work downstream.
+
+\paragraph{Spatial and behavioural addresses coincide.} In $\Gg^+$ a decomposition site is a redex
+position. Constructions that need to identify a structural locus with a modal label --- and there are
+several in \cite{ScientistNote} --- are therefore well typed rather than analogical. This does not by
+itself supply an enabling theorem: a syntactic locus that is a redex position in $\Gg^+$ need not
+correspond to a \emph{proper} step that is reachable in $\Gg$, and claims about reachability still
+require their own argument.
+
+\paragraph{Morphisms.} The category $\GSLT$ has bisimulation-preserving maps as morphisms
+\cite{Omnibus}, and an assignment that depends on spatial structure is not functorial over them; the
+usual repair is to narrow the morphism class by hand to maps preserving the generated logic. Under
+Theorem~\ref{thm:main} the narrowing is not a narrowing: logic-preserving maps of $\Gg$ are exactly
+bisimulation-preserving maps of $\Gg^+$. The repair becomes functoriality on the image of $(-)^+$.
+
+\paragraph{An in-principle ceiling.} Adequacy in the extension is a claim about what an ideal observer
+could separate, not about what any particular agent can afford. Arguments that move from adequacy to a
+conclusion about an actual learner need the affordability premise stated separately; the fragment an
+agent occupies is fixed by its budget, and \S\ref{sec:dial} is where the two meet.
+
+\section{Open problems}
+\label{sec:open}
+
+\begin{enumerate}
+\item \textbf{Canonicity as an adjunction.} We have called $(-)^+$ canonical on the grounds that it is
+mechanical in the presentation and chooses nothing. Is it a left adjoint --- free on $\Gg$ among
+extensions making $\Lo(\Gg)$ behavioural, hence initial among them? An adjunction would upgrade
+``evident construction'' to ``forced construction'', which matters wherever the absence of a design
+choice is doing argumentative work.
+
+\item \textbf{Do the two dials agree?} \S\ref{sec:dial} gives a family indexed by a subset of the
+signature and a second indexed by a set of observable administrative labels. Are they the same family?
+
+\item \textbf{The capability-indexed family.} With Stay's tokens the relation $\bis_{\Gg^+}$ becomes a
+family indexed by the tokens an observer holds, interpolating between $\bis_\Gg$ and $=_E$ with the
+index an object of the calculus rather than a parameter of the metatheory. This is the sharpest form
+of the resolution and we have not developed it.
+
+\item \textbf{No capability amplification.} The security claim wants a theorem: one cannot open one's
+way to a token one was not given. The statement has a circular smell --- unforgeability rests on the
+gate, the gate rests on tokens --- and needs a well-foundedness argument.
+
+\item \textbf{Derived pricing.} Does the step count of \S\ref{sec:cost} agree with the stipulated
+schedules used in cost-accounted models, and under what exchange rate?
+
+\item \textbf{Weak equivalences.} Everything here is strong. Administrative steps are natural
+candidates for being made silent, and the resulting weak theory is presumably where the connection back
+to $\bis_\Gg$ is cleanest.
+
+\item \textbf{Relation to the semantic route.} \cite{CairesVieira} obtains extensionality from partial
+failures. Is there a translation carrying that model into a partial extension of the present kind, so
+that failures and administrative openings turn out to be two presentations of one mechanism?
+\end{enumerate}
+
+\section*{Acknowledgements}
+
+The construction was described to the author's satisfaction in conversation with Mike Stay, whose
+capability refinement is the subject of \S\ref{sec:security} and whose objection is the reason that
+section exists.
+
+\begin{thebibliography}{99}
+
+\bibitem{CairesObs} L.\ Caires. \emph{Behavioral and spatial observations in a logic for the
+$\pi$-calculus.} In Proc.\ FOSSACS 2004, LNCS 2987, Springer, 2004.
+
+\bibitem{CairesCardelliI} L.\ Caires and L.\ Cardelli. \emph{A spatial logic for concurrency (Part I).}
+Information and Computation 186(2), 2003.
+
+\bibitem{CairesCardelliII} L.\ Caires and L.\ Cardelli. \emph{A spatial logic for concurrency
+(Part II).} Theoretical Computer Science 322(3):517--565, 2004.
+
+\bibitem{SangiorgiExtInt} D.\ Sangiorgi. \emph{Extensionality and intensionality of the ambient logics.}
+In Proc.\ POPL 2001, ACM Press, 2001.
+
+\bibitem{HLS02} D.\ Hirschkoff, E.\ Lozes and D.\ Sangiorgi. \emph{Separability, expressiveness and
+decidability in the ambient logic.} In Proc.\ LICS 2002, IEEE Computer Society, 2002.
+
+\bibitem{HLS03} D.\ Hirschkoff, E.\ Lozes and D.\ Sangiorgi. \emph{Minimality results for the spatial
+logics.} In Proc.\ FSTTCS 2003, LNCS 2914, Springer, 2003.
+
+\bibitem{LozesAdjunct} E.\ Lozes. \emph{Adjunct elimination in the static ambient logic.} In Proc.\
+EXPRESS 2003, ENTCS, Elsevier.
+
+\bibitem{LozesThesis} E.\ Lozes. \emph{Expressivit\'e des logiques spatiales.} Th\`ese de doctorat,
+ENS Lyon, 2004.
+
+\bibitem{CairesLozes} L.\ Caires and E.\ Lozes. \emph{Elimination of quantifiers and undecidability in
+spatial logics for concurrency.} In Proc.\ CONCUR 2004, LNCS 3170, Springer, 2004.
+
+\bibitem{DGG} A.\ Dawar, P.\ Gardner and G.\ Ghelli. \emph{Adjunct elimination through games in static
+ambient logic.} In Proc.\ FSTTCS 2004, LNCS 3328, Springer, 2004.
+
+\bibitem{CairesVieira} L.\ Caires and H.\ T.\ Vieira. \emph{Extensionality of spatial observations in
+distributed systems.} In Proc.\ EXPRESS 2006, ENTCS 175(3):131--149, Elsevier, 2007.
+
+\bibitem{TuostoVieira} E.\ Tuosto and H.\ T.\ Vieira. \emph{An observational model for spatial logics.}
+ENTCS 142:229--254, 2006.
+
+\bibitem{CairesSurvey} L.\ Caires. \emph{Dynamic spatial logics: a tutorial survey.} Bulletin of the
+EATCS 94, 2008.
+
+\bibitem{Omnibus} L.\ G.\ Meredith. \emph{Graph-structured lambda theories: a reference for the working
+developer.} F1R3FLY.io, 2026.
+
+\bibitem{ScientistNote} L.\ G.\ Meredith. \emph{The mortal scientist: learning as cost-accounted
+computation in a reflective higher-order calculus.} F1R3FLY.io, 2026.
+
+\bibitem{ClassifierNote} L.\ G.\ Meredith. \emph{Classifying knot diagrams with a spatial--behavioural
+logic: a logic obtained for free from the encoding of knots as processes.} F1R3FLY.io, 2026.
+
+\bibitem{CostMonad} L.\ G.\ Meredith. \emph{Cost accounting as a monad for continued graph-structured
+lambda theories.} F1R3FLY.io, 2026.
+
+\end{thebibliography}
+
+\end{document}
