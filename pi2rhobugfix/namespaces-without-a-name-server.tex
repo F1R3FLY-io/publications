@@ -1,0 +1,1441 @@
+% =====================================================================
+%  Namespaces Without a Name Server
+%  L. G. Meredith, F1R3FLY.io
+% =====================================================================
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[margin=1.1in]{geometry}
+\usepackage{mathrsfs}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage[expansion=false]{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{construction}[definition]{Construction}
+\newtheorem{notation}[definition]{Notation}
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{corollary}[definition]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{example}[definition]{Example}
+
+% ---- notation ----
+\newcommand{\rhoc}{\mathrm{rho}}
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{*}#1}
+\newcommand{\inp}[3]{\mathsf{for}(\,#1 \leftarrow #2\,)#3}
+\newcommand{\inpp}[5]{\mathsf{for}(\,#1 \leftarrow #2\ \&\ #3 \leftarrow #4\,)#5}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\enc}[1]{[\![#1]\!]}
+\newcommand{\nequiv}{\equiv_{\mathcal{N}}}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\Lft}{\mathsf{L}}
+\newcommand{\Rgt}{\mathsf{R}}
+\newcommand{\Frsh}{\mathsf{Fresh}_2}
+\newcommand{\Dup}{\mathsf{D}}
+\newcommand{\Ctx}{\mathscr{C}}
+\newcommand{\Obs}{\mathcal{D}}
+\newcommand{\pic}{\pi}
+\newcommand{\bisim}{\approx}
+\newcommand{\QD}{\mathrm{qd}}
+\newcommand{\fn}{\mathrm{fn}}
+\providecommand{\xLongrightarrow}[1]{\mathrel{\overset{#1}{\Longrightarrow}}}
+
+\lstset{basicstyle=\ttfamily\small,columns=fullflexible,keepspaces=true,
+        breaklines=true,frame=single,framesep=4pt,xleftmargin=6pt}
+
+\title{\textbf{Namespaces Without a Name Server}\\[4pt]
+\large Contraction, copying, and a fully abstract encoding of the
+$\pi$-calculus in the rho calculus}
+\author{L.\,G.\ Meredith\thanks{F1R3FLY.io.\ \texttt{lgreg.meredith@f1r3fly.io}}}
+\date{August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+The rho calculus was designed so that its theory of names would be
+\emph{internal}: names are quoted processes, there is no name-restriction
+operator, and no ambient supply of atoms. The encoding of the
+$\pi$-calculus given with the original presentation was meant to
+demonstrate that $\nu$ can be discharged under that constraint --- that
+one need not posit a runtime source of fresh names. Lybech showed that
+the encoding is wrong, by two counterexamples, and gave a corrected
+encoding that is provably valid against Gorla-style criteria. His
+correction obtains freshness from a single central \emph{name server}
+contacted by every $\nu$ in the term. That is a correct encoding of a
+different thing: it discharges $\nu$ by supposing precisely the resource
+whose elimination was the point.
+
+We repair the encoding without a name server. The repair is not an
+invention. The original construction was modelled on Abramsky's
+computational interpretation of classical linear logic, and used only
+half of it: the multiplicative \emph{splitting} of a namespace, and not
+the \emph{rejoining} performed by the Contraction term former $t \mathbin{@} u$
+together with the Copy reaction rule. Abramsky's Copy carries an
+invariant --- names are pairs $\langle x_0, s\rangle$ with $s$ a binary
+address, and two names sharing a root have \emph{incompatible} addresses
+--- which is exactly the invariant the original encoding needed and never
+stated. We show why the missing half is not optional in the rho calculus:
+Copy renames the contents of a box at the metalevel, whereas rho's
+duplicator copies quoted code verbatim, and rho substitution does not
+descend under a quote. Address arithmetic must therefore move out of the
+syntax and into processes. We give the resulting encoding, in which each
+replication carries its own local address server derived from its own
+address, verify it against both of Lybech's counterexamples, and prove it
+fully abstract with respect to a bisimilarity whose observers are
+restricted to the \emph{encodings of source contexts}. We show that this
+restriction is forced rather than convenient: an unrestricted rho context
+separates the encodings of $P$ and $P \mid \nil$.
+
+Throughout we use the current concrete syntax for the rho calculus ---
+$\inp{y}{x}{P}$, $\out{x}{P}$, $\quo{P}$, $\drp{x}$ --- and explain why
+it, rather than the corner-quote notation of the original papers, is the
+notation in which the central lemma of this note can be stated at all.
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}\label{sec:intro}
+% =====================================================================
+
+Process calculi customarily begin by positing a countably infinite set of
+atomic names, and a scoping operator $(\nu x)P$ which conjures a name
+guaranteed fresh. Both are idealisations, and both are discharged
+somewhere below the model: an implementation must say where names come
+from and how freshness is achieved, and in a distributed setting the
+answer is not obvious.
+
+The rho calculus \cite{MeredithRadestock05} was an attempt to move that
+question inside the theory. Names are quoted processes; the only binder
+is input; there is no $\nu$. Freshness, when it is available, is a
+consequence of structural distinctness of the processes quoted, not of an
+oracle. Whether this is a viable position is exactly the question of
+whether the $\pi$-calculus can be encoded in the rho calculus
+\emph{without reintroducing what was removed}, and the original paper
+offered an encoding to that end. The price paid was that the translation
+is not a homomorphism on a signature: it compiles a whole term at a time,
+because the namespace discipline is a property of the term's structure.
+
+Lybech \cite{Lybech22} showed that the encoding is incorrect.\footnote{%
+The author discussed this with Lybech in early 2023 and mentioned that
+Abramsky's construction \cite{Abramsky93} was the source of the encoding's
+design and, in the author's view, the source of its repair; the thread was
+not taken up. The present note makes the argument in full.}
+He exhibits two counterexamples, diagnoses their common cause precisely,
+proposes a new encoding, and proves it valid against a list of criteria
+close to Gorla's \cite{Gorla10}, augmented by a criterion of
+\emph{parameter independence} which is the right addition for
+parametrised translations. All of this is correct, and this note does not
+dispute any of it.
+
+What this note disputes is the repair. Lybech's encoding obtains fresh
+names from a process
+\[
+  !N(x,z,v,s)
+\]
+--- a name server --- reached over a fixed channel $v$ which every
+occurrence of $\nu$ in the entire term must contact. He is candid about
+the cost, and closes his paper by observing that a more elaborate
+encoding, in which each replication instantiates its own source of
+names, ``would be closer to the intention in the encoding by Meredith and
+Radestock'', but that it appears to face a \emph{scaffolding} problem: to
+build a source of fresh names one must already have a source of fresh
+names. He leaves it open.
+
+The scaffolding problem has a solution, and it was in the construction the
+original encoding was modelled on. Abramsky's proof expressions for
+classical linear logic \cite{Abramsky93} handle exactly this: unboundedly
+many copies of a proof, each needing names distinct from every other
+copy's, with no fresh names manufactured at runtime at all. The mechanism
+is that a name is a pair $\langle x_0, s \rangle$ of a root and a binary
+\emph{address}; the Copy rule extends addresses rather than allocating
+roots; and Copy's own first clause \emph{re-contracts} the copied box's
+side ports, so that the parent's namespace is never disturbed. Freshness
+is required only where roots are introduced --- statically, finitely
+often, at translation time.
+
+The original encoding used the first half of this. Its splitting of the
+parameter pair across parallel composition,
+$\enc{P_1 \mid P_2}_{n,p} = \enc{P_1}_{+n,+p} \mid \enc{P_2}_{n+,p+}$, is
+precisely Abramsky's variant operation $t \mapsto t^l, t^r$, and it is
+correct for precisely his reason. It did not use the second half, and
+what the second half supplies is not decoration: it is the reason the
+invariant survives copying.
+
+\paragraph{Contributions.}
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em]
+\item We identify the invariant the 2005 encoding required and never
+stated (\S\ref{sec:diagnosis}), and show that the invariant Lybech
+reverse-engineers from it --- that the parameters are the most recently
+replicated names --- is a different and weaker property that no splitting
+clause can preserve, whereas Abramsky's prefix-incompatibility invariant
+is preserved by splitting by construction. On this reading the parallel
+composition clause is not the defect; it is the half that was right.
+\item We prove a no-go result (Proposition~\ref{prop:nogo}) explaining why
+having the right invariant is still not enough: a translation function is
+a finite object and can emit only finitely many quoted addresses, while
+replication yields unboundedly many occurrences; and rho's duplicator
+cannot make up the difference, because it copies quoted code verbatim and
+rho substitution does not descend under a quote. Address arithmetic must
+therefore be performed by communication. This is stated as a syntactic
+side condition on translation clauses
+(Definition~\ref{def:discipline}), which both of Lybech's counterexamples
+violate by inspection.
+\item We give an encoding satisfying that condition
+(\S\ref{sec:encoding}), in which each replication node carries a local
+address server derived from its own address, the scaffolding regress
+terminates at a static seed consumed once, and no process is contacted by
+more than one node. Whole-term compilation survives: the address
+structure is still written statically and still mirrors the parse tree;
+only the addresses themselves become runtime values.
+\item We verify the encoding against both of Lybech's counterexamples
+(\S\ref{sec:worked}), adapted to the input-guarded fragment.
+\item We prove full abstraction (\S\ref{sec:fullabs}) for a
+context-labelled bisimilarity whose observers are the encodings of source
+contexts, and we show (\S\ref{sec:necessity}) that the restriction is
+forced: an unrestricted rho context separates $\enc{P}$ from
+$\enc{P \mid \nil}$ although $P \equiv P \mid \nil$. Lybech's own
+separation theorem is untouched and explains why no encoding whatever can
+do better.
+\end{enumerate}
+
+\paragraph{Scope.}
+The source language is the asynchronous, choice-free $\pi$-calculus with
+\emph{input-guarded} replication. This is not a concession extracted by
+the difficulty: unguarded replication is nonsense from an implementation
+standpoint --- it runs away --- and the 2005 encoding of it diverges
+unconditionally, as Lybech notes. He restricts to the same fragment for
+the same reason, and observes (his footnote 5) that the restriction would
+not by itself have prevented either of his counterexamples. Cost
+accounting is out of scope. This note is a bug fix.
+
+% =====================================================================
+\section{The rho calculus}\label{sec:rho}
+% =====================================================================
+
+We recall the calculus \cite{MeredithRadestock05}, in current notation.
+
+\begin{definition}[Syntax]
+Processes $P$ and names $x$ are given by mutual recursion:
+\[
+P \ ::=\ \nil \ \mid\ P_1 \mid P_2 \ \mid\ \out{x}{P} \ \mid\ \inp{y}{x}{P}
+      \ \mid\ \drp{x}
+\qquad\qquad
+x \ ::=\ \quo{P}
+\]
+$\out{x}{P}$ is the \emph{lift}: it quotes $P$, thereby creating the name
+$\quo{P}$, and outputs it on $x$. $\inp{y}{x}{P}$ is the input, binding
+$y$ in $P$; it is the only binder. $\drp{x}$ is the \emph{drop}: it
+strips the quotes from $x$ and runs the process inside.
+\end{definition}
+
+\begin{definition}[Name equivalence and structural congruence]
+Name equivalence $\nequiv$ is the least equivalence on names closed under
+\[
+\frac{P_1 \equiv P_2}{\quo{P_1} \nequiv \quo{P_2}}
+\qquad\qquad
+\frac{x_1 \nequiv x_2}{\quo{(\drp{x_1})} \nequiv x_2}
+\]
+and structural congruence $\equiv$ is the least congruence containing
+$\alpha$-equivalence and the abelian monoid laws for $\mid$ with unit
+$\nil$, with names compared up to $\nequiv$ in the congruence rules.
+\end{definition}
+
+\begin{definition}[Reduction]
+\[
+\frac{x_1 \nequiv x_2}
+     {\inp{y}{x_1}{P_1} \ \mid\ \out{x_2}{P_2} \ \to\ P_1\{\quo{P_2}/y\}}
+\]
+closed under $\mid$ and $\equiv$ in the usual way.
+\end{definition}
+
+Substitution is capture-avoiding and replaces all names $\nequiv$-equal to
+the substituted variable. Two clauses matter for everything below:
+\[
+(\quo{P})\{x/y\} =
+  \begin{cases} x & \text{if } \quo{P} \nequiv y\\ \quo{P} & \text{otherwise}\end{cases}
+\qquad\qquad
+(\drp{x})\{\quo{P}/y\} =
+  \begin{cases} P & \text{if } x \nequiv y \\ \drp{x} & \text{otherwise}\end{cases}
+\]
+The first is the crux of this paper: \emph{substitution does not recur
+into a process under a quote}. A quoted process is an atom to
+substitution; it is replaced wholesale or not at all.
+
+\begin{notation}
+We write $\out{x}{\drp{z}}$ for the transmission of the \emph{name} $z$
+along $x$, since $\quo{(\drp{z})} \nequiv z$; and we write $\Dup(x)$ for
+the duplicator $\inp{y}{x}{(\drp{y} \mid \out{x}{\drp{y}})}$, which
+satisfies $\out{x}{Q} \mid \Dup(x) \to Q \mid \out{x}{Q}$.
+\end{notation}
+
+\subsection{Why this notation}\label{sec:notation}
+
+The 2005 papers wrote input as $x(y).P$ and quotation with corner
+quotes. We use $\inp{y}{x}{P}$, $\quo{P}$, $\drp{x}$ throughout, for four
+reasons, of which the last is the one that earns its place in a paper
+about a bug.
+
+\begin{enumerate}[label=(\arabic*),leftmargin=2.2em]
+\item It is ASCII. Every term displayed in this note is a term of
+rholang; the appendix runs.
+
+\item It extends to joins without renegotiation. Simultaneous consumption
+from several channels is written
+$\inpp{y_1}{x_1}{y_2}{x_2}{P}$, with $\&$ joining within a group and
+$;$ separating alternative groups. The corner-quote prefix notation
+$x(y).P$ has no comparable extension: the prefix is a unary constructor
+by construction, and polyadic or joined receipt has to be simulated. The
+encoding of \S\ref{sec:encoding} does not require joins, but the
+generalisation of \S\ref{sec:open} to polyadic $\pi$ does, and it is
+better to have paid for the notation in advance.
+
+\item It is the for-comprehension of Scala, Haskell's \texttt{do}, and
+C\#'s LINQ. A reader who knows none of the literature on process calculi
+nonetheless reads $\inp{y}{x}{P}$ correctly on the first attempt: draw a
+$y$ from $x$, then do $P$. The monadic reading of input is not an analogy
+here; RSpace, the store underlying the rho calculus implementations, is a
+comprehension over a tuplespace.
+
+\item Most importantly, $\quo{\cdot}$ and $\drp{\cdot}$ are visibly
+\emph{operators applied to terms}, occupying positions in a term. The
+central technical observation of this note
+(Lemma~\ref{lem:transparency}) is a statement about which \emph{positions}
+substitution can reach: it reaches the object of a lift, which is a
+process position, and it does not reach beneath a quote. Corner quotes
+present quotation as a change of typographic register rather than as an
+operator, and in that notation the distinction between
+$\out{c}{\out{n}{\nil}}$ and $\quo{\out{n}{\nil}}$ --- which is the entire
+difference between the broken encoding and the repaired one --- is
+typographically almost invisible. It was, in fact, invisible for
+seventeen years.
+\end{enumerate}
+
+\begin{remark}
+The calculus is the \textbf{r}eflective \textbf{h}igher \textbf{o}rder
+calculus; ``rho'' is an acronym before it is a Greek letter, and the pun
+--- that rho follows $\pi$ --- is the point of the name. We therefore
+never write it with the letter $\rho$.
+\end{remark}
+
+% =====================================================================
+\section{The 2005 encoding and what it was for}\label{sec:2005}
+% =====================================================================
+
+Fix an injection $\varphi$ from $\pi$-calculus names to rho names; we
+suppress it. The \emph{static quoting} techniques generate, from a name
+$x$, the names
+\[
+  \Lft(x) \ \triangleq\ \quo{(\out{x}{\nil})}
+  \qquad
+  \Rgt(x) \ \triangleq\ \quo{(\inp{y}{x}{\nil})}
+\]
+(the left and right increments, written $+x$ and $x{+}$ in the original),
+and their composition. Each generates a countably infinite sequence of
+names from any starting point.
+
+The translation $\enc{-}_{n,p}$ takes two name parameters, and is defined
+by
+\[
+\begin{array}{rcl}
+\enc{\nil}_{n,p} &=& \nil \\
+\enc{x(y).P}_{n,p} &=& \inp{y}{x}{\enc{P}_{n,p}} \\
+\enc{\bar x \langle z\rangle}_{n,p} &=& \out{x}{\drp{z}} \\
+\enc{P_1 \mid P_2}_{n,p} &=& \enc{P_1}_{\Lft(n),\Lft(p)} \mid \enc{P_2}_{\Rgt(n),\Rgt(p)} \\
+\enc{(\nu z)P}_{n,p} &=& \inp{z}{p}{\enc{P}_{\Lft(n),\Lft(p)}} \mid \out{p}{\drp{n}} \\
+\enc{!P}_{n,p} &=& \out{a}{\big(\inp{n}{b}{\inp{p}{c}{(\enc{P}_{n,p} \mid \Dup(a) \mid \cdots)}}\big)}
+                   \mid \Dup(a) \mid \cdots
+\end{array}
+\]
+with $a = n \cdot p$, $b = \Rgt(n)$, $c = \Rgt(p)$, and top-level
+parameters $n_0 = \quo{\prod_{x \in \fn(P)} \out{x}{\nil}}$,
+$p_0 = \quo{\prod_{x \in \fn(P)} \inp{y}{x}{\nil}}$, chosen so that no
+name of $P$ is derivable from them.
+
+Two features of this design should be recorded before it is criticised,
+because they are what the design is \emph{for}.
+
+\begin{enumerate}[label=(\alph*),leftmargin=2.2em]
+\item \textbf{There is no runtime source of names.} $n_0$ and $p_0$ are
+computed by the translation from $\fn(P)$ and are never requested from
+anything. Every other name in the image is obtained from them by
+operations that are, in intent, local to the node that performs them.
+\item \textbf{The translation compiles a whole term at a time.} It is
+parametrised by a position in the term, not merely by the term's head
+constructor. This is the price of (a), and it is the reason the encoding
+is not a signature homomorphism.
+\end{enumerate}
+
+The defect, stated in the way we will need it, is this: the encoding
+carries an invariant on $(n,p)$ that is never written down. Lybech
+recovers it as \emph{the parameters are the names most recently
+replicated}, and this is a fair reconstruction of what the replication
+clause is trying to maintain. We shall argue in \S\ref{sec:diagnosis}
+that it is the wrong invariant, and that the encoding's own ancestry
+supplies the right one.
+
+% =====================================================================
+\section{Lybech's counterexamples and his repair}\label{sec:lybech}
+% =====================================================================
+
+\subsection{The counterexamples}
+
+\begin{example}[Splitting destroys the parameter invariant]\label{ex:ce1}
+Let $Q$ be arbitrary and
+\[
+P_1' \ \triangleq\ !\big((\nu z)\bar u \langle z\rangle \mid Q\big)
+\qquad
+P_2' \ \triangleq\ (\nu z)\,!\big(\bar u \langle z\rangle \mid Q\big).
+\]
+$P_1'$ emits a different fresh name on $u$ at each unfolding; $P_2'$
+emits the same one forever, and the context
+$[\,\cdot\,] \mid u(n_1).u(n_2).(\bar n_1 \mid n_2.\bar x)$
+distinguishes them. Their images do not differ: the replication context
+rebinds $n$ and $p$ at each unfolding, but the parallel composition
+clause has already frozen $\Lft(n)$ and $\Lft(p)$ \emph{inside quotes},
+where the runtime substitution cannot reach, so the inner $\nu$ emits the
+same name every time.
+\end{example}
+
+\begin{example}[Nesting $\nu$ destroys it too]\label{ex:ce2}
+\[
+P_1 \ \triangleq\ !(\nu z)\bar u\langle z\rangle
+\qquad
+P_2 \ \triangleq\ !(\nu q)(\nu z)\bar u\langle z\rangle
+\]
+are structurally congruent, since $q$ is unused. Their images are not
+equivalent: the clause for $(\nu q)$ statically increments the parameters
+before the clause for $(\nu z)$ sees them, so in $\enc{P_2}$ the emitted
+names are all equal while in $\enc{P_1}$ they are all distinct.
+\end{example}
+
+Lybech's diagnosis is exact, and we adopt it verbatim: the property of
+being ``the most recently replicated names'' is not preserved by the
+translation of parallel composition, because the increments the
+translation writes are \emph{static}, i.e.\ they place the parameter
+under a quote, and substitution does not recur under quotes.
+
+\begin{remark}\label{rem:guarded}
+Both examples use unguarded replication, which our fragment excludes. The
+errors survive the restriction --- Lybech records as much explicitly ---
+and we restate the examples in the input-guarded fragment in
+\S\ref{sec:worked}, where we check the repaired encoding against them.
+\end{remark}
+
+\subsection{The name server}
+
+Lybech's encoding is
+$\enc{P} \triangleq \enc{P}_{n,v} \mid\, !N(x,z,v,s)$ where the server
+\[
+  !N(x,z,v,s) \ \triangleq\
+  \Dup(x) \mid \out{x}{\big(\inp{a}{z}{\inp{r}{v}{(\Dup(x) \mid \out{r}{\drp{a}} \mid \out{z}{\out{a}{\nil}})}}\big)}
+  \mid \out{z}{\drp{s}}
+\]
+holds a seed on $z$, and answers requests arriving on the fixed channel
+$v$ with successive left increments of $s$. The parameter $n$ is
+threaded forward through the translation and is never re-bound, which is
+what removes the second error; the first is removed because access to the
+name source is by a channel $v$ that never changes and so can never be
+lost. The encoding is proved valid against compositionality, substitution
+invariance, operational correspondence, observational correspondence,
+divergence reflection, and parameter independence. We accept all of
+this.
+
+We also note the mechanism the server uses to build the successor name:
+\[
+  \out{z}{\out{a}{\nil}}
+\]
+where $a$ is a name that was \emph{received}. This computes
+$\Lft(a)$ at runtime, and it works because the object of a lift is a
+process position. It is the very manoeuvre the broken clauses needed and
+did not use. Lybech deploys it once, inside a server, without remarking
+that it is a general discipline; \S\ref{sec:diagnosis} makes it one.
+
+\subsection{Why this is a correct encoding of a different thing}
+
+\begin{enumerate}[label=(\arabic*),leftmargin=2.2em]
+\item \textbf{It reintroduces the resource whose elimination was the
+point.} A single process, reached over a single fixed channel, is the
+source of every fresh name in the term. That is the $\pi$-calculus
+assumption of an ambient name supply, implemented rather than discharged.
+It is not a criticism of the theorem; it is an observation about what the
+theorem is about.
+\item \textbf{The topology is wrong.} Lybech makes this criticism
+himself, and better than we would: for a distributed system with a
+topology other than a star, the translation does not yield an adequate
+representation of the source, because it routes every name request
+through one node. The encoding preserves the semantics of a program and
+not the intuitions underlying its structure.
+\item \textbf{The criteria are not the right yardstick here.} A
+Gorla-style list with compositionality as a primitive measures how close a
+translation is to a signature homomorphism. But behavioural faithfulness
+and syntactic homomorphism are independent: Milner's encoding of the
+$\lambda$-calculus into $\pi$ is behaviourally faithful and is not a
+signature homomorphism. Since compiling a whole term at a time is
+precisely what the rho encoding trades for locality, adopting
+compositionality as a primitive criterion rules the interesting design
+out by fiat. In \S\ref{sec:fullabs} we take the correctness criterion to
+be a single behavioural condition and derive Lybech's criteria from it.
+\end{enumerate}
+
+Finally, his own conclusion states the alternative and the obstacle: give
+each replication its own copy of the name server, ``closer to the
+intention'' of the original, and confront the scaffolding problem, since
+to instantiate a source of fresh names one must first have a source of
+fresh names. This note answers that. The answer was available in 1993.
+
+% =====================================================================
+\section{The missing half: Abramsky's construction}\label{sec:abramsky}
+% =====================================================================
+
+Abramsky's computational interpretation of classical linear logic
+\cite{Abramsky93} assigns \emph{proof expressions} $\Theta;\bar t$ to
+sequent proofs and gives them an operational semantics in the style of
+the chemical abstract machine. We need four features of it.
+
+\paragraph{Names carry addresses.}
+In the notational interlude preceding the reaction rules, Abramsky fixes
+a bijection
+\[
+  \mathcal{N} \ \cong\ \mathbb{N}_0 \times \{l,r\}^*
+\]
+so that a name is a pair $\langle x_0, s\rangle$ of a \emph{root} and a
+binary \emph{address}. For a term $t$, the variants $t^l$ and $t^r$
+replace every $\langle x_0, s\rangle$ occurring in $t$ by
+$\langle x_0, sl\rangle$ and $\langle x_0, sr\rangle$ respectively. The
+invariant established by the proof-expression assignment and maintained by
+every transition is:
+\begin{quote}
+for all distinct names $\langle x_0,s\rangle, \langle y_0,t\rangle$
+occurring in $P$, $x_0 = y_0$ implies that $s$ and $t$ are
+\emph{incompatible} --- they have no upper bound in the prefix ordering.
+\end{quote}
+
+\paragraph{Contraction is a term former.}
+The Contraction rule of $\mathsf{PE}_2$ is
+\[
+\frac{\vdash \Theta; \Gamma,\ t{:}\,?A,\ u{:}\,?A}
+     {\vdash \Theta; \Gamma,\ t \mathbin{@} u : \,?A}
+\]
+The joiner $t \mathbin{@} u$ is a term, not a rewrite: it is a
+first-class object that can be embedded in larger terms and cut against
+other terms.\footnote{The rule is printed in \cite{Abramsky93} with
+$u{:}\,?B$; comparison with the intuitionistic Contraction rule and with
+case (12) of the realizability proof shows this to be a typo for $?A$.}
+
+\paragraph{Copy is the rejoin.}
+The reaction rule for the exponential is
+\[
+  \bar x(P) \perp u \mathbin{@} v
+  \ \longrightarrow\
+  \bar x \perp (\bar x^{\,l} \mathbin{@} \bar x^{\,r}),\quad
+  \bar x(P)^l \perp u,\quad
+  \bar x(P)^r \perp v .
+\]
+Three things are worth separating here.
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em]
+\item Copying is \emph{demand-driven}: the box duplicates only when a
+contraction node asks for two. Abramsky says as much --- the term of type
+$?A^\perp$ specifies how many copies of the $!A$ term are required --- and
+records that Copy is the only rule that increases the size of a proof
+expression.
+\item Distinctness of the two copies is by \emph{address extension}, not
+by allocation. No fresh root is created. Freshness is required only where
+roots are introduced, and roots are introduced only by the name
+convention at the Axiom, With and Of Course rules --- statically, finitely
+often.
+\item The first clause, $\bar x \perp (\bar x^{\,l} \mathbin{@} \bar
+x^{\,r})$, is the rejoin. The box's side ports $\bar x$ are cut against a
+\emph{newly built contraction} of the two copies' corresponding ports.
+The environment continues to see one port; the two copies' demands on it
+are routed through a joiner. \emph{The parent's namespace is never
+re-rooted.}
+\end{enumerate}
+
+\paragraph{The correspondence.}
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+$\mathsf{PE}_2$ & 2005 encoding & status \\
+\midrule
+$\mathcal{N} \cong \mathbb{N}_0 \times \{l,r\}^*$ & $\Lft, \Rgt$ namespace templates & used \\
+variants $t^l, t^r$ & $\enc{P_1 \mid P_2}_{n,p} = \enc{P_1}_{\Lft(n),\Lft(p)} \mid \enc{P_2}_{\Rgt(n),\Rgt(p)}$ & used \\
+prefix-incompatibility invariant & --- & \textbf{not stated} \\
+Contraction $t \mathbin{@} u$ & --- & \textbf{unused} \\
+Copy, clause $\bar x \perp (\bar x^l \mathbin{@} \bar x^r)$ & --- & \textbf{unused} \\
+demand-driven copying & eager replication (diverges) & \textbf{unused} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =====================================================================
+\section{Diagnosis}\label{sec:diagnosis}
+% =====================================================================
+
+\begin{proposition}[The reconstructed invariant is the wrong one]
+\label{prop:wronginv}
+Let $I(n,p)$ be the property that $(n,p)$ are the names most recently
+produced by the enclosing replication context. No splitting clause
+preserves $I$: if $\enc{P_1 \mid P_2}_{n,p}$ delegates to sub-translations
+at parameters derived from $(n,p)$, then the derived parameters do not
+satisfy $I$ in the sub-terms, since they are not the most recent output of
+the replication context but a function of it.
+\end{proposition}
+
+\begin{proof}
+Immediate from the shape of $I$: it is a statement about a moving
+frontier, and it identifies one distinguished pair globally, whereas
+splitting produces two pairs neither of which is that one. It follows
+that any repair which preserves $I$ must avoid deriving parameters at
+$\mid$ --- which is what Lybech's threading of a single $n$ through the
+translation does, at the cost of needing an external source for the
+values $n$ takes.
+\end{proof}
+
+\begin{proposition}[Prefix-incompatibility is preserved by splitting]
+\label{prop:rightinv}
+Let $\mathrm{Inc}(S)$ be the property that the addresses occurring in a
+set $S$ of names over a common root are pairwise incompatible in the
+prefix ordering. If $\mathrm{Inc}(S)$ and $\sigma \in S$, then
+$\mathrm{Inc}\big((S \setminus \{\sigma\}) \cup \{\sigma l, \sigma r\}\big)$.
+\end{proposition}
+
+\begin{proof}
+$\sigma l$ and $\sigma r$ are incompatible with each other. For
+$\tau \in S \setminus \{\sigma\}$: $\tau$ is incompatible with $\sigma$,
+hence neither is a prefix of the other, hence $\tau$ is incompatible with
+every extension of $\sigma$.
+\end{proof}
+
+Propositions \ref{prop:wronginv} and \ref{prop:rightinv} together say
+that the parallel composition clause of the 2005 encoding is not the
+defect. Against the invariant its ancestry supplies, splitting is exactly
+the operation that maintains it. The defect is elsewhere.
+
+\begin{lemma}[Substitution transparency]\label{lem:transparency}
+The object of a lift is a substitution-transparent position and a quote is
+not: for all $P$, $x$, $y$,
+\[
+  (\out{c}{P})\{x/y\} \ =\ \out{c\{x/y\}}{(P\{x/y\})}
+  \qquad\text{whereas}\qquad
+  (\quo{P})\{x/y\} \in \{x, \quo{P}\}.
+\]
+Consequently a name may be derived from a runtime-bound parameter $n$ by
+the process $\out{c}{\out{n}{\nil}}$, which transmits $\Lft(n)$ on $c$;
+and it may not be derived by writing $\quo{(\out{n}{\nil})}$ in the
+translation.
+\end{lemma}
+
+\begin{proof}
+By the definition of substitution: the lift's object is a process, and
+substitution is defined by structural recursion through process
+constructors; quotation is not a process constructor but the name
+constructor, and its clause is the two-case clause above.
+\end{proof}
+
+\begin{corollary}[One quote level per rendezvous]\label{cor:onequote}
+A name at quote depth $k$ above a runtime-received name requires at least
+$k$ communications to construct.
+\end{corollary}
+
+\begin{proposition}[No static address assignment]\label{prop:nogo}
+There is no translation function $\enc{-}$ of the 2005 shape --- finitely
+many clauses, each emitting finitely many quoted names --- for which the
+address carried by a name in the $k$-th unfolding of a replication is
+written by the translation, for all $k$.
+\end{proposition}
+
+\begin{proof}
+The translation is a finite object, so the set of quoted names appearing
+syntactically in the image of a fixed term is finite. A replication
+yields unboundedly many occurrences of its body, each of which must, if
+the body contains $\nu$, contribute a name distinct from all the others.
+The pigeonhole principle applies. The only remaining hope is that
+substitution, applied at each unfolding, differentiates copies of a fixed
+piece of syntax --- but by Lemma~\ref{lem:transparency} substitution
+cannot reach beneath a quote, and by construction rho's duplicator
+reproduces the quoted body verbatim. This is not an accident of the
+duplicator: transmission of code without modification is what reflection
+\emph{is}, and it is the same fact on which Lybech's separation theorem
+turns.
+\end{proof}
+
+Proposition~\ref{prop:nogo} is the precise sense in which Abramsky's Copy
+rule does not transfer. Copy renames the contents of a box at the
+metalevel; rho has no metalevel operation on quoted code. Address
+arithmetic must therefore leave the syntax and become communication, and
+the structure that routes it is Copy's other clause: the shared port,
+re-contracted per copy.
+
+\begin{definition}[The discipline]\label{def:discipline}
+A translation clause is \emph{admissible} if every parameter that will be
+bound at runtime occurs in it only
+\begin{enumerate}[label=(\alph*),leftmargin=2.2em,nosep]
+\item in subject position of an input or a lift, or
+\item within the object of a lift,
+\end{enumerate}
+and never within a quote written by the translation.
+\end{definition}
+
+\begin{proposition}
+The clauses for $\mid$ and for $\nu$ in the 2005 encoding are
+inadmissible; those for $\nil$, input and output are admissible.
+\end{proposition}
+
+\begin{proof}
+By inspection: $\Lft(n) = \quo{(\out{n}{\nil})}$ places the parameter
+under a quote written by the translation, and both clauses use it. The
+remaining clauses do not mention the parameters except by passing them
+along.
+\end{proof}
+
+This is the whole of the repair, and it is checkable in a minute. Both of
+Lybech's counterexamples exploit exactly the two inadmissible clauses.
+
+% =====================================================================
+\section{The encoding}\label{sec:encoding}
+% =====================================================================
+
+\subsection{Addresses}
+
+\begin{definition}[Address templates]
+For a name $\sigma$ put
+$\Lft(\sigma) = \quo{(\out{\sigma}{\nil})}$ and
+$\Rgt(\sigma) = \quo{(\inp{y}{\sigma}{\nil})}$.
+An \emph{address} is a name of the form $\theta(n_0)$ for
+$\theta \in \{\Lft,\Rgt\}^*$ and $n_0$ the static seed.
+\end{definition}
+
+We never write $\Lft$ or $\Rgt$ in the image of the translation; they are
+metalanguage, used only to \emph{name} the addresses that the encoding
+produces by communication.
+
+\begin{lemma}[Injectivity and disjointness]\label{lem:templates}
+$\Lft$ and $\Rgt$ are injective on names up to $\nequiv$, their images are
+disjoint, and $\QD(\Lft(\sigma)) = \QD(\Rgt(\sigma)) = 1 + \QD(\sigma)$,
+where $\QD$ is Lybech's quote depth. Consequently
+$\theta \mapsto \theta(n_0)$ is injective on $\{\Lft,\Rgt\}^*$.
+\end{lemma}
+
+\begin{proof}
+Injectivity: $\quo{(\out{\sigma}{\nil})} \nequiv \quo{(\out{\tau}{\nil})}$
+requires $\out{\sigma}{\nil} \equiv \out{\tau}{\nil}$, hence
+$\sigma \nequiv \tau$; similarly for $\Rgt$. Disjointness: a lift and an
+input are distinct constructors and structural congruence does not relate
+them. Neither template's output is of the form $\quo{(\drp{x})}$, so
+[N-DROP] does not apply and quote depth strictly increases. Injectivity of
+$\theta \mapsto \theta(n_0)$ follows by induction on $|\theta|$, using
+disjointness at each step and stratification to prevent an address from
+coinciding with a proper prefix of itself.
+\end{proof}
+
+Lemma~\ref{lem:templates} is Abramsky's bijection
+$\mathcal{N} \cong \mathbb{N}_0 \times \{l,r\}^*$, realised inside the rho
+calculus with $n_0$ as the unique root. Prefix-incompatibility becomes,
+here, the conjunction of two things already in the literature:
+stratification by quote depth separates addresses of different length,
+and template disjointness separates siblings.
+
+\subsection{The one primitive}
+
+Everything is built from a single macro, which obtains two fresh addresses
+from a given one by communication.
+
+\begin{construction}[$\Frsh$]
+\[
+  \Frsh(\sigma;\, u,\, v).\,P
+  \ \triangleq\
+  \inp{u}{\sigma}{\inp{v}{\sigma}{P}}
+  \ \mid\ \out{\sigma}{\out{\sigma}{\nil}}
+  \ \mid\ \out{\sigma}{\inp{y}{\sigma}{\nil}}
+\]
+binding $u$ and $v$ in $P$.
+\end{construction}
+
+$\Frsh$ is admissible: $\sigma$ occurs in subject position and in the
+object of a lift, never under a written quote. After two administrative
+communications, $\{u,v\} = \{\Lft(\sigma), \Rgt(\sigma)\}$, with the
+assignment chosen nondeterministically. That the assignment is
+nondeterministic is not a defect but the content of the design: only
+distinctness is required, never identity, which is exactly Lybech's
+criterion of parameter independence read as a design principle rather than
+as a proof obligation.
+
+\subsection{The clauses}
+
+The encoding maps a $\pi$ term to an \emph{address abstraction}, a
+function from a name to a rho process. We write $\enc{P}_\sigma$ for its
+value at $\sigma$.
+
+\begin{definition}[The translation]\label{def:translation}
+\begin{align*}
+\enc{\nil}_\sigma \ &=\ \nil \\[2pt]
+\enc{\bar x\langle z\rangle}_\sigma \ &=\ \out{x}{\drp{z}} \\[2pt]
+\enc{x(y).P}_\sigma \ &=\ \inp{y}{x}{\enc{P}_\sigma} \\[2pt]
+\enc{P_1 \mid P_2}_\sigma \ &=\
+  \inp{m}{\sigma}{\enc{P_1}_m}
+  \ \mid\ \inp{m}{\sigma}{\enc{P_2}_m}
+  \ \mid\ \out{\sigma}{\out{\sigma}{\nil}}
+  \ \mid\ \out{\sigma}{\inp{y}{\sigma}{\nil}} \\[2pt]
+\enc{(\nu z)P}_\sigma \ &=\ \Frsh(\sigma;\, z,\, m).\ \enc{P}_m \\[2pt]
+\enc{!\,x(y).P}_\sigma \ &=\
+  \Frsh(\sigma;\, a,\, b).\ \Frsh(b;\, s,\, c).\
+  \Big(\ \Dup(a)
+  \ \mid\ \out{a}{B}
+  \ \mid\ \out{s}{\drp{c}}\ \Big)
+\\
+\text{where}\quad
+B \ &=\ \inp{y}{x}{\Big(\Dup(a) \ \mid\
+        \inp{c'}{s}{\ \Frsh(c';\, d,\, e).\ \big(\out{s}{\drp{e}} \mid \enc{P}_d\big)}\Big)}
+\end{align*}
+Top level: $\enc{P} \triangleq \enc{P}_{n_0}$ with
+$n_0 = \quo{\prod_{x \in \fn(P)} \out{x}{\nil}}$.
+\end{definition}
+
+\paragraph{Reading the replication clause.}
+The node splits its own address twice, obtaining a box channel $a$, a
+local server port $s$, and a first seed $c$. The box $B$ is posted on $a$
+and duplicated in the usual self-reproducing manner, so that
+$\Dup(a) \mid \out{a}{B} \to B \mid \out{a}{B}$ and $B$ then blocks on
+$x$: unfolding is input-guarded, and there is no divergence. On each
+unfolding, $B$ reinstalls a duplicator, takes the current seed $c'$ off
+the local port $s$, splits $c'$ into a body address $d$ and a successor
+seed $e$, posts $e$ back on $s$, and runs the body at $d$.
+
+The crucial point is what is \emph{inside} the quote. When the box is
+posted, $a$, $s$, $x$ have already been substituted, because they are
+bound by inputs whose continuations include the lift, and by
+Lemma~\ref{lem:transparency} substitution reaches into a lift's object.
+Thereafter $B$ is copied verbatim, and it needs no renaming, because it
+contains no addresses --- only the port $s$ on which it asks for one.
+This is Copy's first clause, $\bar x \perp (\bar x^l \mathbin{@} \bar x^r)$:
+the copies share the parent's port and the routing does the
+distinguishing.
+
+\begin{remark}[No global server]
+The port $s$ is fixed and shared --- among the copies of \emph{one}
+replication node, and derived from \emph{that node's} address. A term
+with $k$ replication nodes has $k$ mutually unaware local servers and no
+channel that all of them use. The scaffolding regress terminates at
+$n_0$, which is computed by the translation from $\fn(P)$ and consumed
+once. Compare Lybech's single $!N(x,z,v,s)$ on a fixed $v$.
+\end{remark}
+
+\begin{remark}[Whole-term compilation survives]
+Every process displayed above is written by the translation. What became
+dynamic is the \emph{value} of an address, not the structure that
+computes it: the tree of $\Frsh$ nodes is static and is isomorphic to the
+parse tree of the source. The encoding remains a whole-term compilation
+and remains non-homomorphic, which is the design (b) of \S\ref{sec:2005}.
+\end{remark}
+
+\subsection{Address allocation is a tree}
+
+\begin{lemma}[Locality]\label{lem:locality}
+In $\enc{P}_{n_0}$, each address serves as the subject of the
+administrative traffic of exactly one clause occurrence, and the addresses
+allocated by distinct occurrences are distinct.
+\end{lemma}
+
+\begin{proof}
+Assign to each node of the source term the address at which its clause is
+invoked. The clauses for $\nil$, output and input allocate nothing and
+pass their address to their continuation, so an address may be shared
+along a prefix chain but is consumed as a subject by at most the unique
+$\mid$, $\nu$ or $!$ node terminating that chain. Each of $\mid$, $\nu$
+and $\Frsh$ consumes its address $\sigma$ as a subject and allocates
+exactly $\Lft(\sigma)$ and $\Rgt(\sigma)$, which by
+Lemma~\ref{lem:templates} lie strictly below $\sigma$ in the address
+tree. Subtrees allocated at $\Lft(\sigma)$ and $\Rgt(\sigma)$ are
+disjoint. For $!$, the successive seeds are $c_0 = c$ and
+$c_{k+1} = e_k$, where $d_k, e_k$ are the two children of $c_k$; hence
+the body of the $k$-th unfolding occupies the subtree below $d_k$, and
+these subtrees are pairwise disjoint and disjoint from every $c_j$. Note
+in particular that the successor seed is a \emph{sibling} of the body
+address, not an extension of it; taking the successor seed to be
+$\Lft(c_k)$ while the body ran at $c_k$ would make the next seed collide
+with the body's own first child.
+\end{proof}
+
+\begin{corollary}[Distinctness]\label{cor:distinct}
+All names generated by $\enc{P}_{n_0}$ are pairwise non-$\nequiv$, and
+none is $\nequiv$ to a name of $\fn(P)$ or derivable from one.
+\end{corollary}
+
+\begin{proof}
+Lemmas~\ref{lem:templates} and \ref{lem:locality}; the last clause by the
+choice of $n_0$, whose quote depth exceeds that of every $x \in \fn(P)$.
+\end{proof}
+
+\begin{lemma}[Administrative reductions terminate]\label{lem:admin}
+Call a reduction \emph{administrative} if its subject is an address.
+Every maximal administrative reduction sequence from $\enc{P}_\sigma$ is
+finite, and no administrative reduction is observable on
+$\varphi(\fn(P))$.
+\end{lemma}
+
+\begin{proof}
+Each $\mid$ node contributes two, each $\nu$ node two, each $!$ node four
+plus, per unfolding, one on $a$ and three on $s$ and $c_k$. Unfoldings
+are guarded by an input on the source channel $x$, so no unfolding occurs
+without a corresponding source communication. Hence the number of
+administrative steps enabled at any point is bounded by a function of the
+number of source communications performed. Unobservability is
+Corollary~\ref{cor:distinct}.
+\end{proof}
+
+\begin{corollary}[Divergence reflection]
+$\enc{P} \to^{\omega}$ implies $P \to^{\omega}$.
+\end{corollary}
+
+% =====================================================================
+\section{The counterexamples, worked}\label{sec:worked}
+% =====================================================================
+
+We restate Examples~\ref{ex:ce1} and \ref{ex:ce2} in the input-guarded
+fragment, guarding each replication with an input on a trigger channel
+$w$, and supplying triggers from the context.
+
+\begin{example}[Example~\ref{ex:ce1}, guarded]
+\[
+P_1' = !\,w(t).\big((\nu z)\bar u\langle z\rangle \mid Q\big)
+\qquad
+P_2' = (\nu z)\,!\,w(t).\big(\bar u\langle z\rangle \mid Q\big)
+\]
+distinguished in $\pi$ by
+$C = [\,\cdot\,] \mid \bar w \mid \bar w \mid u(n_1).u(n_2).(\bar n_1 \mid n_2.\bar x)$.
+
+In the image, the $k$-th unfolding of $\enc{P_1'}$ runs its body at
+address $d_k$, and the body's parallel composition allocates
+$\Lft(d_k), \Rgt(d_k)$ \emph{by communication on $d_k$}, whose value is
+the $k$-th seed's child and therefore differs with $k$. The $\nu$ inside
+then allocates from an address that differs with $k$, so a different name
+is emitted on $u$ at each unfolding. In $\enc{P_2'}$ the $\nu$ is outside
+the box; its $\Frsh$ fires once, and every unfolding emits the same $z$.
+$\enc{C}$ separates them. This is the failure of Example~\ref{ex:ce1}
+removed: the offending static increment has become a communication, and
+the value it computes tracks the unfolding.
+\end{example}
+
+\begin{example}[Example~\ref{ex:ce2}, guarded]
+\[
+P_1 = !\,w(t).(\nu z)\bar u\langle z\rangle
+\qquad
+P_2 = !\,w(t).(\nu q)(\nu z)\bar u\langle z\rangle,
+\qquad P_1 \equiv P_2 .
+\]
+In $\enc{P_1}$, unfolding $k$ runs
+$\Frsh(d_k; z, m).\out{u}{\drp{z}}$, emitting one of
+$\Lft(d_k), \Rgt(d_k)$. In $\enc{P_2}$, unfolding $k$ runs
+$\Frsh(d_k; q, m).\Frsh(m; z, m').\out{u}{\drp{z}}$, emitting a child of
+$m$, itself a child of $d_k$. In both cases the emitted names are
+pairwise distinct across $k$, since the $d_k$ are, and in neither case is
+any emitted name observable except as a $\pi$ name. The two are therefore
+identified, as they must be. In the 2005 encoding they were separated
+because the extra $\nu$ performed a static increment that the replication
+context could not update; here it performs a communication that it can.
+\end{example}
+
+% =====================================================================
+\section{Full abstraction relative to encoded contexts}\label{sec:fullabs}
+% =====================================================================
+
+\subsection{Context-labelled bisimilarity}
+
+\begin{definition}[Context-labelled transitions]
+Let $L$ be a calculus with reduction $\to$ and a class $\Ctx$ of
+one-holed contexts. For $C \in \Ctx$ write
+$P \xrightarrow{\,C\,} P'$ when $C[P] \to P'$, and
+$P \xLongrightarrow{\,C\,} P'$ for $C[P] \to^* P'$.
+\end{definition}
+
+\begin{definition}[$\Obs$-relative bisimilarity]\label{def:dbisim}
+Let $\Obs \subseteq \Ctx$. A symmetric relation $\mathcal{R}$ is a
+\emph{$\Obs$-bisimulation} if $P \mathrel{\mathcal{R}} Q$ implies: for all
+$C \in \Obs$, if $P \xrightarrow{\,C\,} P'$ then
+$Q \xLongrightarrow{\,C\,} Q'$ for some $Q'$ with
+$P' \mathrel{\mathcal{R}} Q'$. Write $\bisim_\Obs$ for the largest such
+relation.
+\end{definition}
+
+On the source we take $\Obs = \Ctx_\pi$, all $\pi$ contexts, and write
+$\bisim_\pi$. On the target we take $\Obs = \enc{\Ctx_\pi}$, the
+\emph{encodings of source contexts}, and write $\bisim_{\enc{\Ctx_\pi}}$.
+
+\begin{remark}[On minimality]\label{rem:minimality}
+The labels here are enabling contexts, not \emph{minimal} enabling
+contexts. Minimality --- relative pushouts in the sense of Leifer and
+Milner, and their refinement to a subcategory of admissible observers ---
+is the right long-run discipline and is developed elsewhere; nothing in
+the theorem below needs it. Without minimality the label set is larger
+than necessary and $\bisim_\Obs$ is correspondingly finer, which makes the
+completeness direction harder rather than easier. We prove it anyway and
+flag the refinement as future work.
+\end{remark}
+
+\begin{definition}[Encoding a context]
+$\enc{-}$ extends to contexts by
+$\enc{[\,\cdot\,]}_\sigma = [\,\cdot\,]_\sigma$, a hole expecting an
+address, and by the clauses of Definition~\ref{def:translation} otherwise.
+Plugging is instantiation of the address abstraction:
+$\enc{C[P]} = \enc{C}\big[\enc{P}\big]$.
+\end{definition}
+
+\begin{lemma}[Compositionality]\label{lem:compositional}
+$\enc{C[P]} = \enc{C}[\enc{P}]$ for all $\pi$ contexts $C$ and processes
+$P$, on the nose.
+\end{lemma}
+
+\begin{proof}
+By induction on $C$. Each clause of Definition~\ref{def:translation}
+mentions its sub-translations only under an address abstraction, and the
+hole occurs in exactly one of them.
+\end{proof}
+
+Note that this is Lybech's criterion 1 (compositionality) as a
+consequence, with the coordinating context being the $\Frsh$ traffic and
+its free names contained in $\varphi(\fn(P)) \cup \{\sigma\}$.
+
+\subsection{Address independence}
+
+\begin{lemma}[Address independence]\label{lem:addrind}
+Let $\sigma, \tau$ be addresses satisfying
+Corollary~\ref{cor:distinct} for $P$. Then there is a bijection $\beta$
+between the names generated by $\enc{P}_\sigma$ and those generated by
+$\enc{P}_\tau$, identity on $\varphi(\fn(P))$, such that
+$\beta(\enc{P}_\sigma) = \enc{P}_\tau$; and consequently
+$\enc{P}_\sigma \bisim_{\enc{\Ctx_\pi}} \enc{P}_\tau$.
+\end{lemma}
+
+\begin{proof}
+The first claim is the substitution $\theta(\sigma) \mapsto \theta(\tau)$,
+which is well defined and bijective by Lemma~\ref{lem:templates} and
+total on generated names by Lemma~\ref{lem:locality}. For the second:
+$\beta$ is not the identity, so the two terms are not equal; but an
+encoded context uses a name it has received only as the subject of an
+input or a lift, or as the object of one, and never applies $\drp{\cdot}$
+to it or matches on its structure. Hence the only discriminations an
+encoded observer can make between two received names are equality tests
+by attempted synchronisation, which $\beta$ preserves and reflects, being
+a bijection.
+\end{proof}
+
+Lemma~\ref{lem:addrind} is where the restriction to encoded observers
+first does work, and it should be read carefully: the statement is
+\emph{false} for unrestricted rho observers, as \S\ref{sec:necessity}
+shows. This is the rho-calculus form of the $\pi$-calculus device of
+bisimulation up to a bijection on generated names.
+
+\subsection{Operational correspondence}
+
+\begin{proposition}[Completeness]\label{prop:complete}
+If $P \to P'$ then $\enc{P}_\sigma \to^{+} T$ with
+$T \bisim_{\enc{\Ctx_\pi}} \enc{P'}_{\sigma'}$ for some address $\sigma'$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+By induction on the derivation of $P \to P'$. For $[\pi\text{-COM}]$,
+$x(y).P_1 \mid \bar x\langle z\rangle \to P_1\{z/y\}$: the images are
+$\inp{y}{x}{\enc{P_1}_{\sigma_1}}$ and $\out{x}{\drp{z}}$ at sibling
+addresses, and one rho communication yields
+$\enc{P_1}_{\sigma_1}\{z/y\}$, which equals
+$\enc{P_1\{z/y\}}_{\sigma_1}$ because $y$ occurs in the image only in
+subject and object positions (this is the substitution proposition, and it
+is where admissibility is used a second time). Structural congruence:
+the interesting case is $P \mid \nil \equiv P$, for which the images
+differ by two administrative steps and are related by
+Lemma~\ref{lem:admin} and Lemma~\ref{lem:addrind}. Replication: one
+unfolding of $!x(y).P$ is matched by the box's copy step, the seed
+exchange, and one $\Frsh$, all administrative, followed by the
+communication on $x$. Restriction: $\Frsh$, two administrative steps.
+The address bookkeeping is discharged by Lemma~\ref{lem:addrind}
+throughout, which is what allows $\sigma'$ to be an arbitrary address
+satisfying Corollary~\ref{cor:distinct}.
+\end{proof}
+
+\begin{proposition}[Soundness]\label{prop:sound}
+If $\enc{P}_\sigma \to^* T$ then $P \to^* P'$ for some $P'$ with
+$T \bisim_{\enc{\Ctx_\pi}} \enc{P'}_{\sigma'}$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+By induction on the length of the reduction, classifying each step as
+administrative or as the image of a source communication
+(Lemma~\ref{lem:admin} makes the classification exhaustive, since every
+rho redex in the image has as subject either an address or a name of
+$\varphi(\fn(P))$ or a $\nu$-generated name, and the latter two are
+exactly the source channels). Administrative steps are absorbed into
+$\bisim$: they are finite in number and produce no observable on
+$\varphi(\fn(P))$. The only non-confluence among administrative steps is
+the $\Frsh$ race, which permutes the two allocated addresses; the two
+outcomes are related by Lemma~\ref{lem:addrind}.
+\end{proof}
+
+\subsection{The theorem}
+
+\begin{theorem}[Full abstraction]\label{thm:fullabs}
+For all $\pi$ processes $P, Q$,
+\[
+  P \bisim_\pi Q
+  \qquad\Longleftrightarrow\qquad
+  \enc{P} \bisim_{\enc{\Ctx_\pi}} \enc{Q}.
+\]
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+($\Rightarrow$) Let $\mathcal{R} = \{(\enc{P}, \enc{Q}) : P \bisim_\pi Q\}$
+closed under $\bisim_{\enc{\Ctx_\pi}}$ on both sides. Suppose
+$\enc{P} \xrightarrow{\enc{C}} T$. If the step is administrative, $T$ is
+related to $\enc{P}$ itself by Lemma~\ref{lem:admin}, and $\enc{Q}$ matches
+by doing nothing. Otherwise, by Lemma~\ref{lem:compositional},
+$\enc{C}[\enc{P}] = \enc{C[P]}$, and by Proposition~\ref{prop:sound} the
+step is the image of $C[P] \to P_1$; since $P \bisim_\pi Q$ we have
+$C[Q] \to^* Q_1$ with $P_1 \bisim_\pi Q_1$, and
+Proposition~\ref{prop:complete} supplies the matching target moves.
+
+($\Leftarrow$) Contrapositively, let $C$ separate $P$ from $Q$ in $\pi$.
+Then $\enc{C}$ is a label in $\enc{\Ctx_\pi}$, and by
+Lemma~\ref{lem:compositional} and Proposition~\ref{prop:complete} the
+separating source computation is reproduced in the image; the observable
+distinguishing $C[P]$ from $C[Q]$ is a barb on a name of
+$\varphi(\fn(P) \cup \fn(Q))$, and barbs on such names are preserved and
+reflected by Lemma~\ref{lem:admin} and
+Corollary~\ref{cor:distinct}. Hence $\enc{P} \not\bisim_{\enc{\Ctx_\pi}} \enc{Q}$.
+\end{proof}
+
+\subsection{The restriction is forced}\label{sec:necessity}
+
+\begin{proposition}[Unrestricted observers are too strong]
+\label{prop:necessity}
+There are $\pi$ processes $P, Q$ with $P \equiv Q$ --- hence
+$P \bisim_\pi Q$ --- and a rho context $C$, not in $\enc{\Ctx_\pi}$, with
+$C[\enc{P}] \not\bisim C[\enc{Q}]$.
+\end{proposition}
+
+\begin{proof}
+Take $P = \bar u\langle v\rangle$ and $Q = \bar u\langle v\rangle \mid \nil$.
+Then $\enc{P}_{n_0} = \out{u}{\drp{v}}$, which has no barb on $n_0$,
+whereas
+\[
+\enc{Q}_{n_0} =
+  \inp{m}{n_0}{\out{u}{\drp{v}}} \ \mid\ \inp{m}{n_0}{\nil}
+  \ \mid\ \out{n_0}{\out{n_0}{\nil}} \ \mid\ \out{n_0}{\inp{y}{n_0}{\nil}}
+\]
+has a barb on $n_0$. Since $n_0$ is computed from $\fn(P)$ by the
+translation, an arbitrary rho context can name it; take
+$C = [\,\cdot\,] \mid \inp{k}{n_0}{\out{\mathit{succ}}{\nil}}$. No
+encoded context can, because $n_0 \notin \varphi(\fn(P))$ by construction
+--- which is precisely the content of the restriction.
+\end{proof}
+
+\begin{remark}[A sharper form of the same phenomenon]
+The example above exploits the encoding's scaffolding. A second, deeper
+form exploits reflection itself: an arbitrary rho context may apply
+$\drp{\cdot}$ to a name received on $u$, running the process the name
+quotes. Since a $\nu$-generated name in our encoding is $\Lft(\sigma)$ or
+$\Rgt(\sigma)$ for an internal address $\sigma$, dropping it executes
+$\out{\sigma}{\nil}$ or $\inp{y}{\sigma}{\nil}$ and exposes a barb on an
+internal address. No encoded context does this: an encoded context uses a
+received name only as a $\pi$ name, i.e.\ in subject or object position.
+This is not a weakness of the present encoding. By Lybech's separation
+theorem, the rho calculus manufactures new \emph{free} --- hence
+observable and substitutable --- names at runtime, and no encoding of
+$\pi$ into rho, his or ours, can be fully abstract against unrestricted
+rho observers. The restriction to $\enc{\Ctx_\pi}$ is the shape of the
+theorem, not a weakening of it.
+\end{remark}
+
+\subsection{Comparison with the $\mathcal{N}$-restricted criteria}
+
+\begin{proposition}\label{prop:criteria}
+Theorem~\ref{thm:fullabs} implies Lybech's criteria 1--6 for
+$\enc{-}$, with $\simeq$ taken to be $\bisim_{\enc{\Ctx_\pi}}$ and the
+name derivation function $\delta$ taken to be
+$\sigma \mapsto \{\Lft(\sigma), \Rgt(\sigma)\}$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Compositionality is Lemma~\ref{lem:compositional}; substitution
+invariance is the substitution proposition used in
+Proposition~\ref{prop:complete}; operational correspondence is
+Propositions~\ref{prop:complete} and \ref{prop:sound}; observational
+correspondence follows from Corollary~\ref{cor:distinct} and
+Lemma~\ref{lem:admin}, since the observable names are exactly
+$\varphi(\fn(P))$ and administrative traffic is confined to addresses;
+divergence reflection is Corollary~\ref{cor:distinct}'s companion; and
+parameter independence is Lemma~\ref{lem:addrind}.
+\end{proof}
+
+\begin{remark}
+Lybech's $\bisim^{\mathcal{N}}$ restricts observation by \emph{stipulating}
+a set of names. Ours restricts it by \emph{deriving} the observers from
+the source: $\Obs = \enc{\Ctx_\pi}$. The two agree here, because $\pi$ and
+rho are both name-passing calculi and barbs are an adequate notion of
+observation for both. They do not agree in general, and a presentation in
+terms of a name set assumes that what one can observe of a term is the
+set of names it can communicate on --- true for these two calculi and
+false for, e.g., the ambient calculus.
+\end{remark}
+
+% =====================================================================
+\section{Comparison and discussion}\label{sec:discussion}
+% =====================================================================
+
+\begin{center}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.19\textwidth}p{0.21\textwidth}p{0.21\textwidth}@{}}
+\toprule
+ & MR 2005 & Lybech 2022 & this note \\
+\midrule
+runtime name source & none & one, global & none \\
+topology of name traffic & --- & star & tree, $\cong$ parse tree \\
+whole-term compilation & yes & no & yes \\
+replication & eager, diverges & input-guarded & input-guarded \\
+stated invariant & none & most-recent params & prefix-incompatibility \\
+correctness criterion & full abstraction (false) & six criteria & full abstraction rel.\ $\enc{\Ctx_\pi}$ \\
+status & refuted & proved & this paper \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Three remarks on what has and has not been achieved.
+
+\paragraph{Freshness is confined, not eliminated.}
+Abramsky's construction is not free of a freshness assumption either: his
+name convention stipulates that a different root is introduced at each
+instance of the Axiom, With and Of Course rules. What the construction
+buys --- and what this note inherits --- is that freshness is required
+only \emph{statically}, finitely often, at translation time. At runtime
+there is no allocation: only address extension, performed locally, by
+communication. That is the defensible form of the claim that the rho
+calculus needs no theory of names from outside, and it is strictly what
+the name server costs.
+
+\paragraph{Demand-driven copying is a dividend, not a patch.}
+Abramsky's Copy fires only when a contraction asks for a second copy.
+Restricting to input-guarded replication --- which both Lybech and this
+note do, to avoid divergence --- is the process-calculus shadow of that
+discipline. It is worth recording that the fix for divergence and the fix
+for freshness come from the same place.
+
+\paragraph{Linearity was doing work that we must now do by hand.}
+In $\mathsf{PE}_2$ the address invariant is protected by linearity (each
+name occurs exactly twice) and acyclicity (which Abramsky uses to
+guarantee deadlock freedom). The rho calculus has neither: names are used
+by arbitrarily many senders and receivers. What was structural there is a
+theorem here, and its proof is Lemmas~\ref{lem:templates} and
+\ref{lem:locality}, which decompose along exactly Abramsky's two axes ---
+depth and siblings.
+
+% =====================================================================
+\section{Related work}\label{sec:related}
+% =====================================================================
+
+Abramsky's programme was carried forward by Bellin and Scott
+\cite{BellinScott94}, who translate classical linear logic proof
+structures into a synchronous $\pi$-calculus, and tightened into a
+session-typed discipline by Caires and Pfenning \cite{CairesPfenning10}
+and Wadler \cite{Wadler14}. Kokke, Montesi and Peressotti \cite{HCP}
+observe that the separation of environments internalised by $\otimes$
+corresponds to parallel process behaviour, and extend linear logic to
+hyperenvironments accordingly; that is the same move as the present one,
+made from the side of the logic rather than the side of the encoding.
+
+On encodability, Gorla \cite{Gorla10} supplies the criteria Lybech adapts,
+and Gorla and Nestmann \cite{GorlaNestmann14} argue against full
+abstraction as a criterion; van Glabbeek \cite{Glabbeek18} derives
+validity from a semantic equivalence rather than a list, which is closer
+in spirit to what we do here, though he does not treat parametrised
+translations. Sangiorgi's encoding of HO$\pi$ into $\pi$
+\cite{Sangiorgi93} is the result Lybech's separation theorem shows does
+not extend to reflection. Bendixen, Bojesen, H\"uttel and Lybech
+\cite{Psi} instantiate the rho calculus as a higher-order $\Psi$-calculus.
+Leifer and Milner \cite{LeiferMilner00} supply the derived-transition
+machinery that a minimal-label refinement of \S\ref{sec:fullabs} would
+use.
+
+% =====================================================================
+\section{Open problems}\label{sec:open}
+% =====================================================================
+
+\begin{enumerate}[label=\arabic*.,leftmargin=2.2em]
+\item \textbf{Minimal labels.} Replace enabling contexts by minimal
+ones (relative pushouts), taken relative to the observer class
+$\enc{\Ctx_\pi}$ rather than to the whole of rho, and show that
+Theorem~\ref{thm:fullabs} survives with a coarser relation.
+\item \textbf{Full proofs.} Propositions~\ref{prop:complete},
+\ref{prop:sound}, \ref{prop:criteria} and Theorem~\ref{thm:fullabs} are
+given as sketches. The bookkeeping is routine but long, and the case
+that deserves scrutiny is the interaction of the $\Frsh$ race with
+replication.
+\item \textbf{Polyadic $\pi$ and joins.} The encoding is monadic. Polyadic
+synchronisation should be encoded using the join form
+$\inpp{y_1}{x_1}{y_2}{x_2}{P}$ directly, which would put
+\S\ref{sec:notation}(2) to work and connect with Carbone and Maffeis
+\cite{CarboneMaffeis03}.
+\item \textbf{Choice.} The source fragment is choice-free.
+\item \textbf{Cost.} The $\Frsh$ tree is a metering surface: each source
+$\nu$ costs two communications, each unfolding four. What the encoding
+charges is a natural object, and it is not treated here.
+\item \textbf{Mechanisation.} Definition~\ref{def:discipline} is a
+syntactic side condition on translation clauses and should be machine
+checked; a translation that satisfies it cannot have a bug of the kind
+found in 2022.
+\end{enumerate}
+
+\section*{Acknowledgements}
+
+The author thanks Stian Lybech, whose counterexamples are correct and
+whose diagnosis of their common cause is the reason the present repair
+could be stated so briefly. Claude (Anthropic) assisted with source
+review, drafting, and proof-checking.
+
+\begin{thebibliography}{99}
+
+\bibitem{Abramsky93} S. Abramsky.
+\emph{Computational interpretations of linear logic.}
+Theoretical Computer Science 111(1--2):3--57, 1993.
+
+\bibitem{BellinScott94} G. Bellin and P. J. Scott.
+\emph{On the $\pi$-calculus and linear logic.}
+Theoretical Computer Science 135(1):11--65, 1994.
+
+\bibitem{CairesPfenning10} L. Caires and F. Pfenning.
+\emph{Session types as intuitionistic linear propositions.}
+CONCUR 2010, LNCS 6269, 222--236.
+
+\bibitem{CarboneMaffeis03} M. Carbone and S. Maffeis.
+\emph{On the expressive power of polyadic synchronisation in $\pi$-calculus.}
+Nordic Journal of Computing 10(2):70--98, 2003.
+
+\bibitem{Glabbeek18} R. van Glabbeek.
+\emph{A theory of encodings and expressiveness.}
+FoSSaCS 2018, 183--202.
+
+\bibitem{Gorla10} D. Gorla.
+\emph{Towards a unified approach to encodability and separation results
+for process calculi.}
+Information and Computation 208(9):1031--1053, 2010.
+
+\bibitem{GorlaNestmann14} D. Gorla and U. Nestmann.
+\emph{Full abstraction for expressiveness: history, myths and facts.}
+Mathematical Structures in Computer Science 26:639--654, 2014.
+
+\bibitem{HCP} W. Kokke, F. Montesi and M. Peressotti.
+\emph{Better late than never: a fully abstract semantics for classical
+processes.}
+Proc. ACM Program. Lang. 3(POPL), 2019.
+
+\bibitem{LeiferMilner00} J. J. Leifer and R. Milner.
+\emph{Deriving bisimulation congruences for reactive systems.}
+CONCUR 2000, LNCS 1877, 243--258.
+
+\bibitem{Lybech22} S. Lybech.
+\emph{Encodability and separation for a reflective higher-order calculus.}
+EXPRESS/SOS 2022, EPTCS 368, 95--112.
+Technical report: Reykjav\'ik University, 2022.
+
+\bibitem{MeredithRadestock05} L. G. Meredith and M. Radestock.
+\emph{A reflective higher-order calculus.}
+Electronic Notes in Theoretical Computer Science 141(5):49--67, 2005.
+
+\bibitem{Psi} A. R. Bendixen, B. B. Bojesen, H. H\"uttel and S. Lybech.
+\emph{A generic type system for higher-order $\Psi$-calculi.}
+EXPRESS/SOS 2022, EPTCS 368, 43--59.
+
+\bibitem{Sangiorgi93} D. Sangiorgi.
+\emph{From $\pi$-calculus to higher-order $\pi$-calculus --- and back.}
+TAPSOFT 1993, LNCS 668, 151--166.
+
+\bibitem{Wadler14} P. Wadler.
+\emph{Propositions as sessions.}
+Journal of Functional Programming 24(2--3):384--418, 2014.
+
+\end{thebibliography}
+
+\appendix
+
+% =====================================================================
+\section{Status of results}
+% =====================================================================
+
+\begin{center}
+\begin{tabular}{@{}llp{0.42\textwidth}@{}}
+\toprule
+Result & Status & Note \\
+\midrule
+Prop.~\ref{prop:wronginv}, \ref{prop:rightinv} & proved & elementary \\
+Lemma~\ref{lem:transparency}, Cor.~\ref{cor:onequote} & proved & \\
+Prop.~\ref{prop:nogo} & proved & \\
+Lemma~\ref{lem:templates} & proved & uses Lybech's stratification lemma \\
+Lemma~\ref{lem:locality}, Cor.~\ref{cor:distinct} & proved & \\
+Lemma~\ref{lem:admin} & proved & \\
+Lemma~\ref{lem:compositional} & proved & \\
+Lemma~\ref{lem:addrind} & proved & the $\Obs$-relativity is essential \\
+Prop.~\ref{prop:complete}, \ref{prop:sound} & \textbf{sketch} & bookkeeping routine; see open problem 2 \\
+Thm.~\ref{thm:fullabs} & \textbf{sketch} & modulo the above \\
+Prop.~\ref{prop:necessity} & proved & \\
+Prop.~\ref{prop:criteria} & \textbf{sketch} & modulo operational correspondence \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =====================================================================
+\section{The encoding in rholang}
+% =====================================================================
+
+\begin{lstlisting}
+// Fresh2(sigma; u, v).P  --- two addresses from one, by communication.
+// L(sigma) = @{ sigma!(Nil) }   R(sigma) = @{ for (y <- sigma) { Nil } }
+
+// Fresh2(sigma; u, v).P  expands inline to:
+//
+//   for (u <- sigma) { for (v <- sigma) { P } }
+//   | sigma!( sigma!(Nil) )
+//   | sigma!( for (y <- sigma) { Nil } )
+//
+// After two communications, {u,v} = { L(sigma), R(sigma) }.
+
+// [[ P1 | P2 ]]_sigma
+//   for (m <- sigma) { [[P1]]_m } | for (m <- sigma) { [[P2]]_m }
+//   | sigma!( sigma!(Nil) ) | sigma!( for (y <- sigma) { Nil } )
+
+// [[ (nu z) P ]]_sigma
+//   for (z <- sigma) { for (m <- sigma) { [[P]]_m } }
+//   | sigma!( sigma!(Nil) ) | sigma!( for (y <- sigma) { Nil } )
+
+// [[ ! x(y).P ]]_sigma  --- local address server on s, box on a
+//   Fresh2(sigma; a, b). Fresh2(b; s, c).
+//     ( D(a) | a!( B ) | s!( *c ) )
+//   B = for (y <- x) {
+//         D(a) |
+//         for (cp <- s) {
+//           Fresh2(cp; d, e).( s!(*e) | [[P]]_d )
+//         }
+//       }
+//   D(a) = for (q <- a) { *q | a!(*q) }
+\end{lstlisting}
+
+\noindent
+The listing is schematic in one respect: rholang's receipts are
+linear-or-persistent as a whole, and the two-message handshake of
+$\Frsh$ is written above with two separate linear receives on the same
+channel, which is what the calculus prescribes. A production
+implementation would use the join form,
+\texttt{for (u <- s \& v <- s) \{ \ldots \}}, which consumes both in one
+rendezvous and removes the race of \S\ref{sec:encoding} altogether --- at
+the cost of assuming joins, which the pure calculus does not have. This
+is the concrete payoff of \S\ref{sec:notation}(2) and is recorded here
+rather than assumed in the theory.
+
+\end{document}
