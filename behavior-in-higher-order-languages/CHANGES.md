@@ -96,6 +96,53 @@ implicit: strict RPOs are fragile under AC equations on `|`, and the standard
 repair is groupoidal RPOs (Sassone–Sobociński, now in the bib). The normality
 assumption is doing the same work by another route.
 
+## New §10: morphisms should carry contexts
+
+The paper now ends on a definitional proposal rather than on a list of gaps.
+
+The received definition of the semantic category takes morphisms to be
+bisimulation-preserving maps of terms, where the bisimulation is over
+context-labelled transitions. That does not quite parse: the labels **are**
+contexts, so preserving the relation presupposes a map on labels, and a map
+of terms does not determine one. Two encodings agreeing on every term can
+disagree about how a source context is realised in the target, and will
+then preserve different relations.
+
+So §10 proposes that a morphism be a pair `(F, Φ)` — `F` on terms, `Φ` a
+multifunctor on the context multicategory — with equivariance
+`F(c[t⃗]) ≈ Φ(c)[F t⃗]` and preservation along `Φ`. Embeddings are the
+morphisms whose `Φ` is faithful and whose preservation is reflected.
+
+Three consequences, all immediate:
+
+- **Prop 68**: `D = im(Φ)`. The observer subcategory stops being a parameter
+  supplied alongside a translation and becomes a component of it. Everything
+  D-relative in the paper is relative to a morphism's context map, and
+  relative minimality is minimality in the image of Φ.
+- **Prop 69**: Definition 41 (encoding) and Definition 67 (morphism) are the
+  same notion. The clause demanding that source equations become
+  bisimulations is not extra — it is equivariance up to ≈.
+- **Prop 70**: hosting and exhausting are faithfulness and density of Φ, not
+  properties of the term map. Stated of `F` they look like bespoke criteria
+  in Gorla's style; stated of `Φ` they are what one always asks of a functor.
+
+**Conjecture 71**: generated logics are functorial on this morphism class,
+though not on term maps alone — structural connectives are indexed by term
+constructors, constructors are contexts, so Φ transports the structural
+layer where a term map cannot. Companion work concluded the assignment is
+not functorial; the conjecture says that was an artifact of the morphisms.
+
+§10.3 names four open choices rather than presenting the definition as
+finished: multifunctor vs profunctor; strict vs up-to-≈ (which forces a
+bicategory — and this is *the same decision* as Remark 31's strict-vs-GRPO
+question, so it should be made once); faithfulness kept out of morphism-hood
+(build full abstraction in and the category has too few morphisms for the
+cost and history adjunctions); and whether the decorations lift.
+
+§10.4 settles the overlap with the reference account of GSLTs: machinery and
+justification here, category and monads there, citing this paper for the
+morphisms. Duplication becomes dependency.
+
 ## Attribution: the Lybech correction
 
 The π→rho encoding in the draft is **Lybech's corrected encoding**, not
