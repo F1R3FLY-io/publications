@@ -96,6 +96,70 @@ implicit: strict RPOs are fragile under AC equations on `|`, and the standard
 repair is groupoidal RPOs (Sassone–Sobociński, now in the bib). The normality
 assumption is doing the same work by another route.
 
+## Attribution: the Lybech correction
+
+The π→rho encoding in the draft is **Lybech's corrected encoding**, not
+Meredith–Radestock's. That was already true of v1; it was just invisible,
+because the bib key for Lybech 2022 was `pi-rho`, which reads as the
+Meredith–Radestock paper, and because the π→rho theorem itself carried no
+citation at all.
+
+Fixed in v3:
+
+- The duplicate/misnamed `pi-rho` entry is gone; the paper is cited as
+  `lybech` (EPTCS 368, arXiv 2209.02356), with the technical report as
+  `lybech-tr`. Citations that meant the *original* encoding now point at
+  `rho` (Meredith–Radestock 2005), which is where that encoding lives.
+- §7.3 now opens with the history: the two errors Lybech found, their
+  common cause (the parameter invariant "n,p are the most recently
+  replicated names", destroyed by the parallel split because substitution
+  does not recur under quotes), and the fix (a single name server on a
+  fixed `v`). Theorem 43 is attributed to him in its statement.
+- New bib entries: van Glabbeek, Gorla–Nestmann, Bendixen–Bojesen–Hüttel–
+  Lybech on rho as a higher-order Ψ-calculus, Sangiorgi on HOπ.
+
+### This changes the status of the main result
+
+v2 listed the ν lemma as "the largest piece of new mathematics" and the
+reason π→rho was never proved. That was wrong: it is proved, against
+Gorla-style criteria, in Lybech 2022. What is open is narrower and better
+posed — whether those criteria imply Definition 41. That is now
+**Obligation 45, the comparison theorem**, and it is broken into four
+numbered parts.
+
+His `≈^N` (barbs restricted to a name set) is D-relative bisimilarity with
+D stipulated rather than derived. Saying so is the paper's clearest
+statement of what the observer machinery buys, and Remark 47 says plainly
+where the two presentations come apart: a barbed presentation assumes the
+observations worth making are the names a term is ready to communicate on,
+which is true of rho and π and false in general.
+
+### And it supplies a second, already-proved flagship
+
+New **§7.4 Separation**. Lybech proves rho cannot be encoded in π (or HOπ)
+under those criteria, and the mechanism is that reflection manufactures
+observable *free* names at runtime. In our vocabulary that is the same fact
+as Proposition 12, `@` is not admissible — seen from outside rather than
+inside. **Obligation 50** asks for the D-relative re-derivation, and §7.4
+says why it is the sharpest available test of the apparatus.
+
+Two other things Lybech already proved, now cited instead of reproved:
+his parameter-independence proposition (which was Lemma 57 here) and his
+quote-depth stratification lemma (the rigorous form of Lemma 56).
+
+## Two remarks the encodings needed anyway
+
+- **Remark 38**: rho!→rho is D-relative and false without the restriction —
+  an arbitrary rho context can `out(n, junk)` and corrupt the duplicator's
+  store, while no encoded context mentions `n`. The proved theorem was
+  already an instance of the thesis and never said so.
+- **Remark 39**: the input-guarding that Note 2's comprehension enforces is
+  exactly Lybech's divergence fix.
+- **Remark 58**: the failure mode §8's name discipline does *not* exclude —
+  static increments live under quotes, so a root that is bound and
+  re-substituted will not reach them. Bool is safe; a recursive type whose
+  fold replicates its continuation would not be safe for free.
+
 ## Typography
 
 The rho calculus is never written with the Greek letter. The name is an

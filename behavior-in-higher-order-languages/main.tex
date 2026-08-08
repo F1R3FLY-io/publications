@@ -53,7 +53,8 @@ We do not choose $\D$ arbitrarily. Section~\ref{sec:obs} shows that $\D$ is dete
     \item An \textbf{open} form of the Leifer--Milner construction. Their reactive systems fix a distinguished object $0$ as the domain of IPOs, restricting attention to ground terms; their proofs do not use it. Dropping it yields a transition system on open terms (\S\ref{sec:drel}).
     \item \textbf{Observation relations and admissible observers} (\S\ref{sec:obs}): the class $\D$ derived from a logical relation on types, with admissibility as preservation.
     \item \textbf{$\D$-relative pushouts}, the derived $\D$-relative transition system, and the $\D$-relative congruence theorem: $\Dsbis$ is a congruence for $\D$ (\S\ref{sec:drel}). We also give the construction in $\D/\!\approx$, where labels are compared coinductively rather than syntactically, which is what lets equations of a source theory be satisfied only up to bisimilarity in a target.
-    \item Three instantiations: reflection in the rho calculus (\S\ref{sec:rho}), encodings including $\pi$ into rho (\S\ref{sec:enc}), and extension by built-in data types (\S\ref{sec:data}), where we prove that the equations of a finitary algebraic theory become weak bisimulations under a Scott-style encoding, worked in full for $\mtt{Bool}$.
+    \item Three instantiations: reflection in the rho calculus (\S\ref{sec:rho}), encodings (\S\ref{sec:enc}), and extension by built-in data types (\S\ref{sec:data}), where we prove that the equations of a finitary algebraic theory become weak bisimulations under a Scott-style encoding, worked in full for $\mtt{Bool}$.
+    \item A reading of the encodability and separation results of \citet{lybech} for the rho calculus in these terms (\S\ref{sec:pirho}, \S\ref{sec:sep}). His $\mathcal{N}$-restricted barbed bisimilarity is $\D$-relative bisimilarity with $\D$ stipulated as a set of observable names rather than derived; and his separation theorem turns on reflection manufacturing observable free names at runtime, which is the same fact as the inadmissibility of $@$.
 \end{enumerate}
 
 \subsection{Status of the results}
@@ -74,7 +75,10 @@ $\D$-relative congruence (weak) & Thm.~\ref{thm:weakcong} & \stOblig\\
 Congruence for rho, admissible contexts & Thm.~\ref{thm:rhocong} & \stProved\\
 Redex IPOs exist for rho and $\pi$ & Thm.~\ref{thm:ipoexist} & \stSketch\\
 Replication elimination $\rhoc^{!}\to\rhoc$ & Thm.~\ref{thm:repl} & \stProved\\
-$\pi\to\rhoc$ preserves behavior & Thm.~\ref{thm:pirho} & \stOblig\\
+$\pi\to\rhoc$, against Gorla-style criteria & Thm.~\ref{thm:pirho} & \stProved\ \citep{lybech}\\
+Those criteria imply Definition~\ref{def:encoding} & Ob.~\ref{ob:compare} & \stOblig\\
+Separation: rho does not embed in $\pi$ & Thm.~\ref{thm:sep} & \stProved\ \citep{lybech}\\
+The same, derived $\D$-relatively & Ob.~\ref{ob:sep} & \stOblig\\
 Extension equations become weak bisimulations & Thm.~\ref{thm:data} & \stSketch\\
 The same, for $\mtt{Bool}$ & Prop.~\ref{prop:bool} & \stProved\\
 Retraction $\T\ext\A\to\T$ uniform in $\T$ & Ob.~\ref{ob:retract} & \stOblig\\
@@ -791,9 +795,9 @@ The last clause is stated as a biconditional. Soundness --- the forward directio
 
 \subsection{Eliminating replication}
 
-The smallest instance is the elimination of replicated input from $\rhoc^{!}$, using a duplicator stored at a name \citep{pi-rho}.
+The smallest instance is the elimination of replicated input from $\rhoc^{!}$, using a duplicator stored at a name \citep{lybech}.
 
-\begin{proposition}[\citealp{pi-rho}]
+\begin{proposition}[\citealp{lybech}]
     There is an encoding of $\rhoc^{!}$ into rho given by
     \begin{center}
         \renewcommand{\arraystretch}{1.2}
@@ -841,13 +845,38 @@ A copy of $\map{\lambda x.p}$ is stored at $a$ and the same is being output; for
 
 This is the pattern the rest of the paper generalizes: an operation with a rewrite rule is replaced by a protocol, the rewrite becomes a silent path, and the encoding is behavior-preserving against the encoded observers.
 
+\begin{remark}[the restriction is already doing work here]
+\label{rem:replrestrict}
+    Theorem~\ref{thm:repl} is $\map{\D}$-relative and is false without the restriction, which is easy to miss because the source and target theories are so nearly the same. The duplicator holds the stored process at the parameter $n$. An arbitrary rho context may send on $n$ --- $\tout(n,q)$ for any $q$ it likes --- whereupon $D(n)$ receives $q$, runs it, and republishes it in place of the process that was stored. The encoding's store is corrupted and the correspondence with $\rhoc^{!}$ is destroyed. No context in $\map{\D}$ can do this: $n$ is a parameter of the translation and is not the image of any name of $\rhoc^{!}$. So even the smallest encoding in this paper needs $\D$.
+\end{remark}
+
+\begin{remark}[input guarding]
+\label{rem:guard}
+    The restriction of $!$ to input-guarded processes, which \S\ref{sec:cat} obtains from the comprehension of Note~2, is not cosmetic. An encoding of unguarded replication by this duplicator replicates eagerly and therefore diverges; \citet{lybech} identifies this as a defect of the encoding of \citet{rho} and repairs it by guarding, which is exactly what the subset type $\{p\of Pr\pr p=\mtt{in}(n,c)\}$ enforces here.
+\end{remark}
+
 \subsection{$\pi$ into rho}
+\label{sec:pirho}
 
-The main encoding uses the same duplicator, plus a name server $!N$ that supplies fresh names to interpret $\nu$.
+The main encoding uses the same duplicator, plus a \emph{name server} $!N$ that supplies fresh names to interpret $\nu$. It is not ours, and its history is worth stating, because that history is itself evidence for the thesis of this paper.
 
-\begin{theorem}
+\subsubsection*{Two errors, and their common cause}
+
+\citet{rho} proposed an encoding of the asynchronous choice-free $\pi$ calculus into rho, parameterized by a pair of names $(n,p)$, and claimed full abstraction with respect to a name-restricted barbed bisimilarity. \citet{lybech} showed that the claim fails, in both directions, and diagnosed why.
+
+The translation of parallel composition splits the parameters,
+\[\map{p\pr q}_{n,p} = \map{p}_{+n,+p}\pr \map{q}_{n+,p+}\]
+while the translation of replication rebinds $n$ and $p$ at runtime, so that they always name the most recently replicated generation. The two mechanisms are incompatible. Substitution in rho does not recur under quotes, so the \emph{statically} incremented names $+n$ and $n+$, which sit inside quotations, cannot be reached by the runtime rebinding. A replicated process therefore loses access to its own name supply, and emits the same name every time where it should emit a fresh one. \citet{lybech} exhibits two consequences: $!(\nu z)\overline{u}\langle z\rangle \pr Q$ against $(\nu z)!(\overline{u}\langle z\rangle\pr Q)$, which are distinguishable in $\pi$ and become bisimilar under the translation; and $!(\nu z)\overline{u}\langle z\rangle$ against $!(\nu q)(\nu z)\overline{u}\langle z\rangle$, which are structurally congruent in $\pi$ and become distinguishable. A third defect is independent: that encoding replicates eagerly, and so always diverges.
+
+The common cause is an invariant on the parameters --- \emph{$n$ and $p$ are the most recently replicated names} --- that is assumed throughout and never stated, and that the translation itself destroys. This is exactly the failure mode that a criterion of \emph{parameter independence} is designed to catch, and it is why \citet{lybech} adds one to the Gorla criteria.
+
+\subsubsection*{The corrected encoding}
+
+The repair isolates name generation in a single contextual process reached on a name $v$ that is never updated, so that access to it cannot be lost; $n$ is used for return addresses and replication and is incremented, never rebound. We reproduce the encoding of \citet{lybech}, in the notation of this paper.
+
+\begin{theorem}[\citealp{lybech}]
 \label{thm:pirho}
-    \stOblig{} There is an encoding of the $\pi$ calculus with replicated input into the rho calculus, given as follows.
+    There is an encoding of the $\pi$ calculus with input-guarded replication into the rho calculus, given as follows.
     \begin{center}
     \renewcommand{\arraystretch}{1.2}
     \begin{tabular}{rcl}
@@ -863,7 +892,7 @@ The main encoding uses the same duplicator, plus a name server $!N$ that supplie
     \begin{center}
         \renewcommand{\arraystretch}{1.2}
         \begin{tabular}{rcl}
-             $\map{p}$ & $=$ & $\lambda xzvns. \map{p}(n,v)\pr !N(x,z,v,s)$\\
+             $\map{p}$ & $=$ & $\lambda xwvns. \map{p}(n,v)\pr !N(x,w,v,s)$\\
              $\map{0}(n,v)$ & $=$ & $0$\\
              $\map{p\pr q}(n,v)$ & $=$ & $\map{p}(+n,v)\pr \map{q}(n+, v)$\\
              $\map{\mtt{out}(a,k)}(n,v)$ & $=$ & $\mtt{out}(a,\ast(k))$\\
@@ -872,33 +901,81 @@ The main encoding uses the same duplicator, plus a name server $!N$ that supplie
              $\map{!\mtt{in}(a,\lambda x.p)}(n,v)$ & $=$ & $D(n)\pr \mtt{out}(n, \mtt{in}(a, \lambda x. D(n)\pr \map{p}(n\cdot n, v)))$
         \end{tabular}
     \end{center}
+    The name server generates the namespace of left-increments rooted at $s$; the parameters $x,w,v,s$ are chosen distinct from the free names of $p$ and outside that namespace.
 \end{theorem}
 
-We state the proof obligations rather than the proof. The argument factors through the two lemmas below, of which the second is Theorem~\ref{thm:repl}.
+Note that the parameter $v$ is held fixed by every clause, including parallel composition. That is the fix, and it is the one line of the table that carries it.
 
-\begin{obligation}[the $\nu$ lemma]
-\label{ob:nu}
-    The three $\nu$-equations of $\pi$ become bisimulations:
-    \tbl{
-        $\map{\nu(\lambda x.0)}(n,v)$ & $\approx$ & $0$\\
-        $\map{p\pr \nu(\lambda x.q)}(n,v)$ & $\approx$ & $\map{\nu(\lambda x.(p\pr q))}(n,v)$\\
-        $\map{\nu(\lambda x.\nu(\lambda y.p))}(n,v)$ & $\approx$ & $\map{\nu(\lambda y.\nu(\lambda x.p))}(n,v)$
-    }
-    equivalently, that $\map{-}$ is a functor into $\map{\D}/\!\approx$ on the $\nu$ fragment.
+\subsubsection*{What is proved, and against which criteria}
+
+\citet{lybech} proves this encoding correct against a list of criteria adapted from \citet{gorla}: compositionality, substitution invariance, operational correspondence, observational correspondence, divergence reflection, and parameter independence. The behavioral equivalence is $\approx^{\mathcal{N}}$, \emph{$\mathcal{N}$-restricted barbed bisimilarity}, in which the observation predicate is parameterized by a set of names and only names in that set may be observed; the encoding is judged with $\mathcal{N}$ the free names of the source term, so that names manufactured by the translation are unobservable. Restriction to input-guarded replication is what removes the divergence of the earlier encoding.
+
+Two of his results are ones we would otherwise have had to prove here, and we take them as given.
+
+\begin{proposition}[\citealp{lybech}, Prop.~1: independence of parameters]
+\label{prop:lyparam}
+    If $n,n',s,s'$ are fresh for $p$ and unique for the translation, then
+    \[\map{p}_{n,v}\pr !N(x,w,v,s)\;\sim^{\mrm{fn}(p)}\;\map{p}_{n',v}\pr !N(x,w,v,s')\]
+\end{proposition}
+
+\begin{proposition}[\citealp{lybech}, Lem.~1: stratification]
+\label{prop:lystrat}
+    Name equivalence implies equality of quote depth, where the quote depth of $@(P)$ is that of $x$ if $P\equiv\ast x$, and otherwise one more than the quote depth of $P$. Consequently the namespaces generated by the static increments $+(-)$, $(-)+$ and $(-)\cdot(-)$ from distinct, non-derivable roots are disjoint.
+\end{proposition}
+
+Proposition~\ref{prop:lyparam} is the ancestor of Lemma~\ref{lem:root} below, and Proposition~\ref{prop:lystrat} is the rigorous form of the name discipline we use in \S\ref{sec:data}. Full proofs are in the accompanying technical report \citep{lybech-tr}.
+
+\subsubsection*{What remains: a comparison, not a construction}
+
+The encoding is therefore not an open problem. What is open is the relation between the criteria it satisfies and the notion of encoding of Definition~\ref{def:encoding}, which asks for a functor into $\map{\D}/\!\approx$ with labels given by $\D$-relative IPOs.
+
+\begin{obligation}[the comparison theorem]
+\label{ob:compare}
+    Let $\map{-}$ satisfy the criteria of \citet{lybech}, with $\mathcal{N}=\mrm{fn}(p)$. Show that $\map{-}$ is an encoding in the sense of Definition~\ref{def:encoding}, with $\D$ the transported observer subcategory $\map{\D}$ of Definition~\ref{def:transported}. Specifically:
+    \begin{enumerate}
+        \item observational correspondence at $\mathcal{N}=\mrm{fn}(p)$ implies that $\map{\D}$-relative barbs and $\map{\D}$-relative IPO labels agree;
+        \item operational correspondence implies the silent-path clause $p\rsq q \Rightarrow \map{p}(\rsq^\ast\approx)^\ast\map{q}$;
+        \item substitution invariance and Proposition~\ref{prop:lyparam} together imply the equation clause, that $p=_\pi q$ implies $\map{p}\approx\map{q}$, for the $\nu$-equations in particular;
+        \item divergence reflection is what makes the weak relation of Definition~\ref{def:encoding} non-vacuous.
+    \end{enumerate}
 \end{obligation}
 
-This is the whole difficulty and it is where the effort should go. The name-supply discipline is what carries it: $+n$, $n+$ and $n\cdot n$ generate a binary tree of names from a single root, and the second equation holds because relocating a $\nu$ across a parallel composition permutes which subtree a fresh name is drawn from, which no encoded context can detect. That last clause is exactly a $\map{\D}$-relative statement and is false for arbitrary rho observers, which can send on $+n$ directly.
+The substance of (1) is that his restriction and ours are the same restriction differently presented. He obtains it by parameterizing the barb predicate with a set of \emph{names}; we obtain it by restricting the class of \emph{contexts} to $\map{\D}$, which \S\ref{sec:obs} derives from an observation relation rather than stipulating. The two should coincide for rho, since a barb on $x$ is a transition under the context $-\pr\tout(x,0)$ or $-\pr\tin(x,\lambda y.0)$, and those contexts are encoded exactly when $x$ is a name of the source; but for a theory whose observations are not exhausted by barbs on names the constructions come apart, and it is the context formulation that generalizes.
 
-\begin{remark}[staging]
-    We suggest proving Obligation~\ref{ob:nu} against $\rhoc^{!}$ rather than rho, and composing with Theorem~\ref{thm:repl}:
-    \[\pi \longrightarrow \rhoc^{!} \longrightarrow \rhoc\]
-    The second leg is done. The first leg then concerns only $\nu$ and the name supply, with replication handled natively. The factorization is not free, since $\map{-}$ into rho is parameterized by $(n,v)$ where the replication encoding needs only $n$; but it isolates name creation, which is the part nobody has written down.
+\begin{remark}[why not barbs]
+    A barbed presentation buys simplicity at the cost of generality: it presumes that the observations worth making are the names on which a term is ready to communicate. That is true of rho and $\pi$ and false in general --- for an arbitrary interactive lambda theory there is no reason for the barbs to be adequate, whereas Definition~\ref{def:observation} is available whenever the theory has an observation relation. This is our reason for the context formulation and not a criticism of \citet{lybech}, whose setting is a single pair of calculi where the barbed presentation is exactly right.
 \end{remark}
 
 \begin{obligation}
 \label{ob:pifull}
-    Full abstraction: $\map{p}\Dbis\map{q}$ in $\map{\D}$ implies $p\Dbis q$ in $\pi$.
+    Full abstraction: $\map{p}\Dbis\map{q}$ in $\map{\D}$ implies $p\Dbis q$ in $\pi$. Note that \citet{gorla-nestmann} argue full abstraction is not by itself the most informative criterion --- it does not, for instance, prevent an encoding from introducing divergence --- which is why the criteria above are stated separately rather than bundled.
 \end{obligation}
+
+\subsection{Separation}
+\label{sec:sep}
+
+The converse fails, and the reason is the subject of this paper.
+
+\begin{theorem}[\citealp{lybech}, Thm.~1 and Cor.~1]
+\label{thm:sep}
+    There is no encoding of the rho calculus into the $\pi$ calculus satisfying those criteria, for any behavioral equivalence preserving reductions, observability and substitution. The same holds for $\mrm{HO}\pi$, by composition with the encoding of \citet{hopi}.
+\end{theorem}
+
+The mechanism is instructive. Let $u := @(\ast x_1\pr \ast x_2)$ and consider
+\[P := \mtt{o}(a,\ast x_1\pr \ast x_2)\pr \mtt{i}(a,\lambda n.\mtt{o}(n,0))
+\qquad P' := \mtt{o}(u,0)\]
+Then $P\rsq P'$, and $u$ is a \emph{free} name of $P'$ that is not a free name of $P$. Reflection has manufactured, at runtime, an observable name that no static analysis of the redex could have predicted. In $\pi$ this is impossible: names have no structure and cannot be composed at runtime, so any free name appearing after a reduction was either free before or came from the translation parameters --- and the latter is precisely what parameter independence forbids.
+
+In the vocabulary of \S\ref{sec:obs} this is the same fact as Proposition~\ref{prop:at}. Choosing $\obseq{Nm}$ to be equality is what makes a manufactured name a genuinely new observation; $@$ is the operation that manufactures one; and $@$ is inadmissible for exactly that reason. The separation result says that a target theory whose observation relation at $Nm$ has no such operation cannot host rho, and the failure of congruence for $\tout(@(-),z)$ says that rho cannot admit that operation as an observer of itself. One phenomenon, seen from inside and from outside.
+
+\begin{obligation}[separation, $\D$-relatively]
+\label{ob:sep}
+    Re-derive Theorem~\ref{thm:sep} from Definition~\ref{def:encoding}: show that no functor $\rhoc\to\map{\D}_\pi/\!\approx$ exists, using the inadmissibility of $@$ rather than a criteria list. If the framework of \S\ref{sec:obs} is doing real work, this is where it should show, since the argument ought to become a statement about which operations can appear in an observation relation rather than a case analysis on substitutions.
+\end{obligation}
+
+We regard Obligation~\ref{ob:sep} as the sharpest available test of this paper's apparatus. A framework that reorganizes known positive results is worth something; one that also reproves a separation result more structurally is worth considerably more.
+
+
 \section{Third instance: extension by data types}
 \label{sec:data}
 
@@ -950,10 +1027,15 @@ Every encoded term is parameterized by a root name $n$, and the parallel clause 
     Under the root-splitting discipline, distinct occurrences of encoded subterms receive incomparable roots, and the derived names of one occurrence are the derived names of no other.
 \end{lemma}
 \begin{proof}
-    The maps $n\mapsto +n$ and $n\mapsto n+$ are injective with disjoint images, since $\mtt{o}(n,0)$ and $\mtt{i}(n,\lambda x.0)$ are distinct terms and $@$ is injective. So roots form a binary tree and the derived names of a node lie in its own subtree.
+    The maps $n\mapsto +n$ and $n\mapsto n+$ are injective with disjoint images, since $\mtt{o}(n,0)$ and $\mtt{i}(n,\lambda x.0)$ are distinct terms and $@$ is injective. So roots form a binary tree and the derived names of a node lie in its own subtree. The general statement, for arbitrary namespaces generated by static quoting, is Proposition~\ref{prop:lystrat}: name equivalence preserves quote depth, so namespaces built by the same template from non-derivable roots are disjoint.
 \end{proof}
 
-\begin{lemma}[root independence]
+\begin{remark}[a failure mode this discipline does not by itself exclude]
+\label{rem:staticbug}
+    Static increments sit inside quotations, and substitution in rho does not recur under quotes. A root parameter that is \emph{bound} somewhere in an encoding and re-substituted at runtime will therefore not reach the increments derived from it, and the encoding will reuse names it believes to be fresh. This is precisely the error \citet{lybech} found in \citet{rho}, described in \S\ref{sec:pirho}. The encoding of \S\ref{sec:bool} is safe because no root is ever bound: the conditional is not replicated and $n$ is threaded statically. An encoding of a recursive type whose fold replicates its continuation would not be safe for free, and the discipline must be checked, not assumed, for each model $\Mod$.
+\end{remark}
+
+\begin{lemma}[root independence; cf.\ \citealp{lybech}, Prop.~1]
 \label{lem:root}
     For $m,n$ roots not occurring in $\map{p}$, $\map{p}(m)\Dbis\map{p}(n)$ in $\map{\D}$.
 \end{lemma}
@@ -1052,7 +1134,9 @@ from which negation, conjunction and disjunction are definable in the usual way.
 
 \textbf{Higher-order syntax.} Presenting binding algebraically goes back to \citet{fpt}; \citet{hoat} give the higher-order algebraic theories closest in spirit to our lambda theories. What we add is the treatment of rewriting as a proposition in the subobject fibration, so that types, terms, equations and rewrites are one structure and entailments may be curried to reason under binders. \citet{lambda-lts} apply RPOs to the $\lambda$-calculus using second-order contexts and supply the IPO-uniformity condition on which Theorem~\ref{thm:weakcong} is modelled.
 
-\textbf{Encodings.} \citet{gorla} surveys the criteria by which an encoding between process calculi is judged --- compositionality, name invariance, operational correspondence, divergence reflection, success sensitiveness. Definition~\ref{def:encoding} is more parsimonious and, we think, better factored: the criteria are consequences of being a functor into $\map{\D}/\!\approx$ rather than a list. \citet{funproc} is the origin of the question for $\lambda$ into $\pi$; \citet{boudol} gives the name-passing variant that makes the translation tractable; \citet{pi-rho} gives the $\pi$-into-rho translation we take up in \S\ref{sec:enc}. Scott-style encodings of data are folklore; \citet{mogensen} is the usual reference.
+\textbf{Encodings.} \citet{gorla} surveys the criteria by which an encoding between process calculi is judged --- compositionality, name invariance, operational correspondence, divergence reflection, success sensitiveness --- and \citet{glabbeek} derives a notion of valid encoding from a semantic equivalence instead of a list. \citet{gorla-nestmann} assess what full abstraction does and does not deliver. Definition~\ref{def:encoding} is closer to van Glabbeek's programme than to Gorla's: one condition, that the translation be a functor into $\map{\D}/\!\approx$, from which criteria should follow. We think this matters beyond economy. A list of criteria has to be argued for case by case, and compositionality in particular imports a syntactic constraint that bisimulation preservation was meant to escape: Milner's encoding of $\lambda$ into $\pi$ is behaviorally faithful without being a homomorphism of signatures. Our position is that such constraints belong downstream, as refinements of a behavioral condition, rather than as primitives alongside it. Establishing that, for the rho calculus at least, is Obligation~\ref{ob:compare}.
+
+\textbf{The rho calculus in particular.} \citet{funproc} is the origin of the question for $\lambda$ into $\pi$ and \citet{boudol} gives the name-passing variant that makes the translation tractable. \citet{rho} proposed the first $\pi$-into-rho translation; \citet{lybech} identified two errors in it, gave the corrected encoding we reproduce in \S\ref{sec:pirho}, and proved the separation result of \S\ref{sec:sep}, with full proofs in \citep{lybech-tr}. \citet{psi-rho} instantiate the rho calculus as a higher-order $\Psi$-calculus, which is a third framework in which these questions can be posed. Scott-style encodings of data are folklore; \citet{mogensen} is the usual reference.
 
 \textbf{Ambients.} \citet{amb-ipo-lts-sos} treat the ambient calculus in the reactive-systems framework and find that the IPO semantics must be coarsened by barbs. We take this as evidence that a locality operator needs a different construction, and omit ambients accordingly (Remark~\ref{rem:ambient}).
 
@@ -1064,7 +1148,8 @@ The outstanding work, in the order we would attack it:
 
 \begin{enumerate}
     \item \textbf{Decomposition-closure} (Obligation~\ref{ob:decomp}). Whether $\map{C_\pi}$ is closed under decomposition up to $\approx$ inside rho. Everything else depends on this and it is cheap to test: one worked factorization of an encoded context will settle it.
-    \item \textbf{The $\nu$ lemma} (Obligation~\ref{ob:nu}). The single largest piece of new mathematics, and the one that has been outstanding longest. We recommend proving it against $\rhoc^{!}$ and composing with Theorem~\ref{thm:repl}.
+    \item \textbf{The comparison theorem} (Obligation~\ref{ob:compare}). Earlier drafts of this material treated the correctness of $\pi\to$~rho as an open problem. It is not: \citet{lybech} settled it, against Gorla-style criteria. What is open is whether those criteria imply Definition~\ref{def:encoding}, which is a smaller and better-posed question.
+    \item \textbf{Separation, derived rather than checked} (Obligation~\ref{ob:sep}). The sharpest test of the apparatus.
     \item \textbf{Weak congruence} (Theorem~\ref{thm:weakcong}). Every result in \S\ref{sec:enc} and \S\ref{sec:data} is about weak bisimilarity, so the general statement is load-bearing; at present only the direct argument for rho is available.
     \item \textbf{Existence of relative IPOs} (Proposition~\ref{prop:dexist}). The codirectedness argument needs a well-foundedness condition we have not identified.
     \item \textbf{Strict versus groupoidal pushouts} (Remark~\ref{rem:grpo}). Either justify normality as a checkable hypothesis on presentations, or redo the construction with GRPOs.
