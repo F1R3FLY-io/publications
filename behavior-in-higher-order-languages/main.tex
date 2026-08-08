@@ -1,0 +1,1308 @@
+\documentclass{article}
+\usepackage{bihol2}
+
+\title{Behavior in higher-order languages\\[0.3em]
+\large Admissible observers, relative pushouts, and the encoding of extended theories}
+\author{C.B.\,Wells, Michael Stay, L.G. Meredith\\~\\ \url{f1r3fly.io}}
+\date{Second draft}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    We derive contextual transition systems for programming languages specified as \emph{lambda theories} --- equational logics with binding and rewriting --- using Milner's framework of relative pushouts. Our central move is to make the class of admissible observers a \emph{parameter} of the construction. Where Leifer and Milner restrict which contexts may \emph{react}, we additionally restrict which contexts may \emph{observe}, and compute relative pushouts inside that restricted class rather than in the ambient theory. The resulting notion of $\D$-relative bisimilarity is a congruence for $\D$, which is the statement one actually wants: for a reflective calculus, congruence fails for arbitrary contexts and holds for the admissible ones; for an encoding, it fails for arbitrary target contexts and holds for the images of source contexts. We show that three apparently separate phenomena --- the failure of congruence under reflection in the $\rho$-calculus, the requirement that an encoding be probed only by encoded contexts, and the correctness of compiling away built-in data types --- are one theorem instantiated three times. The last of these is our practical motivation: a user of a language-definition platform should be able to specify a pure theory and know that extending it with built-in data types leaves their reasoning intact.
+\end{abstract}
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+\href{https://github.com/F1R3FLY-io}{F1R3FLY} is a concurrent computing platform based on the reflective higher-order $\pi$-calculus \citep{rho}. Its language-definition layer, MeTTaIL, lets a user present a domain-specific language as a signature with equations and rewrite rules, and compiles that presentation into the $\rho$-calculus for execution. For this to be more than a syntactic convenience, the user needs a guarantee: that reasoning carried out in the language they defined remains valid in the calculus their program is actually run in.
+
+This paper is about the shape of that guarantee, and about a single obstacle that recurs whenever one tries to state it.
+
+\subsection{The obstacle}
+
+Behavioral equivalence is always relative to a class of observers. A labelled transition system fixes that class by fixing the labels, and since \citet{ccs} the labels have been supplied by hand. \citet{lm} showed that they need not be: labels can be \emph{derived} as the minimal contexts enabling a rewrite, minimality being a universal property (a relative pushout), and bisimilarity for the derived system is then automatically a congruence.
+
+The difficulty is that ``minimal context'' presumes we know which contexts are eligible. Leifer and Milner already need one restriction here --- a subcategory $\D$ of \emph{reactive} contexts, those in which a rewrite may occur --- but they take the eligible \emph{observers} to be all of the ambient category. In every situation we care about, that is too many.
+
+\begin{itemize}
+    \item \textbf{Reflection.} In the $\rho$-calculus, $@$ turns a process into a name and $\ast$ turns it back. Communication tests names for \emph{equality}, not for bisimilarity. So if $p\approx q$ with $p\neq q$, the context $\tout(@(-),z)$ separates them: bisimilarity is not a congruence for contexts with a hole under $@$. It is a congruence for the rest.
+    \item \textbf{Encodings.} An encoding $\map{-}\of\mrm{S}\to\T$ lands its image in a much larger theory. Arbitrary $\T$-contexts can read the encoding's plumbing --- name supplies, servers, dead branches --- as observable structure, separating the images of source-equivalent programs. Only the images $\map{c}$ of source contexts respect the intended abstraction.
+    \item \textbf{Extension.} A theory with a built-in $\mtt{Bool}$ can be compiled into one without, but the compiled conditional leaves an unreachable branch behind. It is unreachable only because no \emph{encoded} context ever addresses it.
+\end{itemize}
+
+These are the same problem. In each case there is a class $\D$ of contexts for which the theory is well-behaved, a larger class for which it is not, and no way to state the good theorem without naming $\D$.
+
+\subsection{The move}
+
+We therefore take $\D$ as data, and compute relative pushouts inside it.
+
+Given a lambda theory $\T$ and a subcategory $\D$ of admissible observers, a $\D$-relative IPO is a context in $\D$ that is minimal \emph{among contexts in $\D$} enabling a given rewrite --- not minimal in $\T$. These differ: the $\T$-minimal enabler of a transition out of $\map{p}$ is typically strictly smaller than any $\map{c}$, because $\map{c}$ carries plumbing that minimality in $\T$ strips away. Insisting on $\T$-minimality thus forces observations outside the image; insisting on encoded contexts abandons minimality. Relative minimality keeps both.
+
+We do not choose $\D$ arbitrarily. Section~\ref{sec:obs} shows that $\D$ is determined by a much simpler datum: an \emph{observation relation}, a family $\obseq{A}$ of equivalences indexed by the types of the theory, built up from a choice at the ground types by the usual logical-relation clauses. An operation is admissible exactly when it preserves the relation. The $\rho$-calculus story then falls out of a single decision --- that $\obseq{Nm}$ is equality --- and the encoding story falls out of another --- that the observation relation on the target is the image of the one on the source.
+
+\subsection{Contributions}
+
+\begin{enumerate}
+    \item A presentation of programming-language specifications as \textbf{lambda theories}: categories with finite limits whose subobject fibration is cartesian closed, carrying a distinguished type $Pr$ and rewriting as a \emph{proposition} $(\rsq)\rightarrowtail Pr\times Pr$. Types, terms, equations and rewrites live in one structure, and currying entailments gives rewriting under binders (\S\ref{sec:lt}).
+    \item An \textbf{open} form of the Leifer--Milner construction. Their reactive systems fix a distinguished object $0$ as the domain of IPOs, restricting attention to ground terms; their proofs do not use it. Dropping it yields a transition system on open terms (\S\ref{sec:drel}).
+    \item \textbf{Observation relations and admissible observers} (\S\ref{sec:obs}): the class $\D$ derived from a logical relation on types, with admissibility as preservation.
+    \item \textbf{$\D$-relative pushouts}, the derived $\D$-relative transition system, and the $\D$-relative congruence theorem: $\Dsbis$ is a congruence for $\D$ (\S\ref{sec:drel}). We also give the construction in $\D/\!\approx$, where labels are compared coinductively rather than syntactically, which is what lets equations of a source theory be satisfied only up to bisimilarity in a target.
+    \item Three instantiations: reflection in the $\rho$-calculus (\S\ref{sec:rho}), encodings including $\pi$ into $\rho$ (\S\ref{sec:enc}), and extension by built-in data types (\S\ref{sec:data}), where we prove that the equations of a finitary algebraic theory become weak bisimulations under a Scott-style encoding, worked in full for $\mtt{Bool}$.
+\end{enumerate}
+
+\subsection{Status of the results}
+
+This is a working draft, and we think it more useful to say plainly where each result stands than to present a uniform surface. \stProved{} means a proof is given here or is immediate from a cited result; \stSketch{} means the argument is given but a case analysis is incomplete; \stOblig{} means the statement is what we intend to prove and the proof is outstanding.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lll}
+\textbf{Result} & \textbf{Where} & \textbf{Status}\\
+\hline
+Observation relation determines $\D$ & Prop.~\ref{prop:admis} & \stProved\\
+$@$ is not admissible & Prop.~\ref{prop:at} & \stProved\\
+$\D$-relative congruence (strong) & Thm.~\ref{thm:dcong} & \stProved\\
+Existence of $\D$-relative IPOs & Prop.~\ref{prop:dexist} & \stSketch\\
+Decomposition-closure of $\map{C_\pi}$ in $\rho$ & Ob.~\ref{ob:decomp} & \stOblig\\
+$\D$-relative congruence (weak) & Thm.~\ref{thm:weakcong} & \stOblig\\
+Congruence for $\rho$, admissible contexts & Thm.~\ref{thm:rhocong} & \stProved\\
+Redex IPOs exist for $\rho$ and $\pi$ & Thm.~\ref{thm:ipoexist} & \stSketch\\
+Replication elimination $\rho^!\to\rho$ & Thm.~\ref{thm:repl} & \stProved\\
+$\pi\to\rho$ preserves behavior & Thm.~\ref{thm:pirho} & \stOblig\\
+Extension equations become weak bisimulations & Thm.~\ref{thm:data} & \stSketch\\
+The same, for $\mtt{Bool}$ & Prop.~\ref{prop:bool} & \stProved\\
+Retraction $\T\ext\A\to\T$ uniform in $\T$ & Ob.~\ref{ob:retract} & \stOblig\\
+\end{tabular}
+\end{center}
+
+\subsection{What is deliberately absent}
+
+Earlier drafts of this material attempted the ambient calculus, the $\lambda$-calculus, name-passing $\lambda$, combinators, and a general theory of ``weakened'' theories with relative pushouts taken over an internal congruence. All are omitted.
+
+The ambient calculus is omitted because it fails our hypotheses for a reason worth stating: the operation $n[-]$ does not commute with parallel composition, $n[p\pr q]\neq n[p]\pr q$, so the redex-IPO enumeration of \S\ref{sec:drel} does not apply. \citet{amb-ipo-lts-sos} show that the IPO semantics for ambients is in any case too fine and must be coarsened by barbs; the correct treatment is a separate paper. The $\lambda$-calculus is omitted because it has no parallel composition at all, and because \citet{lambda-lts} already treat it with second-order contexts. The internal-congruence construction is subsumed: \S\ref{sec:quot} obtains the same effect by taking relative pushouts in $\D/\!\approx$, which needs no new framework.
+\section{Lambda theories}
+\label{sec:lt}
+
+Algebraic structures, such as rings or automata, are defined by operations that satisfy equations. Such an operation has many inputs and one output, and thus can be described as a morphism $f\of \prod A_i\to B$ from a product of types to a type. Hence \textit{cartesian categories} have become the general setting for universal algebra \citep{algthy}. We denote such an operation as follows.
+\[a_1\of A_1, ..., a_n\of A_n\vdash f\of B\]
+
+Yet to model programming languages, a more expressive framework is needed, as a program may be an input to another program: a higher-order operation, whose inputs can be other operations. This is a morphism in a \textit{closed} cartesian category, with both product types and \textit{function types}, whose terms are formed by lambda abstraction and used in beta reduction \citep{ccc}.
+\begin{center}
+    \begin{tabular}{c@{\qquad\qquad}c}
+         \infr{\Gamma, x:X\vdash c:A}{\Gamma \vdash \lambda x.c:[X\to A]} &
+         \infr{\Gamma\vdash t\of X & \Gamma\vdash f\of [X\to A]}{\Gamma\vdash f(t)\of A}
+    \end{tabular}
+\end{center}
+To save space, we may write $[X\to Y]$ as $[X\lam Y]$ and $X\times Y$ as $X,Y$.
+
+For example in the $\pi$ calculus \citep{pi}, an input process hosts a function from names to processes, which can evaluate when in parallel with an output process on the same channel.
+\begin{center}
+    \begin{tabular}{c@{\qquad\qquad}c}
+         $n\of Nm, \lambda x.c\of [Nm\lam Pr] \vdash \mtt{in}(n,\lambda x.c)\of Pr$ &
+         $\Gamma\vdash \mtt{out}(n,a)\pr \mtt{in}(n,\lambda x.c)\rsq c(a)$
+    \end{tabular}
+\end{center}
+The symbol $\rsq$ denotes a \textit{rewrite} from one program to another, as in a basic step of computation. This is a binary relation on programs, found in virtually every language specification, and presented in the style of \citet{sos}. Reasoning about programs involves a combination of types, operations, equations, and rewrites; yet most literature does not explicate their universe of discourse as one cohesive logical structure.
+\[p\of Pr, q\of Pr\vdash (p\rsq q)\; \mrm{prop}\]
+
+Categorical logic provides a canonical setting: the structure of \textit{a logic over a type system} \citep{fibcat}. Rewriting is a \textit{proposition} on pairs of programs, and dynamics is expressed by \textit{entailments} thereof. As each predicate depends on a context of types, the category (poset) of predicates and entailments depends on the category of types and terms: together they form a \textbf{fibered category}.
+\[\begin{tikzcd}
+	{\mrm{SubT}} && \varphi & \vdash & \psi \\
+	{\mrm{T}} && S && T
+	\arrow[from=1-1, to=2-1]
+	\arrow["f"{description}, from=2-3, to=2-5]
+\end{tikzcd}\]
+The morphism above expresses that for any $s\of S$, $\varphi[s]$ entails $\psi[f(s)]$, written $s\of S\ctx \varphi \vdash \psi[f]$.
+
+Every category with finite limits $\T$ determines a fibered category of subobjects $\mrm{Sub}\T\to \T$, in which an object over $\Gamma$ is a subobject $\varphi \rightarrowtail \Gamma$, entailment is inclusion, and substitution is pullback. The internal language of this structure is equational logic; the inference rules are collected in Appendix~\ref{app:rules}, together with the characterization theorem of \citet{fibcat} that licenses their use.
+
+\subsection{Meta-contexts and the rewrite proposition}
+
+We will define rewriting in terms of a distinguished type $Pr$ and a proposition $(\rsq)\rightarrowtail Pr\times Pr$. To define operations on rewrites, we introduce the following concepts.
+
+\begin{definition}
+    Consider the category of endofunctors $\mbb{C}\mrm{at}(\T,\T)$. Define $\mrm{C}[\T]$ to be the subcategory generated by $-\times X$ and $[X\to -]$ over all $X:\T$. We call such a composite a \textbf{meta-context}, and denote one by $\brk{-}:\T\to \T$, or $\brk{-}_i$ when there are multiple. These extend to fibered endofunctors $-\land \top_X$ and $\top_X\ra -$, the composites of which form $\brk{-}\of \mrm{SubT}\to \mrm{SubT}$ for propositions.
+\end{definition}
+
+Since $A\cong 1\times A$, the identity is a meta-context. Meta-contexts are equipped with the following isomorphisms.
+\begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{lcl}
+        $A\times (B\times -)$ & $\cong$ & $(A\times B)\times -$\\
+        $A\to (B\to -)$ & $\cong$ & $(A\times B)\to -$\\
+        $A\to (B\times -)$ & $\cong$ & $(A\to B)\times (A\to -)$
+    \end{tabular}
+\end{center}
+So in general, $\brk{-}= A\times [B\to -]$ for some $A,B:\T$. To define equations with binding operations, we need the monoidal strength $st_B^A$ of each $[B\to -]$ with respect to products of $\T$ \citep{strong}:
+\[\begin{tikzcd}
+	& {[B\to A]\times [B\to -]} \\
+	{A\times [B\to -]} && {[B\to (A\times -)]}
+	\arrow["\cong"{description}, from=1-2, to=2-3]
+	\arrow["{\eta_B^A}"{description}, from=2-1, to=1-2]
+	\arrow["{st_B^A}"{description}, from=2-1, to=2-3]
+\end{tikzcd}\]
+where $\eta_B^A:A\to [B\to A]$ is the currying of the projection $\pi_A:A\times B\to A$. This converts a term $a$ with $b$ not occurring free in $a$ into a term $\lambda b.a$ constant at $a$.
+
+\begin{definition}
+    An \textbf{equational logic with binding and rewriting} is a category with finite limits such that $\pi\of \mrm{SubT\to T}$ is cartesian closed, with a type $Pr$ and a proposition $(\rsq)\rightarrowtail Pr\times Pr$ with entailments: base rewrites $\rsq_B = \{\Gamma\ctx \top\vdash p\rsq q\}$, and rewrite operations $\rsq_O$ of the form below.
+    \[\prod \brk{\Gamma_i}_i\ctx \bigwedge \brk{p_i\rsq q_i}_i\vdash f(\vec{p})\rsq f(\vec{q})\]
+    We shorten to the name \textbf{lambda theory}, as in the classic example of the $\lambda$-calculus.
+\end{definition}
+
+\begin{definition}
+    A \textbf{presentation} of a lambda theory $\T$ consists of:
+    \begin{itemize}
+        \item a set of \textbf{base types} $\T_\mrm{type} = \{ A \}$, including $Pr$
+        \item a set of \textbf{operations} $\T_\mrm{oper} = \{\Gamma\vdash t\of A \}$, with $A\in \T_\mrm{type}$
+        \item a set of \textbf{propositions} $\T_\mrm{prop} = \{ \varphi \}$, including $(p\of Pr, q\of Pr\vdash p\rsq q)$
+        \item a set of \textbf{entailments} $\T_\mrm{ent} = \{\Gamma\ctx \Theta\vdash \varphi\}$, including $\rsq_B$ and $\rsq_O$ above.
+    \end{itemize}
+    A theory is \textbf{finitely presented} if all four sets are finite.
+\end{definition}
+
+The source $l$ of a rewrite $l\rsq r$ is called a \textbf{redex}. Rewrite operations are composed as follows, forming the set of \textbf{rewrite constructors} $\rsq_C$.
+\begin{center}
+    \begin{minipage}{0.4\textwidth}
+        \infr{f\of (\rsq_O)(\prod\brk{Pr}_i)}{f\of (\rsq_C)(\prod\brk{Pr}_i)}
+    \end{minipage} \qquad
+    \begin{minipage}{0.4\textwidth}
+        \infr{\{c_i\of (\rsq_C)(\Gamma_i)\} & f\of (\rsq_O)(\prod \brk{Pr}_i)}{f(\prod \brk{c_i}_i)\of (\rsq_C)(\prod \brk{\Gamma_i}_i)}
+    \end{minipage}
+\end{center}
+For the domains formed this way, we use $\dbrk{-} = \prod\brk{... \prod\brk{-}_i ...}_z$ for the functor $\T^{\Sigma...\Sigma n_{i...z}}\to \T$, and may overload the term meta-context to refer to these functors.
+
+A \textbf{generic rewrite} is a substitution of base rewrites into a rewrite constructor, written $d(\vec{l})$. A \textbf{specific rewrite} is a substitution of ground terms into a generic rewrite, $d(\vv{l(x)})$.
+
+Rewrite constructors are the \emph{reactive contexts} of Leifer and Milner: the substitution of base rewrites into a rewrite constructor is a morphism in the slice category $\T/Pr$. Their relative pushouts are the transitions that characterize behavior --- once we have said which contexts are permitted to take part, which is the subject of \S\ref{sec:obs}.
+
+\vspace{1em}
+
+\textbf{Note 1.} The combination of cartesian $(\times)$ and closed $(\to)$ structure on $\mrm{SubT\to T}$ does not appear in the standard hierarchy of logical structures \citep{elephant}.
+
+\begin{center}
+    \begin{tabular}{c@{\qquad}c@{\qquad}c@{\qquad}c@{\qquad}c}
+         cartesian & regular & coherent & heyting & topos\\
+         $(\top,\land,=)$ & $(...,\exists)$ & $(...,\bot,\lor)$ & $(...,\Rightarrow,\forall)$ & $(...,\to,\Omega)$
+    \end{tabular}
+\end{center}
+Yet it is useful and natural. Arguably the simplest thing one could mean by \emph{higher-order} reasoning is that in the same way we form types of functions, we can form \emph{propositions about proofs}. Just as one curries $f\of A\times B\to C$ to $A\to [B\to C]$, the same is useful for entailments. The basic rewrite of the $\pi$ calculus is the entailment
+\[\begin{tikzcd}
+	{\top_{Nm},\top_{Nm},\top_{[Nm\lam Pr]}} & \vdash & {(\rsq)} \\
+	{Nm,Nm,[Nm{\setminus}Pr]} && {Pr,Pr}
+	\arrow[tail, from=1-1, to=2-1]
+	\arrow[tail, from=1-3, to=2-3]
+	\arrow["{\mtt{o}(a,n)|\mtt{i}(a,\lambda x.c),\; c[n]}", from=2-1, to=2-3]
+\end{tikzcd}\]
+which can be curried to a rewrite of \emph{open} processes --- continuations with a bound name.
+\[\begin{tikzcd}
+	{\top_{Nm},\top_{[Nm\lam Pr]}} & \vdash & {\top_{Nm}\ra (\rsq)} \\
+	{Nm,[Nm{\setminus}Pr]} && {[Nm\lam Pr,Pr]}
+	\arrow[tail, from=1-1, to=2-1]
+	\arrow[tail, from=1-3, to=2-3]
+	\arrow["{\lambda a.(...)}"', from=2-1, to=2-3]
+\end{tikzcd}\]
+This is how we reason about rewrites under a lambda and within binding constructors. It is also why the transition system of \S\ref{sec:drel} can be defined on open terms without the distinguished ground object of \citet{lm}.
+
+\vspace{1em}
+
+\textbf{Note 2.} In a logic $\T$, a subobject $U\rightarrowtail A$ is a \emph{proposition} about a type; but $U$ is also an object of $\T$, hence a \emph{type}. This is \textbf{comprehension}, or subset types.
+\[\infr{x\of A\vdash \varphi\;\mrm{prop}}{\{x\of A\ctx \varphi\}\;\mrm{type}}\]
+It lets us define \emph{partial operations} $p_{op}\of \{\varphi\}\to C$, which we use in \S\ref{sec:cat} to restrict replication to input-guarded processes. We do not use the corresponding refined-binding operations $r_{op}\of [\{\varphi\}\to C]\to D$.
+
+\subsection{Metatheories and free extension}
+\label{sec:meta}
+
+We will need, in \S\ref{sec:data}, to say that an encoding of a data type is \emph{canonical}. Canonicity will come from initiality, so we record the relevant machinery here.
+
+Every finite limit category is a model of a meta-theory $\mbb{T}_\land$ in $\mrm{Set}$, presented by the judgements $\T_0\;\mrm{type}$, $\T_1\;\mrm{type}$, source and target, identities, composition, unitality, associativity, a terminal object and pullbacks; adding types $[A\to B]$ with evaluation and currying gives the meta-theory $\mbb{T}_\land^\to$ of cartesian closed categories. The full presentations are in Appendix~\ref{app:meta}.
+
+\begin{proposition}
+    $\mrm{FinLim}\simeq \mbb{C}\mrm{at}(\mbb{T}_\land, \mrm{Set})$, and finite-limit-preserving functors correspond to morphisms of models.
+\end{proposition}
+
+There are analogous meta-theories for each fragment of higher-order predicate logic, connected by inclusions; and the \emph{free model} with respect to such an inclusion is the left Kan extension along it \citep[Section 4.4]{ttt}.
+
+\begin{proposition}
+\label{prop:freeext}
+Given an equational theory $\mrm{T}\of \mbb{T}_\land\to \mrm{Set}$, the free regular theory is given by the coend
+\[i_\exists !(\T)(T) = \vec{\Sigma} S\of \mbb{T}_\land.\; \T(S)\times \mbb{T}_{\land\exists}(i_\exists(S),T)\]
+and the same holds for every inclusion in the chain
+\[\mbb{T}_\land \subset \mbb{T}_{\land\exists}\subset \mbb{T}_{\land\exists\lor}\subset\mbb{T}_{\land\exists\lor\forall}\subset\mbb{T}_{\land\exists\lor\forall\bigvee}\subset\mbb{T}_{\land\exists\lor\forall\bigvee\bigwedge}\]
+and their closed variants.
+\end{proposition}
+
+A term of $T$ in the free theory is a pair of a term $s\of S$ in the original theory and an inference rule $\gamma$ from $S$ to $T$, quotiented by $\brk{f(s),\gamma} \equiv \brk{s,\gamma(f)}$. These adjunctions induce monads $(-)_\exists$ and so on. We will define bisimilarity in the free infinitary theory $\T_{\land\exists\lor\forall\bigvee\bigwedge}$, and in \S\ref{sec:data} we will use initiality in $\mbb{T}_\land$ to pin down data-type encodings.
+\section{The theories we treat}
+\label{sec:cat}
+
+Our main theory is the $\rho$-\textbf{calculus}: the $\pi$-calculus with reflection between code and data, that is, between processes and names. Its basic rule is communication --- an output process synchronizes with an input process along a name, transferring a list of processes which are converted into names and substituted into the input context --- together with a rule for dereferencing a quoted process.
+
+\begin{mdframed}
+\begin{center}
+    \textbf{$\rho$ calculus}\\~\\
+    \renewcommand{\arraystretch}{1.2}
+
+    \begin{tabular}{rcl}
+        & $\vdash$ & $0\of Pr$\\
+        $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2\of Pr$\\
+        $p\of Pr$ & $\vdash$ & $@(p)\of Nm$\\
+        $n\of Nm$ & $\vdash$ & $\ast(n)\of Pr$\\
+        $n\of Nm,\vec{p}\of Pr^k$ & $\vdash$ & $\mtt{out}_k(n,\vec{p})\of Pr$\\
+        $n\of Nm, \lambda \vec{x}.q\of [Nm^k\lam Pr]$ & $\vdash$ & $\mtt{in}_k(n,\lambda x.q)\of Pr$
+    \end{tabular}
+
+    \vspace{1em}
+
+    \begin{tabular}{rcl}
+         $p\of Pr$ & $\vdash$ & $p\pr 0 = p$\\
+        $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2 = p_2\pr p_1$\\
+        $p_1\of Pr,p_2\of Pr,p_3\of Pr$ & $\vdash$ & $(p_1\pr p_2)\pr p_3 = p_1\pr (p_2\pr p_3)$\\
+        $n\of Nm$ & $\vdash$ & $@(\ast(n)) = n$
+    \end{tabular}
+
+    \vspace{1em}
+
+    \begin{tabular}{rcl}
+         $p_1\of Pr,p_2\of Pr$ & $\vdash$ & $(p_1\rsq p_2)\; \mrm{prop}$\\
+         $n\of Nm,\vec{p}\of Pr^k, \lambda \vec{x}.q\of [Nm^k.Pr]\ctx \top$ & $\vdash$ & $\mtt{out}_k(n,\vec{p})\pr \mtt{in}_k(n,\lambda \vec{x}.q)\rsq  q[@\vec{p}/\vec{x}]$\\
+         $p\of Pr \ctx \top$ & $\vdash$ & $\ast(@(p))\rsq p$\\
+         $p_1,p_2,q\of Pr\ctx (p_1\rsq p_2)$ & $\vdash$ & $ p_1\pr q\rsq  p_2\pr q$\\
+         $p_1,p_2,q_1,q_2\of Pr\ctx (p_1\rsq p_2), (q_1\rsq q_2)$ & $\vdash$ & $p_1\pr q_1\rsq p_2\pr q_2$
+    \end{tabular}
+\end{center}
+\end{mdframed}
+
+These rewrites are drawn as string diagrams in Appendix~\ref{app:diagrams}. Note that $\ast(@(p))\rsq p$ is a rewrite whose redex is not of the form $t\pr u$; this is the one case the enumeration of Theorem~\ref{thm:ipoexist} must handle separately.
+
+Following \citet{rho}, the calculus above has no name restriction: fresh names are obtained by quotation. Replication, however, we treat as an extension, because it is the smallest interesting instance of the pattern this paper is about --- an extension whose defining rewrite is compiled away.
+
+\begin{mdframed}
+\begin{center}
+    \textbf{$\rho^!$: $\rho$ + replicated input}\\~\\
+    \begin{tabular}{cl}
+         & $(p,n,c)\of \{p\of Pr, n\of Nm, c\of [Nm\lam Pr]\pr p=\mtt{in}(n,c)\}$\\
+         $\vdash$ & $!(p)\of Pr,$\\
+         & $!(p)\rsq p\pr !(p)$
+    \end{tabular}
+\end{center}
+\end{mdframed}
+
+The comprehension of Note 2 is what lets us restrict $!$ to input-guarded processes.
+
+\begin{mdframed}
+    \begin{center}
+    \textbf{$\pi$ calculus} (with replicated input)
+    \\~\\
+    \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rcl}
+             & $\vdash$ & $0\of Pr$\\
+             $n\in \mrm{Names}$ & $\vdash$ & $n\of Nm$\\
+             $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2\of Pr$\\
+             $n\of Nm, k\of Pr$ & $\vdash$ & $\mtt{out}(n,k)\of Pr$\\
+             $n\of Nm, \lambda x.q\of [Nm\lam Pr]$ & $\vdash$ & $\mtt{in}(n,\lambda x.q)\of Pr$\\
+             $\lambda x.q\of [Nm\lam Pr]$ & $\vdash$ & $\nu(\lambda x.q)\of Pr$\\
+             $p\of Pr, n\of Nm, c\of [Nm\lam Pr]\pr p=\mtt{in}(n,c)$ & $\vdash$ & $!(p)\of Pr$
+        \end{tabular}
+
+        \vspace{1em}
+
+        \begin{tabular}{rcl}
+            $p\of Pr$ & $\vdash$ & $p\pr 0 = p$\\
+            $p_1\of Pr, p_2\of Pr$ & $\vdash$ & $p_1\pr p_2 = p_2\pr p_1$\\
+            $p_1\of Pr,p_2\of Pr,p_3\of Pr$ & $\vdash$ & $(p_1\pr p_2)\pr p_3 = p_1\pr (p_2\pr p_3)$\\
+            & $\vdash$ & $\nu(\lambda x.0) = 0$\\
+            $p\of Pr, \lambda x.q\of [Nm\lam Pr]$ & $\vdash$ & $p\pr \nu(\lambda x.q) = \nu(\lambda x.(p\pr q))$\\
+            $\lambda xy.p\of [Nm,Nm\lam Pr]$ & $\vdash$ & $\nu(\lambda x.\nu(\lambda y.p)) = \nu(\lambda y.\nu(\lambda x.p))$
+        \end{tabular}
+
+        \vspace{1em}
+
+        \begin{tabular}{rcl}
+             $p_1\of Pr,p_2\of Pr$ & $\vdash$ & $(p_1\rsq p_2)\; \mrm{prop}$\\
+             $n\of Nm, k\of Nm, \lambda x.q\of [Nm\lam Pr]\ctx \top$ & $\vdash$ & $\mtt{out}(n,k)\pr \mtt{in}(n,\lambda x.q)\rsq  q[k/x]$\\
+             $p_1,p_2,q\of Pr\ctx (p_1\rsq p_2)$ & $\vdash$ & $ p_1\pr q\rsq  p_2\pr q$\\
+             $\lambda x.s, \lambda x.t\of [Nm\lam Pr] \ctx (\lambda x.s \;(\top_{Nm}\ra \rsq)\; \lambda x.t)$ & $\vdash$ & $\nu(\lambda x.s)\rsq \nu(\lambda x.t)$\\
+            $p\of Pr$ & $\vdash$ & $!(p) \rsq p\pr !(p)$
+        \end{tabular}
+    \end{center}
+\end{mdframed}
+
+The three $\nu$-equations are the ones that an encoding into $\rho$ will satisfy only up to bisimilarity, and they are the reason \S\ref{sec:quot} is needed. The equations involve the strength of $[Nm\to -]$: for $op$ any of the unary process operations,
+\[\begin{tikzcd}
+	{\Gamma,[Nm\lam Pr]} && {\Gamma,Pr} \\
+	{[Nm\lam \Gamma,Pr]} \\
+	{[Nm\lam Pr]} && Pr
+	\arrow["{\Gamma,\nu}", from=1-1, to=1-3]
+	\arrow["st"', from=1-1, to=2-1]
+	\arrow["op", from=1-3, to=3-3]
+	\arrow["{[Nm\lam op]}"', from=2-1, to=3-1]
+	\arrow["\nu"', from=3-1, to=3-3]
+\end{tikzcd}\]
+expressing $op(x,\nu (\lambda n.p)) = \nu (\lambda n.op(x,p))$; the commutation of $\nu$ with itself uses the symmetry $\sigma:A\times B\cong B\times A$.
+
+\begin{remark}[why the ambient calculus is not here]
+\label{rem:ambient}
+The ambient calculus \citep{amb-ipo-lts-sos} is the natural next example and we do not treat it. The reason is structural rather than incidental. Theorem~\ref{thm:ipoexist} enumerates redex IPOs under the hypothesis that every unary rewrite constructor commutes with parallel composition. For ambients the constructor $n[-]$ does not:
+\[n[p\pr q]\neq n[p]\pr q\]
+Locality is exactly the failure of that commutation --- it is what makes ambients ambients. Consequently the enumeration does not apply, and separately, \citet{amb-ipo-lts-sos} show that the IPO-derived semantics for ambients is strictly finer than the intended one and has to be coarsened by barbs. Both facts point to a different construction, which we do not attempt here.
+\end{remark}
+\section{Admissible observers}
+\label{sec:obs}
+
+Before deriving a transition system we must say which contexts are permitted to observe. This section shows that the answer is not an extra piece of syntax to be legislated, but is determined by a choice of equivalence at the ground types.
+
+\subsection{Observation relations}
+
+\begin{definition}
+\label{def:obsrel}
+    Let $\T$ be a lambda theory. An \textbf{observation relation} on $\T$ is a family $\obseq{A}$ of equivalence relations, one for each type $A$ of $\T$, subject to the clauses
+    \begin{center}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{rcl}
+        $f\obseq{A\times B} g$ & iff & $\pi_1 f\obseq{A}\pi_1 g$ and $\pi_2 f \obseq{B}\pi_2 g$\\
+        $f\obseq{[A\lam B]} g$ & iff & $a\obseq{A}a'$ implies $f(a)\obseq{B} g(a')$\\
+        $p\obseq{Pr} q$ & iff & $p$ and $q$ are bisimilar in the derived transition system
+    \end{tabular}
+    \end{center}
+    and otherwise freely chosen at the remaining base types. We write $\approx$ for the whole family and drop the subscript when the type is clear.
+\end{definition}
+
+The clauses for products and function types are those of a logical relation; the content of an observation relation is entirely in the choice made at the base types other than $Pr$.
+
+\begin{definition}
+    An operation $op\of \Gamma\to A$ of $\T$ is \textbf{admissible} for $\approx$ if it preserves the relation: $\gamma\obseq{\Gamma}\gamma'$ implies $op(\gamma)\obseq{A} op(\gamma')$. We write $\D(\approx)$ for the subcategory of $\T$ generated by the admissible operations, and call its morphisms the \textbf{observers}.
+\end{definition}
+
+\begin{proposition}
+\label{prop:admis}
+    $\D(\approx)$ contains all identities and projections and is closed under composition; and $\approx$ is a congruence for every context in $\D(\approx)$.
+\end{proposition}
+\begin{proof}
+    Identities and projections preserve $\approx$ by the product clause. If $op$ and $op'$ preserve $\approx$ then so does $op\circ op'$, since preservation is a closure condition on relations composed forwards. A context $c\of \dbrk{\vv{Pr}}\to Pr$ in $\D(\approx)$ is by definition a composite of admissible operations, so preserves $\approx$; that is exactly the statement that $\approx$ is a congruence for $c$.
+\end{proof}
+
+Proposition~\ref{prop:admis} looks tautological and in a sense it is: we have arranged for congruence to hold by defining the observers to be the operations for which it holds. The content is not in the proposition but in the fact that the definition of $\obseq{Pr}$ refers to the derived transition system, which in turn refers to $\D$. The two are mutually recursive, and we must check the recursion has a solution.
+
+\begin{proposition}
+\label{prop:fixpoint}
+    Fix a choice of $\obseq{A}$ at each base type other than $Pr$. Let $\Phi$ send a pair $(\D,\approx)$ to $(\D(\approx'),\approx')$, where $\approx'$ is bisimilarity for the $\D$-relative transition system of Definition~\ref{def:dlts}. Then $\Phi$ is monotone in the inclusion order on pairs, and so has a greatest fixed point.
+\end{proposition}
+\begin{proof}
+    Enlarging $\D$ admits more labels, hence more transitions to be matched, hence a \emph{finer} bisimilarity: $\D\mapsto\approx$ is antitone. Coarsening $\approx$ makes preservation harder to satisfy, hence admits fewer operations: $\approx\mapsto\D(\approx)$ is antitone. The composite of two antitone maps is monotone, and the pairs form a complete lattice, so Knaster--Tarski applies.
+\end{proof}
+
+We take the greatest fixed point throughout: the coarsest observation relation compatible with the largest class of observers preserving it. This is the sense in which labels are compared coinductively rather than syntactically --- matching a label $c$ against a label $c'$ asks that $c\approx c'$, with $\approx$ the relation being defined.
+
+\subsection{The $\rho$-calculus: names are discrete}
+
+For the $\rho$-calculus we make the only reasonable choice at the base type $Nm$.
+
+\begin{definition}
+\label{def:rhoobs}
+    The \textbf{standard observation relation} on $\rho$ takes $\obseq{Nm}$ to be equality.
+\end{definition}
+
+The justification is operational: the communication rewrite fires when two names are equal, and no coarser relation on names is respected by it. A calculus in which channels were matched up to bisimilarity of their quoted processes would have to search an equivalence class at every rendezvous, which is not an implementable rule.
+
+This single choice determines the admissible operations, and in particular it rules one out.
+
+\begin{proposition}
+\label{prop:at}
+    For the standard observation relation on $\rho$, the operation $@\of Pr\to Nm$ is not admissible.
+\end{proposition}
+\begin{proof}
+    Admissibility of $@$ would require $p\obseq{Pr}q$ to imply $@(p)\obseq{Nm}@(q)$, that is $@(p)=@(q)$, that is $p=q$ by injectivity of quotation. So $@$ is admissible only if bisimilarity is equality. It is not: take
+    \[p = \tout(a,0)\pr \tin(b,\lambda x.0)\qquad q = \tin(b,\lambda x.0)\pr \tout(a,0)\]
+    which are distinct terms only if we do not quotient by the commutativity equation; for a genuine separation take instead any $p\rsq^\ast q$ with $p\neq q$, for instance $p=\ast(@(0))$ and $q=0$, which are weakly bisimilar and not equal. Then $\tout(@(p),z)$ and $\tout(@(q),z)$ are not bisimilar, since they output on distinct channels and no context can match one action with the other.
+\end{proof}
+
+\begin{corollary}
+\label{cor:rhoD}
+    For $\rho$ with the standard observation relation, the admissible operations include $\tout(n,-)$, $\tin(n,-)$, $-\pr-$ and $\ast(@(-))$, and exclude every operation with a hole under $@$ alone, in particular $\tout(@(-),z)$ and $\tin(@(-),z)$.
+\end{corollary}
+
+Note that $\ast(@(-))$ is admissible although $@$ is not: the composite lands back in $Pr$, where the relation is bisimilarity, and $\ast(@(p))\rsq p$. Admissibility is a property of composites, not of each factor --- which is precisely why $\D(\approx)$ must be described as the subcategory \emph{generated by} admissible operations, and why decomposition-closure (\S\ref{sec:drel}) is a real hypothesis rather than a formality.
+
+\subsection{Encodings: the observation relation transported}
+
+The second source of observation relations is an encoding. If $\map{-}\of \mrm{S}\to\T$ maps types of $\mrm{S}$ to types of $\T$, then the observation relation of $\mrm{S}$ can be transported forwards.
+
+\begin{definition}
+\label{def:transported}
+    Let $\map{-}\of \mrm{S}\to \T$ send $Pr_\mrm{S}$ to $\brk{Pr_\T}$ for a meta-context $\brk{-}$. The \textbf{transported} observation relation $\map{\approx}$ on the image is generated by
+    \[\map{p}\;\map{\obseq{A}}\;\map{q}\quad\text{iff}\quad p\obseq{A}^{\mrm{S}} q\]
+    and its admissible operations are the images $\map{op}$ of the operations of $\mrm{S}$. We write $\map{\D}$ for the subcategory they generate --- the image of the source contexts.
+\end{definition}
+
+This is the formal content of the slogan that an encoding may only be probed by encoded contexts. It is not a restriction imposed from outside: it is what Definition~\ref{def:obsrel} yields when the relation at the base types is the one the source theory already had. The remainder of the paper is the study of $\D$-relative behavior for these two families of examples.
+\section{Relative pushouts, relatively}
+\label{sec:drel}
+
+Beginning with \citet{ccs}, process behavior has been specified by a labelled transition system: a relation $\xr{}\subset T\times A\times T$ for which $t\xr{a} u$ means that when $t$ makes the action $a$ it becomes $u$. This converts internal term structure into external graph structure, revealing how a program can act in different environments.
+\[\mtt{out}(n,p) \xr{-\pr \mtt{in}(n,\lambda x.c)} c(@p)\]
+Such systems had to be made by hand, relying on the researcher to know which labels give the correct view of behavior. \citet{lm} showed how to derive them: labels are the minimal contexts enabling a rewrite, minimality being a universal property.
+
+\subsection{Relative pushouts}
+
+\begin{definition}
+    Let $\mrm{C}$ be a category and $T$ an object. In the \textbf{slice category} $\mrm{C}/T$ an object is a morphism $t: X\to T$ and a morphism $f:t\to u$ is a commuting triangle $t= u\circ f$.
+    \[\begin{tikzcd}
+    	X && Y \\
+    	& T
+    	\arrow["f", from=1-1, to=1-3]
+    	\arrow["t"', from=1-1, to=2-2]
+    	\arrow["u", from=1-3, to=2-2]
+    \end{tikzcd}\]
+    A \textbf{relative pushout} (RPO) in $\mrm{C}$ is a pushout in some $\mrm{C}/T$: given $x:z\to t$ and $y:z\to u$, the pair $p$ with $i:t\to p$ and $j:u\to p$ is an RPO if for every other candidate $(q,i',j')$ there is a unique $h:p\to q$ with $i'=hi$ and $j'=hj$.
+    \[\begin{tikzcd}
+    	\Gamma && A & A \\
+    	& T \\
+    	B && C \\
+    	B &&& D
+    	\arrow["x", from=1-1, to=1-3]
+    	\arrow["z"{description, pos=0.4}, from=1-1, to=2-2]
+    	\arrow["y"', from=1-1, to=3-1]
+    	\arrow[equals, from=1-3, to=1-4]
+    	\arrow["t"{description}, from=1-3, to=2-2]
+    	\arrow["i", from=1-3, to=3-3]
+    	\arrow["{i'}", from=1-4, to=4-4]
+    	\arrow["u"{description, pos=0.4}, from=3-1, to=2-2]
+    	\arrow["j"', from=3-1, to=3-3]
+    	\arrow[equals, from=3-1, to=4-1]
+    	\arrow["p"{description}, from=3-3, to=2-2]
+    	\arrow["{\exists!h}"{description}, dashed, from=3-3, to=4-4]
+    	\arrow["{j'}"', from=4-1, to=4-4]
+    	\arrow["q"{description}, curve={height=18pt}, from=4-4, to=2-2]
+    \end{tikzcd}\]
+    An RPO is \textbf{idempotent} (an IPO) if $p$ is an identity.
+\end{definition}
+
+Because morphisms of a slice category are factorizations, an RPO is the \emph{greatest common factor} of an equal pair of substitutions $t[f]=u[g]$; a transition is asserted when the redex and the context are \emph{relatively prime}.
+
+\subsection{Two things Leifer and Milner did not need}
+
+The construction of \citet{lm} is stated for \emph{reactive systems}, which carry two restrictions we must examine.
+
+First, a reactive system has a distinguished object $0$ that is the domain of all IPOs, which in effect restricts the theory to ground terms. Their proofs do not use this object. We therefore adopt an \emph{open} form of the construction, on arbitrary contexts $\Gamma$, and Note 1 of \S\ref{sec:lt} is what makes this coherent: currying an entailment produces a rewrite of open processes, so there is no need to close a term before observing it.
+
+Second, a reactive system carries a subcategory $\D$ of \emph{reactive} contexts --- those in which a rewrite may occur --- closed under composition and decomposition. Their proofs do use this, and they use nothing about the ambient category beyond it. This is the observation we build on: their arguments take place entirely inside $\D$, so they may be run in $\D$. What we change is which restriction $\D$ expresses. Leifer and Milner restrict where reaction may happen; we additionally restrict who may look.
+
+\begin{definition}
+\label{def:drpo}
+    Let $\T$ be a lambda theory and $\D\subseteq \T$ a subcategory of observers. A \textbf{$\D$-relative pushout} for $x:z\to t$, $y:z\to u$ is an RPO computed in the slice $\D/Pr$: all four legs and the mediating morphism $h$ are required to lie in $\D$. A \textbf{$\D$-relative IPO} is one whose $\D$-RPO is an identity.
+\end{definition}
+
+The point of the relativization is that $\D$-relative IPOs and IPOs are genuinely different, and it is the relative notion that is wanted.
+
+\begin{example}
+\label{ex:minimality}
+    Let $\map{-}\of \pi\to\rho$ be the encoding of \S\ref{sec:enc}, and consider a transition out of $\map{p}$. The $\rho$-minimal context enabling a communication is a bare $-\pr\tout(a,q)$. No such context is of the form $\map{c}$: every encoded context carries the name-supply parameters $(n,v)$ and the replication server $!N$, which $\rho$-minimality strips away. Insisting on minimality in $\rho$ therefore forces observation from outside the image; insisting on encoded contexts abandons minimality. Relative minimality asks for the smallest \emph{encoded} context, and keeps both.
+\end{example}
+
+\begin{definition}
+    Let $\T$ be a lambda theory and $\D$ a subcategory of observers. $\T$ \textbf{has all $\D$-redex-RPOs} if for every redex $dl$, seen as a morphism $l\of dl\to d$ in $\D/Pr$, the $\D$-relative pushout along $l$ exists for all $t\of dl\to c$ with $c\in\D$.
+\end{definition}
+
+\subsection{Which contexts are observations}
+
+We can now finish a definition that earlier drafts of this material left open. The question ``which contexts are observations?'' has no absolute answer; it has an answer relative to $\approx$.
+
+\begin{definition}
+\label{def:observation}
+    Let $\approx$ be an observation relation on $\T$. A context $c\of \dbrk{\vv{Pr}}_1\to\dbrk{\vv{Pr}}_2$ is an \textbf{observation} if $c\in\D(\approx)$ and $\D(\approx)$ is closed under decomposition up to $\approx$: whenever $c=c_1\circ c_2$ in $\T$, there are $d_1,d_2\in\D(\approx)$ with $d_1\approx c_1$, $d_2\approx c_2$ and $d_1\circ d_2\approx c$.
+\end{definition}
+
+Decomposition-closure is what \citet{lm} require of their reactive contexts, and it is needed for the same reason: the congruence argument factors a context and must know that the factors are still legitimate. Requiring it only up to $\approx$ rather than on the nose is forced on us by the examples --- see Obligation~\ref{ob:decomp}.
+
+\subsection{The derived transition system}
+
+Recall that rewrite operations have the form $op\of \prod \brk{Pr}_i\to Pr$, so their composites have the form $d\of \dbrk{\vv{Pr}}\to Pr$. We assume these closed under decomposition, so that every factorization of $d$ is $f\dbrk{\vec{e}}$ with $f$ a rewrite constructor and $\vec{e}$ a tree of rewrite constructors; hence any first factor is of the form $\dbrk{\vec{d}}$.
+
+\begin{definition}
+\label{def:dlts}
+    Let $\T$ be a lambda theory with all $\D$-redex-RPOs. The \textbf{$\D$-relative derived transition system} $\T[\xr{}_\D]$ is defined as follows. For each meta-context $\dbrk{-}$, each tree of rewrite constructors $\vec{d}$ of type $\dbrk{\vv{Pr}}$, and each substitution of base rewrites $[[\Gamma_i\vdash l_i\rsq r_i]_j\cdots]_z$, then for each $\D$-relative IPO of the form below with $c$ an observation, assert $\Gamma\vdash \vec{t}\xr{c}_\D \dbrk{\vv{d\dbrk{\vec{r}}}}$.
+    \[\begin{tikzcd}
+    	{\dbrk{\vv{\dbrk{\vv{\Gamma}}}}} && {\dbrk{\vv{Pr}}_0} \\
+    	\\
+    	{\dbrk{\vv{\dbrk{\vv{Pr}}}}} && \dbrk{\vv{Pr}}
+    	\arrow["{\vec{t}}", from=1-1, to=1-3]
+    	\arrow["{\dbrk{\vv{\dbrk{\vec{l}}}}}"{description}, from=1-1, to=3-1]
+    	\arrow["c", from=1-3, to=3-3]
+    	\arrow["\dbrk{\vec{d}}"', from=3-1, to=3-3]
+    \end{tikzcd}\]
+    Additionally, for each substitution $x:1\to \dbrk{\vv{\dbrk{\vv{\Gamma}}}}$ into the above diagram, assert $\cdot\vdash \vec{t}x\xr{c}_\D \dbrk{\vv{d\dbrk{\vec{r}}}}x$.
+\end{definition}
+
+\begin{definition}
+    A \textbf{$\D$-bisimulation} is a relation $\Dsbis\;\subset Pr\times Pr$ such that $p_0\Dsbis q_0$ implies that every $p_0\xr{c}_\D p_1$ is matched by some $q_0\xr{c'}_\D q_1$ with $c\approx c'$ and $p_1\Dsbis q_1$, and symmetrically. The \textbf{weakening} $\xr{}_{\D\ast}$ is
+    \tbl{
+        $p\xr{c}_{\D\ast} q$ & $:=$ & $\exists \hat{p},\hat{q}.\; (p\rsq^\ast \hat{p})\land (\hat{p}\xr{c}_\D \hat{q})\land (\hat{q}\rsq^\ast q)$
+    }
+    and \textbf{weak $\D$-bisimilarity} $\Dbis$ is defined in the free infinitary theory of Proposition~\ref{prop:freeext} by
+    \tbl{
+        $(p\Dbisn{0} q)$ & $ :=$ & $ \top$\\
+        $(p\Dbisn{n+1} q) $ & $ := $ & $ \forall p'. \forall c. (p\xr{c}_\D p')\ra \exists q',c'. (c\approx c')\land (q\xr{c'}_{\D\ast} q') \land (p'\Dbisn{n} q')\;  \land$\\
+        && $\forall q'. \forall c. (q\xr{c}_\D q')\ra \exists p',c'. (c\approx c')\land (p\xr{c'}_{\D\ast} p') \land (p'\Dbisn{n} q')$\\
+        $(p\Dbis q)$ & $ := $ & $ \bigwedge_{i\of \mbb{N}} p\Dbisn{i} q$
+    }
+    At types other than $Pr$, $\Dbis$ is the observation relation of Definition~\ref{def:obsrel}; this is what gives meaning to $\Gamma\vdash t\Dbis u$ for open terms and to $\lambda x.c\Dbis\lambda x.d$ at $[Nm\lam Pr]$.
+\end{definition}
+
+Matching labels up to $\approx$ rather than by syntactic identity is not a refinement we could avoid. Two encoded contexts that differ only in the internal name of a fresh channel must be allowed to match, and they are equal only up to bisimilarity.
+
+\subsection{Normality and substitution}
+
+\begin{definition}
+    $\T$ is \textbf{rw-normal} if every ground rewrite is of the form $e\circ x:1\to \Gamma\to Rw$ for a generic rewrite $e$, and \textbf{eq-normal} if every ground equation is $lx=rx$ for an equation $(l,r)$ derived from the presentation. $\T$ is \textbf{normal} if both hold.
+\end{definition}
+
+Normality is what lets us pass between generic and specific rewrites, and it is doing a job that in the wider literature is done by moving to a 2-categorical setting; see Remark~\ref{rem:grpo}. Henceforth we assume all theories normal.
+
+\begin{proposition}
+\label{prop:subst}
+    Suppose $\Gamma\vdash \vec{t}\Dbis \vec{u}$. Then for any $x: 1\to \Gamma$, $\cdot \vdash \vec{t}x\Dbis \vec{u}x$.
+\end{proposition}
+\begin{proof}
+    Let $\cdot\vdash \vec{t}x\xr{c}_\D z$. By eq-normality $c\vec{t}x=\dbrk{\vv{d\dbrk{\vec{l}}}}x$, and by rw-normality $z=\dbrk{\vv{d\dbrk{\vec{r}}}}x$, so the transition is determined by the diagram
+    \[\begin{tikzcd}
+    	1 && {\dbrk{\vv{\dbrk{\vv{\Gamma}}}}} && {\dbrk{\vv{Pr}}_0} \\ \\
+    	&& {\dbrk{\vv{\dbrk{\vv{Pr}}}}} && {\dbrk{\vv{Pr}}}
+    	\arrow["x", from=1-1, to=1-3]
+    	\arrow["{\vec{t}}", from=1-3, to=1-5]
+    	\arrow["{\dbrk{\vv{\dbrk{\vec{l}}}}}"', from=1-3, to=3-3]
+    	\arrow["c", from=1-5, to=3-5]
+    	\arrow["{\dbrk{\vv{d}}}"', from=3-3, to=3-5]
+    \end{tikzcd}\]
+    Because $\vec{t}\Dbis \vec{u}$ there are $\vec{u}\rsq^\ast u'\xr{c'}_\D v'\rsq^\ast z'$ with $c\approx c'$ and $z'\Dbis z$, so there is a $\D$-IPO for $u'$ matching the one above; substituting into $(\rsq)$ gives $\vec{u}x\rsq^\ast u'x\xr{c'}_\D v'x \rsq^\ast z'x$. Hence $\{(fx,gx)\;|\; f\Dbis g\}$ is a $\D$-bisimulation.
+\end{proof}
+
+\subsection{Congruence}
+
+\begin{lemma}[\citealp{lm}, Proposition 2, relativized]
+\label{lem:paste}
+    Suppose $\D$ is closed under composition and decomposition up to $\approx$. If the outer rectangle of a pasting is a $\D$-IPO and the left square is a $\D$-RPO, then the right square is a $\D$-IPO.
+\end{lemma}
+\begin{proof}
+    The statement and proof of \citet{lm} concern only the slice category in which the pushouts are computed, and use no property of the ambient category. Taking that slice to be $\D/Pr$, which is a category by closure under composition, the argument goes through verbatim; decomposition-closure up to $\approx$ is what guarantees that the factors produced in the course of the argument again lie in $\D$, up to the relation along which labels are matched.
+\end{proof}
+
+\begin{theorem}[$\D$-relative congruence]
+\label{thm:dcong}
+    Let $\T$ have all $\D$-redex-RPOs, with $\D$ closed under composition and decomposition up to $\approx$. Then $\D$-relative strong bisimilarity is a congruence for $\D$: if $\Gamma\vdash t\Dsbis u$ then $\Gamma\vdash kt\Dsbis ku$ for every $k\in\D$.
+\end{theorem}
+\begin{proof}
+    We show $S=\{(kt,ku)\;|\;t\Dsbis u,\;k\in\D\}$ is a $\D$-bisimulation. Let $kt\xr{c}_\D d\dbrk{\vec{r}}$ with $c\in\D$; then the rectangle $c\circ(k,\Delta)=d\circ\dbrk{\vec{l}}$ is a $\D$-IPO. Since $\T$ has all $\D$-redex-RPOs, the $\D$-RPO of $(t,\Delta)$ against $\dbrk{\vec{l}}$ exists; it is the left square, with legs $c'$ and $d'$ in $\D$, and by Lemma~\ref{lem:paste} the right square is a $\D$-IPO. The left square being a $\D$-IPO gives a transition $t\xr{c'}_\D d'\dbrk{\vec{r}}$.
+
+    Because $t\Dsbis u$ there is $u\xr{c''}_\D e'\dbrk{\vec{r'}}$ with $c'\approx c''$ and $e'\dbrk{\vec{r'}}\Dsbis d'\dbrk{\vec{r}}$. This determines a second left $\D$-IPO with the same right-hand leg up to $\approx$; pasting it with the right square, which is a $\D$-IPO and lies in $\D$, yields $ku\xr{c}_\D ie'\dbrk{\vec{r'}}$ where $i$ is the mediating morphism. Since $kt\xr{c}_\D d\dbrk{\vec{r}}=id'\dbrk{\vec{r}}$ and $d'\dbrk{\vec{r}}\Dsbis e'\dbrk{\vec{r'}}$, the pair $(kt,ku)$ has matching transitions with successors again in $S$.
+\end{proof}
+
+The shape of this statement is the whole point. It does not say that bisimilarity is a congruence; it says that $\D$-relative bisimilarity is a congruence for $\D$. In \S\ref{sec:rho} this is the difference between a theorem with an embarrassing caveat about reflection and a theorem whose hypothesis names the caveat; in \S\ref{sec:enc} it is the difference between an encoding that fails to preserve behavior and one that preserves it against the observers that matter.
+
+\begin{theorem}[weak congruence]
+\label{thm:weakcong}
+    \stOblig{} Under the hypotheses of Theorem~\ref{thm:dcong}, together with the condition that every context of $\D$ is either reactive or IPO-uniform in the sense of \citet[Section 3]{lambda-lts}, weak $\D$-bisimilarity is a congruence for $\D$.
+\end{theorem}
+
+We flag this as an obligation rather than a theorem. Weak bisimilarity is not in general a congruence for all contexts, and it is not yet clear to us whether the failure is an artifact of the framework or a fact of life about weak equivalences; \citet{lambda-lts} give sufficient conditions in the second-order setting and we expect them to transfer, but we have not verified the transfer. This matters more than it may appear: the results of \S\ref{sec:enc} and \S\ref{sec:data} are all statements about \emph{weak} bisimilarity, since an encoding replaces a one-step operation by a multi-step protocol. For $\rho$ specifically we give a direct proof in Theorem~\ref{thm:rhocong} that does not depend on the general result.
+
+\subsection{Existence of relative IPOs}
+
+\begin{proposition}
+\label{prop:dexist}
+    \stSketch{} Let $\T$ have all redex-RPOs and let $\D$ be closed under composition and decomposition up to $\approx$. Suppose further that $\D$ \textbf{reflects factorizations}: whenever $c\in\D$ and $c=f\circ g$ in $\T$, there are $f',g'\in\D$ with $f\approx f'$ and $g\approx g'$. Then $\T$ has all $\D$-redex-RPOs, and the $\D$-IPO of a square is the $\approx$-least $\D$-candidate.
+\end{proposition}
+\begin{proof}[Proof sketch]
+    Given a redex $\dbrk{\vec{l}}$ and $t$, the $\D$-candidates $(c,d)$ with $c\in\D$ form a preorder under factorization. Reflection of factorizations makes this preorder closed under the greatest common factor computed in $\T$: if $(c_1,d_1)$ and $(c_2,d_2)$ are $\D$-candidates, their $\T$-RPO has legs that factor $c_1$ and $c_2$, and by reflection those factors are $\approx$-represented in $\D$. Hence the preorder is codirected and, $\T$ having all redex-RPOs, has a least element up to $\approx$; that element is the $\D$-IPO. The gap in this argument is that codirectedness gives a lower bound for each pair but not for an infinite family; a well-foundedness condition on $\D$ is needed and we have not identified the right one.
+\end{proof}
+
+Reflection of factorizations is a sharpening of what is elsewhere called \emph{hosting} or faithfulness of an encoding: it asks not merely that source terms embed faithfully, but that the way a source context comes apart is visible in the target. It is exactly the hypothesis the encoding results of \S\ref{sec:enc} consume.
+
+\begin{obligation}
+\label{ob:decomp}
+    Verify that $\map{C_\pi}\subseteq\rho$ is decomposition-closed up to $\approx$.
+\end{obligation}
+
+This is the first thing to check and we expect it to fail on the nose. A $\rho$-factorization of an encoded context can cut a constructed name such as $@(\mtt{o}(n,0)\pr\mtt{i}(n,\lambda x.0))$ into pieces that are not encodings of anything. The question is whether every such factorization is $\approx$-equivalent to one through $\map{C_\pi}$. If the answer is no, the closure of $\map{C_\pi}$ must be computed and shown still to exclude the discriminating contexts of Proposition~\ref{prop:at}; if the closure swallows them, the approach fails and we would want to know that early.
+
+\subsection{Enumerating redex IPOs}
+
+\begin{definition}
+    For each rewrite $\Gamma\vdash l\rsq r$, $l$ is a \textbf{process redex} if there is a nontrivial factorization $l = t(p,\Delta)$ for $p\of Pr$ and $\Delta\subset \Gamma$. Note that $\ast(@(p))\rsq p$ has no such factorization.
+\end{definition}
+
+\begin{theorem}
+\label{thm:ipoexist}
+    \stSketch{} Let $(\T,Pr,\rsq)$ be a lambda theory in which $(Pr,-\pr -,0)$ is a commutative monoid, every basic process redex has the form $t\pr u$, the only non-unary rewrite constructor is $-\pr-$, and every unary rewrite constructor $op$ commutes with parallel composition:
+    \[\begin{tikzcd}
+    	{Pr, \brk{Pr}} && {Pr,Pr} \\
+    	{\brk{Pr,Pr}} \\
+    	{\brk{Pr}} && Pr
+    	\arrow["{Pr,op}", from=1-1, to=1-3]
+    	\arrow["st"', from=1-1, to=2-1]
+    	\arrow["{-\pr -}", from=1-3, to=3-3]
+    	\arrow["{\brk{-\pr -}}"', from=2-1, to=3-1]
+    	\arrow["op"', from=3-1, to=3-3]
+    \end{tikzcd}\]
+    Then $\T$ has all redex IPOs, given by the basic factorizations together with one inference rule per unary constructor. For each $l\rsq r$ and $l=ct$ with $t\neq \mrm{id}_{Pr}$ we have $\Gamma\vdash t\xr{c} r$:
+    \[\begin{tikzcd}
+    	\Gamma && {Pr,\Delta} \\
+    	\\
+    	Pr && Pr
+    	\arrow["{t,\Delta}", from=1-1, to=1-3]
+    	\arrow["l"', from=1-1, to=3-1]
+    	\arrow["c", from=1-3, to=3-3]
+    	\arrow[equals, from=3-1, to=3-3]
+    \end{tikzcd}\]
+    and for each $op$ with $l\rsq r\vdash op\brk{l}\rsq op\brk{r}$, since $l=t\pr u$ and the square above is an IPO, pasting gives
+    \[\infr{\Gamma\vdash x\xr{t'\pr u'} r}{\brk{\Gamma} \vdash op(x)\xr{t'\pr u'} op(r)}\]
+    \[\begin{tikzcd}
+    	{\brk{\Gamma}} && {\brk{Pr,\Delta}} && {Pr,Pr} \\ \\
+    	{\brk{Pr}} && {\brk{Pr}} && Pr
+        \arrow["\brk{t'\pr u'}", from=1-3, to=3-3]
+    	\arrow["{\brk{x,\Delta}}", from=1-1, to=1-3]
+    	\arrow["{\brk{l}}"', from=1-1, to=3-1]
+    	\arrow["{op,Pr}", from=1-3, to=1-5]
+    	\arrow["{t'\pr u'}", from=1-5, to=3-5]
+    	\arrow[equals, from=3-1, to=3-3]
+    	\arrow["op"', from=3-3, to=3-5]
+    \end{tikzcd}\]
+\end{theorem}
+
+\begin{corollary}
+    $\pi$ satisfies the hypotheses of Theorem~\ref{thm:ipoexist}: its only unary rewrite constructor is $\nu$, and the equation $p\pr\nu(\lambda x.q)=\nu(\lambda x.(p\pr q))$ is exactly the required commutation.
+\end{corollary}
+
+For $\rho$ the hypotheses hold for the communication rewrite but not for dereferencing, whose redex $\ast(@(p))$ is not a parallel composition. That rewrite contributes the single additional transition $\ast(@(p))\xr{-}p$, with the identity context as label; the label is an observation because $\ast(@(-))$ is admissible by Corollary~\ref{cor:rhoD}, even though $@$ alone is not. Completing the case analysis for $\rho$ is what makes this theorem a sketch rather than a proof.
+
+\begin{remark}[strict pushouts and the 2-categorical alternative]
+\label{rem:grpo}
+    It is well known that strict RPOs frequently fail to exist in the presence of structural congruence, and the standard repair is to move to a bicategorical setting and use \emph{groupoidal} relative pushouts \citep{grpo,grpo2}. The commutative-monoid equations on $-\pr-$ put us squarely in that territory. Our normality assumption is doing the same work by other means, and we regard the relationship as unresolved: either normality should be justified as a hypothesis a MeTTaIL presentation can be checked against, or the construction should be redone with GRPOs and normality dropped. We note that our matching of labels up to $\approx$ rather than on the nose is already a step in the 2-categorical direction, since it replaces equality of labels by a coherent isomorphism.
+\end{remark}
+
+\subsection{Working up to bisimilarity}
+\label{sec:quot}
+
+There is a second relativization we need, and it turns out to be the same one.
+
+An encoding will in general fail to preserve the equations of its source on the nose. The $\nu$-equations of $\pi$ are the standard example: $\map{p\pr\nu(\lambda x.q)}$ and $\map{\nu(\lambda x.(p\pr q))}$ are distinct $\rho$ terms that are bisimilar. An earlier approach to this problem replaced the equations of the source by an internal congruence $Eq$ and asked for relative pushouts with respect to it. That construction requires rebuilding the framework and we do not pursue it, because the following suffices.
+
+\begin{definition}
+\label{def:dquot}
+    Let $\D$ be a subcategory of observers and $\approx$ the observation relation. The category $\D/\!\approx$ has the objects of $\D$ and $\approx$-classes of morphisms as morphisms. Composition is well defined because $\approx$ is a congruence for $\D$ (Proposition~\ref{prop:admis}).
+\end{definition}
+
+\begin{proposition}
+\label{prop:quot}
+    A functor $\mrm{S}\to \D/\!\approx$ is the same thing as a map $\map{-}$ of presentations such that $p=_\mrm{S} q$ implies $\map{p}\approx\map{q}$. Relative pushouts computed in $\D/\!\approx$ are the $\D$-relative pushouts of Definition~\ref{def:drpo} with labels matched up to $\approx$.
+\end{proposition}
+\begin{proof}
+    The first claim is the universal property of the quotient: a functor out of $\mrm{S}$ must send equal terms to equal morphisms of $\D/\!\approx$, and equality there is $\approx$. The second is Definition~\ref{def:dquot} unwound, since a candidate in the quotient is an $\approx$-class of candidates in $\D$.
+\end{proof}
+
+So the single move of working in $\D/\!\approx$ handles both restrictions at once: the subcategory says which contexts may observe, and the quotient says that they observe only up to bisimilarity. Every encoding result below is stated in $\D/\!\approx$, and the clause ``equations become bisimulations'' is not an extra demand on encodings but the definition of a functor into the quotient.
+\section{First instance: reflection in the $\rho$-calculus}
+\label{sec:rho}
+
+The $\rho$-calculus is the case in which the observer subcategory is proper for a reason internal to the theory. We record the structural property that makes its behavior tractable, and then prove congruence for the admissible contexts of Corollary~\ref{cor:rhoD}.
+
+\begin{definition}
+    A lambda theory is \textbf{transparent} if for every context $c$ that is not reactive there is a unique context $\overline{c}$ such that
+    \[c(t) \xr{\overline{c}} d(t)\]
+    where $d$ is constructed from the variables of $\overline{c}$ and does not involve the application of $c$ to $t$.
+\end{definition}
+
+Transparency says that a non-reactive context can always be peeled off by exactly one complementary observation. In $\rho$ the pairing is visible immediately:
+\tbl{
+    & $\mtt{out}(n,p) \xr{-\pr \mtt{in}(n,c)} c(@p)$\\
+    & $\mtt{in}(n,c)\xr{-\pr \mtt{out}(n,p)} c(@p)$\\
+    & $\ast (@ (p)) \xr{-} p$
+}
+so that $\overline{\tout(n,-)}=-\pr\tin(n,c)$ and dually, and $\ast(@(-))$ is its own complement with the identity label. Transparency is what makes the direct argument below possible without appeal to Theorem~\ref{thm:dcong}, and hence without depending on the outstanding Obligation~\ref{ob:decomp}.
+
+\begin{theorem}
+\label{thm:rhocong}
+    In the $\rho$-calculus with the standard observation relation, weak $\D$-bisimilarity is a congruence for the operations generated by
+    \begin{center}
+        \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rr}
+             $\tout(n,-)$ & $Pr\to Pr$\\
+            $\tin(n,-)$ & $[Nm\lam Pr]\to Pr$\\
+            $-\pr -$ & $Pr,Pr\to Pr$\\
+            $\ast(@(-))$ & $Pr\to Pr$
+        \end{tabular}
+    \end{center}
+    when observations are restricted to the same class.
+\end{theorem}
+\begin{proof}
+    Let $p\Dbis q$ and consider a transition out of $\tout(n,p)$. Because $p$ cannot rewrite within $\tout$, the only transition is
+    \[\tout(n,p) \xr{-\pr \tin(n,c)}_\D c(@p)\]
+    matched by $\tout(n,q)\xr{-\pr \tin(n,c)}_\D c(@q)$; the result follows by structural induction, the successors being related because $\Dbis$ at $[Nm\lam Pr]$ is the logical relation of Definition~\ref{def:obsrel}.
+
+    Let $\lambda x.c\Dbis \lambda x.d\of [Nm\lam Pr]$ and consider a transition out of $\tin(n,\lambda x.c)$. Because $\lambda x.c$ cannot rewrite within $\tin$, the only transition is
+    \[\tin(n,\lambda x.c)\xr{-\pr \tout(n,v)}_\D c(@v)\]
+    matched by $\tin(n,\lambda x.d) \xr{-\pr \tout(n,v)}_\D d(@v)$, and $c(@v)\Dbis d(@v)$ by the function-type clause together with Proposition~\ref{prop:subst}.
+
+    Let $p_1\Dbis q_1$ and $p_2\Dbis q_2$ and consider $p_1\pr p_2\xr{f}_\D t$. If $f = (-)$ then by transparency $p_1= \mtt{op}(n,-)\pr \hat{p}_1$ and $p_2 = \overline{\mtt{op}}(n,-)\pr \hat{p}_2$, so
+    \tbl{
+        $p_1\xr{-\pr \overline{\mtt{op}}(n,-)}_\D \hat{p}_1$ & and & $p_2\xr{-\pr \mtt{op}(n,-)}_\D \hat{p}_2$
+    }
+    matched by weak transitions
+    \tbl{
+        $q_1\rsq^\ast u \xr{\mtt{op}(n,-)}_\D \hat{u}\rsq^\ast \hat{q}_1$ & and & $q_2\rsq^\ast v \xr{\overline{\mtt{op}}(n,-)}_\D \hat{v}\rsq^\ast \hat{q}_2$
+    }
+    and thus $q_1\pr q_2\rsq^\ast u\pr v\xr{-}_\D \hat{u}\pr \hat{v}\rsq^\ast \hat{q}_1\pr \hat{q}_2$. If $f\neq (-)$ then it is $-\pr \tout(n,v)$ or $-\pr \tin(n,c)$ for communication with $p_1$ or $p_2$, matched by $\rsq^\ast \xr{-\pr \mtt{op}}_\D\rsq^\ast$ on the corresponding side. So $q_1\pr q_2$ matches every $\rsq$ with $\rsq^\ast$ and every $\xr{c}_\D$ with $\rsq^\ast \xr{c}_\D\rsq^\ast$, giving $p_1\pr p_2\Dbis q_1\pr q_2$.
+
+    Finally $\ast(@(-))$ preserves $\Dbis$ because $\ast(@(p))\rsq p$ and $\ast(@(q))\rsq q$, so any transition of one is matched by the other after a silent step.
+\end{proof}
+
+\begin{remark}
+    The theorem is stated for the admissible class and is false outside it, by Proposition~\ref{prop:at}. Earlier drafts recorded this as a caveat --- ``there is just one problem, reflection'' --- and then restricted the theorem by hand. In the present framework the restriction is not an afterthought: $\D$ was defined so that $@$ falls outside it, and the theorem is an instance of the general shape of Theorem~\ref{thm:dcong}. The $\rho$-calculus is not defective; it is a theory whose observer subcategory is proper.
+\end{remark}
+
+\section{Second instance: encodings}
+\label{sec:enc}
+
+\subsection{What an encoding must preserve}
+
+The naive demand on a translation is that it be a functor of lambda theories preserving bisimilarity on the nose. Written out, this asks that $\map{-}$ preserve products, pullbacks and function types, map $Pr_\mrm{S}$ into $\brk{Pr_\T}$ for a meta-context $\brk{-}$, map rewriting to a silent path, and satisfy $p\approx q\vdash\map{p}\approx\map{q}$ where the right-hand $\approx$ is bisimilarity in $\T$.
+
+This demand is not merely hard to meet; it is the wrong demand, and Example~\ref{ex:minimality} says why. The target has observers the source never had. We therefore ask instead for a functor into $\D/\!\approx$, and Proposition~\ref{prop:quot} tells us what that amounts to.
+
+\begin{definition}
+\label{def:encoding}
+    Let $\mrm{S},\T$ be lambda theories. An \textbf{encoding} $\map{-}\of \mrm{S}\to \T$ is a functor $\mrm{S}\to \map{\D}/\!\approx$, where $\map{\D}$ is the transported observer subcategory of Definition~\ref{def:transported}. Explicitly, $\map{-}$
+    \begin{itemize}
+        \item preserves conjunction and substitution, that is products and pullbacks;
+        \item preserves function types;
+        \item maps $Pr_\mrm{S}$ to $\brk{Pr_\T}$ for some meta-context $\brk{-}$;
+        \item sends each equation of $\mrm{S}$ to a bisimulation: $p=_\mrm{S}q$ implies $\map{p}\approx\map{q}$;
+        \item maps rewriting to a silent path: $p\rsq q$ implies $\map{p}(\rsq^\ast\approx)^\ast\map{q}$, and is called \textbf{strong} if $\map{p}\rsq^\ast\sim\map{q}$;
+        \item and preserves behavior against the transported observers: $p\Dbis^\mrm{S} q$ iff $\map{p}\Dbis\map{q}$ in $\map{\D}$.
+    \end{itemize}
+\end{definition}
+
+The last clause is stated as a biconditional. Soundness --- the forward direction --- is what a translation must have to be usable at all. The converse is what makes the restriction to $\map{\D}$ the \emph{right} restriction rather than merely a sufficient one, and it is the direction that fails badly against unrestricted observers, since the target can then separate images of equivalent programs by reading their implementation.
+
+\subsection{Eliminating replication}
+
+The smallest instance is the elimination of replicated input from $\rho^!$, using a duplicator stored at a name \citep{pi-rho}.
+
+\begin{proposition}[\citealp{pi-rho}]
+    There is an encoding of $\rho^!$ into $\rho$ given by
+    \begin{center}
+        \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rcl}
+            $m,n\of Nm$ & $\vdash$ & $m\cdot n := @(\mtt{o}(m,0)\pr \mtt{i}(n,\lambda x.0))\of Nm$\\
+            $x\of Nm$ & $\vdash$ & $D(x) := \mtt{i}(x,\lambda y.\, \ast y \pr \mtt{o}(x,\ast y))\of Pr$
+        \end{tabular}
+    \end{center}
+    \[\map{!\mtt{in}(a,\lambda x.p)} = \lambda n. D(n)\pr \mtt{out}(n, \mtt{in}(a, \lambda x. \map{p}(n\cdot n)\pr D(n)))\]
+\end{proposition}
+
+The rewrite $!(p)\rsq p\pr !(p)$ maps to a path from $\map{p}$ to a process bisimilar to $\map{p\pr !(p)}$.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{rcl}
+         $\map{!\mtt{in}(a,\lambda x.p)}(n)$ & $=$ & $D(n)\pr \mtt{out}(n, \mtt{in}(a, \lambda x. \map{p}(n\cdot n)\pr D(n)))$\\
+         & $=$ & $\mtt{i}(n,\lambda y. \ast y\pr \mtt{o}(n,\ast y))\pr \mtt{o}(n,\mtt{i}(a, \lambda x.\map{p}\pr D(n)))$\\
+         & $\rsq$ & $\ast(@(\mtt{i}(a,\lambda x.\map{p}\pr D(n))))\pr \mtt{o}(n,\ast(@(\mtt{i}(a,\lambda x. \map{p}\pr D(n))))$\\
+         (1) & $\rsq$ & $\mtt{i}(a,\lambda x.\map{p}\pr D(n))\pr \mtt{o}(n,\ast(@(\mtt{i}(a,\lambda x. \map{p}\pr D(n))))$\\
+         (2) & $\approx$ & $\map{\mtt{in}(a,\lambda x.p)}\pr \map{!\mtt{in}(a,\lambda x.p)}$
+    \end{tabular}
+\end{center}
+
+A copy of $\map{\lambda x.p}$ is stored at $a$ and the same is being output; for any receive on $a$, the body runs and another duplicator opens, reforming the original redex.
+
+\begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{rcl}
+         (1) & $\xr{\mtt{out}(a,r)\pr -}$ & $(\map{p}[@r]\pr D(n))\pr \mtt{out}(n,\mtt{in}(a,\lambda x.\map{p}\pr D(n))$\\
+         & $=$ & $\map{p}[@r]\pr \map{!\mtt{in}(a,\lambda x.p)}$\\
+         (2) & $\xr{\mtt{out}(a,r)\pr -}$ & $\map{p}[@r]\pr \map{!\mtt{in}(a,\lambda x.p)}$
+    \end{tabular}
+\end{center}
+
+\begin{theorem}
+\label{thm:repl}
+    If $p\Dbis q$ in $\T_\rho^!$ then $\map{p}\Dbis \map{q}$ in $\T_\rho$.
+\end{theorem}
+\begin{proof}
+    The only difference of $\T_\rho^!$ from $\T_\rho$ is the operation $!\of \{\mtt{in}(n,c)\}\to Pr$ and the rewrite $!(p)\rsq p\pr !(p)$, with no equations between $!$ and the other operations; so it has exactly one redex IPO not already in $\T_\rho$. It therefore suffices to consider $\lambda x.p\Dbis \lambda x.q$ and apply $\map{!\mtt{in}(n,-)}$. Because the result is an abstraction, the first transition must be an evaluation at a particular $n$.
+
+    Suppose $\map{!\mtt{in}(a,\lambda x.p)}(n)\xr{c}_\D t$. Then $c$ is $(-)$, $(-\pr \mtt{out}(n,q))$, or $(-\pr \mtt{in}(n,c))$. In the latter two cases the rewrites of the duplicator are mirrored in the two processes. If $c=(-)$ the process evolves to $(1)$ above, and the same transitions apply to $\map{!\mtt{in}(n,\lambda x. q)}$; because $\lambda x.p\Dbis \lambda x.q$, they are bisimilar for every substitution $p[@r]\Dbis q[@r]$ by Proposition~\ref{prop:subst}. Hence $\map{!\mtt{in}(a,\lambda x.p)}\Dbis \map{!\mtt{in}(a,\lambda x.q)}$.
+\end{proof}
+
+This is the pattern the rest of the paper generalizes: an operation with a rewrite rule is replaced by a protocol, the rewrite becomes a silent path, and the encoding is behavior-preserving against the encoded observers.
+
+\subsection{$\pi$ into $\rho$}
+
+The main encoding uses the same duplicator, plus a name server $!N$ that supplies fresh names to interpret $\nu$.
+
+\begin{theorem}
+\label{thm:pirho}
+    \stOblig{} There is an encoding of the $\pi$ calculus with replicated input into the $\rho$ calculus, given as follows.
+    \begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{rcl}
+        $n\of Nm$ & $\vdash$ & $+n := @(\mtt{o}(n,0))\of Nm$\\
+        $n\of Nm$ & $\vdash$ & $n+ := @(\mtt{i}(n,\lambda x.0))\of Nm$\\
+        $m,n\of Nm$ & $\vdash$ & $m\cdot n := @(\mtt{o}(m,0)\pr \mtt{i}(n,\lambda x.0))\of Nm$\\
+        $x\of Nm$ & $\vdash$ & $D(x) := \mtt{i}(x,\lambda y.\, \ast y \pr \mtt{o}(x,\ast y))\of Pr$\\
+        $x,w,v,s\of Nm$ & $\vdash$ & $!N(x,w,v,s) :=$\\
+        && $D(x)\pr \mtt{o}(x,\mtt{i}(w,\lambda a. \mtt{i}(v, \lambda r. D(x)\pr \mtt{o}(r,\ast a)\pr \mtt{o}(w, \mtt{o}(a,0)))))\pr \mtt{o}(w,\ast s)$
+    \end{tabular}
+    \end{center}
+
+    \begin{center}
+        \renewcommand{\arraystretch}{1.2}
+        \begin{tabular}{rcl}
+             $\map{p}$ & $=$ & $\lambda xzvns. \map{p}(n,v)\pr !N(x,z,v,s)$\\
+             $\map{0}(n,v)$ & $=$ & $0$\\
+             $\map{p\pr q}(n,v)$ & $=$ & $\map{p}(+n,v)\pr \map{q}(n+, v)$\\
+             $\map{\mtt{out}(a,k)}(n,v)$ & $=$ & $\mtt{out}(a,\ast(k))$\\
+             $\map{\mtt{in}(a,\lambda x.p)}(n,v)$ & $=$ & $\mtt{in}(a,\lambda x.\map{p}(n,v))$\\
+             $\map{\nu(\lambda x.p)}(n,v)$ & $=$ & $\mtt{out}(v,\ast(n))\pr \mtt{in}(n,\lambda x.\map{p}(n\cdot n,v))$\\
+             $\map{!\mtt{in}(a,\lambda x.p)}(n,v)$ & $=$ & $D(n)\pr \mtt{out}(n, \mtt{in}(a, \lambda x. D(n)\pr \map{p}(n\cdot n, v)))$
+        \end{tabular}
+    \end{center}
+\end{theorem}
+
+We state the proof obligations rather than the proof. The argument factors through the two lemmas below, of which the second is Theorem~\ref{thm:repl}.
+
+\begin{obligation}[the $\nu$ lemma]
+\label{ob:nu}
+    The three $\nu$-equations of $\pi$ become bisimulations:
+    \tbl{
+        $\map{\nu(\lambda x.0)}(n,v)$ & $\approx$ & $0$\\
+        $\map{p\pr \nu(\lambda x.q)}(n,v)$ & $\approx$ & $\map{\nu(\lambda x.(p\pr q))}(n,v)$\\
+        $\map{\nu(\lambda x.\nu(\lambda y.p))}(n,v)$ & $\approx$ & $\map{\nu(\lambda y.\nu(\lambda x.p))}(n,v)$
+    }
+    equivalently, that $\map{-}$ is a functor into $\map{\D}/\!\approx$ on the $\nu$ fragment.
+\end{obligation}
+
+This is the whole difficulty and it is where the effort should go. The name-supply discipline is what carries it: $+n$, $n+$ and $n\cdot n$ generate a binary tree of names from a single root, and the second equation holds because relocating a $\nu$ across a parallel composition permutes which subtree a fresh name is drawn from, which no encoded context can detect. That last clause is exactly a $\map{\D}$-relative statement and is false for arbitrary $\rho$ observers, which can send on $+n$ directly.
+
+\begin{remark}[staging]
+    We suggest proving Obligation~\ref{ob:nu} against $\rho^!$ rather than $\rho$, and composing with Theorem~\ref{thm:repl}:
+    \[\pi \longrightarrow \rho^! \longrightarrow \rho\]
+    The second leg is done. The first leg then concerns only $\nu$ and the name supply, with replication handled natively. The factorization is not free, since $\map{-}$ into $\rho$ is parameterized by $(n,v)$ where the replication encoding needs only $n$; but it isolates name creation, which is the part nobody has written down.
+\end{remark}
+
+\begin{obligation}
+\label{ob:pifull}
+    Full abstraction: $\map{p}\Dbis\map{q}$ in $\map{\D}$ implies $p\Dbis q$ in $\pi$.
+\end{obligation}
+\section{Third instance: extension by data types}
+\label{sec:data}
+
+We come to the motivating case. A user of MeTTaIL presents a pure theory --- $\lambda$, $\rho$, $\pi$, or a domain-specific calculus of their own --- with no built-in data. They then want $\mtt{Bool}$, $\mtt{Int}$, $\mtt{String}$, lists. Adding these adds operations and, crucially, \emph{equations}: $2+3=5$ is not a rewrite the user writes, it is an identity they expect to hold. The question is whether the reasoning they do in the extended theory survives compilation back into the pure one.
+
+\subsection{Extensions and models}
+
+\begin{definition}
+    A \textbf{finitary algebraic theory} $\A$ is a presentation with finitely many sorts, finitely many operations of finite arity, and equations; no rewrites. Its \textbf{initial model} is the free model on no generators.
+\end{definition}
+
+\begin{definition}
+\label{def:ext}
+    Let $\T$ be a lambda theory and $\A$ a finitary algebraic theory. The \textbf{extension} $\T\ext\A$ is $\T$ together with the sorts, operations and equations of $\A$ and an injection $\iota_a\of a\to Pr$ for each sort $a$ of $\A$. The extension is \textbf{pure} if no new equation mentions an operation of $\T$ other than the injections, and \textbf{conservative} if $\T\to\T\ext\A$ reflects equations and rewrites between terms of $\T$.
+\end{definition}
+
+Purity and conservativity are exactly the conditions a language-definition platform can check mechanically from a presentation, and they are what make the following possible; without purity there is no reason to expect an encoding that is the identity on $\T$.
+
+\begin{definition}
+\label{def:laxmodel}
+    A \textbf{lax model} $\Mod$ of $\A$ in $\T$ assigns to each sort $a$ an object $\Mod(a)$ of $\T$ and to each operation $f$ of $\A$ a morphism $\Mod(f)$ of the corresponding type, such that every equation of $\A$ holds up to weak $\D$-bisimilarity:
+    \[\A\vdash s=t \quad\text{implies}\quad \Mod(s)\Dbis\Mod(t)\]
+\end{definition}
+
+The word \emph{lax} is the only honest one. A strict model would satisfy the equations on the nose, and no encoding of a data type into a process calculus does: the built-in $2+3$ is an identity, taking no steps, while its encoding is a protocol taking several. Laxity is not a weakness of the construction; it is what the construction is about.
+
+\subsection{Canonicity}
+
+There are many encodings of $\mtt{Bool}$ into a calculus --- Church, Scott, Parigot, and any number of ad hoc ones. Calling one \emph{canonical} requires saying with respect to what.
+
+\begin{proposition}
+\label{prop:canon}
+    Let $\A$ be finitary algebraic and $\Mod$ a lax model of $\A$ in $\T$. Then $\Mod$ determines, up to weak $\D$-bisimilarity, a unique map on the $\A$-terms of $\T\ext\A$ commuting with the operations. Canonicity is thus canonicity relative to the choice of $\Mod$, and the encoding of the closed $\A$-terms is determined by initiality.
+\end{proposition}
+\begin{proof}
+    The closed $\A$-terms form the initial model of $\A$; a lax model is a model in the quotient $\D/\!\approx$ by Proposition~\ref{prop:quot}, so there is a unique morphism from the initial model to it, and uniqueness in the quotient is uniqueness up to $\approx$. This is the free-extension machinery of Proposition~\ref{prop:freeext} applied to the inclusion of the empty presentation.
+\end{proof}
+
+For the calculi of \S\ref{sec:cat} we take $\Mod$ to be the \textbf{Scott-style} model, in which a value of an algebraic sort is a process that, when handed a family of continuation names, signals on the one corresponding to its outermost constructor and delivers its arguments there. In a calculus with pattern matching this is the right choice: destructuring is one communication rather than a fold, which matters for a platform whose surface language has a for-comprehension with patterns. Church-style models are also lax models and everything below applies to them; they are simply worse.
+
+\subsection{The name discipline}
+
+Scott-style encodings need a supply of private names. In $\rho$ these are generated by quotation, using the operations already introduced in \S\ref{sec:enc}:
+\[+n := @(\mtt{o}(n,0))\qquad n+ := @(\mtt{i}(n,\lambda x.0))\qquad n\cdot n := @(\mtt{o}(n,0)\pr\mtt{i}(n,\lambda x.0))\]
+Every encoded term is parameterized by a root name $n$, and the parallel clause splits the root, $\map{p\pr q}(n)=\map{p}(+n)\pr\map{q}(n+)$, so that occurrences receive distinct roots.
+
+\begin{lemma}[name discipline]
+\label{lem:names}
+    Under the root-splitting discipline, distinct occurrences of encoded subterms receive incomparable roots, and the derived names of one occurrence are the derived names of no other.
+\end{lemma}
+\begin{proof}
+    The maps $n\mapsto +n$ and $n\mapsto n+$ are injective with disjoint images, since $\mtt{o}(n,0)$ and $\mtt{i}(n,\lambda x.0)$ are distinct terms and $@$ is injective. So roots form a binary tree and the derived names of a node lie in its own subtree.
+\end{proof}
+
+\begin{lemma}[root independence]
+\label{lem:root}
+    For $m,n$ roots not occurring in $\map{p}$, $\map{p}(m)\Dbis\map{p}(n)$ in $\map{\D}$.
+\end{lemma}
+\begin{proof}
+    The root parameter appears only in derived names used for internal signalling. By Lemma~\ref{lem:names} those names lie in the occurrence's own subtree, and by Definition~\ref{def:transported} no encoded context addresses them, since the source theory has no operation whose image sends on a derived name of another occurrence. So the relation pairing $\map{p}(m)$ with $\map{p}(n)$ and closed under the transitions of $\map{\D}$ is a $\D$-bisimulation.
+\end{proof}
+
+Lemma~\ref{lem:root} is false against unrestricted $\rho$ observers, which can send on $+m$ and not on $+n$. It is the first place where the whole apparatus of \S\ref{sec:obs} earns its keep, and it is not a technicality: without it no encoding of a binder-free data type is well defined.
+
+\subsection{Booleans, in full}
+\label{sec:bool}
+
+Let $\A_\mtt{Bool}$ have one sort, constants $\mtt{tt},\mtt{ff}$, an operation $\mtt{if}(-,-,-)$, and the two equations
+\[\mtt{if}(\mtt{tt},x,y)=x\qquad \mtt{if}(\mtt{ff},x,y)=y\]
+from which negation, conjunction and disjunction are definable in the usual way. The Scott model in $\rho$ is
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{rcl}
+    $\map{\mtt{tt}}(n)$ & $=$ & $\tout(+n,0)$\\
+    $\map{\mtt{ff}}(n)$ & $=$ & $\tout(n+,0)$\\
+    $\map{\mtt{if}(b,p,q)}(n)$ & $=$ & $\map{b}(n)\pr \tin(+n,\lambda y.\map{p}(n\cdot n))\pr\tin(n+,\lambda y.\map{q}(n\cdot n))$
+\end{tabular}
+\end{center}
+
+\begin{lemma}[dead branches are inert]
+\label{lem:dead}
+    Let $n$ be the root of a conditional whose test has been consumed. Then $\tin(n+,\lambda y.\map{q}(n\cdot n))\Dbis 0$ in $\map{\D}$.
+\end{lemma}
+\begin{proof}
+    A transition out of the residual requires an observation sending on $n+$. By Lemma~\ref{lem:names} the only encoded producer of a message on $n+$ is $\map{\mtt{ff}}(n)$, and the root $n$ belongs to this occurrence alone; the test has been consumed, so no such producer remains in the term. By Definition~\ref{def:transported} no context in $\map{\D}$ supplies one either, since every encoded context addresses names derived from its own root. Hence the residual has no transitions in the $\map{\D}$-relative system, and the singleton relation pairing it with $0$ is a $\D$-bisimulation.
+\end{proof}
+
+\begin{proposition}
+\label{prop:bool}
+    The Scott model of $\A_\mtt{Bool}$ in $\rho$ is a lax model: both equations become weak $\map{\D}$-bisimulations.
+\end{proposition}
+\begin{proof}
+    Compute the first; the second is symmetric.
+    \begin{center}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{rcl}
+        $\map{\mtt{if}(\mtt{tt},p,q)}(n)$ & $=$ & $\tout(+n,0)\pr \tin(+n,\lambda y.\map{p}(n\cdot n))\pr\tin(n+,\lambda y.\map{q}(n\cdot n))$\\
+        & $\rsq$ & $\map{p}(n\cdot n)\pr\tin(n+,\lambda y.\map{q}(n\cdot n))$\\
+        & $\Dbis$ & $\map{p}(n\cdot n)$ \qquad by Lemma~\ref{lem:dead}\\
+        & $\Dbis$ & $\map{p}(n)$ \qquad by Lemma~\ref{lem:root}
+    \end{tabular}
+    \end{center}
+    The first step is the communication rewrite; it is a silent step, so the composite is a weak bisimulation and not a strong one.
+\end{proof}
+
+\begin{remark}
+    Every line of that computation after the first is $\map{\D}$-relative and false without the restriction. Against arbitrary $\rho$ observers the residual $\tin(n+,\dots)$ is live --- a context may send on $n+$ and fire the branch that was not taken --- so $\map{\mtt{if}(\mtt{tt},p,q)}$ and $\map{p}$ are separated, and the compiled conditional is simply wrong. This is the clearest statement we know of why the observer subcategory cannot be dispensed with. It is also the standard ``junk'' problem of encodings, and the $\D$-relative treatment is the standard fix, made into a definition.
+\end{remark}
+
+\subsection{The general theorem}
+
+\begin{theorem}
+\label{thm:data}
+    \stSketch{} Let $\T$ be a lambda theory with all $\D$-redex-RPOs, $\A$ a finitary algebraic theory, $\T\ext\A$ a pure conservative extension, and $\Mod$ a lax model of $\A$ in $\T$ whose operations are admissible. Then the induced $\map{-}_\Mod\of\T\ext\A\to\T$ is an encoding in the sense of Definition~\ref{def:encoding}: it is the identity on $\T$, and every equation of $\T\ext\A$ becomes a weak $\D$-bisimulation.
+\end{theorem}
+\begin{proof}[Proof sketch]
+    Identity on $\T$ is purity: no new equation constrains an old operation, so the old fragment is untouched, and conservativity ensures nothing new is derivable there.
+
+    For the equations, induct on the derivation of $s=t$ in $\T\ext\A$. The axioms of $\A$ hold up to $\Dbis$ by Definition~\ref{def:laxmodel}. Reflexivity, symmetry and transitivity are inherited because $\Dbis$ is an equivalence. Congruence steps --- from $s_i=t_i$ conclude $f(\vec{s})=f(\vec{t})$ --- hold because the operations of $\Mod$ are admissible, so $\Dbis$ is a congruence for them by Proposition~\ref{prop:admis}, or in the case of $\rho$ by Theorem~\ref{thm:rhocong}. Substitution steps hold by Proposition~\ref{prop:subst}. Purity is what guarantees that no derivation mixes an $\A$-axiom with a $\T$-equation in a way not covered by these cases.
+
+    Two gaps. First, the induction is over derivations in the free infinitary theory, and the infinitary conjunction defining $\Dbis$ must be shown to commute with the induction; this is where a well-foundedness hypothesis on $\A$ is needed and $\A$ being finitary is what should supply it. Second, admissibility of the operations of $\Mod$ is a per-model check, and we have carried it out only for $\A_\mtt{Bool}$.
+\end{proof}
+
+\begin{obligation}
+\label{ob:retract}
+    Strengthen Theorem~\ref{thm:data} to a retraction: exhibit $\T\ext\A\to\T$ and $\T\to\T\ext\A$ with the composite $\map{\D}$-relatively bisimilar to the identity, naturally in $\T$. Naturality in $\T$ is the formal content of the claim that extensions ``just work'' for any pure theory a user may present, rather than for each one separately.
+\end{obligation}
+
+\subsection{What is out of scope, and why}
+
+\begin{remark}[$\mtt{Float}$]
+    We scope the theorem to initial algebras of finitary signatures: $\mtt{Bool}$, $\mtt{Nat}$ and $\mtt{Int}$, $\mtt{String}$ as a free monoid, lists, finite maps. Floating-point arithmetic is not among them and should not be. IEEE~754 addition is not associative, has two zeros, and has a value unequal to itself; there is no algebraic theory whose initial model it is, hence nothing for an encoding to be canonical with respect to. The right treatment is to carry $\mtt{Float}$ as an opaque ground type with an oracle, whose observation relation at that type is a chosen equivalence in the sense of Definition~\ref{def:obsrel} --- which is precisely the freedom that definition leaves open at base types other than $Pr$.
+\end{remark}
+
+\begin{remark}[cost]
+\label{rem:cost}
+    In a cost-accounted theory Theorem~\ref{thm:data} is false as stated. The built-in $2+3$ and the encoded $\map{2+3}$ carry different ledgers: the first is an equation and costs nothing, the second is a protocol and costs several communications. No cost-respecting bisimulation relates them.
+
+    We regard the gap as the content rather than an obstruction. The encoding theorem says that extension by data types is \emph{semantically} free; cost accounting says that data types are exactly what one pays less for. Together they say why a Turing-complete language acquires an $\mtt{Int}$ at all. The two statements should be proved separately, over the uncosted and costed theories respectively, and their difference --- the ledger gap of an encoding --- is a quantity worth naming.
+\end{remark}
+
+\begin{remark}[what a platform must check]
+    Theorem~\ref{thm:data} is stated so that its hypotheses are decidable properties of a presentation. Given a MeTTaIL presentation of $\T$ and of an extension, a compiler can check that the extension is pure (no new equation mentions an old operation), that $\A$ is finitary algebraic (no rewrites among the new rules), and that the supplied model's operations are admissible for the declared observation relation. Conservativity and the well-foundedness gap of Theorem~\ref{thm:data} are the parts that are not obviously mechanical, and are where we would look first if the guarantee is to be delivered by a tool rather than by hand.
+\end{remark}
+\section{Related work}
+\label{sec:related}
+
+\textbf{Deriving labels.} The framework is that of \citet{lm}, refined for bigraphs by \citet{bigraph-lts}. \citet{lux} give a general account of the ``labels from reductions'' programme and its limits. Our departure is to make the observer class a parameter rather than take it to be the ambient category; the technique of restricting to a subcategory is theirs, applied to reaction rather than observation.
+
+\textbf{Structural congruence and 2-categories.} Strict relative pushouts are fragile in the presence of equations such as associativity and commutativity of parallel composition. \citet{grpo,grpo2} replace them with groupoidal relative pushouts in a bicategorical setting. As noted in Remark~\ref{rem:grpo}, our normality assumption addresses the same difficulty by a different route and the relationship deserves to be settled rather than left implicit; our matching of labels up to $\approx$ is already partway there.
+
+\textbf{Higher-order syntax.} Presenting binding algebraically goes back to \citet{fpt}; \citet{hoat} give the higher-order algebraic theories closest in spirit to our lambda theories. What we add is the treatment of rewriting as a proposition in the subobject fibration, so that types, terms, equations and rewrites are one structure and entailments may be curried to reason under binders. \citet{lambda-lts} apply RPOs to the $\lambda$-calculus using second-order contexts and supply the IPO-uniformity condition on which Theorem~\ref{thm:weakcong} is modelled.
+
+\textbf{Encodings.} \citet{gorla} surveys the criteria by which an encoding between process calculi is judged --- compositionality, name invariance, operational correspondence, divergence reflection, success sensitiveness. Definition~\ref{def:encoding} is more parsimonious and, we think, better factored: the criteria are consequences of being a functor into $\map{\D}/\!\approx$ rather than a list. \citet{funproc} is the origin of the question for $\lambda$ into $\pi$; \citet{boudol} gives the name-passing variant that makes the translation tractable; \citet{pi-rho} gives the $\pi$-into-$\rho$ translation we take up in \S\ref{sec:enc}. Scott-style encodings of data are folklore; \citet{mogensen} is the usual reference.
+
+\textbf{Ambients.} \citet{amb-ipo-lts-sos} treat the ambient calculus in the reactive-systems framework and find that the IPO semantics must be coarsened by barbs. We take this as evidence that a locality operator needs a different construction, and omit ambients accordingly (Remark~\ref{rem:ambient}).
+
+\section{Conclusion and open problems}
+
+We have made the class of admissible observers a parameter of the Leifer--Milner construction, shown that the parameter is determined by a choice of equivalence at the ground types, and given a congruence theorem whose statement is $\D$-relative on both sides. Three phenomena that look unrelated --- reflection in the $\rho$-calculus, the restriction of an encoding's observers to encoded contexts, and the correctness of compiling away built-in data --- are the same theorem with three choices of $\D$.
+
+The outstanding work, in the order we would attack it:
+
+\begin{enumerate}
+    \item \textbf{Decomposition-closure} (Obligation~\ref{ob:decomp}). Whether $\map{C_\pi}$ is closed under decomposition up to $\approx$ inside $\rho$. Everything else depends on this and it is cheap to test: one worked factorization of an encoded context will settle it.
+    \item \textbf{The $\nu$ lemma} (Obligation~\ref{ob:nu}). The single largest piece of new mathematics, and the one that has been outstanding longest. We recommend proving it against $\rho^!$ and composing with Theorem~\ref{thm:repl}.
+    \item \textbf{Weak congruence} (Theorem~\ref{thm:weakcong}). Every result in \S\ref{sec:enc} and \S\ref{sec:data} is about weak bisimilarity, so the general statement is load-bearing; at present only the direct argument for $\rho$ is available.
+    \item \textbf{Existence of relative IPOs} (Proposition~\ref{prop:dexist}). The codirectedness argument needs a well-foundedness condition we have not identified.
+    \item \textbf{Strict versus groupoidal pushouts} (Remark~\ref{rem:grpo}). Either justify normality as a checkable hypothesis on presentations, or redo the construction with GRPOs.
+    \item \textbf{The retraction} (Obligation~\ref{ob:retract}), and with it $\mtt{Int}$, $\mtt{String}$ and lists, which we expect to follow the pattern of \S\ref{sec:bool} without new ideas.
+    \item \textbf{Cost.} Remark~\ref{rem:cost} identifies a quantity --- the ledger gap of an encoding --- that measures what a built-in operation buys. We have not studied it.
+\end{enumerate}
+
+\newpage
+
+\bibliography{bihol}
+
+\newpage
+
+\appendix
+
+\section{Inference rules for lambda theories}
+\label{app:rules}
+
+There is a characterization theorem for subobject fibrations which licenses using their internal language as the syntax for categories with finite limits.
+
+\begin{theorem}[\citealp{fibcat}, 4.9.4]
+    Let $\pi\of \mrm{P\to T}$ be a fibered preorder with finite products and equality. Then $\pi$ is equivalent to a subobject fibration $\mrm{SubT\to T}$ if and only if it has extensionality
+    \[\Gamma\ctx (f=_B g) \vdash f=g\of B\]
+    full subset types
+    \[
+        \infre{\Gamma,x\of \sigma\ctx \Theta,\varphi \vdash \psi}{\Gamma, y\of\{x\of \sigma\pr \varphi\}\ctx \Theta[\mrm{o}(y)/x] \vdash \psi [\mrm{o}(y)/x]}
+    \]
+    and unique choice.
+    \[\infr{
+            i\of I, j_1,j_2\of J\ctx R(i,j_1), R(i,j_2)\vdash j_1=j_2
+        }{
+            i\of I, j\of J \vdash (\exists j.R\; \mrm{prop}), (\exists j.R \sim R)}\]
+\end{theorem}
+
+The structural rules are summarized by the fact that each level forms a category.
+\begin{center}
+    \begin{tabular}{ccc}
+        \infr{}{x\of A\vdash x\of A} &
+        \infr{
+            \Gamma\vdash a\of A &
+            x\of A\vdash b\of B}{
+            \Gamma\vdash b(a)\of B
+        } &
+        \infr{\Gamma\vdash a_1= a_2\of A & x\of A\vdash b\of B}{\Gamma\vdash b(a_1)= b(a_2)\of B}
+        \\~\\
+        \infr{}{\Gamma\ctx \varphi\vdash \varphi} &
+         \infr{\Gamma\ctx \varphi\vdash \theta & \Gamma\ctx \theta\vdash \psi}{\Gamma\ctx \varphi\vdash \psi} &
+         \infr{
+            \Gamma\vdash a\of A &
+            \Gamma,x\of A\ctx \theta\vdash \varphi}{\Gamma\ctx \theta[a/x]\vdash \varphi[a/x]}
+    \end{tabular}
+\end{center}
+
+\begin{mdframed}
+\begin{center}
+
+    \textbf{units}\\~\\
+    \begin{tabular}{ccc}
+         \infr{}{1\; \mrm{type}} &
+         \infr{}{\Gamma\vdash \ast\of1} &
+         \infr{\Gamma\vdash x\of1}{\Gamma\vdash x=\ast\of 1}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cc}
+         \infr{}{\Gamma\vdash \top\; \mrm{prop}} &
+         \infr{}{\Gamma\ctx \varphi\vdash \top}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \textbf{products}\\~\\
+
+    \begin{tabular}{cccc}
+         \infr{A\; \mrm{type}\;\; B\; \mrm{type}}{A\times B\; \mrm{type}} &
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash b\of B}{\Gamma\vdash \brk{a,b}\of A\times B}
+         &
+         \infr{\Gamma\vdash p\of A\times B}{\Gamma\vdash \pi_1(p)\of A} &
+         \infr{\Gamma\vdash p\of A\times B}{\Gamma\vdash \pi_2(p)\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cc}
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash b\of B}{\Gamma\vdash \pi_1\brk{a,b}= a\of A} &
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash b\of B}{\Gamma\vdash \pi_2\brk{a,b}= b\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cccc}
+        \infr{\Gamma\vdash \varphi\; \mrm{prop} \quad \Gamma\vdash \psi\; \mrm{prop}}{\Gamma\vdash \varphi \land \psi\; \mrm{prop}} &
+        \infr{\Gamma \ctx \theta \vdash \varphi\quad \Gamma \ctx \theta \vdash \psi}{\Gamma\ctx \theta \vdash \varphi\land \psi} &
+        \infr{\Gamma\ctx \theta\vdash \varphi\land \psi}{\Gamma\ctx\theta\vdash \varphi} &
+        \infr{\Gamma\ctx \theta\vdash \varphi\land\psi}{\Gamma\ctx\theta \vdash \psi}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \textbf{functions}\\~\\
+
+    \begin{tabular}{ccc}
+         \infr{A\;\mrm{type}\quad B\;\mrm{type}}{A\to B\; \mrm{type}} &
+         \infr{\Gamma,x\of A\vdash f\of B}{\Gamma\vdash \lambda x.f\of A\to B} &
+         \infr{\Gamma\vdash a\of A\quad \Gamma\vdash f\of A\to B}{\Gamma\vdash f\, a\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cc}
+         \infr{\Gamma,x\of A\vdash f\of B\quad \Gamma\vdash a\of A}{\Gamma\vdash (\lambda x.f)\, a = f[a/x]:B} &
+         \infr{\Gamma\vdash f\of A\to B}{\Gamma \vdash \lambda x.(f\, x) = f\of A\to B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{cc}
+         \infr{b\of B\vdash \psi\; \mrm{prop} & c\of C\vdash \theta\; \mrm{prop}}{\lambda b.c\of [B\lam C]\vdash \psi\ra \theta\; \mrm{prop}} &
+         \infr{a\of A,b\of B\vdash f\of C & a\of A,b\of B\ctx \varphi,\psi\vdash \theta[f]}{a\of A\ctx \varphi\vdash (\psi\ra\theta)[\lambda b.f]}
+    \end{tabular}
+
+        \vspace{2em}
+
+    \textbf{equality}\\~\\
+
+    \begin{tabular}{ccc}
+        \infr{\Gamma\vdash a_1\of A & \Gamma\vdash a_2\of A}{\Gamma\vdash (a_1=_A a_2)\;\mrm{prop}} &
+        \infre{\Gamma,x\of A\ctx \theta\vdash f[x/y] =_B g[x/y]}{\Gamma, x\of A, y\of A\ctx \theta, (x=_A y)\vdash f =_B g} &
+        \infr{}{\Gamma\ctx (f =_B g)\vdash f = g\of B}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \textbf{subsets}\\~\\
+
+    \begin{tabular}{ccc}
+         \infr{x\of A\vdash \varphi\;\mrm{prop}}{\{x\of A\ctx \varphi\}\;\mrm{type}} &
+         \infr{\Gamma\vdash a\of A\quad \Gamma\ctx \top \vdash \varphi[a/x]}{\Gamma\vdash i(a)\of \{x\of A\ctx \varphi\}} &
+         \infr{\Gamma\vdash a\of \{x\of A\ctx \varphi\}}{\Gamma\vdash o(a)\of A}
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{c}
+         \infre{\Gamma,x\of A\ctx \theta,\varphi\vdash \psi}{\Gamma, y\of \{x\of A\ctx \varphi\}\ctx \theta[o(y)/x]\vdash \psi[o(y)/x]}
+    \end{tabular}
+
+\end{center}
+\end{mdframed}
+
+\section{Meta-theories}
+\label{app:meta}
+
+\begin{definition}
+    The \textbf{metatheory of finite limits} $\mbb{T}_\land$ is a finite limit category presented as follows.
+    \tbl{
+        & $\vdash$ & $\T_0\; \mrm{type}$\\
+        & $\vdash$ & $\T_1\; \mrm{type}$\\
+        $f\of \T_1$ & $\vdash$ & $\mrm{s}(f)\of \T_0$\\
+        $f\of \T_1$ & $\vdash$ & $\mrm{t}(f)\of \T_0$
+    }
+    We use $f\of \T(A,B)$ as shorthand for $A,B\of \T_0, f\of T_1, \mrm{s}(f)=A, \mrm{t}(f) = B$.
+    \tbl{
+        $A\of \T_0$ & $\vdash$ & $\mrm{id}_A\of \T(A,A)$\\
+        $f\of \T(A,B), g\of \T(B,C)$ & $\vdash$ & $g\circ f\of \T(\mrm{s}(f),\mrm{t}(g))$\\
+        $f\of \T(A,B)$ & $\vdash$ & $\mrm{id}_A\circ f=f$,\\
+        && $f\circ \mrm{id}_B = f$\\
+        $f\of \T(A,B), g\of \T(B,C), h\of \T(C,D)$ & $\vdash$ & $(h\circ g)\circ f = h\circ (g\circ f)$
+    }
+    This defines a category $\T$; we now give it a terminal object and pullbacks.
+    \tbl{
+        & $\vdash$ & $1\of \T_0$\\
+        $A\of \T_0$ & $\vdash$ & $A_!\of \T(A,1)$\\
+        $f\of \T(A,1)$ & $\vdash$ & $f = A_!$
+    }
+    \tbl{
+        $p\of \T(A,C), q\of \T(B,C)$ & $\vdash$ & $p\times_C q\of \T_0$,\\
+        && $\pi_1\of \T(p\times_C q, A)$,\\
+        && $\pi_2\of \T(p\times_C q, B)$,\\
+        && $p\circ \pi_1 = q\circ \pi_2$\\
+        $x\of \T(Z,A), y\of \T(Z,B)\ctx p\circ x = q\circ y$ & $\vdash$ & $\brk{x,y}\of \T(Z,p\times_C q)$,\\
+        && $\pi_1\circ \brk{x,y} = x$,\\
+        && $\pi_2\circ \brk{x,y} = y$\\
+        $..., h\of \T(Z,p\times_C q)\ctx \pi_1\circ h = x, \pi_2\circ h = y$ & $\vdash$ & $h = \brk{x,y}$
+    }
+\end{definition}
+
+\begin{definition}
+    The meta-theory of cartesian closed categories $\mbb{T}_{\land}^\to$ is $\mbb{T}_\land$ plus the following.
+    \tbl{
+        $A,B\of \T_0$ & $\vdash$ & $[A\to B]\of \T_0$,\\
+        && $\varepsilon^A_B\of \T([A\to B]\times A, B)$\\
+        $f\of \T(\Gamma\times A, B)$ & $\vdash$ & $\lambda a.f\of \T(\Gamma,[A\to B])$\\
+        $..., t\of A$ & $\vdash$ & $\varepsilon^A_B(\lambda a.f, t) = f(t)$
+    }
+\end{definition}
+
+\section{String diagrams}
+\label{app:diagrams}
+
+\begin{center}
+    \textbf{$\rho$ calculus}\\~\\
+
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{c}
+         \img{0.75}{rho-comm}\\
+         $out_k(n,\vec{q})|in_k(n,\lambda \vec{x}.p) \rsq p[@\vec{q}/\vec{x}]$\\~\\
+         \img{0.75}{rho-exec}\\
+         $\ast@p\rsq p$\\~\\
+         \img{0.75}{rho-par}\\
+         $l\rsq r \;\ra\; p|l\rsq p|r$
+    \end{tabular}
+\end{center}
+
+\newpage
+
+\begin{center}
+    \textbf{relative pushouts, contexts, bisimulation}\\~\\
+    \begin{tabular}{c}
+        \img{0.35}{rpo-def}\\
+        The relative pushout of $t[f]=u[g]$ is $(p,(i,j))$, which factors uniquely through every $q$.\\~\\
+    \end{tabular}
+
+    \vspace{2em}
+
+    \begin{tabular}{c@{\qquad\qquad}c}
+         \img{0.5}{trans-def} & \img{0.5}{transition}
+    \end{tabular}
+
+    \vspace{3em}
+
+    \img{0.5}{bisim}\\~\\
+    $p_0\sim q_0$\\
+    $\forall C,p_1.\; (p_0\xr{C} p_1)\ra \exists q_1.\; q_0\xr{C} q_1 \land p_1\sim q_1$\\
+    $\forall C,q_1.\; (q_0\xr{C} q_1)\ra \exists p_1.\; p_0\xr{C} p_1\land p_1\sim q_1$
+\end{center}
+
+To read each ``grey bottle-opener'' shape: $\forall x. P(x)\ra Q(x)$ is equivalent to $\neg[\exists x. P(x) \land \neg[Q(x)]]$ --- the outer negation is grey, and the inner negation flips back to white.
+
+\end{document}
