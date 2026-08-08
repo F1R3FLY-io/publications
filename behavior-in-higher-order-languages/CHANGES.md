@@ -96,6 +96,19 @@ implicit: strict RPOs are fragile under AC equations on `|`, and the standard
 repair is groupoidal RPOs (Sassone–Sobociński, now in the bib). The normality
 assumption is doing the same work by another route.
 
+## Typography
+
+The rho calculus is never written with the Greek letter. The name is an
+acronym — the **r**eflective **h**igher-**o**rder calculus — and dropping the
+periods from r.h.o. gives the transliteration of the letter after π, which is
+the pun: the rho calculus comes after the π-calculus. Writing ρ throws the
+acronym away and keeps only the joke.
+
+So: *rho calculus*, *rho*, `\rhoc^{!}`. The macro `\rhoc` (= `\mrm{rho}`) is
+in `bihol2.sty` for math-mode use; π keeps its Greek letter throughout, since
+it is genuinely named for one. A footnote at the first occurrence (§3) states
+the etymology.
+
 ## Build notes
 
 - `bihol2.sty` replaces `bihol.sty`. Only two real changes: biblatex →
