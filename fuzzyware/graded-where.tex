@@ -1,0 +1,1164 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+\usepackage[T1]{fontenc}
+\usepackage[protrusion=true,expansion=false]{microtype}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Theorem environments
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{principle}[theorem]{Principle}
+\newtheorem{obligation}[theorem]{Obligation}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros.  NOTATION RULES OBSERVED THROUGHOUT:
+%   * the rho calculus is never written with the Greek letter rho
+%   * quoting is @P, dropping is *x; corner quotes are pre-2016 notation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\grho}{\textsf{rho}_{\V}}
+\newcommand{\sem}[1]{[\![#1]\!]}
+\newcommand{\V}{\mathbb{V}}
+\newcommand{\Bool}{\mathbb{B}}
+\newcommand{\Rnn}{\mathbb{R}_{\geq 0}}
+\newcommand{\Cx}{\mathbb{C}}
+\newcommand{\Nat}{\mathbb{N}}
+\newcommand{\Proc}{\mathcal{P}}
+\newcommand{\Names}{\mathcal{N}}
+\newcommand{\NF}{\mathrm{NF}}
+\newcommand{\Reach}{\mathrm{Reach}}
+\newcommand{\supp}{\mathrm{supp}}
+\newcommand{\Per}{\mathrm{Per}}
+\newcommand{\Det}{\mathrm{Det}}
+\newcommand{\scong}{\equiv}
+\newcommand{\tensorv}{\otimes}
+\newcommand{\sumv}{\oplus}
+\newcommand{\Cand}{\mathrm{Cand}}
+\newcommand{\Out}{\mathrm{out}}
+\newcommand{\crisp}[1]{\lceil #1 \rceil}
+\newcommand{\pow}{\mathrm{pow}}
+\newcommand{\str}{\mathrm{s}}
+\newcommand{\conf}{\mathrm{c}}
+
+\lstdefinestyle{rholang}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  morekeywords={for,new,in,where,contract,match,if,else},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  framesep=5pt,
+  rulecolor=\color{black!35},
+  xleftmargin=6pt,
+  aboveskip=9pt,
+  belowskip=9pt
+}
+\lstset{style=rholang}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{\bfseries Graded Where-Clauses\\[4pt]
+\large Non-crisp truth values as the syntax of non-determinism resolution\\
+in the rho calculus, with quantum and probabilistic-logic instances}
+
+\author{L.\,G.\ Meredith\\ \small F1R3FLY.io}
+
+\date{F1R3FLY.io working note --- August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The rho calculus is silent about how the non-determinism of a race is resolved.
+An implementation must supply that mechanism, and different mechanisms give
+different executions of the same program: RSpace supplies the physical races of
+cores on a CPU, and one may equally supply the Born rule. We take this seriously
+as a design principle and ask what syntax a programmer needs in order to
+\emph{arrange} a resolution mechanism rather than merely inherit one.
+
+We argue, first, that no repair of full abstraction over rho contexts can expose
+the additional structure a quantum resolver supplies, because no rho context says
+anything about how non-determinism is resolved; the mismatch is not in the class
+of contexts but in the type of observation. We then show that unmodified rho,
+read as a sum over its possible futures, already interferes --- but only on
+structurally indistinguishable racers, and only constructively, because the
+message left behind by a race is a which-path record.
+
+The design that follows is a single change: the \texttt{where} clause of the
+for-comprehension is valued in a commutative semiring $\V$ rather than in the
+Booleans, and is evaluated \emph{per candidate match} rather than per
+communication. Everything else is unchanged. We show that (i) weight maps in the
+sense of the weighted-GSLT programme are exactly the linear normal forms of
+graded clauses, so the partition discipline and the update-function machinery
+both disappear; (ii) the join operator \texttt{\&} is already a recombiner, so
+the which-path erasure that interference requires needs no new term former; and
+(iii) the graded clause on an $m$-fold join over $m$ data \emph{is} a scattering
+matrix, with the amplitude of the symmetric outcome given by its permanent.
+Boolean $\V$ recovers rholang 1.4 exactly; $\Rnn$ gives stochastic execution;
+$\Cx$ gives interference, including cancellation of an operationally reachable
+outcome.
+
+Finally we observe that the same slot accepts truth values in the sense of
+Goertzel's Probabilistic Logic Networks. Valuing where-clauses by PLN inference
+makes MeTTaIL's execution engine and its reasoning engine the same loop: what
+fires next is decided by what the system currently believes. We give the
+resolution algebra this requires, and are explicit about which part of PLN's
+truth-value arithmetic supplies values and which part would have to be weakened
+to supply the algebra.
+\end{abstract}
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}\label{sec:intro}
+
+\subsection{Where the choice is}
+
+A rho program does not determine its own execution. Write
+\[
+  x!(Q_1) \mid \textsf{for}(y \Leftarrow x)P \mid x!(Q_2)
+\]
+and the operational semantics permits two reductions. It does not say which one
+happens, and it does not say with what tendency. This is not an oversight; it is
+the defining feature of a mobile process calculus, and it is what makes the
+calculus a specification of interaction rather than of a machine.
+
+An implementation must close the gap. RSpace closes it by presenting the parallel
+fragment as a store from channels to polarity-homogeneous bags and letting the
+physical race between cores decide which produce is zipped with which consume.
+That is a resolution mechanism, and it is a choice --- in the precise sense that
+the family of admissible pairings, indexed by contended channels, has a section
+only when something supplies one.
+
+The observation this note develops is that the resolution mechanism is a
+\emph{parameter}, and that other values of the parameter are available. In
+particular, quantum mechanics is a resolution mechanism: it supplies amplitudes
+for the branches of a race and the Born rule for turning them into outcomes.
+Instantiating rho's parameter with that mechanism is a well-posed thing to do,
+and the question this note answers is what syntax a programmer needs in order to
+control it.
+
+\subsection{The programme, in two stages}
+
+The work proceeds in two stages, and it is worth separating them sharply because
+they have different success criteria.
+
+\emph{Stage one} exposes the additional structure. A quantum resolver
+distinguishes programs that classical observation identifies, because it permits
+interference. That is a failure of full abstraction --- the denotation is finer
+than contextual equivalence --- and the failure is the feature. The set of pairs
+that classical observation identifies and the quantum denotation separates is
+the specification document for stage two.
+
+\emph{Stage two} gives that structure syntactic expression, so that a programmer
+can write into the gap on purpose. Aaronson's summary of quantum programming is
+apt here: most of the discipline consists of arranging for interference to do
+something useful. A syntax for arranging interference is therefore a syntax for
+exploring what quantum advantage is available, and having one is a precondition
+for a verdict rather than a consequence of one.
+
+The weighted-GSLT programme proposed \emph{weight maps} for stage two: a table,
+carried alongside the term, from spatial-behavioural formulae refining the
+left-hand side of a rewrite rule to weights. This note argues that the weight map
+had the right \emph{language} and the wrong \emph{location}, and that relocating
+it into the for-comprehension's \texttt{where} clause --- by the simple device of
+letting formulae take non-crisp truth values --- both subsumes it and repairs
+three separate defects at once.
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=3pt]
+\item \textbf{A negative result about full abstraction} (\S\ref{sec:fa}).
+Enlarging the class of rho contexts cannot expose interference, because contexts
+can \emph{create} apertures but cannot \emph{read} them. The mismatch is in the
+observation type, not the context class, and the correct frame is a
+\emph{separation} between resolvers rather than a full-abstraction theorem
+between terms. We give the replacement correctness condition: one-sided support
+adequacy, whose failure to be two-sided is the interference.
+
+\item \textbf{A sharp stage-one verdict} (\S\ref{sec:stage1}). Under the
+race equation with uniform weights, unmodified rho interferes exactly when the
+racing messages are structurally congruent, and then only constructively, because
+the surviving message is a which-path record. The phenomenon is a permanent; it
+is BosonSampling-shaped, hence plausibly hard and definitely not universal.
+
+\item \textbf{The design} (\S\S\ref{sec:design}--\ref{sec:semantics}). Value the
+\texttt{where} clause in a commutative semiring and evaluate it per candidate
+match. Boolean values recover rholang 1.4 on the nose
+(Theorem~\ref{thm:conservativity}).
+
+\item \textbf{Weight maps are a normal form} (\S\ref{sec:weightmaps},
+Theorem~\ref{thm:dnf}). Every weight map is a graded clause of the shape
+$\bigoplus_i v_i \tensorv \crisp{\chi_i}$, and the partition discipline exists
+solely to make that shape single-valued --- a requirement a formula satisfies for
+free. Dynamic weight maps become formulae mentioning the current term, so the
+update function disappears too (Proposition~\ref{prop:plastic}).
+
+\item \textbf{The join is the recombiner} (\S\ref{sec:erasure},
+Theorem~\ref{thm:scattering}). Which-path erasure --- the half of the problem the
+weight map never addressed --- requires no new term former. A join
+\texttt{\&} over $m$ patterns on a contended channel has $m!$ candidate matches
+whose outcomes coincide precisely when the continuation is symmetric in the bound
+names, and the graded clause supplies the $m!$ amplitudes. The clause is a
+scattering matrix and the symmetric outcome carries its permanent.
+
+\item \textbf{PLN-valued clauses} (\S\ref{sec:pln}). The same slot accepts
+Probabilistic Logic Network truth values, making inference and execution one
+loop. We give the algebra honestly, including which of PLN's operations supply
+values and which would need weakening to supply a semiring.
+\end{enumerate}
+
+\subsection{What this note does not do}
+
+It does not prove a quantum advantage; it builds the instrument with which one
+could be sought. It does not settle the normalisation question raised in
+\S\ref{ssec:fork}, though it makes the fork explicit and recommends a branch. It
+does not treat replication or the full recursive fragment beyond noting where the
+budget must bite. And it does not attempt a categorical account of the
+construction, which we expect to be a Kleisli-style story over the semiring's
+free-module monad and which we leave to a companion.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Why context-based full abstraction cannot help}\label{sec:fa}
+
+\subsection{An asymmetry between two translations}
+
+When one encodes the $\pi$-calculus into rho, a natural worry about full
+abstraction arises and a natural repair is available: rho contexts see strictly
+more than $\pi$ contexts do, so demand preservation only against the images of
+$\pi$ contexts. The repair is legitimate because the discrepancy it manages ---
+rho's ability to inspect the structure of a name --- lies on an axis about which
+\emph{both} calculi are silent in the same way, namely how a race is resolved.
+Restricting the context class is orthogonal to resolution, so it costs nothing on
+that axis.
+
+The translation from rho into quantum mechanics is not like this. Quantum
+mechanics makes a definite commitment about resolution: amplitudes compose
+linearly and outcomes obey the Born rule. The discrepancy is therefore
+\emph{on} the axis about which rho is silent. No restriction or enlargement of
+the class of rho contexts can address it, for the simple reason that a rho
+context is itself a rho term, whose own races are resolved by the same
+unspecified mechanism. Composing silence with silence yields silence.
+
+\begin{principle}[Contexts create apertures; they do not read them]\label{prin:aperture}
+A rho context can change which races exist --- by adding contention, by
+consuming a contender, by installing a new receive. It cannot observe how any
+race is resolved. Consequently no property of the form ``for all rho contexts
+$C[-]$, \dots'' can be sensitive to the resolution mechanism.
+\end{principle}
+
+This is the precise reason a full-abstraction theorem is not the right
+correctness statement for the present setting, and the reason is stronger than
+the usual observation that interference makes the denotation too fine. It is not
+that we have too few contexts. It is that the discriminating power we want is not
+of the kind contexts have.
+
+\subsection{The door that stays open}
+
+The enterprise is not thereby vacuous, and it is worth being careful about why.
+A context cannot see a phase. But a context can be an \emph{interferometer}: an
+arrangement in which a difference of phase becomes a difference in the
+\emph{support} of the outcomes. This is how every physical quantum experiment
+reports its result --- not by observing an amplitude but by a detector that never
+fires. \S\ref{sec:erasure} exhibits such a context in three lines of rholang.
+
+What this does not do is rescue full abstraction, because the discrimination it
+achieves is between two \emph{resolvers} at a fixed term, not between two terms
+at a fixed resolver.
+
+\subsection{Separation as the correctness frame}
+
+The right object of study is therefore the map
+\[
+  \textsf{Resolvers} \times \textsf{Terms} \longrightarrow \textsf{Distributions
+  over normal forms},
+\]
+in which the classical RSpace semantics and the Born semantics are two points of
+the first coordinate. Quantum advantage is the assertion that the image of the
+quantum resolver is not contained in the image of the classical family --- a
+separation, in the shape of a Bell argument, rather than a full-abstraction
+theorem.
+
+What survives as a checkable correctness obligation is one-sided.
+
+\begin{definition}[Support adequacy and the interference deficit]\label{def:deficit}
+Let $\Reach(P) \subseteq \NF$ be the set of normal forms operationally reachable
+from $P$, and let $\sem{P}$ be the graded denotation of \S\ref{sec:semantics}.
+The denotation is \emph{support-adequate} when
+\[
+  \supp(\sem{P}) \;\subseteq\; \Reach(P).
+\]
+The \emph{interference deficit} of $P$ is
+$\;\mathcal{D}(P) := \Reach(P)\setminus\supp(\sem{P})$.
+\end{definition}
+
+Support adequacy says the interpretation invents nothing the operational
+semantics forbids. The converse inclusion is exactly what destructive
+interference violates: a normal form that some derivation reaches, whose
+amplitudes cancel. So the natural two-sided condition is not merely unproven, it
+is \emph{false precisely where the interesting physics is}, and its failure is
+the observable. We will return to $\mathcal{D}$ as the quantity a programmer
+manipulates.
+
+\begin{remark}[Non-compositionality is not a defect]\label{rem:compositional}
+The store denotation of rho is a monoid homomorphism for parallel composition,
+because it denotes the store. The sum-over-futures denotation cannot be, because
+composing $P$ with $Q$ creates races that neither had alone. This is not a
+weakness relative to quantum mechanics; it is the same phenomenon in the same
+place --- interacting subsystems do not have product states. The cut is the
+interaction term, and entanglement across a cut is the semantic image of a race
+across a cut. It is also the semantic shadow of the observation that an aperture
+is a property of the cut and not of either agent flanking it.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{What unmodified rho already gives}\label{sec:stage1}
+
+\subsection{The race equation}
+
+Take as the constraint on an interpretation $\sem{-}$, at a two-way race between
+one receive and two sends,
+\begin{equation}\label{eq:race}
+  \sem{\,x!(Q_1) \mid \textsf{for}(y \Leftarrow x)P \mid x!(Q_2)\,}
+  \;=\;
+  w_1\,\sem{\,P\{@Q_1/y\} \mid x!(Q_2)\,}
+  \;+\;
+  w_2\,\sem{\,x!(Q_1) \mid P\{@Q_2/y\}\,},
+\end{equation}
+with $w_1 = w_2$ and the weights covering the total probability space; dually for
+two receives racing over one message. The constraint says nothing about a lone
+receive meeting a lone send. Alongside it we adopt the principle that the meaning
+of a term is the sum of all its possible futures.
+
+Two things are worth noticing immediately about \eqref{eq:race}. It is
+\emph{parameter-free}: the weights are forced by the arity of the race, so there
+is no table, no key language, and no partition. And it is \emph{silent on the
+confluent fragment}, which localises whatever design freedom remains.
+
+\subsection{The residual is a which-path record}
+
+The left summand of \eqref{eq:race} retains $x!(Q_2)$ and the right retains
+$x!(Q_1)$. That surviving message records which branch was taken. Two derivations
+whose residuals differ do not reconverge, and derivations that do not reconverge
+cannot interfere.
+
+There is exactly one escape, and it is forced: when $Q_1 \scong Q_2$ the record
+is vacuous, the two summands are structurally congruent, and the branches meet.
+
+\begin{proposition}[Stage-one verdict]\label{prop:stage1}
+Under \eqref{eq:race} with uniform real weights and no further apparatus, the
+only interference available to rho is between derivations consuming
+structurally congruent messages, and it is always constructive.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Interference requires two derivations from a common source reaching a common
+target. At a single race the targets are $P\{@Q_1/y\} \mid x!(Q_2)$ and
+$x!(Q_1) \mid P\{@Q_2/y\}$, which are congruent only if $Q_1 \scong Q_2$ (the
+substitution instances agreeing for all $P$ forces the quoted payloads to agree).
+Iterating, any reconvergence decomposes into steps of this form together with
+permutations of independent redexes, which are identified by
+Definition~\ref{def:causal} below. All weights being non-negative reals, summed
+amplitudes cannot cancel.
+\end{proof}
+
+\begin{remark}[The general race is a permanent]\label{rem:permanent}
+At a channel carrying a bag of produces and a bag of consumes, communication
+chooses an admissible pairing and zips, leaving surplus. Summing coherently over
+perfect matchings of an amplitude matrix is the computation of a permanent, which
+is to say that the coherent reading of the zip is BosonSampling-shaped: plausibly
+hard to sample, while the classical reading --- pick a matching uniformly ---
+is easy. The superlinear multiplicity that earlier work identified in the
+degenerate case is accordingly not a bookkeeping error but genuine
+indistinguishable-particle statistics.
+\end{remark}
+
+The verdict is therefore genuinely good news for the design, because it makes the
+brief precise: what rho lacks is not interference \emph{per se} but \emph{phase}
+and \emph{control over recombination}. The analogy with linear optics is close
+enough to be useful. Indistinguishable bosons through a passive network give
+hardness without universality; adding phase control and adaptivity is what
+carries one to KLM-style universality. The gap to be closed may be small.
+
+\subsection{The normalisation fork}\label{ssec:fork}
+
+Equation~\eqref{eq:race} is not consistent as stated, and the inconsistency shows
+up at its own simplest instance. With $Q_1 \scong Q_2$ the right-hand side is
+$(w_1 + w_2)\sem{T}$ for a single $T$. If the $w_i$ are amplitudes with
+$|w_1|^2 + |w_2|^2 = 1$, this has norm $\sqrt{2}$; for an $m$-fold degenerate
+race, norm $\sqrt{m}$ and weight $m$.
+
+Three resolutions are available.
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+\item \emph{Convex.} Let $\sem{-}$ take values in formal convex combinations,
+$w_i = 1/m$. Consistent, and exactly the classical scheduler with a fair coin.
+No interference.
+\item \emph{Branch register.} Adjoin the derivation index so the summands stay
+distinguishable. Consistent and interference-capable, at the cost of carrying the
+index --- this is the route taken by the ZX compilation work.
+\item \emph{Unnormalised.} Let $\sem{-}$ take values in the free $\V$-module on
+normal forms and apply the Born rule at observation. Consistent, with $m$-fold
+degeneracy carrying weight $m^2$.
+\end{enumerate}
+
+We take the third, on the ground that linear-in-$m$ and quadratic-in-$m$ are the
+values of two different observables rather than two normalisations of one: the
+first is what one gets by looking at which derivation fired, the second by
+declining to look. Since the whole point of the exercise is to decline to look,
+the quadratic answer is the correct one here, and it is exactly the bosonic
+enhancement of Remark~\ref{rem:permanent}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Two requirements, derived}\label{sec:requirements}
+
+Interference needs two things and nothing else: derivations that
+\emph{reconverge}, and a nonzero \emph{relative phase} between them. Every
+syntactic feature proposed below is answerable to one of these.
+
+\subsection{Reconvergence must be counted over causal histories}
+
+A caution first, because it disciplines the path sum. Every concurrency diamond
+is a reconvergence: two independent redexes fired in either order reach the same
+term. Rho programs are saturated with these. If the sum over futures ranges over
+\emph{interleavings}, then $m$ independent redexes contribute a factor of $m!$
+arising from nothing but the number of linearisations of a partial order.
+
+\begin{definition}[Independence and causal histories]\label{def:causal}
+Two redex firings at a term are \emph{independent} when their footprints ---
+the data and continuations they consume --- are disjoint. Let $\sim$ be the least
+congruence on derivations identifying $u\,;\,v$ with $v\,;\,u$ for independent
+$u,v$. A \emph{causal history} is a $\sim$-class of derivations, and the path sum
+of \S\ref{ssec:pathsum} ranges over causal histories.
+\end{definition}
+
+\begin{proposition}[No spurious combinatorial enhancement]\label{prop:causal}
+Summing over causal histories rather than interleavings removes the $m!$ factor,
+and does not remove any reconvergence between causally inequivalent derivations.
+\end{proposition}
+
+The apparatus for this choice already exists in the history-monad account of
+rho: free histories form the universal cover of the reduction graph and the
+erasure lattice is indexed by subgroups of its fundamental group. Filling the
+concurrency squares is one such erasure, and interference lives on the loops
+that survive it.
+
+\subsection{The two syntactic requirements}
+
+\begin{enumerate}[label=(R\arabic*),leftmargin=2.6em,itemsep=3pt]
+\item \label{r1} \textbf{Phase conditional on data.} The amplitude attaching to a
+branch must be allowed to depend on which datum that branch consumed, and on the
+structure of the term around it.
+\item \label{r2} \textbf{Which-path erasure.} The programmer must be able to
+arrange that two branches produce the \emph{same} residual, so that their
+amplitudes are added rather than kept apart.
+\end{enumerate}
+
+\begin{remark}[Auditing weight maps against the requirements]\label{rem:audit}
+A weight map answers \ref{r1} well: its keys are spatial-behavioural formulae
+refining the left-hand side of a rule, which is precisely ``a phase conditional
+on the structure of what was matched.'' It says nothing whatever about \ref{r2};
+in the ZX treatment, recombination arrives as a choice of measurement basis at
+the end, which is an observer's decision made outside the program. And it is
+ergonomically misplaced: a table carried in the state is a Hamiltonian
+specification, whereas arranging interference is done with term formers, at the
+site where the branching happens.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The design}\label{sec:design}
+
+The design is one change, stated in a sentence: \emph{the \texttt{where} clause
+of the for-comprehension is valued in a commutative semiring and is evaluated
+once per candidate match.}
+
+\subsection{Resolution algebras}
+
+\begin{definition}[Resolution algebra]\label{def:algebra}
+A \emph{resolution algebra} is a commutative semiring
+$\V = (V, \sumv, \tensorv, 0, 1)$: $\sumv$ associative and commutative with unit
+$0$, $\tensorv$ associative and commutative with unit $1$, $\tensorv$
+distributing over $\sumv$, and $0$ annihilating.
+\end{definition}
+
+The two operations are forced by what the connectives must mean.
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+\item \emph{Conjunction is $\tensorv$.} Two conditions holding together compose
+multiplicatively; this is also what makes the joined receive
+$p_1 \Leftarrow c_1\ \&\ p_2 \Leftarrow c_2$ combine its clauses correctly.
+\item \emph{Disjunction is $\sumv$.} Two ways for a match to be enabled add.
+\end{itemize}
+
+\begin{principle}[Interference is a logical phenomenon]\label{prin:or}
+Since $\sem{\varphi \vee \psi} = \sem{\varphi} \sumv \sem{\psi}$, in a resolution
+algebra with additive inverses a disjunction may evaluate to $0$ though neither
+disjunct does. Destructive interference is a \emph{false disjunction with true
+disjuncts}. This is the whole of the additional structure, stated in the logic
+rather than imposed on it from outside.
+\end{principle}
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Algebra} & \textbf{$\sumv,\tensorv$} & \textbf{Resolver} & \textbf{Regime}\\
+\midrule
+$\Bool = (\{0,1\},\vee,\wedge)$ & $\vee$, $\wedge$ & demonic / RSpace race & rholang 1.4 exactly \\
+$\Rnn = (\mathbb{R}_{\geq 0},+,\times)$ & $+$, $\times$ & Gillespie / SSA & stochastic \\
+$\Cx = (\mathbb{C},+,\times)$ & $+$, $\times$ & Born rule & interference \\
+Viterbi $([0,1],\max,\times)$ & $\max$, $\times$ & greedy & most-likely path \\
+Tropical $(\mathbb{R}\cup\{\infty\},\min,+)$ & $\min$, $+$ & least cost & cost-optimal path \\
+$\pow$-PLN $([0,1],+,\times)$ & $+$, $\times$ & inference-driven & \S\ref{sec:pln} \\
+\bottomrule
+\end{tabular}
+\caption{Instances. One syntax; the resolver is the choice of $\V$.}\label{tab:algebras}
+\end{table}
+
+Negation is the casualty and it is worth saying so plainly. On $[0,1]$ the map
+$v \mapsto 1 - v$ serves; on $\Cx$ there is no canonical complement and De
+Morgan fails against $(+,\times)$. The design therefore keeps two sorts, with the
+crisp sort embedded in the graded one.
+
+\subsection{Two sorts of formula}
+
+Let the crisp sort be the existing condition language of rholang 1.4: ground
+formulae supplied by a language definition, the spatial connectives generated
+from the term formers, the context-labelled modality $\langle K \rangle$, and
+full Boolean structure.
+\begin{align*}
+\beta &::= \textsf{true} \mid \textsf{false} \mid g \mid \neg\beta \mid
+  \beta \wedge \beta \mid \beta \vee \beta \mid \langle K \rangle\beta \mid
+  \textsf{out}(n)\beta \mid \textsf{in}(n)\beta \mid \beta \mid \beta \mid @\beta
+\intertext{and let the graded sort be}
+\psi &::= \crisp{\beta} \mid v \mid \psi \tensorv \psi \mid \psi \sumv \psi
+  \mid \langle K \rangle_{\V}\,\psi \qquad (v \in V).
+\end{align*}
+Here $\crisp{\beta}$ is the indicator embedding, sending a satisfied $\beta$ to
+$1$ and an unsatisfied one to $0$, and $v$ ranges over scalar constants of the
+algebra. The graded sort has no negation and no fixed-point operator; the crisp
+sort keeps both.
+
+\begin{remark}[One slot, not two]\label{rem:oneslot}
+It is tempting to give the for-comprehension two clauses, a Boolean gate and a
+graded weight. It is better to give it one graded clause and recover the gate as
+its \emph{support}: a communication is enabled exactly when its clause evaluates
+to something other than $0$. This keeps the language unforked --- existing
+Boolean where-clauses are the $\Bool$-valued fragment under
+$\Bool \hookrightarrow \V$ --- and it makes support adequacy
+(Definition~\ref{def:deficit}) hold by construction rather than by proof, since
+the classical interpreter sees nothing of the value except whether it vanishes.
+\end{remark}
+
+\subsection{Syntax}
+
+The for-comprehension of rholang 1.4 already carries a \texttt{where} clause,
+whose condition may mention the variables bound by the preceding receipts. The
+change is only to the sort of that condition.
+
+\begin{lstlisting}
+for( p11 <- c11 & ... & pm1 <- cm1 ;
+     ... ;
+     p1n <- c1n & ... & pmn <- cmn
+     where psi ) P
+\end{lstlisting}
+
+\noindent
+with \texttt{psi} a graded formula over the algebra $\V$ declared for the shard
+or the channel's language definition. Within \texttt{psi}, the bound names
+$p_{ij}$ are in scope, so the value may depend on what was matched --- which is
+requirement \ref{r1}.
+
+\subsection{Per-match evaluation}\label{ssec:permatch}
+
+The decisive point, and the one from which everything in \S\ref{sec:erasure}
+follows, concerns \emph{when} the clause is evaluated.
+
+\begin{definition}[Candidates]\label{def:cand}
+Let $r$ be a receipt site in $P$ --- a for-comprehension together with the
+channels its receipts name. A \emph{candidate} at $r$ is an assignment $\sigma$
+of a distinct datum occurrence to each pattern of each group, such that every
+pattern matches its assigned datum. Write $\Cand(P,r)$ for the set of candidates
+and $\Out(r,\sigma) \in \Proc/{\scong}$ for the residual term the firing of $r$
+under $\sigma$ produces.
+\end{definition}
+
+Candidates are indexed by \emph{occurrences}, not by terms. This matters: two
+structurally congruent messages on a channel are two candidates, not one,
+because parallel composition is a multiset and structural congruence does not
+delete duplicates. An implementation that keys data by content alone, or that
+allocates identifiers during firing, cannot represent $\Cand$ faithfully.
+
+\begin{definition}[Graded clause valuation]\label{def:val}
+A graded clause $\psi$ at a receipt site $r$ denotes a function
+\[
+  \sem{\psi}_r : \Cand(P,r) \longrightarrow V ,
+\]
+defined by structural recursion, with $\crisp{\beta}$ evaluated against the term
+$P$ under the substitution $\sigma$ carries, scalars constant, $\tensorv$ and
+$\sumv$ pointwise, and $\langle K \rangle_\V$ as in \S\ref{ssec:modality}.
+\end{definition}
+
+So a clause is a \emph{vector} indexed by candidates, and --- once we compose it
+with $\Out$ --- a \emph{matrix} over candidates and outcomes. That is the whole
+mechanism.
+
+\subsection{The graded modality is a transfer operator}\label{ssec:modality}
+
+Let $\V\langle \Proc/{\scong}\rangle$ be the free $\V$-module on terms modulo
+structural congruence. Define the one-step operator of a term by summing its
+candidates:
+\begin{equation}\label{eq:onestep}
+  T(P) \;=\; \sum_{r}\ \sum_{\sigma \in \Cand(P,r)}
+    \sem{\psi_r}_r(\sigma)\;\cdot\;\Out(r,\sigma) ,
+\end{equation}
+the outer sum over receipt sites, taken over causal histories in the sense of
+Definition~\ref{def:causal}, and the coefficient arithmetic in $\V$. Then the
+graded modality is
+\[
+  \sem{\langle K \rangle_\V\,\psi}(P)
+  \;=\; \sum_{r,\sigma} \sem{\psi_r}_r(\sigma) \tensorv \sem{\psi}(\Out(r,\sigma)),
+\]
+which is $T$ acting on the vector of values of $\psi$. In other words the graded
+modality is the transfer matrix of the reduction relation, and the principle that
+the meaning of a term is the sum of all its possible futures is exactly the
+statement that $\sem{-}$ is a fixed point of $\langle K\rangle_\V$. The
+denotational principle and the graded logic are one object seen twice.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Formal semantics}\label{sec:semantics}
+
+\subsection{Terms}
+
+We work with core rho, taken with a built-in name restriction whose desugaring is
+not our concern here.
+\[
+  P ::= 0 \;\mid\; x!(P) \;\mid\; \textsf{for}(\,\vec{y} \Leftarrow \vec{x}
+  \ \textsf{where}\ \psi\,)P \;\mid\; P \mid P \;\mid\; *x \;\mid\; \textsf{new}\ x\ \textsf{in}\ P,
+  \qquad
+  x ::= @P .
+\]
+Quoting is $@P$ and dropping is $*x$. Structural congruence $\scong$ is the least
+congruence making $(\Proc, \mid, 0)$ a commutative monoid, together with the
+usual laws for \textsf{new} and $*@P \scong P$.
+
+\subsection{The state space}
+
+\begin{definition}[Graded denotation]\label{def:denotation}
+Fix a resolution algebra $\V$ and a budget $\beta \in \Nat$. Let
+$M := \V\langle \Proc/{\scong}\rangle$ be the free $\V$-module on terms modulo
+structural congruence, with basis vectors written $\lvert P \rangle$. The
+$\beta$-budgeted denotation is
+\[
+  \sem{P}_\beta \;:=\; T_{\!*}^{\,\beta}\,\lvert P \rangle
+  \;=\;\!\!\sum_{h \,:\, P \Rightarrow^{\leq\beta} Q}\!\! w(h)\,\lvert Q\rangle ,
+\]
+where $T_*$ extends $T$ of \eqref{eq:onestep} linearly, $h$ ranges over causal
+histories of length at most $\beta$ ending at a normal form or exhausting the
+budget, and $w(h)$ is the $\tensorv$-product of the clause values along $h$.
+\end{definition}
+
+\begin{remark}[Why a budget, and only one]\label{rem:budget}
+The definition is corecursive and does not bottom out on non-terminating terms.
+For terminating $P$ the recursion is well-founded on the reduction tree and
+$\beta$ may be taken to be its depth. In general one needs either a convergence
+hypothesis --- a spectral radius condition on $T$, since $\Cx$ has no order and
+Knaster--Tarski is unavailable --- or a budget. We take the budget, and note it
+is the same budget already charged elsewhere: the risk ledger's single $\omega$
+for reflection, the address-space bound of the compilation route, and the
+inference-token budget that keeps generated model-checking terminating. These
+should be one budget doing three jobs rather than three budgets.
+\end{remark}
+
+To make normal forms absorbing and keep histories comparable in length we adopt
+the usual convention.
+
+\begin{definition}[Fictitious jump]\label{def:fict}
+At a normal form $Q$ the operator acts as $T\lvert Q\rangle = \lvert Q\rangle$.
+\end{definition}
+
+\subsection{Readings}\label{ssec:pathsum}
+
+One denotation admits three readings, differing only in what is done at the end.
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+\item \emph{Support.} $\supp(\sem{P}_\beta) \subseteq \NF$. This is what the
+classical interpreter sees, and by Remark~\ref{rem:oneslot} it is all it sees.
+\item \emph{Born.} For $\V = \Cx$, the distribution
+$Q \mapsto |\langle Q \mid \sem{P}_\beta\rangle|^2$, normalised.
+\item \emph{Stochastic.} For $\V = \Rnn$, the same expression without the
+square, which is the jump-chain marginal of the Gillespie reading.
+\end{enumerate}
+
+\begin{theorem}[Conservativity]\label{thm:conservativity}
+Let $\V = \Bool$ and let every clause be the embedding $\crisp{\beta}$ of a
+crisp condition. Then $\supp(\sem{P}_\beta)$ is exactly the set of normal forms
+reachable from $P$ in at most $\beta$ steps under rholang 1.4's operational
+semantics with its Boolean \texttt{where} clauses.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+In $\Bool$, $\tensorv = \wedge$ and $\sumv = \vee$, so $w(h) = 1$ iff every step
+of $h$ has a satisfied clause, and the coefficient of $\lvert Q\rangle$ is the
+disjunction over histories reaching $Q$. Candidates coincide with the admissible
+zips of the store presentation, and the fictitious jump does not add normal
+forms. Hence the coefficient is $1$ iff some admissible derivation reaches $Q$.
+\end{proof}
+
+\begin{corollary}[Support adequacy]\label{cor:adequacy}
+For any $\V$, $\supp(\sem{P}_\beta) \subseteq \Reach_\beta(P)$, since a nonzero
+coefficient requires at least one history with all clause values nonzero, and
+such a history is admissible under the Boolean image of the clauses. Equality
+fails exactly when some $\Reach$-witnessed coefficient is a sum of nonzero terms
+summing to $0$ --- that is, exactly on the interference deficit
+$\mathcal{D}(P)$.
+\end{corollary}
+
+This is the payoff of Remark~\ref{rem:oneslot}. Adding grading cannot make a
+classical program do something it could not do; it can only make it fail to do
+something it could.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Weight maps are a normal form}\label{sec:weightmaps}
+
+\begin{definition}[Weight map, recalled]\label{def:wmap}
+A weight map for a rewrite rule $R$ is a finite family of spatial-behavioural
+formulae $\chi_1,\dots,\chi_k$ refining the left-hand side of $R$, required to
+\emph{partition} that refinement, together with values $v_1,\dots,v_k \in V$;
+the weight of a redex is $v_i$ for the unique $i$ with $\chi_i$ satisfied.
+\end{definition}
+
+\begin{theorem}[Weight maps are the linear graded clauses]\label{thm:dnf}
+Every weight map $(\chi_i,v_i)_{i\leq k}$ is denoted by the graded clause
+\[
+  \psi \;=\; \bigoplus_{i=1}^{k} \; v_i \tensorv \crisp{\chi_i},
+\]
+and conversely a graded clause of this shape denotes a weight map if and only if
+the $\chi_i$ partition the refinement. Graded clauses not of this shape ---
+those with nested $\tensorv$ over overlapping conditions, or with a graded
+modality --- are strictly more expressive.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Forwards: on a candidate satisfying $\chi_j$ and no other, all but the $j$th
+summand vanish and the value is $v_j$, and totality of the partition ensures some
+summand survives. Backwards: if two $\chi$'s overlap on a candidate, the clause
+returns $v_i \sumv v_j$, which is a well-defined value but not a table lookup;
+the partition condition is exactly the condition making the sum a selection.
+Strictness: with overlapping $\chi_i$ the clause is a genuine mixture no weight
+map assigns, and $\langle K\rangle_\V$ inspects successors, which no key can.
+\end{proof}
+
+\begin{corollary}[The partition discipline is unnecessary]\label{cor:nopartition}
+Single-valuedness of a graded clause is automatic, a formula having one value.
+The requirements that key sets partition the left-hand-side refinement, that
+partitions be constructed through a single checked funnel, and that a default
+class complete them, all exist to secure single-valuedness for a lookup and have
+no analogue here.
+\end{corollary}
+
+This also dissolves a specific obstruction. Earlier work observed a tension
+between the \emph{Boolean demand} --- a weight map's partition needs complements,
+so the target logic specification must supply negation --- and the fact that the
+transport of a generated logic along a bisimulation-preserving translation
+preserves only the geometric fragment, which has no complements. With no
+partition to define, the Boolean demand does not arise. Negation is still absent
+from the graded sort, but it is absent as a design choice about the value algebra
+rather than as an unmet requirement.
+
+\begin{proposition}[Plasticity is free]\label{prop:plastic}
+A dynamic weight map, whose table is revised after each rewrite by an update
+function $u : W \times \textsf{Match} \times \textsf{Trace} \to W$, is denoted by
+a static graded clause whenever $u$'s dependence on the trace is expressible as a
+crisp formula over the current term. No update function is needed, because a
+clause is re-evaluated against the current term at every candidate.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+The clause $\psi$ mentions the term through its crisp subformulae; its value at
+a candidate in the term $P'$ reached after some history is by definition computed
+against $P'$. A table revised to depend on features of $P'$ therefore agrees with
+the clause $\bigoplus_i v_i \tensorv \crisp{\chi_i}$ in which the $\chi_i$
+mention those features directly. Dependence on trace history beyond what is
+visible in $P'$ is not expressible, which is the hypothesis.
+\end{proof}
+
+\begin{remark}
+Proposition~\ref{prop:plastic} retires a specific implementation obligation. The
+plan for compiling the weighted simulator identified the update function --- an
+arbitrary closure over time and a trace summary --- as the one component with no
+compilable form, and proposed a declarative sub-language for it. The graded
+clause \emph{is} that sub-language, and it was already needed for other reasons.
+The restriction to features visible in the current term has precedent: the
+exhaustive-graph construction already refuses time-dependent updates by fixing
+the clock at zero.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The join is the recombiner}\label{sec:erasure}
+
+Requirement \ref{r2} asked for which-path erasure, and the audit of
+Remark~\ref{rem:audit} found nothing in the weight map that supplies it. It turns
+out no new term former is needed: the erasure is already in the language, in the
+join.
+
+\subsection{Permutations of a join are the interfering pair}
+
+Consider a receipt whose group contains $m$ patterns on a single contended
+channel, meeting $m$ data occurrences:
+\[
+  x!(Q_1) \mid \cdots \mid x!(Q_m) \mid
+  \textsf{for}(\,y_1 \Leftarrow x\ \&\ \cdots\ \&\ y_m \Leftarrow x
+  \ \textsf{where}\ \psi\,)P .
+\]
+The candidates are the $m!$ bijections $\sigma$ from patterns to data. Every
+candidate consumes \emph{all} the data --- there is no surplus, hence no residual
+message and no which-path record --- and produces
+$\Out(\sigma) = P\{@Q_{\sigma(1)}/y_1,\dots,@Q_{\sigma(m)}/y_m\}$.
+
+\begin{definition}[Symmetric continuation]\label{def:sym}
+$P$ is \emph{symmetric} in $y_1,\dots,y_m$ when
+$P\{@Q_{\sigma(1)}/y_1,\dots\} \scong P\{@Q_{\tau(1)}/y_1,\dots\}$ for all
+bijections $\sigma,\tau$ and all payloads.
+\end{definition}
+
+Symmetry is cheap to arrange, because parallel composition is commutative: the
+continuation $z!(*y_1) \mid z!(*y_2)$ is symmetric, while
+$z_1!(*y_1) \mid z_2!(*y_2)$ is not.
+
+\begin{theorem}[The clause is a scattering matrix]\label{thm:scattering}
+Let $A_{ij} := \sem{\psi}(\,y_i \mapsto @Q_j\,)$ be the value of the clause on the
+candidate assigning datum $j$ to pattern $i$, and suppose $\psi$ factors as
+$\bigotimes_i \psi_i(y_i)$ over patterns. If $P$ is symmetric in the $y_i$, all
+$m!$ candidates share a single outcome $\bar{P}$, and
+\[
+  \langle \bar{P} \mid T \lvert P\text{-site}\rangle
+  \;=\; \sum_{\sigma \in S_m} \prod_{i=1}^{m} A_{i\sigma(i)}
+  \;=\; \Per(A).
+\]
+If $P$ is not symmetric, the candidates have pairwise distinct outcomes and each
+carries its own product with no summation.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Every candidate is a bijection and the clause factors, so the weight of the
+candidate $\sigma$ is $\prod_i A_{i\sigma(i)}$. Under symmetry all outcomes are
+one basis vector and the coefficients add, which is the permanent. Without
+symmetry the outcomes are distinct basis vectors and no addition occurs.
+\end{proof}
+
+\begin{corollary}[Which-path, syntactically]\label{cor:whichpath}
+No choice of clause produces interference at a receipt whose continuation
+distinguishes its bound names. Whether a race interferes is decided by the
+continuation, not by the weights.
+\end{corollary}
+
+This is the design's central ergonomic fact. The programmer has two dials at
+exactly the site where the branching happens: the clause sets the amplitudes, and
+the continuation decides whether the branches are told apart. Arranging
+interference is arranging for the continuation to forget.
+
+\begin{remark}[Statistics]\label{rem:stats}
+$\Per(A)$ is the bosonic amplitude. A clause assigning the sign of $\sigma$ ---
+expressible when the algebra has additive inverses and the crisp sort can
+detect the relevant order --- gives $\Det(A)$ and hence fermionic statistics, in
+which coincident data annihilate. That the same syntactic slot produces both is a
+point in favour of the slot.
+\end{remark}
+
+\subsection{The minimal interferometer}
+
+Take $\V = \Cx$, $m = 2$, and a clause that returns $a$ on the identity
+assignment and $b$ on the transposition. With a symmetric continuation:
+
+\begin{lstlisting}
+new x, z in {
+  x!(Q1) | x!(Q2) |
+  for( y1 <- x & y2 <- x where psi ) { z!(*y1) | z!(*y2) }
+}
+\end{lstlisting}
+
+The single outcome $z!(*Q_1) \mid z!(*Q_2)$ carries amplitude $a + b$. Choosing
+$b = -a$ makes it zero. That normal form is operationally reachable --- indeed it
+is the \emph{only} reachable normal form --- so
+$\mathcal{D}(P) \neq \emptyset$ and Corollary~\ref{cor:adequacy}'s inclusion is
+strict. Replacing the continuation by $z_1!(*y_1) \mid z_2!(*y_2)$ restores two
+distinct outcomes with amplitudes $a$ and $b$, probabilities $|a|^2$ and $|b|^2$,
+and no cancellation whatever the phases.
+
+Three lines of rholang thus exhibit the entire phenomenon: a detector that never
+fires, and a which-path measurement that destroys the effect. It is the
+Hong--Ou--Mandel arrangement, with the channel $z$ playing the role of a single
+detector and the pair $z_1,z_2$ of two.
+
+\begin{remark}[What a rho context can and cannot do]\label{rem:back-to-fa}
+Note the consistency with \S\ref{sec:fa}. The context
+$\textsf{for}(y_1 \Leftarrow x\ \&\ y_2 \Leftarrow x \dots)\{z!(*y_1)\mid z!(*y_2)\}$
+does not observe the resolution of the race; it \emph{arranges} the race so that
+resolution leaves a trace in the support. This is precisely what was meant by a
+context acting as an interferometer, and it is the reason the enterprise has
+observable consequences without any context ever reading an amplitude.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{PLN-valued where-clauses}\label{sec:pln}
+
+\subsection{Why this slot invites PLN}
+
+MeTTaIL describes finitely presentable graph-structured lambda theories, and the
+control-flow layer is a rholang whose channels are typed by those language
+definitions. Probabilistic Logic Networks are the uncertain-inference framework
+developed for the OpenCog and Hyperon line of work, in which knowledge is
+annotated with truth values and inference rules carry truth-value formulas
+computing a conclusion's annotation from its premises'.
+
+The proposal of this note opens a door between them. If a \texttt{where} clause
+is valued in an algebra rather than in the Booleans, then a clause may be valued
+\emph{by an inference}: the propensity with which a communication fires is the
+truth value PLN currently assigns to the proposition that it should. Execution
+stops being gated by belief and starts being \emph{driven} by it. The scheduler
+and the reasoner become the same loop.
+
+This is a different use of the machinery from the quantum one, and it is worth
+being explicit that it is a different \emph{regime} rather than a different
+mechanism.
+
+\subsection{PLN truth values, briefly}
+
+We use PLN's \emph{simple truth values}: a pair $(\str,\conf) \in [0,1]^2$ of a
+strength, the estimated probability that a statement holds, and a confidence,
+reflecting how much evidence stands behind that estimate.\footnote{Confidence is
+formalised in several ways across the literature, including as the width of a
+confidence interval around the mean of a second-order distribution; the
+NARS-style count form $\conf = n/(n+k)$ for an evidence count $n$ and a personality
+parameter $k$ is the one easiest to read operationally, and we use it
+informally.} The independence-based deduction formula for term-logic transitivity
+is
+\[
+  \str_{AC} \;=\; \str_{AB}\str_{BC}
+  \;+\; \frac{(1-\str_{AB})(\str_C - \str_B \str_{BC})}{1 - \str_B},
+\]
+with a concept-geometry variant replacing the independence assumption by an
+assumption about the shape of concepts,
+$\str_{AC} = \str_{AB}\str_{BC} / \min(1, \str_{AB}+\str_{BC})$. Induction and
+abduction are obtained by chaining deduction with Bayes' rule. The quantity
+$\pow := \str \times \conf$, sometimes called the power of an uncertain
+statement, behaves multiplicatively under deduction in the regime where term
+probabilities are highly uncertain: $\pow_{AC} \approx \pow_{AB}\,\pow_{BC}$.
+
+\subsection{The resolution algebra, honestly}
+
+The design of \S\ref{sec:design} requires a commutative semiring. PLN's
+operations do not straightforwardly furnish one, and it is better to say where
+the difficulty lies than to paper over it.
+
+Multiplication is unproblematic. Conjunction of independent statements
+multiplies strengths, and confidences compose multiplicatively under the usual
+independence assumption, so $\tensorv$ may be taken componentwise; under the
+high-uncertainty regime this agrees with deduction on the power.
+
+Addition is the problem. PLN's operation for combining two estimates of the same
+proposition is \emph{revision}, a confidence-weighted average
+\[
+  \str \;=\; \frac{\str_1\conf_1 + \str_2\conf_2}{\conf_1+\conf_2},
+\]
+with an accompanying rule for the revised confidence. Revision is not the
+addition of a semiring: it is idempotent on equal arguments, it does not have
+$(0,\cdot)$ as a two-sided unit in the required sense, and it does not distribute
+over componentwise multiplication. Taking $\sumv$ to be revision therefore makes
+the one-step operator \eqref{eq:onestep} sensitive to the order in which
+candidates are aggregated, which is precisely the order the calculus refuses to
+fix.
+
+Two responses are available, and we recommend the first.
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=3pt]
+\item \textbf{PLN supplies values; $\Rnn$ supplies the algebra.} Let the graded
+sort contain ground formulae whose evaluation is a PLN inference, and let the
+clause's value be the resulting power $\pow = \str\times\conf \in [0,1]$, with
+$\sumv = +$ and $\tensorv = \times$ over $\Rnn$. Then $\V = \Rnn$, the semiring
+laws hold, and the whole apparatus of \S\S\ref{sec:design}--\ref{sec:semantics}
+applies unchanged. Deduction's multiplicativity on the power means that chaining
+inference and chaining communication agree, which is the coherence one wants.
+The confidence coordinate is not discarded: it enters the propensity, so a
+poorly-evidenced belief yields a rarely-taken branch rather than a forbidden one.
+\item \textbf{Carry $(\str,\conf)$ and weaken the algebra.} Keep the pair as the
+carrier and accept a lax structure in which aggregation is revision. This is more
+faithful to PLN but requires a canonical aggregation order, which must then be
+justified as not observable --- a substantial obligation, and one that
+reintroduces exactly the kind of implementation-visible choice the design was
+meant to abstract.
+\end{enumerate}
+
+\begin{principle}[Fuzzy inference drives execution]\label{prin:pln}
+Under the first response, a MeTTaIL rewrite fires with propensity equal to the
+power PLN currently assigns to the proposition, expressed as a graded ground
+formula in the rule's \texttt{where} clause, that the rewrite is warranted here.
+Because clauses are re-evaluated at every candidate against the current term
+(Proposition~\ref{prop:plastic}), revisions of belief take effect on the next
+step without any separate update mechanism.
+\end{principle}
+
+\subsection{Three regimes, one syntax}
+
+The point of Table~\ref{tab:algebras} is now visible. The same slot, with the
+same formula language and the same per-match evaluation, gives:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+\item $\Bool$ --- rholang 1.4, unchanged, by Theorem~\ref{thm:conservativity};
+\item $\Rnn$ --- stochastic execution, with PLN as a distinguished source of
+values, in which inference schedules computation;
+\item $\Cx$ --- coherent execution with interference, in which the clause is a
+scattering matrix by Theorem~\ref{thm:scattering}.
+\end{itemize}
+
+It is worth stating the boundary between the second and third plainly, since it
+is easy to blur. PLN values live in $[0,1]$ and carry no phase; PLN-driven
+execution is therefore stochastic and exhibits no cancellation. The interference
+regime requires additive inverses in the value algebra, which is a property of
+$\Cx$ and not of any probability-valued logic. What the two share is the
+mechanism; what separates them is whether $\sumv$ can cancel.
+
+\begin{remark}[A speculation worth naming, and not indulging]\label{rem:paraconsistent}
+PLN has been given paraconsistent formulations, and paraconsistent logics are
+one of the places complex or otherwise non-order-theoretic truth values have
+been contemplated. Whether a paraconsistent PLN would furnish a value algebra
+with cancellation --- and hence let inference and interference share not merely a
+slot but a semantics --- is a real question and not one this note attempts.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Implementation}\label{sec:impl}
+
+The design is deliberately small on the implementation side, and most of what it
+needs already exists.
+
+\paragraph{Candidate enumeration.} The store presentation gives the redex
+enumerator directly: the map from channels to rows of data and waiting
+continuations, together with the join index, is precisely $\Cand$. The one
+requirement the current representation does not meet is occurrence identity ---
+per-channel occupancy counts collapse the distinction between congruent data, and
+identifiers allocated during firing are not stable across branches. Candidates
+must be addressed by (channel, canonical slot), deterministically and
+branch-independently. This is the same addressing obligation that arises in the
+compilation route, and it should be solved once.
+
+\paragraph{Basis identity.} Interference is addition of coefficients on a common
+basis vector, so the implementation needs a canonical name for a term modulo
+structural congruence. The content-addressed store already supplies one. This
+also repairs a known defect: a configuration fingerprint that formats values to
+fixed decimal precision cannot distinguish $1$, $-1$ and $i$, and therefore
+cannot represent the very distinctions the grading exists to make.
+
+\paragraph{Clause evaluation.} The crisp sort is the existing condition language
+and its evaluator; the graded sort adds scalars, two binary operations and the
+graded modality. The modality is the only construct requiring successor
+exploration, and it takes the inference budget.
+
+\paragraph{Two readings out.} A simulator should emit both the support/Born
+reading and the coherent sum, since by Corollary~\ref{cor:adequacy} they differ
+exactly on the interference deficit. If they never differ on a corpus of test
+theories, the grading is doing nothing and the implementation is wrong.
+
+\paragraph{What retires.} Partition construction and its checked funnel; the
+requirement that keys be structural, as a precondition for partition locality;
+the update-function plumbing and the declarative update sub-language it wanted;
+and the class-global phase, which was in any case observationally inert.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Open threads}\label{sec:open}
+
+\begin{obligation}[Length-asymmetric reconvergence]\label{ob:asym}
+Theorem~\ref{thm:scattering} secures interference at a single join. The general
+question is which closed loops survive the causal quotient of
+Definition~\ref{def:causal} in pure rho --- that is, whether two causally
+inequivalent derivations of different lengths can reach a common term. Reflection
+is the natural suspect, since dropping a quoted process makes the residual
+communication count depend on which datum won. A negative answer would confine
+interference to joins; a positive one would open a second, non-local source.
+\end{obligation}
+
+\begin{obligation}[Normalisation]\label{ob:norm}
+\S\ref{ssec:fork} recommends the unnormalised reading with Born at observation.
+The alternative branches should be worked out far enough to confirm that the
+choice is a choice of observable rather than of correctness.
+\end{obligation}
+
+\begin{obligation}[Unitarity and extraction]\label{ob:unitary}
+Theorem~\ref{thm:scattering} makes a clause a matrix; nothing so far makes it
+unitary. Which graded clauses give isometries, and what syntactic condition
+corresponds to uniformisation, determines whether a graded program can be
+extracted to a circuit rather than merely simulated.
+\end{obligation}
+
+\begin{obligation}[Adaptivity and universality]\label{ob:klm}
+A continuation may install further joins depending on what it received, which is
+adaptivity. Whether adaptive graded joins reach a universal fragment --- the
+question KLM answers affirmatively for linear optics --- is the question on which
+a verdict about advantage ultimately rests.
+\end{obligation}
+
+\begin{obligation}[Categorical status]\label{ob:cat}
+The construction looks like a Kleisli category for the free-module monad of $\V$
+over terms modulo congruence, with the graded modality as the structure map of a
+coalgebra. Making this precise would connect the design to the existing
+coalgebraic account of the store denotation and its two-layer full abstraction.
+\end{obligation}
+
+\begin{obligation}[Paraconsistent values]\label{ob:para}
+Remark~\ref{rem:paraconsistent}: whether an inference calculus can supply a value
+algebra with cancellation.
+\end{obligation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}\label{sec:conc}
+
+The rho calculus does not say how its races are settled, and that silence is a
+parameter rather than a gap. Filling it differently gives different executions of
+the same program, and a programmer who wants to arrange interference needs to be
+able to write the filling down.
+
+The change proposed here is one line of grammar: let the \texttt{where} clause of
+the for-comprehension take values in a commutative semiring, and evaluate it once
+per candidate match rather than once per communication. Boolean values give back
+today's language exactly. Non-negative reals give stochastic execution, with
+probabilistic-logic inference as a natural source of values, so that what the
+system believes decides what it does next. Complex values give interference, and
+the clause becomes a scattering matrix whose permanent is the amplitude of the
+symmetric outcome.
+
+Two things about this were not evident at the outset. The first is that weight
+maps were not wrong but merely linear: they are the normal forms
+$\bigoplus_i v_i \tensorv \crisp{\chi_i}$, and the partition discipline that
+attended them was the price of making a lookup single-valued rather than a fact
+about weights. The second is that the recombination interference requires ---
+the half of the problem no weight map addressed --- was already in the language.
+A join over a contended channel has one candidate per assignment and one outcome
+per orbit of the continuation's symmetry, so whether a race interferes is decided
+by whether the continuation troubles to tell its inputs apart. That is a dial a
+programmer already knows how to turn.
+
+\end{document}
