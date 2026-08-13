@@ -135,7 +135,12 @@ makes MeTTaIL's execution engine and its reasoning engine the same loop: what
 fires next is decided by what the system currently believes. We give the
 resolution algebra this requires, and are explicit about which part of PLN's
 truth-value arithmetic supplies values and which part would have to be weakened
-to supply the algebra.
+to supply the algebra. A second worked example --- a mortal forager whose
+hypothesis is a PLN truth value in a \texttt{where} guard --- shows what the
+grading buys: a Boolean guard has no coordinate in which to record
+disappointment and cannot learn to stop, exploration and exploitation cease to
+be scheduled, and PLN's personality parameter, elsewhere set by taste, acquires
+an interior optimum fixed by the risk of the environment.
 \end{abstract}
 
 \tableofcontents
@@ -246,6 +251,15 @@ convenience.
 Probabilistic Logic Network truth values, making inference and execution one
 loop. We give the algebra honestly, including which of PLN's operations supply
 values and which would need weakening to supply a semiring.
+
+\item \textbf{A mortal forager} (\S\ref{sec:forager}). A second worked example,
+in the inference-driven regime. The complementary guard pair's dependence on
+negation in the hypothesis language dissolves
+(Proposition~\ref{prop:trichotomy}); the power has a fixed point at zero, so a
+belief needs prior evidence or an exploration disjunct
+(Proposition~\ref{prop:bootstrap}); confidence is invisible without an outside
+option (Remark~\ref{rem:cancel}); and the personality parameter $k$ acquires a
+metabolic optimum (Principle~\ref{prin:k}) --- a return to PLN as well as from it.
 \end{enumerate}
 
 \subsection{What this note does not do}
@@ -1294,6 +1308,298 @@ slot but a semantics --- is a real question and not one this note attempts.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{A second worked example: a mortal forager}\label{sec:forager}
+
+\S\ref{sec:shor} exercised the coherent regime. This section exercises the
+inference-driven one, and it is drawn from a setting where graded clauses have
+somewhere to go rather than being demonstrated in the abstract: the mortal
+scientist programme, in which a learner's hypotheses are already installed in
+\texttt{where} guards and every observation is charged against a finite token
+stack. There, a hypothesis in operational position is an experiment. Here we
+value that guard in PLN and ask what changes.
+
+The example is deliberately small --- one forager, one predicate, one belief ---
+and every number below is measured by a simulator that runs the clause as
+specified.
+
+\subsection{The setting}
+
+A forager meets a stream of specimens. Each is \emph{rich}, carrying a stack of
+$\sigma_R = 120$ tokens, or a \emph{decoy}, carrying $\sigma_D = 0$. Breaking one
+open costs $\kappa_{\rm break} = 40$, so opening a decoy is a pure loss. A
+structural predicate $\chi$ at depth two costs $\kappa_{\rm sense} = 2^2 = 4$ to
+evaluate and is \emph{evidence, not a decision procedure}: it is satisfied by
+$80\%$ of rich specimens and $30\%$ of decoys. The forager may instead graze a
+wall yielding $5$, which is the outside option. It starts with $120$ tokens and
+meets at most $400$ specimens; death is failure to fund.
+
+Two worlds. In world $A$ the base rate of rich specimens is $0.40$, so
+$\Pr[\text{rich} \mid \chi] = 0.64$ and opening a $\chi$-specimen is worth
+$+36.80$ in expectation. In world $B$ the base rate is $0.15$ and $\chi$ is
+satisfied by $40\%$ of decoys, so $\Pr[\text{rich}\mid\chi] = 0.26$ and opening
+is worth $-8.70$. The forager is not told which world it is in.
+
+\begin{lstlisting}
+new bel, prey, wall in {
+  bel!( (1, 0.5) ) |                    // (n, s): one unit of prior evidence
+
+  // the two branches race for the belief and the specimen
+  for( @(n,s) <- bel ; @spec <- prey  where  Chi(spec) * Pow(n,s) ) {
+    Break!(spec) | bel!( revise(n, s, spec) )
+  } |
+  for( @(n,s) <- bel ; @spec <- prey  where  g ) {
+    Graze!(*wall) | bel!( (n, s) )
+  }
+}
+\end{lstlisting}
+
+\noindent
+\texttt{Chi} is a crisp structural predicate entering through the indicator
+embedding $\crisp{-}$; \texttt{Pow(n,s)} is a graded ground formula evaluating to
+the PLN power $\str \cdot \conf$ with $\conf = n/(n+k)$; \texttt{*} is the graded
+conjunction $\tensorv$; and \texttt{g} is a scalar constant of $\V = \Rnn$. By
+\S\ref{ssec:permatch} both clauses are evaluated per candidate, so the forager's
+propensity to open \emph{this} specimen is $\str\conf$ against the wall's $g$.
+
+\begin{remark}[The belief is a message]\label{rem:belief-message}
+The belief sits on a channel as data. It is therefore in the tuple space like
+any other datum, which means it can be read, raced for, and taken. In the
+ecological reading this is not an implementation detail: testimony and the theft
+of a hypothesis are the same operation as predation, differing only in which
+namespace the name lives in.
+\end{remark}
+
+\subsection{What the graded clause replaces}
+
+The assay in the mortal scientist programme is a \emph{complementary guard pair}:
+one receipt guarded by $\varphi$ reporting confirmation, a second guarded by
+$\neg\varphi$ reporting refutation, and a third outcome $\bot$ when neither fires
+before the budget is exhausted. The pair is needed because a Boolean guard that
+does not fire is indistinguishable from one still waiting.
+
+This has a dependency worth naming: the second guard requires $\neg$ \emph{in the
+hypothesis language}, and a generated logic supplies negation only when the
+target logic specification does --- which several members of the generating
+family do not.
+
+\begin{proposition}[The trichotomy is the corners of the truth-value square]
+\label{prop:trichotomy}
+Valuing the guard at a PLN simple truth value $(\str,\conf)$ replaces the pair by
+one clause and its complement in the \emph{value algebra}: the confirming branch
+carries $\str\conf$, the refuting branch $(1-\str)\conf$, and neither fires with
+weight $1 - \conf$. Confirmation, refutation and $\bot$ are then the corners
+$\conf = 1, \str = 1$; $\conf = 1, \str = 0$; and $\conf = 0$ of the unit square,
+and $\bot$ becomes a coordinate rather than a residue.
+\end{proposition}
+
+The negation the assay needs has moved from the formula language, where it may
+not exist, to $[0,1]$, where $1 - \str$ always does. This is the same observation
+as \S\ref{sec:design}'s --- that negation does not survive to the graded sort ---
+read in the direction where it is a gain rather than a cost.
+
+\begin{remark}[Confidence needs an outside option to be visible]
+\label{rem:cancel}
+If the competing branch is the complement of the same belief, the confidence
+coordinate is a common factor: $\str\conf / (\str\conf + (1-\str)\conf) = \str$
+exactly, and $\conf$ cancels. Confidence changes behaviour only against an
+alternative whose weight does not scale with it. In this example that alternative
+is the wall, and in the ecology generally it is autotrophy. Grading a guard buys
+nothing unless the learner has something else to do.
+\end{remark}
+
+\subsection{The bootstrap trap}
+
+\begin{proposition}[Zero is a fixed point of the power]\label{prop:bootstrap}
+A belief with no evidence has $\conf = 0$, hence power $0$, hence a clause value
+of $0$, hence --- by the support reading of Remark~\ref{rem:oneslot} --- a
+receipt that never fires. It therefore never acquires evidence.
+\end{proposition}
+
+Measured: a forager initialised with $n = 0$ opens $0.00$ specimens over $400$
+encounters in either world and ends with $520.0$ tokens, exactly the grazing
+baseline, against $3543.7$ for the same forager given a single unit of prior
+evidence in world $A$. The trap is not death but stasis.
+
+The remedy is available inside the clause language and is worth stating as such:
+either the belief carries prior evidence $n_0 \geq 1$, which is PLN's own
+convention, or the clause is $\mathrm{Pow}(n,s) \sumv \varepsilon$ for a scalar
+$\varepsilon$ --- \emph{exploration is a disjunct}. We use the former below.
+
+\subsection{Two worlds, four foragers}
+
+Four arms. \textsc{naive} has no prior evidence. \textsc{crisp} is the mechanism
+as it stands: the guard is $\chi$, weight $1$ when satisfied, confidence
+invisible. \textsc{individual} holds a hypothesis about the specimen, so its
+evidence count cannot pass $1$ --- the specimen is destroyed by the assay.
+\textsc{pln} holds a class hypothesis and accumulates. All at $k = 4$, over
+$20{,}000$ lives each.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+world & arm & survival & terminal & lifetime & opened & decoys \\
+\midrule
+$A$ & \textsc{naive} & $1.0000$ & $520.0$ & $400.0$ & $0.00$ & $0.00$ \\
+$A$ & \textsc{crisp} & $0.8501$ & $\mathbf{4084.7}$ & $341.6$ & $113.83$ & $40.94$ \\
+$A$ & \textsc{individual} & $0.9478$ & $2117.3$ & $381.2$ & $50.68$ & $18.20$ \\
+$A$ & \textsc{pln} & $\mathbf{0.9485}$ & $3543.7$ & $381.6$ & $95.53$ & $34.36$ \\
+\midrule
+$B$ & \textsc{naive} & $1.0000$ & $\mathbf{520.0}$ & $400.0$ & $0.00$ & $0.00$ \\
+$B$ & \textsc{crisp} & $0.0029$ & $27.4$ & $30.5$ & $8.72$ & $6.44$ \\
+$B$ & \textsc{individual} & $0.2121$ & $95.2$ & $166.8$ & $13.65$ & $10.10$ \\
+$B$ & \textsc{pln} & $0.0509$ & $37.2$ & $125.2$ & $14.85$ & $10.99$ \\
+\bottomrule
+\end{tabular}
+\caption{Four foragers, two worlds, $k=4$.}\label{tab:forager}
+\end{table}
+
+Two things in this table are worth stating as findings rather than data.
+
+First, in world $A$ the crisp forager has the \emph{highest} mean terminal stack
+and the \emph{lowest} survival. The confidence coordinate does not buy yield; it
+buys variance. A forager that acts on a satisfied guard from its first encounter
+does better on average and dies more often, which is the trade a mortal learner
+is actually facing and which a Boolean guard cannot express.
+
+Second, and more sharply: in world $B$ the crisp forager is essentially extinct
+at $0.29\%$ survival. It cannot do otherwise. Its policy is the formula, and the
+formula does not change, so \emph{a Boolean guard has no coordinate in which to
+record disappointment}. The graded forager's policy is the formula's
+\emph{value}, which moves. Here is a single life in world $B$:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+opening & $\str$ & $\conf$ & power & $\Pr[\text{open}]$ \\
+\midrule
+1 & $0.7500$ & $0.3333$ & $0.2500$ & $0.3333$ \\
+2 & $0.5000$ & $0.4286$ & $0.2143$ & $0.3000$ \\
+3 & $0.3750$ & $0.5000$ & $0.1875$ & $0.2727$ \\
+5 & $0.2500$ & $0.6000$ & $0.1500$ & $0.2308$ \\
+\bottomrule
+\end{tabular}
+\caption{Learning to stop. Strength falls as decoys accumulate; confidence
+rises; the product falls, and with it the propensity to open.}\label{tab:trace}
+\end{table}
+
+\begin{remark}[Exploration and exploitation are not scheduled]
+\label{rem:explore}
+Nothing in the clause is a schedule. Early behaviour is cautious because $\conf$
+is small, late behaviour is decisive because $\conf$ is large, and the transition
+rate is set by how fast evidence arrives. The usual hyperparameter is absent
+because the quantity it approximates is a coordinate of the truth value.
+\end{remark}
+
+\subsection{Amortisation, measured}
+
+The class hypothesis and the individual hypothesis differ in exactly one place:
+the individual's evidence count cannot grow, because the assay destroys its
+subject. That is not a difference in what can be believed but in what can be
+\emph{accumulated}, and PLN's confidence is the ledger of accumulation.
+
+Measured over survivors in world $A$ at $k=4$, against the true posterior
+$0.6400$:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+arm & mean $|\str - \text{truth}|$ & mean evidence count & survivors \\
+\midrule
+\textsc{individual} & $0.2039$ & $2.00$ & $18{,}917$ \\
+\textsc{pln} & $\mathbf{0.0383}$ & $101.54$ & $18{,}900$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+A factor of $5.3$ in accuracy, for evidence that costs nothing extra --- the
+openings happen either way; only the bookkeeping differs. This is the
+amortisation advantage in its defensible form. It says that reusable class
+hypotheses recover their acquisition cost across instances and individual ones
+cannot, which is a selective advantage; it does not say that individual
+hypotheses have no value, and the table shows they do not (the
+\textsc{individual} arm outlives \textsc{crisp} in both worlds).
+
+\subsection{The personality parameter acquires a metabolic optimum}
+
+In PLN and its relatives, $k$ is a free parameter: the amount of evidence at
+which confidence reaches one half. It is chosen by the designer's taste. In a
+mortal ecology it is not free, because it is priced on both sides. A credulous
+forager (small $k$) becomes confident before it has grounds and opens decoys it
+cannot afford; a sceptical one (large $k$) never becomes confident enough to eat.
+
+Scored by mean $\log$ terminal wealth --- the criterion appropriate to a
+multiplicative, absorbing process, where ruin contributes zero rather than a
+small number --- the optimum is interior. World $A$, $40{,}000$ lives per point:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lrrrrrrrrrrr@{}}
+\toprule
+$k$ & $4$ & $5$ & $6$ & $7$ & $8$ & $\mathbf{9}$ & $10$ & $12$ & $14$ & $16$ & $20$ \\
+\midrule
+survival & $.944$ & $.952$ & $.959$ & $.967$ & $.970$ & $.976$ & $.979$ & $.984$ & $.988$ & $.991$ & $.995$ \\
+$\log$-fitness & $7.744$ & $7.785$ & $7.818$ & $7.853$ & $7.852$ & $\mathbf{7.874}$ & $7.872$ & $7.858$ & $7.832$ & $7.798$ & $7.715$ \\
+\bottomrule
+\end{tabular}
+\caption{An optimal degree of scepticism, $k^\ast = 9$.}\label{tab:ksweep}
+\end{table}
+
+\noindent
+In an ensemble where each life draws world $A$ or world $B$ with equal
+probability --- the honest setting, since a learner does not know which world it
+is in --- the optimum moves to $k^\ast = 64$, with $\log$-fitness $6.343$,
+$\mathbf{6.431}$, $6.354$, $6.316$, $6.263$ at $k = 32, 64, 96, 128, 512$. In
+world $B$ alone it runs to the boundary, because when the evidence is a trap the
+best policy is abstinence and large $k$ is how the forager approximates it.
+
+\begin{principle}[Scepticism is priced by the environment]\label{prin:k}
+$k^\ast$ is not a property of the reasoner. It rises with the risk of the world
+the reasoner is in --- here by a factor of about seven between a world whose
+evidence is sound and an ensemble containing a trap. A parameter that uncertain
+inference leaves to taste is, in a mortal setting, selected.
+\end{principle}
+
+We regard this as the example's main return, and note that it runs in both
+directions: the graded clause gives the ecology a principled exploration
+schedule, and the ecology gives PLN a selection criterion for a parameter it
+otherwise has to stipulate.
+
+\subsection{Up the fractal}\label{ssec:fractal}
+
+The forager is a single learner. The programme this example is drawn from
+continues upward --- to learners that compose by parallel composition over shared
+namespaces, to lineages, and to populations --- and the graded clause has
+something to say at each level. We record two observations and claim neither.
+
+The first is that PLN's operation for combining two estimates of the same
+proposition is \emph{revision}, which adds evidence counts. Two learners that
+share a hypothesis namespace and exchange truth values therefore have
+superadditive confidence, in a setting where the same programme's own results
+make metabolism subadditive: tokens are conserved and formulae are not. Testimony
+would then be the operation at which a composite strictly exceeds the sum of its
+parts, and PLN would say by how much.
+
+The second is the hazard attending the first. Revision assumes the evidence being
+combined is independent. Two learners who both heard from a third double-count,
+and confidence rises with no evidence behind it. \emph{Belief inflation is the
+epistemic analogue of minting} --- and where the conservation law of a token
+economy forbids minting outright, nothing in the epistemic layer forbids this.
+Whether a namespace discipline can restore conservation to the evidence ledger
+seems to us the right question to ask next.
+
+Both of these need the truth value carried as a pair rather than collapsed to its
+power, which puts them outside the algebra recommended in \S\ref{sec:pln} and
+into the lax structure set aside there. They belong to a subsequent paper, along
+with the back-patching of the results above into the programme they came from.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Implementation}\label{sec:impl}
 
 The design is deliberately small on the implementation side, and most of what it
@@ -1375,6 +1681,15 @@ coalgebra. Making this precise would connect the design to the existing
 coalgebraic account of the store denotation and its two-layer full abstraction.
 \end{obligation}
 
+\begin{obligation}[Testimony, and conservation of evidence]\label{ob:fractal}
+\S\ref{ssec:fractal}. Carrying $(\str,\conf)$ rather than the power puts
+revision back in play, which makes confidence superadditive under testimony and
+opens the double-counting failure --- belief inflation as the analogue of
+minting. Both require the lax algebra set aside in \S\ref{sec:pln} and belong to
+a subsequent paper, together with back-patching \S\ref{sec:forager}'s results
+into the mortal-scientist programme they are drawn from.
+\end{obligation}
+
 \begin{obligation}[Paraconsistent values]\label{ob:para}
 Remark~\ref{rem:paraconsistent}: whether an inference calculus can supply a value
 algebra with cancellation.
@@ -1408,6 +1723,17 @@ and the fragment computes $\mathsf{PP}$. The isometry condition is therefore not
 a compilation convenience but the boundary between a quantum language and a
 magic one, and the fragment on which it can be checked --- clauses without the
 graded modality --- is precisely the fragment a circuit compiler can accept.
+
+The inference-driven regime was exercised too, on a mortal forager whose
+hypothesis is a PLN truth value sitting in a guard. Three things came out of it.
+The complementary guard pair such a learner needs in order to tell refutation
+from patience turns out to require negation in the hypothesis language, which a
+generated logic need not supply --- and grading moves that negation into $[0,1]$,
+where it always exists. A Boolean guard has no coordinate in which to record
+disappointment, so it cannot learn to stop, and in a world whose evidence is a
+trap it does not survive. And PLN's personality parameter, which uncertain
+inference leaves to the designer's taste, acquires an interior optimum that rises
+with the risk of the environment: scepticism, priced.
 
 Two things about this were not evident at the outset. The first is that weight
 maps were not wrong but merely linear: they are the normal forms
