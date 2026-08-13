@@ -120,6 +120,15 @@ Boolean $\V$ recovers rholang 1.4 exactly; $\Rnn$ gives stochastic execution;
 $\Cx$ gives interference, including cancellation of an operationally reachable
 outcome.
 
+As a worked example we build Shor's algorithm in the fragment, with every number
+computed by a simulator that enumerates candidates rather than multiplying gate
+matrices. Universality is easy and modular exponentiation is ordinary rholang,
+but the exercise turns up a hazard rather than a triumph: with clauses
+unconstrained, renormalising at observation is post-selection, and the fragment
+computes $\mathsf{PP}$. We therefore state the isometry condition that contains
+it, and observe that the fragment on which it is decidable is exactly the
+fragment a compiler to circuits can accept.
+
 Finally we observe that the same slot accepts truth values in the sense of
 Goertzel's Probabilistic Logic Networks. Valuing where-clauses by PLN inference
 makes MeTTaIL's execution engine and its reasoning engine the same loop: what
@@ -223,6 +232,15 @@ weight map never addressed --- requires no new term former. A join
 whose outcomes coincide precisely when the continuation is symmetric in the bound
 names, and the graded clause supplies the $m!$ amplitudes. The clause is a
 scattering matrix and the symmetric outcome carries its permanent.
+
+\item \textbf{Shor's algorithm, and an overshoot} (\S\ref{sec:shor}). The
+fragment is universal for quantum circuits (Lemmas~\ref{lem:1q}--\ref{lem:2q}),
+the circuit's DAG is the term's causal order (Proposition~\ref{prop:dag}), and
+the classical part costs nothing (Corollary~\ref{cor:modexp}). But with clauses
+unconstrained the fragment decides $\mathsf{PP}$ by post-selection
+(Proposition~\ref{prop:postbqp}), so the isometry condition of
+Definition~\ref{def:isometric} is a containment requirement rather than a
+convenience.
 
 \item \textbf{PLN-valued clauses} (\S\ref{sec:pln}). The same slot accepts
 Probabilistic Logic Network truth values, making inference and execution one
@@ -924,6 +942,231 @@ observable consequences without any context ever reading an amplitude.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{A worked example: Shor's algorithm}\label{sec:shor}
+
+The design of \S\ref{sec:design} was derived from what interference requires,
+not from the circuit model, so it is a fair question whether it reaches the
+standard algorithms. It does. The instructive part is not that the fragment turns
+out expressive enough but that it turns out \emph{too} expressive, which
+\S\ref{ssec:hazard} addresses and which changes the status of one of this note's
+open threads.
+
+Every number reported in this section is computed by a simulator implementing
+Definition~\ref{def:denotation} literally: it enumerates the candidates at each
+site and adds coefficients on coinciding outcomes. Nothing in it multiplies gate
+matrices. Matrices appear only as the values a clause returns on a candidate.
+
+\subsection{A qubit and a gate}\label{ssec:gadget}
+
+\begin{definition}[Wire encoding]\label{def:wire}
+A \emph{qubit} is a channel carrying exactly one of two designated data. Writing
+$a_0,a_1$ for the two, the basis states are $q!(a_0)$ and $q!(a_1)$.
+\end{definition}
+
+\begin{lstlisting}
+new q, w, q' in {
+  q!(*in) | w!(a0) | w!(a1) |
+  for( v <- q & u1 <- w & u2 <- w where psi ) { q'!(*u1) }
+}
+\end{lstlisting}
+
+\begin{lemma}[Arbitrary one-qubit gate]\label{lem:1q}
+The site above has exactly two candidates, the bijections
+$\{u_1,u_2\} \to \{a_0,a_1\}$. Each consumes every datum on $q$ and on $w$, so
+no residual records which fired. The outcomes are $q'!(a_0)$ and $q'!(a_1)$;
+they are distinct, and neither mentions $v$, hence they are the \emph{same two
+terms} for either input encoding. Therefore the one-step operator restricted to
+$\mathrm{span}\{q!(a_0), q!(a_1)\}$ is the matrix
+$A_{ij} = \sem{\psi}(v \mapsto a_i,\; u_1 \mapsto a_j)$, and since $\psi$ may
+mention both $v$ and $u_1$, every $2\times 2$ matrix over $\V$ is realised.
+\end{lemma}
+
+\begin{remark}[Two erasures, not one]\label{rem:twoerasures}
+Theorem~\ref{thm:scattering} identified outcomes of \emph{different candidates at
+one site}, which is recombination within a superposition. A gate needs the other
+identification: outcomes at \emph{different input basis states} must coincide,
+which is what makes the site a linear map into a fixed codomain rather than a
+family of unrelated branchings. Both are bought by the same device --- a join
+consumes everything, and the continuation re-emits without mentioning what was
+consumed. That the join's totality purchases both erasures is the reason no
+further term former is needed here either.
+\end{remark}
+
+\begin{lemma}[Arbitrary two-qubit gate]\label{lem:2q}
+Joining two input channels with two ancilla channels gives
+$2 \times 2 = 4$ candidates and four distinct outcomes indexed by the pair of
+$u_1$-assignments. The clause may mention both input data and both assignments,
+so every $4 \times 4$ matrix is realised, including entangling ones. Diagonal
+gates are the case where the clause vanishes off the diagonal, and by
+Remark~\ref{rem:oneslot} those candidates simply do not fire.
+\end{lemma}
+
+\subsection{Composition, and where the circuit's wires went}
+
+\begin{proposition}[The circuit's DAG is the term's causal order]\label{prop:dag}
+A gadget is enabled exactly when its input channels carry data. Composing
+gadgets in series on fresh channels therefore makes the data dependency of the
+term equal to the wire structure of the circuit, and every reduction order is a
+linear extension of the circuit's dependency DAG. No scheduling discipline is
+required and none is expressible: the term does not encode the circuit's order,
+it \emph{is} that order.
+\end{proposition}
+
+Proposition~\ref{prop:causal} is load-bearing here rather than hygienic. Gates in
+one circuit layer are independent redexes, so without the causal quotient a layer
+of $n$ gates would contribute a factor $n!$ from counting linearisations.
+Measured, for $n$ independent one-qubit gadgets: the causal sum gives squared
+norm $1.000000$ for $n = 2,3,4$, while summing over interleavings inflates it by
+exactly $2$, $6$ and $24$.
+
+\subsection{The classical part is free}
+
+\begin{proposition}[Deterministic communication is amplitude-transparent]\label{prop:free}
+A communication with a single candidate contributes the clause's value on that
+candidate, which for a crisp clause is $1$. Hence amplitudes are unchanged by
+deterministic reduction, and the \emph{length} of a derivation does not affect
+its weight.
+\end{proposition}
+
+\begin{corollary}\label{cor:modexp}
+Any ordinary rho program runs inside every branch of a superposition at no cost
+in the semantics. In particular modular exponentiation --- the expensive part of
+Shor's algorithm, and the part usually requiring laborious reversible
+compilation --- is written as ordinary rholang.
+\end{corollary}
+
+Measured: the block computing $x \mapsto 7^x \bmod 15$ carries a $16$-term
+superposition to a $16$-term superposition with norm $1.000000000000$, exactly
+preserved.
+
+\subsection{The instance, assembled}
+
+\begin{theorem}[Expressibility]\label{thm:shor}
+For $N$ with $n = \lceil \log_2 N\rceil$, Shor's algorithm is a graded rho term
+using $O(n^2)$ gadgets of arity at most two for the quantum Fourier transform,
+$O(n^3)$ deterministic communications for modular exponentiation, and a term
+size and reduction depth polynomial in $n$.
+\end{theorem}
+
+Two verifications.
+
+\emph{The transform.} The QFT assembled from the gadgets of
+Lemmas~\ref{lem:1q}--\ref{lem:2q} --- Hadamards, controlled phases and swaps, in
+the standard decomposition --- was compared entry by entry against the discrete
+Fourier matrix $\omega^{jk}/\sqrt{2^n}$. Worst entry error: $2.7\times 10^{-16}$
+at $n=2$, $1.4\times 10^{-15}$ at $n=3$, $3.8\times 10^{-15}$ at $n=4$.
+
+\emph{The instance.} $N=15$, $a=7$ (so $r=4$), with four counting and four work
+qubits. The run fires $8$ one-qubit and $8$ two-qubit gadgets, evaluating $390$
+candidates in all, and ends with $16$ configurations carrying nonzero amplitude.
+The counting register reads
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lccccl@{}}
+\toprule
+outcome $c$ & $0$ & $4$ & $8$ & $12$ & all others \\
+\midrule
+probability & $0.250000000$ & $0.250000000$ & $0.250000000$ & $0.250000000$ & $0$ \\
+\bottomrule
+\end{tabular}
+\caption{Counting-register distribution, total $1.000000000000$.}\label{tab:shor}
+\end{table}
+
+\noindent
+Continued fractions on $4/16$ and $12/16$ give $r = 4$; then
+$\gcd(7^2-1,15) = 3$ and $\gcd(7^2+1,15) = 5$.
+
+The zeroes in Table~\ref{tab:shor} are the point. Twelve of the sixteen outcomes
+are operationally reachable --- some derivation of the term produces each of them
+--- and carry amplitude zero. By Definition~\ref{def:deficit} they constitute the
+interference deficit $\mathcal{D}(P)$, and by Corollary~\ref{cor:adequacy} the
+inclusion $\supp(\sem{P}) \subseteq \Reach(P)$ is strict by exactly those twelve.
+Shor's algorithm, in this semantics, \emph{is} a large interference deficit
+arranged on purpose.
+
+\subsection{The hazard: unnormalised clauses buy post-selection}\label{ssec:hazard}
+
+\S\ref{ssec:fork} chose the unnormalised reading, with the Born rule applied at
+observation. That was the right call for the degenerate race, but nothing in
+\S\S\ref{sec:design}--\ref{sec:semantics} requires a clause matrix to be an
+isometry. A non-isometric clause shrinks the norm, and renormalising at
+observation is precisely post-selection on the surviving branch.
+
+\begin{proposition}[Overshoot]\label{prop:postbqp}
+With $\V = \Cx$ and arbitrary clauses, the graded fragment with the Born reading
+decides $\mathsf{PostBQP}$, and hence $\mathsf{PP}$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Lemmas~\ref{lem:1q}--\ref{lem:2q} give universal quantum circuits. The clause
+$\mathrm{diag}(1,\epsilon)$ is expressible and non-isometric; applying it and
+normalising at observation implements post-selection on the first outcome up to
+error $O(\epsilon)$. Conversely the model is simulable with post-selection.
+Aaronson's identification of $\mathsf{PostBQP}$ with $\mathsf{PP}$ gives the
+second equality.
+\end{proof}
+
+Measured, to show that the semantics charges nothing for it: a Hadamard layer on
+$n$ qubits followed by $\mathrm{diag}(1,10^{-3})$ on each wire leaves a surviving
+norm of $2.5\times 10^{-1}$, $1.25\times 10^{-1}$, $6.25\times 10^{-2}$,
+$3.13\times 10^{-2}$ for $n = 4,6,8,10$ --- falling as $2^{-n/2}$ --- while the
+renormalised probability of the all-zero string is
+$0.999996$, $0.999994$, $0.999992$, $0.999990$. The filter is free.
+
+So the fragment as specified in \S\ref{sec:semantics} is not a quantum
+programming language. It is a post-selected one, and it computes $\mathsf{PP}$
+--- far more than Shor, and far more than any device. The containment condition
+must be stated.
+
+\begin{definition}[Isometric clause]\label{def:isometric}
+Let $r$ be a receipt site, let $I$ index the input configurations on which $r$ is
+enabled, and let $O$ index the outcomes. The clause $\psi$ at $r$ is
+\emph{isometric} when the matrix $A_{io} := \sum_{\sigma \in \Cand:\,
+\Out(\sigma)=o} \sem{\psi}(\sigma)$, taken at input $i$, satisfies
+$A^{\dagger}A = \mathbb{1}$.
+\end{definition}
+
+\begin{proposition}[Decidability of the condition]\label{prop:decidable}
+For a clause of the normal form of Theorem~\ref{thm:dnf} with constant
+$v_i \in V$ and crisp $\chi_i$, the matrix $A$ is a finite table computable from
+the clause and the site's arity, and isometry is decidable by inspection. For
+clauses using the graded modality $\langle K\rangle_\V$ the entries depend on
+the reachable successors and no such decision procedure is immediate.
+\end{proposition}
+
+This gives a natural stratification, and it is the same one extraction wants:
+\emph{the modality-free fragment with isometric clauses is the extractable
+fragment}, and it is the fragment a compiler to circuits can consume. Clauses
+using $\langle K\rangle_\V$ remain available for the stochastic and
+inference-driven regimes of \S\ref{sec:pln}, where no unitarity is expected of
+them.
+
+\subsection{What the example shows, and what it does not}
+
+It shows that expressiveness is not the obstacle: the fragment is universal for
+quantum circuits, and the classical portion of a quantum algorithm is written as
+ordinary rholang.
+
+It does not show that graded rho has a quantum idiom of its own. Every gate above
+is a hand-built join gadget, and mobility, reflection and name-passing sit idle
+throughout; the encoding is circuit-shaped, and a circuit-shaped encoding
+demonstrates capability rather than fit. The one primitive the design offers that
+a circuit does not hand over directly is Theorem~\ref{thm:scattering}: an
+$m$-fold join is a BosonSampling instance in a single term former. Since
+candidate sets are permutation sets, the ambient symmetry group of the design is
+$S_m$ rather than $\mathbb{Z}_N$, which suggests that a native algorithm --- if
+there is one --- would sit nearer the non-abelian hidden subgroup problem than
+near Shor. We record the direction without claiming it.
+
+Finally, writing Shor is not running Shor. Evaluating the denotation classically
+is exponential; the simulator used for this section is a state-vector simulator
+wearing a process calculus. The value of the term is as a \emph{compilation
+source}, and Proposition~\ref{prop:decidable} says exactly which terms a
+compiler can accept.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{PLN-valued where-clauses}\label{sec:pln}
 
 \subsection{Why this slot invites PLN}
@@ -1107,11 +1350,15 @@ The alternative branches should be worked out far enough to confirm that the
 choice is a choice of observable rather than of correctness.
 \end{obligation}
 
-\begin{obligation}[Unitarity and extraction]\label{ob:unitary}
-Theorem~\ref{thm:scattering} makes a clause a matrix; nothing so far makes it
-unitary. Which graded clauses give isometries, and what syntactic condition
-corresponds to uniformisation, determines whether a graded program can be
-extracted to a circuit rather than merely simulated.
+\begin{obligation}[Enforcing isometry]\label{ob:unitary}
+\emph{Upgraded by \S\ref{ssec:hazard} from an open thread to a containment
+requirement.} Definition~\ref{def:isometric} states the condition and
+Proposition~\ref{prop:decidable} says it is decidable on the modality-free
+fragment. What remains is to turn that into a static discipline --- a judgement
+on clauses, checked at elaboration, refusing non-isometric clauses in a
+declared coherent mode while leaving them available in the stochastic and
+inference-driven modes where no unitarity is expected. Until that exists, a
+graded program should be read as post-selected.
 \end{obligation}
 
 \begin{obligation}[Adaptivity and universality]\label{ob:klm}
@@ -1149,6 +1396,18 @@ probabilistic-logic inference as a natural source of values, so that what the
 system believes decides what it does next. Complex values give interference, and
 the clause becomes a scattering matrix whose permanent is the amplitude of the
 symmetric outcome.
+
+Shor's algorithm fits, and fitting it was informative in an unexpected
+direction. Universality is easy, the classical portion of the algorithm is
+ordinary rholang, and the algorithm's characteristic behaviour shows up in this
+semantics as a large interference deficit arranged on purpose --- twelve of
+sixteen reachable outcomes carrying amplitude zero. What the exercise exposed is
+that the fragment as first specified reaches too far: with clause matrices
+unconstrained, the renormalisation performed at observation is post-selection,
+and the fragment computes $\mathsf{PP}$. The isometry condition is therefore not
+a compilation convenience but the boundary between a quantum language and a
+magic one, and the fragment on which it can be checked --- clauses without the
+graded modality --- is precisely the fragment a circuit compiler can accept.
 
 Two things about this were not evident at the outset. The first is that weight
 maps were not wrong but merely linear: they are the normal forms
