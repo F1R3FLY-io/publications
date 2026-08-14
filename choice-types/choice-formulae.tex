@@ -1,0 +1,1439 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage[T1]{fontenc}
+\usepackage{palatino}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[hidelinks]{hyperref}
+\setlength{\emergencystretch}{2.5em}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{principle}{Principle}
+\newtheorem{construction}{Construction}
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{question}{Question}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+\newcommand{\V}{\mathcal{V}}
+\newcommand{\sumv}{\oplus}
+\newcommand{\bigsumv}{\bigoplus}
+\newcommand{\tensorv}{\otimes}
+\newcommand{\Bool}{\mathbb{B}}
+\newcommand{\Rnn}{\mathbb{R}_{\geq 0}}
+\newcommand{\Cx}{\mathbb{C}}
+\newcommand{\Cand}{\mathrm{Cand}}
+\newcommand{\Out}{\mathrm{Out}}
+\newcommand{\Proc}{\mathrm{Proc}}
+\newcommand{\scong}{\equiv}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\crisp}[1]{\lceil #1 \rceil}
+\newcommand{\AC}{\mathrm{AC}}
+\newcommand{\DC}{\mathrm{DC}}
+\newcommand{\CC}{\mathrm{CC}}
+\newcommand{\LLPO}{\mathrm{LLPO}}
+\newcommand{\LPO}{\mathrm{LPO}}
+\newcommand{\WKL}{\mathrm{WKL}}
+\newcommand{\WWKL}{\mathrm{WWKL}}
+\newcommand{\lw}{\leq_{\mathrm{W}}}
+\newcommand{\ew}{\equiv_{\mathrm{W}}}
+\newcommand{\Wstar}{\star}
+\newcommand{\Bai}{\mathbb{N}^{\mathbb{N}}}
+\newcommand{\Can}{2^{\mathbb{N}}}
+\newcommand{\rbisim}{\sim_{r}}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=none,
+  xleftmargin=1.4em,
+  showstringspaces=false
+}
+
+\title{\bfseries Choice Principles as Graded Where-Clauses\\[3pt]
+\large One programming paradigm at every altitude of the Weihrauch lattice}
+
+\author{L. Gregory Meredith\\
+\small F1R3FLY.io / F1R3FLY Industries\\
+\small \texttt{lgreg.meredith@gmail.com}}
+
+\date{Research Note --- August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Two companion notes leave a seam between them. One \cite{choicesched} proposes a
+Curry--Howard correspondence for nondeterminism in which choice principles are the
+types and fair schedulers are the terms, and lists ``the scheduler calculus'' as an
+open problem: the term language does not exist. The other \cite{gradedwhere} supplies
+a term-level paradigm --- the \texttt{where} clause of a for-comprehension, valued not
+in Booleans but in a resolution algebra $\V$, evaluated per match --- and shows that
+one syntax covers the Boolean, stochastic, quantum and probabilistic-logic regimes.
+This note joins them. We argue that a graded clause is not a choice function but a
+\emph{quantifier} in the sense of Escard\'o--Oliva, that a resolver is a
+\emph{selection function}, and that the monad morphism between them is exactly the
+statement that a resolver realises a clause. Attainability of the induced quantifier
+is then a sharp dividing line, and we compute where it falls. We extend the graded
+sort with a fixed-point operator --- omitted by design in \cite{gradedwhere} --- and
+show that without it every graded clause sits at the bottom of the hypercomputation
+stalk. With it, three independent engines of ascent become available: recursion
+\emph{depth}, candidate \emph{width}, and \emph{reflection}. The first two are
+incomparable, which is the syntactic shadow of the incomparability of $\CC$ and weak
+K\"onig's lemma in the Weihrauch lattice, and hence of that lattice being a lattice and
+not a chain. We then write down a clause schema for each of
+$\LLPO$, $\CC$, $\WKL$, $\WWKL$, $\lim$, $\DC$ and closed choice on Baire space, each
+inhabiting the same \texttt{where} slot, so that a scheduler's choice type is readable
+off its clause. Full $\AC$ is reachable, by exactly two routes: an \emph{aperture}
+channel fed by the environment rather than by the term, and \emph{reflection} --- and
+we note that Krivine realises dependent choice with a \texttt{quote} instruction which
+the rho calculus has as a term former. We show that the complex-valued regime is
+\emph{transverse} to the lattice rather than high in it, that fairness disciplines are
+clause combinators rather than typing side-conditions, and that the mechanism buying
+$\AC$ is the mechanism that threatens subject reduction --- which is the open hinge of
+\cite{agency} in syntactic dress. Every number reported is computed by the
+accompanying \texttt{choicesim.py}.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+
+\subsection{Two notes and the seam between them}
+
+The note \cite{choicesched} proposes that the mathematical theory of choice is a
+declarative language for nondeterminism and the theory of fairness and scheduling its
+term language: choice principles are the types, schedulers are the terms, running a
+schedule is normalisation. Its dictionary is suggestive and its metatheory is
+well-posed --- progress is fairness, subject reduction is the statement that scheduling
+cannot bootstrap an oracle. But its second open problem, P2, is the term language
+itself: \emph{define the scheduler calculus}. Nothing in the note says what a scheduler
+looks like as a piece of syntax a programmer writes.
+
+The note \cite{gradedwhere} was written for a different purpose --- to give syntactic
+expression to the resolution of nondeterminism so that a programmer can arrange
+quantum interference --- and it arrives at a paradigm. The for-comprehension of rholang
+1.4 already carries a \texttt{where} clause. Let its condition take values not in
+$\Bool$ but in a commutative semiring $\V$, and let it be evaluated \emph{per match},
+once for each candidate assignment of data to patterns. Then one syntax covers
+Boolean gating, Gillespie propensities, Born amplitudes, Viterbi decoding, tropical
+cost-optimisation and PLN-driven inference; the resolver is the choice of $\V$.
+
+The seam is obvious once stated. \cite{gradedwhere} has a syntax for resolution and no
+theory of how much power a given resolution costs. \cite{choicesched} has a theory of
+how much power a resolution costs and no syntax. The essay both descend from
+\cite{agency} says what the join should look like: the choice type $\chi(c)$ of a cut
+is a semantic invariant, not in general computable, but ``approximable from above by
+\emph{types} \dots\ the term assignment of the companion note is the effective
+approximation of the decoration, which is why a factorisation defined semantically can
+nonetheless be certified syntactically.'' A graded clause is exactly such an effective
+approximation, and this note builds it.
+
+\subsection{The thesis}
+
+\begin{quote}
+\emph{One \texttt{where} slot suffices at every altitude. What changes as one climbs
+the choice hierarchy is not the programming construct but the shape of the formula in
+it: the presence and polarity of a fixed point, the width of the candidate set it
+ranges over, and whether it quantifies through the namespace or through an aperture.
+A scheduler's choice type is a syntactic property of its clause.}
+\end{quote}
+
+We take the Weihrauch lattice \cite{weihrauch} as the spine rather than the coarse
+ladder --- finite choice, $\CC$, $\DC$, $\AC$ --- because the interesting formulae
+live at degrees the coarse ladder does not name --- $\LLPO$, $\WWKL$, $\lim$ --- and because two of those
+degrees turn out to be the ones a rho programmer writes by accident.
+
+\subsection{Contributions}
+
+\begin{enumerate}[label=C\arabic*.,leftmargin=2.6em,itemsep=3pt]
+\item \textbf{The seam, correctly identified.} A graded clause denotes a map
+$\Cand \to V$: a weighting of a fibre, not a section of it. Clause, choice principle
+and scheduler stand in the relation \emph{family} / \emph{assertion that a section
+exists} / \emph{the section} (\S\ref{sec:seam}).
+\item \textbf{Attainment as the soundness relation.} A clause is a quantifier
+($K$-monad), a resolver is a selection function ($J$-monad), and the morphism
+$\varepsilon \mapsto \lambda p.\,p(\varepsilon(p))$ is ``this resolver realises this
+clause''. We characterise attainability: it is total exactly when $\sumv$ is idempotent
+and the winning candidate carries the multiplicative unit, and it fails for every
+genuinely graded clause over $(+,\times)$, where the induced quantifier is an
+expectation (\S\ref{sec:attain}, Proposition~\ref{prop:attain}, measured).
+\item \textbf{Non-attainment is a lift, not a defect.} Where the quantifier is not
+attained, the resolver selects into a larger codomain: distributions for $\Rnn$
+(verified by Monte Carlo), amplitudes for $\Cx$. The $\Rnn$ row of the algebra table
+is the $\WWKL$ row of the lattice (\S\ref{ssec:wwkl}).
+\item \textbf{The graded fixed point, and why nothing climbs without it.} The graded
+sort of \cite{gradedwhere} is finitary by design. Proposition~\ref{prop:bottom}: every
+fixed-point-free clause has choice type $\bot$. The ascent is the reintroduction of
+$\mu$ and $\nu$ (\S\ref{sec:fix}).
+\item \textbf{Three engines, two of them incomparable.} Depth, width, reflection.
+Depth and width are Weihrauch-incomparable, which is the syntactic reason the order on
+scheduler types is a lattice and not a chain (\S\ref{sec:engines}).
+\item \textbf{The formulae.} A clause schema per degree, all in one \texttt{where}
+slot, with the rho term each sits in (\S\ref{sec:formulae}, Table~\ref{tab:master}).
+\item \textbf{Full $\AC$, by exactly two routes.} A ceiling theorem for closed terms
+over a presented store, and the two ways past it: the aperture and reflection. Krivine
+realises $\DC$ with \texttt{quote}; the rho calculus has \texttt{quote} as a term
+former (\S\ref{sec:ac}).
+\item \textbf{Interference is transverse.} A resolver with a non-empty interference
+deficit is not a choice function at all, so $\Cx$ is off the lattice rather than high
+on it (\S\ref{sec:transverse}).
+\item \textbf{Fairness disciplines are clause combinators.} The bootstrap trap of
+\cite{gradedwhere} is a fairness violation manufactured by the value algebra, and its
+repair $\psi \sumv \epsilon$ is weak fairness written as a formula
+(\S\ref{sec:fairness}).
+\item \textbf{The hinge, sharpened.} The mechanism that buys $\AC$ is the mechanism
+that breaks subject reduction. A stratification judgement recovers it, and $\AC$ lives
+outside the stratified fragment (\S\ref{sec:sr}).
+\end{enumerate}
+
+\subsection{What this note does not do}
+
+It does not prove the Weihrauch degrees claimed for the schemas of
+\S\ref{sec:formulae}. Each schema is presented with the reduction it is intended to
+realise and with the resolver obligation it imposes; turning ``this clause requires
+$\WKL$'' into ``the choice type of this clause is $\ew \WKL$'' requires fixing a
+representation of the candidate family as a point of a represented space, which we set
+up only informally. It does not present the topos-theoretic setting in which the
+Diaconescu argument of \S\ref{ssec:diaconescu} would be a theorem rather than an
+analogy. And it does not treat the quantale-graded calculus of \cite{fuzzyrho}, which
+is the value-algebra point at which the graded fixed point exists by Knaster--Tarski
+and which therefore deserves its own treatment.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The seam}\label{sec:seam}
+
+\subsection{What a clause denotes}
+
+We recall the object from \cite{gradedwhere}. A \emph{receipt site} $r$ in a term $P$
+is a for-comprehension together with the channels its receipts name. A
+\emph{candidate} at $r$ is an assignment $\sigma$ of a distinct datum occurrence to
+each pattern of each group such that every pattern matches its assigned datum; write
+$\Cand(P,r)$ for the set of candidates and $\Out(r,\sigma)$ for the residual term the
+firing produces. A \emph{resolution algebra} is a commutative semiring
+$\V = (V,\sumv,\tensorv,0,1)$, with conjunction interpreted by $\tensorv$ and
+disjunction by $\sumv$. A graded clause $\psi$ at $r$ denotes
+\[
+  \sem{\psi}_r : \Cand(P,r) \longrightarrow V .
+\]
+Candidates are indexed by occurrences, not by terms. The classical interpreter sees
+nothing of the value except whether it vanishes: a communication is enabled exactly
+when its clause is nonzero, so the crisp language is the $\Bool$-valued fragment and
+support adequacy holds by construction.
+
+\subsection{What a choice principle asserts}
+
+A choice principle asserts that a family of nonempty sets admits a section. In the
+Weihrauch setting \cite{weihrauch} the canonical form is \emph{closed choice}: $C_X$
+takes a closed subset $A \subseteq X$, given negatively (by an enumeration of basic
+open sets exhausting its complement), together with the promise $A \neq \emptyset$,
+and must return a point of $A$. The degree of $C_X$ depends on $X$: $C_{\mathbb{N}}$ is
+countable choice; $C_{\Can} \ew \WKL$; $C_{\Bai}$ is the strongest of the family;
+$C_2 \ew \LLPO$ is the weakest nontrivial one. Reducibility $\lw$ orders them and
+Weihrauch composition $\Wstar$ --- solve one problem, then, using its answer, the next
+--- composes them.
+
+\subsection{The category error, and the division of labour}
+
+It is tempting, and wrong, to try to \emph{write} a choice principle as a clause. A
+clause weights a fibre. A choice principle asserts a section of one. No map
+$\Cand \to V$ is a section of $\Cand$, whatever $V$ is.
+
+What a clause can do is \emph{determine the family whose section is at issue}, and
+therefore certify, syntactically, how hard that section is to produce. That is the
+division of labour we adopt throughout, and it is the one \cite{agency} asks for.
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Object} & \textbf{Role}\\
+\midrule
+graded clause $\psi$ & the family: which candidates, weighted how\\
+choice principle & the assertion that a section exists, uniformly\\
+resolver / scheduler & the section\\
+attainment & the resolver realises the clause\\
+choice type $\chi$ & the Weihrauch degree of the assertion\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{remark}[Why the certificate can be syntactic though the degree is not computable]
+$\chi$ is undecidable at large \cite{agency}. But the schemas of
+\S\ref{sec:formulae} bound it from above by inspection: a fixed-point-free clause over
+a finite candidate set cannot require more than a definable section, whatever else it
+does. Certification from above is all a type discipline ever offers, and it is what
+makes ``the oracle it imports is written on its face'' \cite{choicesched} an
+implementable slogan.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Quantifiers, selections, and attainment}\label{sec:attain}
+
+\subsection{The two monads}
+
+Escard\'o and Oliva \cite{escardo} study two monads on a fixed codomain $R$. The
+\emph{quantifier} (continuation) monad
+\[
+  K_R X = (X \to R) \to R,
+\]
+and the \emph{selection} monad
+\[
+  J_R X = (X \to R) \to X .
+\]
+There is a monad morphism $\overline{(-)} : J_R \to K_R$ given by
+\[
+  \overline{\varepsilon}(p) \;=\; p(\varepsilon(p)),
+\]
+and a quantifier $\phi$ is \emph{attainable} when $\phi = \overline{\varepsilon}$ for
+some selection function $\varepsilon$. The paradigm example of an attainable
+quantifier is $\sup$, attained by $\arg\max$; the paradigm example of a non-attainable
+one is expectation.
+
+The identification we propose is immediate once the two monads are on the table.
+
+\begin{definition}[The quantifier of a clause]\label{def:quant}
+Let $\psi$ be a graded clause at a receipt site $r$ over $\V$. Its \emph{induced
+quantifier} is $\phi_\psi : (\Cand(P,r) \to V) \to V$,
+\[
+  \phi_\psi(p) \;=\; \bigsumv_{\sigma \in \Cand(P,r)} \sem{\psi}_r(\sigma)
+  \tensorv p(\sigma) .
+\]
+\end{definition}
+
+\noindent
+Here $p$ is a \emph{payoff}: an assessment, in $\V$, of what each candidate leads to.
+The graded modality supplies the canonical payoff, since
+$\sem{\langle K \rangle_\V \psi'}(P) = \sum_{r,\sigma} \sem{\psi_r}(\sigma) \tensorv
+\sem{\psi'}(\Out(r,\sigma))$ is exactly $\phi_{\psi_r}$ applied to the payoff
+$\sigma \mapsto \sem{\psi'}(\Out(r,\sigma))$. So the graded modality of
+\cite{gradedwhere} \emph{is} the clause's quantifier eating the value of the future.
+
+\begin{definition}[A resolver realises a clause]\label{def:realise}
+A \emph{resolver} at $r$ is a selection function
+$\varepsilon : (\Cand(P,r) \to V) \to \Cand(P,r)$. It \emph{realises} $\psi$ when
+$\overline{\varepsilon} = \phi_\psi$, that is, when for every payoff $p$,
+\[
+  p(\varepsilon(p)) \;=\; \bigsumv_{\sigma} \sem{\psi}_r(\sigma) \tensorv p(\sigma).
+\]
+\end{definition}
+
+This is the soundness relation the seam needed. It says: the value the clause assigns
+to the site as a whole is the value actually obtained by the candidate the resolver
+picks. A resolver that realises its clause is not merely consistent with it; it
+\emph{achieves} it.
+
+\subsection{When is a clause realisable at all?}
+
+\begin{proposition}[Attainability]\label{prop:attain}
+Let $\psi$ be a clause over $\V$ with finite candidate set.
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em,itemsep=2pt]
+\item If $\sumv$ is idempotent and $\psi$ is crisp --- that is, $\sem{\psi}(\sigma) \in
+\{0,1\}$ for every $\sigma$ --- then $\phi_\psi$ is attained by a definable selection
+function, namely the $\sumv$-optimal candidate of the support.
+\item If $\sumv$ is idempotent and $\psi$ is graded, then $\phi_\psi$ is attained at a
+payoff $p$ if and only if the $\sumv$-winning candidate $\sigma^\ast$ carries the
+multiplicative unit, $\sem{\psi}(\sigma^\ast) = 1$.
+\item If $\sumv$ is not idempotent --- in particular for $\V = \Rnn$ or $\Cx$ --- then
+$\phi_\psi$ is an expectation and is not attained by any selection function into
+$\Cand$, except in the degenerate case of a singleton support.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+(i) With $\sumv$ idempotent, $\phi_\psi(p) = \bigsumv_{\sigma \in \mathrm{supp}(\psi)}
+p(\sigma)$, which for $\sumv = \max$, $\min$ or $\vee$ is a value of $p$ on the
+support; take $\varepsilon$ to return the candidate achieving it.
+(ii) $\phi_\psi(p) = \bigsumv_\sigma \sem{\psi}(\sigma)\tensorv p(\sigma)$. If the
+winner carries $1$ this equals $p(\sigma^\ast)$; if it carries $v \neq 1$ the value is
+$v \tensorv p(\sigma^\ast)$, which is not in general in the image of $p$.
+(iii) $\sum_\sigma \sem{\psi}(\sigma) p(\sigma)$ is a strict convex-type combination
+whenever two candidates carry nonzero weight, hence lies strictly between two values of
+$p$ and is not among them, generically.
+\end{proof}
+
+The proposition is sharp enough to be measured, and we measured it. Over $20{,}000$
+random payoffs per row (\texttt{choicesim.py}, E1):
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Algebra and clause} & \textbf{attained}\\
+\midrule
+$\Bool$, crisp $\psi$ & $100.00\%$\\
+Viterbi $(\max,\times)$, crisp $\psi$ & $100.00\%$\\
+Viterbi $(\max,\times)$, graded $\psi$ & $73.83\%$\\
+tropical $(\min,+)$, crisp $\psi$ & $100.00\%$\\
+tropical $(\min,+)$, graded $\psi$ & $0.00\%$\\
+$\Rnn$, crisp $\psi$ & $0.00\%$\\
+$\Rnn$, graded $\psi$ & $0.00\%$\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+and the intermediate Viterbi figure is not noise: over the same payoffs, ``$\phi_\psi$
+is attained'' agrees with ``the winning candidate carries the unit'' on $100.00\%$ of
+cases, which is clause (ii) verified.
+
+\begin{remark}[Restriction versus discount]\label{rem:restrict}
+Clause (ii) has a reading worth keeping. Over an idempotent $\sumv$, a clause that
+merely \emph{restricts} --- rules candidates in and out --- is realisable by a pure
+term; a clause that \emph{discounts} --- prefers one admissible candidate to another
+--- is not. Gating is free. Preference costs.
+\end{remark}
+
+\subsection{Non-attainment is a lift}\label{ssec:lift}
+
+Clause (iii) looks like bad news for the whole enterprise, since $\Rnn$ and $\Cx$ are
+the two rows anyone cares about. It is not. The standard response to a non-attainable
+quantifier is to enlarge the codomain of the selection function, and the enlargements
+are exactly the resolvers already in use.
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+\item $\V = \Rnn$. Lift $\varepsilon$ to select into $\mathcal{D}(\Cand)$,
+distributions over candidates, taking $p \mapsto$ the normalised clause. Then
+$\mathbb{E}[p(\varepsilon(p))] = \phi_\psi(p) / \phi_\psi(\mathbf{1})$, so attainment
+holds \emph{in expectation}. Verified by Monte Carlo over $400{,}000$ draws: measured
+$0.590826$ against target $0.590000$, and $0.390489$ against $0.390000$
+(\texttt{choicesim.py}, E1).
+\item $\V = \Cx$. No lift into distributions works, because the coefficients are not
+positive. The Born rule is a lift into $\mathcal{D}(\Cand)$ \emph{after} a quadratic
+map, and \S\ref{sec:transverse} shows why that is a different kind of object.
+\end{itemize}
+
+\begin{principle}[The lift is the oracle]\label{prin:lift}
+The extra structure a resolver must have, beyond being a function into the candidate
+set, is exactly the failure of attainment of its clause's quantifier. Where the clause
+is crisp over an idempotent $\sumv$, the scheduler is a pure term and imports nothing.
+Where it discounts, the scheduler must optimise. Where $\sumv$ is additive, the
+scheduler must randomise. This is Principle~\ref{prin:complementary}'s first payoff:
+the altitude is legible in the algebra before any fixed point is written.
+\end{principle}
+
+\subsection{The product is the composition}\label{ssec:product}
+
+Escard\'o--Oliva's binary product of selection functions,
+\[
+  (\varepsilon_0 \tensorv \varepsilon_1)(p) = (a_0, a_1), \quad
+  a_0 = \varepsilon_0\big(\lambda x.\, p(x, \varepsilon_1(\lambda y.\,p(x,y)))\big),
+  \quad a_1 = \varepsilon_1(\lambda y.\, p(a_0,y)),
+\]
+is their characteristic operation, and its infinite iteration is bar recursion. Three
+things now want to be the same operation: this product; Weihrauch composition
+$\Wstar$, ``solve one, then, using its answer, the next'' \cite{weihrauch}, which
+\cite{choicesched} nominates as the cut of the logic of choice; and the sequential
+chaining of two graded receipt sites through $\langle K \rangle_\V$, in which the
+second site's clause is evaluated against the term the first left behind.
+
+\begin{conjecture}[One operation, three names]\label{conj:one}
+For clauses whose quantifiers are attainable, the Escard\'o--Oliva product of the
+realising resolvers, the Weihrauch composition of the choice types, and the chaining of
+the graded sites through $\langle K \rangle_\V$ agree. Consequently $\DC$ is the
+$\omega$-fold product, bar recursion is its realiser, and the graded modality is the
+syntax of both.
+\end{conjecture}
+
+We verified the arithmetic half over Viterbi: the product and the chained sites select
+the same pair on $20{,}000$ random payoff tables, with $0$ disagreements. That
+agreement is a consistency check rather than a discovery --- but it is not vacuous, and
+we made sure it is not. The identification requires the chaining to aggregate in the
+\emph{same} algebra the selection function optimises in. Chaining with $\sumv = +$
+while still selecting by $\arg\max$ --- backward induction over expectation rather than
+over the maximum --- disagrees on $4{,}483$ of the same $20{,}000$ tables
+(\texttt{choicesim.py}, E2). So the identification has content, and the content is that
+the algebra of the clause and the discipline of the scheduler must match.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The graded fixed point}\label{sec:fix}
+
+\subsection{Why the grammar as it stands cannot climb}
+
+The graded sort of \cite{gradedwhere} is
+\[
+  \psi ::= \crisp{\beta} \mid v \mid \psi \tensorv \psi \mid \psi \sumv \psi
+  \mid \langle K \rangle_\V \psi \qquad (v \in V),
+\]
+with the crisp sort $\beta$ carrying full Boolean structure, the spatial connectives,
+the modality and fixed points. The graded sort deliberately has neither negation nor a
+fixed point. The exclusion was principled --- $\Cx$ has no order, so Knaster--Tarski is
+unavailable and a graded $\nu$ is a convergence question rather than a definition ---
+but it has a consequence the note did not draw.
+
+\begin{proposition}[Everything finitary sits at the bottom]\label{prop:bottom}
+Let $\psi$ be a graded clause containing no fixed point, at a receipt site whose
+candidate set is finite. Then $\phi_\psi$ is computable from the store, and the
+resolver realising it (under Proposition~\ref{prop:attain}(i), or its lift under
+\S\ref{ssec:lift}) imports no oracle: $\chi = \bot$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+$\crisp{\beta}$ is decidable against a finite term by hypothesis on the crisp fragment;
+scalars are constants; $\tensorv$ and $\sumv$ are pointwise; and
+$\langle K \rangle_\V$ applied a syntactically bounded number of times ranges over a
+finite set of successors, since each site has finitely many candidates and the nesting
+depth of the modality in $\psi$ is finite. So $\sem{\psi}_r$ is a computable finite
+vector, and choice from a finite presented family is definable outright.
+\end{proof}
+
+\begin{corollary}
+The whole of \cite{gradedwhere} --- including its Shor construction, whose extractable
+fragment is characterised there as the modality-free clauses with isometric values ---
+lives at the base of the hypercomputation stalk. The extractable fragment and the
+constructively-choosable fragment coincide.
+\end{corollary}
+
+That coincidence is worth pausing on. A clause is compilable to a circuit exactly when
+its resolution is definable; the reason the ZX pipeline of \cite{cwrhozx} can consume
+the fragment it consumes is that the fragment demands no choice. Extraction and
+constructivity are the same constraint seen from two ends.
+
+\subsection{The grammar, extended}
+
+\begin{definition}[Graded formulae with fixed points]\label{def:grammar}
+Fix a resolution algebra $\V$ and a set of formula variables $X$. The graded sort is
+\[
+  \psi ::= \crisp{\beta} \mid v \mid X \mid \psi \tensorv \psi \mid \psi \sumv \psi
+  \mid \langle K \rangle_\V \psi \mid \langle @ \rangle_\V \psi
+  \mid \mu X.\,\psi \mid \nu X.\,\psi ,
+\]
+subject to the \emph{guardedness} condition that every free occurrence of $X$ in
+$\mu X.\psi$ or $\nu X.\psi$ lies under a $\langle K \rangle_\V$ or a
+$\langle @ \rangle_\V$. The new modality $\langle @ \rangle_\V \psi$ is the graded
+namespace connective: evaluated at a candidate binding a name $y$, it returns the value
+of $\psi$ at the process $*y$ quoted by that name.
+\end{definition}
+
+Guardedness is what makes the unfolding a genuine iteration of the transfer operator
+$T$ of \cite{gradedwhere}, rather than a self-reference with no dynamics. The two
+polarities have distinct readings.
+
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+\item $\mu X.\psi$ is a \emph{search}: the least fixed point, the value accumulated by
+those unfoldings that terminate. Operationally, ``keep unfolding until the body
+contributes something nonzero''. A $\mu$ whose unfolding depth is not bounded by the
+term is an unbounded search, and unbounded search is where $\CC$ enters.
+\item $\nu X.\psi$ is a \emph{survival} condition: the greatest fixed point, the value
+carried by unfoldings that never fail. Operationally, ``this holds along some
+infinite path''. A $\nu$ over an infinitely deep candidate tree is a statement about
+branches, and statements about branches of infinite trees are where K\"onig's lemma
+enters.
+\end{itemize}
+
+\subsection{When the fixed point exists}
+
+This is where the value algebra stops being a free parameter.
+
+\begin{proposition}[Existence, by algebra]\label{prop:exists}
+Let $\Psi$ be the guarded functional on $\V$-valued assignments determined by
+$\psi$.
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em,itemsep=2pt]
+\item If $\V$ carries a complete order compatible with $\sumv,\tensorv$ --- a quantale,
+as in \cite{fuzzyrho} --- then $\mu$ and $\nu$ exist by Knaster--Tarski, and no budget
+is required.
+\item If $\V = \Rnn$, $\Psi$ is monotone but the lattice is not complete;
+$\mu X.\psi$ exists as a supremum in $[0,\infty]$ and $\nu X.\psi$ requires a
+convergence hypothesis. Sufficient: the spectral radius of the transfer operator
+restricted to the reachable set is $< 1$.
+\item If $\V = \Cx$ there is no order at all. Neither fixed point is defined by
+approximation from below or above; both must be given as solutions of a linear
+system, and existence is a spectral condition on $T$.
+\end{enumerate}
+\end{proposition}
+
+\begin{remark}[The budget is the honest default]\label{rem:budget}
+Rholang 1.4 already reins in infinitary property checks with a token budget
+\cite{omnibus}. The budget is precisely the retreat from (i) to
+Proposition~\ref{prop:bottom}: a budgeted $\mu$ or $\nu$ is a bounded unfolding, hence
+finitary, hence at $\bot$. This gives the implementation a dial that is also a
+\emph{semantic} dial --- spend budget, gain altitude --- and it means a shard can
+refuse to run a clause whose declared altitude exceeds its policy simply by capping
+unfoldings.
+\end{remark}
+
+\begin{principle}[The two gradings are not orthogonal]\label{prin:complementary}
+There are two gradings in play: the strength of the choice principle (a Weihrauch
+degree, an altitude in the stalk of \cite{agency}) and the value algebra of the clause.
+They are transverse in general --- $\Cx$ is not ``stronger choice'', it is a different
+resolver --- but the fixed point couples them, because whether a fixed point exists at
+all is a property of the algebra's order structure
+(Proposition~\ref{prop:exists}). The altitude a clause certifies is a function of
+formula shape \emph{and} algebra.
+\end{principle}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Three engines of ascent}\label{sec:engines}
+
+With the fixed point available, exactly three things can make a clause's family
+non-presented. We name them and then show that two of them are incomparable.
+
+\begin{definition}[The engines]\label{def:engines}
+Let $\psi$ be a graded clause at a site $r$ of a term $P$.
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+\item \emph{Depth.} The \emph{unfolding rank} of $\psi$ is the least $n$ such that
+$\psi$'s fixed points stabilise within $n$ applications of the transfer operator,
+or $\omega$ if no such $n$ exists. Depth $\omega$ with bounded branching is the
+\emph{depth engine}.
+\item \emph{Width.} The \emph{candidate width} of $r$ is $\sup |\Cand(P',r)|$ over
+terms $P'$ reachable from $P$. Width $\omega$ at bounded depth is the \emph{width
+engine}.
+\item \emph{Reflection.} $\psi$ uses the \emph{reflection engine} when it contains
+$\langle @ \rangle_\V$ applied to a name bound by the site's own receipts, so that the
+family it indexes is determined by processes received at run time rather than by
+sub-terms of $P$.
+\end{itemize}
+\end{definition}
+
+Each engine has a plain operational meaning in rholang. Depth $\omega$ is a recursive
+process --- built, since core rho has no primitive replication, by the reflection
+idiom, a receipt that re-installs itself by dropping its own quotation. Width $\omega$
+is a channel on which unboundedly many messages accumulate: a producer under recursion
+whose consumer is slower, or a persistent producer. Reflection is a clause that talks
+about what it just received.
+
+\begin{proposition}[Depth and width are incomparable]\label{prop:incomparable}
+The depth engine at bounded width realises closed choice on a compact space; the width
+engine at bounded depth realises closed choice on the naturals. These are
+Weihrauch-incomparable: $C_{\mathbb{N}} \not\lw C_{\Can}$ and
+$C_{\Can} \not\lw C_{\mathbb{N}}$ \cite{weihrauch}.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Bounded width $k$ and unbounded depth present the candidate family as an infinite,
+finitely-branching tree whose nodes are the successive sites' candidates and whose
+branches are the runs a $\nu$ quantifies over. A $\nu$-clause asserts the existence of
+an infinite branch on which the body never vanishes, and by guardedness the set of such
+branches is closed in $k^{\mathbb{N}}$; choosing one is $C_{k^{\mathbb{N}}} \ew \WKL$.
+Bounded depth and unbounded width present a single site's candidate set as a subset of
+$\mathbb{N}$, given negatively by the clause's vanishing; a $\mu$-clause searches it,
+and choosing an element is $C_{\mathbb{N}}$. The incomparability is standard.
+\end{proof}
+
+\begin{remark}[Why the order on scheduler types is a lattice]\label{rem:lattice}
+\cite{choicesched} insists that the Weihrauch lattice is a lattice and not a chain, and
+calls this ``the declarative shadow of the jumble-not-tower ontology'' of
+\cite{agency}. Proposition~\ref{prop:incomparable} gives the shadow a syntactic
+source: two independent axes of a formula --- how deep it recurses and how wide it
+looks --- generate incomparable degrees. A programmer can make a scheduler stronger in
+two ways that do not compare, and the non-comparison is visible in the clause without
+computing anything.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The formulae}\label{sec:formulae}
+
+We now write a clause schema for each degree. Throughout, the surface form is the same:
+\begin{lstlisting}
+for( ptrn <- chan where psi ) P
+\end{lstlisting}
+and only \texttt{psi} changes. We give, for each degree, the schema, the shape of term
+it sits in, and the obligation it places on the resolver.
+
+\subsection{The bottom: finite presented choice}\label{ssec:finite}
+
+\[
+  \psi \;::=\; \crisp{\beta} \mid v \mid \psi \tensorv \psi \mid \psi \sumv \psi
+  \mid \langle K \rangle_\V^{\leq n} \psi
+\]
+--- no fixed point, or a budgeted one; finite candidate width. By
+Proposition~\ref{prop:bottom} the family is presented as a list, and by
+Proposition~\ref{prop:attain}(i) a crisp clause over an idempotent $\sumv$ is realised
+by a definable selection function. This is the Martin-L\"of point of
+\cite{choicesched}: the proof \emph{is} the choice function, and no scheduler
+primitive is needed. Every clause in \cite{gradedwhere} is of this shape.
+
+\emph{Resolver obligation:} none. Any deterministic tie-break realises it.
+
+\subsection{$\LLPO \ew C_2$: the negatively-presented binary commit}\label{ssec:llpo}
+
+The weakest nontrivial degree is choice on two points, and it is reachable with two
+messages and no fixed point at all --- provided the crisp guards are
+\emph{semi-decidable complements} rather than decidable predicates.
+
+\begin{lstlisting}
+new a, b in
+  ( search(f, a) | search(g, b)
+  | for( x <- a ; y <- b  where  [halts(f)] (+) [halts(g)] ) P )
+\end{lstlisting}
+
+\noindent
+where \texttt{search} produces on its channel exactly if its argument's search
+terminates, and the clause's two crisp conjuncts are the corresponding
+$\Sigma^0_1$ statements. The promise ``not both'' is the term's invariant; the clause's
+support is therefore never empty, and a resolver must commit to one side without being
+able to decide which side is safe.
+
+We checked both halves computationally (\texttt{choicesim.py}, E3). Over
+$3 \times 40 \times 60$ instance/stage pairs the support was empty $0$ times: the
+family is genuinely a family of nonempty sets. And for every stage-$k$ selector,
+$k = 0,\dots,7$, under both tie-breaking preferences, the diagonal instance --- which
+produces at stage $k+1$ on exactly the side the selector commits to --- defeats it.
+So the clause is inhabited but has no stage-uniform computable section.
+
+\emph{Resolver obligation:} $\LLPO$. This is the degree of ``choose which of two
+$\Sigma^0_1$ statements fails''.
+
+\begin{remark}[Rho programmers write this by accident]\label{rem:accident}
+The term above is an ordinary race between two producers whose production is
+conditional on a semi-decidable event. Nothing exotic is involved and nothing in the
+current language flags it. That a routine racing idiom sits strictly above the
+computable degrees is the clearest argument for wanting the type in the first place.
+\end{remark}
+
+\subsection{$C_{\mathbb{N}}$: the width engine}\label{ssec:cn}
+
+\[
+  \psi \;=\; \mu X.\, \big( \crisp{\beta} \sumv \langle K \rangle_\V X \big)
+\]
+at a site whose channel accumulates unboundedly many data. The $\mu$ is an unbounded
+search through the candidate set for one satisfying $\beta$, where $\beta$ is again
+only semi-decidable, so the set is given negatively: a candidate is excluded when it is
+\emph{seen} to fail, and never positively certified in finite time.
+
+\begin{lstlisting}
+new c in
+  ( enumerate(c)                            // unboundedly many data on c
+  | for( x <- c  where  mu X. ([not_excluded(x)] (+) <K>_V X) ) P )
+\end{lstlisting}
+
+\emph{Resolver obligation:} $C_{\mathbb{N}}$ --- countable choice, an unbounded search
+that terminates because the family is promised nonempty, with no bound computable in
+advance on how long it takes.
+
+\subsection{$\WKL \ew C_{\Can}$: the depth engine}\label{ssec:wkl}
+
+\[
+  \psi \;=\; \nu X.\, \big( \crisp{\beta} \tensorv \langle K \rangle_\V X \big)
+\]
+at a site of bounded width --- two candidates suffice --- under a recursive process, so
+that the candidate tree is infinite and finitely branching. The $\nu$ asserts the
+existence of an infinite run along which $\beta$ never fails: exactly an infinite
+branch of an infinite binary tree.
+
+\begin{lstlisting}
+new c in
+  ( bits(c)                                 // two data at a time, forever
+  | for( x <- c  where  nu X. ([ok(x)] (x) <K>_V X) ) P )
+\end{lstlisting}
+
+\emph{Resolver obligation:} $\WKL$ --- compactness. The resolver must produce a branch
+of a tree all of whose finite paths extend, which is not computable from the tree.
+
+\begin{remark}[The polarity of the fixed point is the polarity of the principle]
+$\mu$ searches and $\nu$ survives; $C_{\mathbb{N}}$ searches an unbounded set and
+$\WKL$ selects an infinite path. The syntactic distinction between the two fixed
+points and the semantic distinction between the two incomparable choice principles are
+the same distinction, and Proposition~\ref{prop:incomparable} is that observation made
+into a claim.
+\end{remark}
+
+\subsection{$\WWKL$: the $\Rnn$ row, and where the two axes touch}\label{ssec:wwkl}
+
+Take the $\WKL$ schema and replace the crisp $\beta$ by a genuinely graded value, with
+$\V = \Rnn$ and the clause normalised so that the total over a level is $1$:
+\[
+  \psi \;=\; \nu X.\, \big( w(\cdot) \tensorv \langle K \rangle_\V X \big),
+  \qquad w : \Cand \to \Rnn .
+\]
+The set of surviving branches is now not merely nonempty but of \emph{positive
+measure}, and the resolver's obligation weakens accordingly: it need only find a branch
+in a positive-measure closed set. That is $\WWKL$, positive-measure choice, which
+Brattka, Gherardi and H\"olzl identify as the degree of Las Vegas computability
+\cite{brattkalasvegas} --- randomised computation that never errs but may not
+terminate.
+
+This is the one place the two gradings of Principle~\ref{prin:complementary} genuinely
+touch. The lift of \S\ref{ssec:lift} --- selecting into distributions over candidates
+rather than into candidates, which is forced by Proposition~\ref{prop:attain}(iii) ---
+is precisely the randomness that $\WWKL$ measures.
+
+\begin{proposition}[The stochastic row is the randomised degree]\label{prop:wwkl}
+A clause over $\Rnn$ with a $\nu$ of unbounded depth, normalised and with positive
+total mass at every level, has choice type $\WWKL$, and the resolver realising it is
+the distributional lift of \S\ref{ssec:lift}: sampling.
+\end{proposition}
+
+\noindent
+Read backwards, this says something about the Gillespie regime of \cite{weightedgslt}:
+a stochastic simulator is not a weaker classical scheduler but a scheduler at a
+specific, nonzero altitude, and the altitude is the price of the random bits.
+
+\subsection{$\lim$: plasticity without a modulus}\label{ssec:lim}
+
+The forager of \cite{gradedwhere} maintains a belief whose value moves as evidence
+accumulates: the clause is evaluated against the current term, so its value at a site
+depends on what earlier firings did. Suppose the sequence of values converges --- the
+belief settles --- but no modulus of convergence is computable from the term. Then a
+resolver that must act on the \emph{limit} value is computing a limit of a computable
+sequence, and $\lim$ is Weihrauch-equivalent to the Turing jump \cite{weihrauch}.
+
+\[
+  \psi \;=\; \nu X.\, \big( \mathrm{pow}(s,c) \tensorv \langle K \rangle_\V X \big)
+\]
+with $\mathrm{pow}(s,c) = s \cdot c$ the PLN strength-times-confidence value of
+\cite{gradedwhere}, $c = n/(n+k)$, and $n$ the evidence count accumulated by firing.
+
+\emph{Resolver obligation:} $\lim$, if the resolver must act on the limit;
+$\bot$ if it acts on the current approximation. The distinction is the whole content:
+\emph{learning is free, but knowing that you have finished learning is the jump.}
+
+\begin{remark}[The personality parameter, revisited]
+\cite{gradedwhere} finds the PLN scepticism parameter $k$ has an interior metabolic
+optimum. In the present reading, $k$ is a \emph{modulus policy}: it trades the rate at
+which confidence accumulates against the risk of acting on an unsettled value. That an
+optimum exists is the statement that neither $\bot$ nor $\lim$ is the right altitude to
+run at, and that the environment prices the compromise.
+\end{remark}
+
+\subsection{$\DC$: the $\omega$-fold product}\label{ssec:dc}
+
+Dependent choice requires no new syntax whatever. Per-match evaluation against the
+current term already makes a site's clause depend on the outcomes of earlier sites,
+which is exactly the defining feature of $\DC$: later fibres depend on earlier
+selections.
+
+\begin{proposition}[Plasticity is dependent choice]\label{prop:dc}
+A graded clause evaluated per match against the running term, at a sequence of sites
+chained through $\langle K \rangle_\V$, presents the family
+$\prod_{i \in \omega} X_i$ with $X_{i+1}$ depending on the selection made at $X_i$.
+Its resolver is the $\omega$-fold Escard\'o--Oliva product of the per-site resolvers,
+i.e.\ bar recursion.
+\end{proposition}
+
+\noindent
+This is Conjecture~\ref{conj:one} instantiated at $\omega$, and it is the cleanest
+alignment in the note: \cite{choicesched}'s row ``countable/dependent choice $\DC$ ---
+bar recursion; scheduler with memory and lookahead'' is satisfied by a feature
+\cite{gradedwhere} already has and describes as a convenience
+(``plasticity is free'').
+
+\subsection{$C_{\Bai}$: both engines together}\label{ssec:baire}
+
+Unbounded depth \emph{and} unbounded width --- a $\nu$ over a tree with infinite
+branching --- presents the family as a closed subset of Baire space, and
+$C_{\Bai}$ is the strongest of the closed-choice family.
+
+\[
+  \psi \;=\; \nu X.\, \big( \crisp{\beta} \tensorv \mu Y.(\langle K \rangle_\V
+  (X \sumv Y)) \big)
+\]
+--- the inner $\mu$ searching an unbounded width at each level, the outer $\nu$
+surviving unbounded depth.
+
+\emph{Resolver obligation:} $C_{\Bai}$. This is the ceiling for closed terms, as
+\S\ref{ssec:ceiling} makes precise.
+
+\subsection{The master table}\label{ssec:table}
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lllll@{}}
+\toprule
+\textbf{Degree} & \textbf{Clause shape} & \textbf{Depth} & \textbf{Width} &
+\textbf{Resolver must}\\
+\midrule
+$\bot$ (definable) & no fixed point & $<\omega$ & $<\omega$ & tie-break\\
+$\bot$ (optimising) & graded, idempotent $\sumv$ & $<\omega$ & $<\omega$ &
+optimise\\
+$\LLPO \ew C_2$ & crisp, $\Sigma^0_1$ guards & $<\omega$ & $2$ & commit blind\\
+$C_{\mathbb{N}}$ & $\mu X.(\crisp{\beta} \sumv \langle K\rangle_\V X)$ & $<\omega$ &
+$\omega$ & search unboundedly\\
+$\WKL \ew C_{\Can}$ & $\nu X.(\crisp{\beta} \tensorv \langle K\rangle_\V X)$ &
+$\omega$ & $<\omega$ & be compact\\
+$\WWKL$ & as $\WKL$, $\V = \Rnn$, normalised & $\omega$ & $<\omega$ & randomise\\
+$\lim$ & plastic, acting on the limit & $\omega$ & $<\omega$ & take a limit\\
+$\DC$ & chained plastic sites & $\omega$ & any & bar-recurse\\
+$C_{\Bai}$ & $\nu$ over $\mu$ & $\omega$ & $\omega$ & choose on Baire space\\
+$\AC$ & aperture, or $\langle @ \rangle_\V$ under $\nu$ & --- & --- & be a choice
+function\\
+\bottomrule
+\end{tabular}
+\caption{One \texttt{where} slot at every altitude. Only the formula changes.}
+\label{tab:master}
+\end{table}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Reaching full $\AC$}\label{sec:ac}
+
+\subsection{The ceiling for closed terms}\label{ssec:ceiling}
+
+First the obstruction, stated so that the routes past it can be seen to be the only
+ones.
+
+\begin{proposition}[Ceiling]\label{prop:ceiling}
+Let $P$ be a closed term all of whose channels are fed by sub-terms of $P$, and let
+$\psi$ be a graded clause containing no $\langle @ \rangle_\V$ under a fixed point.
+Then the union of the candidate sets arising at any site over any run of $P$ is
+recursively enumerable from $P$, the family is presented, and
+$\chi \lw C_{\Bai}$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Candidates are assignments of datum occurrences to patterns. Data arise only by
+reduction from $P$, and the reduction relation of the rho calculus is r.e.; names are
+quoted processes, so the namespace generated by $P$ is r.e. as well. Hence the total
+candidate family is an r.e.-indexed family of subsets of an r.e.\ set, given negatively
+by the clause's vanishing --- a closed subset of a computably admissible, countably
+based space. Closed choice on such a space reduces to $C_{\Bai}$.
+\end{proof}
+
+So a closed rho term, however baroque, cannot demand more than choice on Baire space.
+The set-theoretic $\AC$ --- ``survey an unindexed contention and select coherently''
+\cite{choicesched} --- needs a family that is not presented at all. There are exactly
+two ways for a clause to index one.
+
+\subsection{Route E: the aperture}\label{ssec:aperture}
+
+The hypothesis of Proposition~\ref{prop:ceiling} that does most of the work is ``all of
+whose channels are fed by sub-terms of $P$''. Drop it.
+
+\begin{definition}[Aperture channel]\label{def:aperture}
+A channel $c$ of $P$ is an \emph{aperture channel} when the data on $c$ are supplied by
+the environment --- in the context-labelled semantics of \cite{probing}, by the
+context $K$ in $K[P]$ rather than by $P$ --- and no presentation of the possible
+supplies is given.
+\end{definition}
+
+\begin{construction}[$\AC$ at an aperture]\label{cons:ac-e}
+\begin{lstlisting}
+for( x <- sensor  where  psi(x) ) P
+\end{lstlisting}
+where \texttt{sensor} is an aperture channel. $\Cand$ is indexed by whatever the
+environment supplies; the clause's support carves out a subfamily of it; and a resolver
+must select from a family over an index set with no presentation. That is full $\AC$.
+\end{construction}
+
+This is not a trick. It is \cite{agency}'s own thesis rendered syntactically. That
+essay's central structural claim is that a confluent interior carries no choice
+resource, that ``the resource degree of a macro-component is carried entirely by its
+boundary'', and that ``capacity, like choice, lives at the apertures''. Route E says
+the same thing about clauses: \emph{the only place in a program where full $\AC$ can be
+demanded is a boundary at which the world, not the term, supplies the contention.} A
+shard's oracle-consuming sites are exactly its I/O sites, and they are syntactically
+identifiable.
+
+\begin{remark}[This is also a security statement]
+If full $\AC$ is reachable only at apertures, then a static analysis that identifies
+aperture channels bounds the choice type of an entire shard. The unbounded altitude of
+a deployment is confined to its declared boundary, which is precisely the discipline a
+capability system already wants to impose for other reasons.
+\end{remark}
+
+\subsection{Route R: reflection, and Krivine's \texttt{quote}}\label{ssec:reflection}
+
+The second hypothesis of Proposition~\ref{prop:ceiling} is that $\psi$ contains no
+$\langle @ \rangle_\V$ under a fixed point. Drop that instead, and the family becomes
+impredicative.
+
+\begin{construction}[$\AC$ by reflection]\label{cons:ac-r}
+\[
+  \psi \;=\; \nu X.\, \big( \langle @ \rangle_\V X \tensorv \crisp{\beta(*y)} \big)
+\]
+at a site binding $y$. The graded namespace modality evaluates $X$ at the process
+$*y$ quoted by the received name. Since names are quotations of processes and processes
+may carry clauses, the domain over which $\langle @ \rangle_\V$ ranges includes
+processes whose own clauses are instances of $\psi$. The fixed point is therefore taken
+over a domain whose description mentions the fixed point being taken.
+\end{construction}
+
+\begin{lstlisting}
+for( y <- c  where  nu X. ( <@>_V X (x) [beta(*y)] ) ) P
+\end{lstlisting}
+
+The family here is not presented in advance of the run, and not presented \emph{by} the
+run either: it is specified by a condition quantifying over a domain that contains the
+condition. This is the shape of full $\AC$ as \cite{choicesched} describes it --- an
+unindexed contention surveyed coherently --- rather than of any $C_X$ for a fixed
+represented $X$.
+
+\begin{conjecture}[Degree of the reflective clause]\label{conj:refl}
+Construction~\ref{cons:ac-r} is not Weihrauch-reducible to $C_{\Bai}$; its resolver
+requires a choice function on an arbitrary family, i.e.\ full $\AC$.
+\end{conjecture}
+
+We flag this as a conjecture rather than a proposition because making it precise
+requires a representation of the impredicative family, and the natural candidates
+either collapse it back to $C_{\Bai}$ by stratifying the namespace, or fail to be
+representations at all. The stratification question is the same one that returns in
+\S\ref{sec:sr}, which we take as evidence that it is the real content rather than a
+technicality.
+
+There is, however, a striking piece of external corroboration. Krivine's classical
+realizability interprets dependent choice using a \texttt{quote} instruction --- a
+primitive that assigns a code to a term, breaking the purely functional discipline of
+the abstract machine \cite{krivine}. \cite{choicesched} already notes this as ``the
+cleanest existing statement that a choice-type's inhabitant is a program with matching
+extra power''. The observation to add here is that
+
+\begin{quote}
+\emph{the rho calculus has \texttt{quote} as a term former.} What Krivine must add to
+his machine to realise choice, $@P$ already is.
+\end{quote}
+
+\noindent
+Reflection is not an incidental convenience of the rho calculus that happens also to
+enable Construction~\ref{cons:ac-r}. It is, on this reading, the calculus's native
+choice primitive, and it has been sitting in the syntax since \cite{Mer05}.
+
+\subsection{Exactly two routes}\label{ssec:tworoutes}
+
+\begin{corollary}[Trichotomy]\label{cor:trichotomy}
+Let $P$ be a term and $\psi$ a clause at a site of $P$. Exactly one of the following:
+(i) $P$ is closed with presented channels and $\psi$ has no $\langle @ \rangle_\V$
+under a fixed point, and then $\chi \lw C_{\Bai}$ by Proposition~\ref{prop:ceiling};
+(ii) the site's channel is an aperture, and $\chi$ may be $\AC$ by
+Construction~\ref{cons:ac-e}; (iii) $\psi$ is reflective, and $\chi$ may be $\AC$ by
+Construction~\ref{cons:ac-r}.
+\end{corollary}
+
+The corollary is what makes the ceiling useful rather than discouraging. It is not that
+$\AC$ is unreachable; it is that the two ways of reaching it are both syntactically
+conspicuous. One is an I/O boundary and the other is a clause that quotes. A checker
+that flags those two features flags every site in a program that can demand a genuine
+choice function.
+
+\subsection{The Diaconescu cost}\label{ssec:diaconescu}
+
+Diaconescu's theorem says that in a topos the axiom of choice implies the law of
+excluded middle. The analogue here is a cost, and it is worth stating because it is the
+price of the answer to the question this section asks.
+
+\begin{principle}[$\AC$ and interference do not cohabit]\label{prin:diaconescu}
+Suppose a resolver realises full $\AC$ over the graded families a language of clauses
+defines: every such family admits a section produced by that resolver. Then the
+resolver's outcome at every site is a single candidate --- a point --- so the
+coefficient it assigns to any outcome is the value of the clause at one candidate, and
+no cancellation between candidates can occur. Hence the resolver exhibits no
+interference deficit, and it is insensitive to any structure in $\V$ beyond the support
+of the clause. An $\AC$-realising resolver reads its clauses crisply.
+\end{principle}
+
+\begin{proof}[Sketch, and its limits]
+A choice function selects an element of the fibre. The interference phenomenon of
+\S\ref{sec:transverse} is the assignment of coefficient $0$ to an outcome reachable
+along two candidates with nonzero clause values; that requires the resolver to sum
+across candidates rather than select one. The two are exclusive by definition of
+``section''. What is \emph{not} established here is the converse Diaconescu direction
+--- that the availability of choice forces the crisp sort's excluded middle as a
+theorem of the logic --- which needs the subobject structure of a topos of graded
+predicates that we have not built. We state the forward direction only.
+\end{proof}
+
+\begin{remark}[Why this is a feature]
+The two research programmes this note joins want different things: \cite{choicesched}
+wants the strongest choice principles typed and bounded, \cite{gradedwhere} wants
+interference arranged deliberately. Principle~\ref{prin:diaconescu} says these are
+demands on different resolvers, not competing demands on one. A shard may run an
+$\AC$-strength resolver at its apertures and a coherent resolver in its interior; what
+it may not do is expect one resolver to be both. The next section says why in the
+lattice's own terms.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Interference is transverse to the lattice}\label{sec:transverse}
+
+The complex row of the algebra table is not a high altitude. It is not an altitude at
+all.
+
+\begin{definition}[Interference deficit \cite{gradedwhere}]\label{def:deficit}
+The \emph{interference deficit} of a term $P$ is
+$\mathrm{Reach}(P) \setminus \mathrm{supp}(\sem{P})$: the outcomes operationally
+reachable from $P$ that carry coefficient $0$ in the denotation.
+\end{definition}
+
+\begin{proposition}[A deficit is not a section]\label{prop:transverse}
+If the interference deficit of $P$ at a site is non-empty, no selection function on
+$\Cand$ produces the resolver's behaviour at that site.
+\end{proposition}
+
+\begin{proof}
+A section of a family lands in a fibre: whatever a choice function returns is an
+element of the set it was asked to choose from, and the outcome that element produces
+therefore carries positive weight. An outcome in the deficit is reachable --- some
+candidate produces it --- but carries coefficient $0$. So the resolver's behaviour is
+not the image of any section.
+\end{proof}
+
+The mechanism is the one already worked out in \cite{gradedwhere}: two candidates whose
+outcomes coincide contribute $w_0 \sumv w_1$ to that outcome, and over $\Cx$ the sum of
+two nonzero terms can vanish. We recomputed the minimal case (\texttt{choicesim.py},
+E5): with $|w_0| = |w_1| = 1/\sqrt2$ and relative phase $0$, $\pi$, $\pi/2$ the
+coefficient is $1.4142$, $0.0000$, $0.7071{+}0.7071i$, giving $|{\cdot}|^2$ of
+$2.000000$, $0.000000$, $1.000000$. Over $\Rnn$ this cannot happen: minimising
+$w_0 + w_1$ over $100 \times 100$ strictly positive pairs gives $0.020000$, the
+smallest pair, and never $0$.
+
+\begin{principle}[Two axes, one crossing]\label{prin:axes}
+The Weihrauch axis measures \emph{how hard it is to produce a witness}. The value-algebra
+axis measures \emph{whether ``which candidate?'' has an answer}. Over $\Bool$, an
+idempotent graded algebra, or $\Rnn$, it does, and the resolver is a section, possibly
+randomised; the choice hierarchy applies and the schemas of \S\ref{sec:formulae}
+classify it. Over $\Cx$ it does not: the resolver sums rather than selects, and
+destructive interference \emph{deletes} a reachable witness, which no section can do.
+The two axes cross at exactly one point, $\WWKL$, where the lift into distributions is
+still a lift into sections-with-randomness.
+\end{principle}
+
+\begin{remark}[Consistency with Principle~\ref{prin:diaconescu}]
+The two statements are the same fact from opposite ends. $\AC$ forces a section, which
+forbids a deficit; a deficit forbids a section, which forbids $\AC$. The
+top of the choice hierarchy and the interfering regime are disjoint, and neither is
+above the other.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Fairness disciplines are clause combinators}\label{sec:fairness}
+
+\cite{choicesched} places fairness on the typing side: a fairness discipline constrains
+which schedulers inhabit a choice-type. In the graded setting it moves to the term
+side, because a clause can starve a candidate all by itself.
+
+\begin{definition}[Support fairness]\label{def:supportfair}
+A run is \emph{weakly support-fair} when a candidate continuously in
+$\mathrm{supp}(\sem{\psi})$ eventually fires, and \emph{strongly support-fair} when a
+candidate infinitely often in the support eventually fires.
+\end{definition}
+
+\begin{proposition}[Zero is absorbing]\label{prop:absorbing}
+A receipt whose clause evaluates to $0$ is outside the support, hence never fires,
+hence never changes the term against which its clause is evaluated. If the clause's
+value depends only on state that firing would update, the value remains $0$ forever.
+\end{proposition}
+
+This is not hypothetical. \cite{gradedwhere}'s forager exhibits it: with the PLN
+confidence $c = n/(n+k)$ and no prior evidence, $n_0 = 0$ gives $c = 0$, gives clause
+value $0$, gives a receipt that never fires and therefore never acquires the evidence
+that would raise $n$. We reproduced the trap in a stripped-down model
+(\texttt{choicesim.py}, E4): with $n_0 = 0$ and no repair, $0$ firings over the
+horizon and a terminal stack of $0.00$; with $n_0 = 1$, $197$ firings and $89.20$.
+
+The repair \cite{gradedwhere} found is a disjunct, and in the present language that is
+literally a formula.
+
+\begin{definition}[The exploration combinator]\label{def:explore}
+For $\epsilon \in V$ with $\epsilon \neq 0$, write $\psi^{\epsilon} = \psi \sumv
+\epsilon$.
+\end{definition}
+
+\begin{proposition}[Weak fairness is a combinator]\label{prop:weakfair}
+Over an algebra with no additive inverses,
+$\mathrm{supp}(\psi^\epsilon) = \Cand$, so every enabled candidate is in the support at every step and every run is weakly
+support-fair.
+\end{proposition}
+
+\noindent
+Measured: the same forager with $n_0 = 0$ and $\psi \sumv 0.02$ recovers to $179$
+firings and a terminal stack of $83.80$, against $0$ and $0.00$ without it
+(\texttt{choicesim.py}, E4). Exploration is a disjunct; fairness is a formula.
+
+\begin{remark}[Strong fairness is a fixed-point condition, and it costs]
+Weak support fairness is cheap because it is a condition on each step. Strong support
+fairness is a condition on infinite runs --- ``infinitely often in the support implies
+eventually fires'' --- which is a $\nu$ over the run tree, and by \S\ref{ssec:wkl} a
+$\nu$ over an infinite finitely-branching tree is $\WKL$. So the classical folklore
+that strong fairness is a substantially stronger assumption than weak fairness acquires
+a degree: the gap is compactness.
+\end{remark}
+
+\begin{remark}[The additive-inverses caveat is the interference caveat]
+Proposition~\ref{prop:weakfair} requires that adding $\epsilon$ cannot cancel. Over
+$\Cx$ it can: $\psi \sumv \epsilon$ may vanish where $\psi$ did not. So the exploration
+combinator is a fairness device in the $\Bool$, $\Rnn$ and PLN regimes and a
+\emph{de-tuning} device in the coherent one. The same structure that buys interference
+costs the cheap fairness repair.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Subject reduction, and reflection as the suspect}\label{sec:sr}
+
+\cite{choicesched}'s central metatheorem is subject reduction, read as: \emph{scheduling
+cannot bootstrap an oracle}. \cite{agency} makes the same question the hinge of its
+factorisation --- if $\chi(c)$ can rise as a term runs, an interior cut can cross the
+threshold and an island cracks. In the present setting the question becomes concrete
+and, we suspect, has a negative answer for the full language.
+
+\begin{definition}[Clause level]\label{def:level}
+The \emph{level} $\ell(\psi)$ of a clause is its position in Table~\ref{tab:master},
+read syntactically: the polarity and boundedness of its fixed points, the width of the
+sites it ranges over, and whether it contains $\langle @ \rangle_\V$ under a fixed
+point.
+\end{definition}
+
+\begin{question}[Subject reduction]\label{q:sr}
+If $P \to P'$ by a firing at a site whose clause has level $\ell$, is every clause in
+$P'$ of level $\leq \ell$?
+\end{question}
+
+\begin{proposition}[Reflection defeats it]\label{prop:srfails}
+No. Let $Q$ be a process containing a receipt whose clause is
+$\nu X.(\crisp{\beta} \tensorv \langle K \rangle_\V X)$, at level $\WKL$. Let
+\[
+  P \;=\; c!(Q) \;\mid\; \mathrm{for}(y \leftarrow c \ \mathrm{where}\
+  \crisp{\mathrm{true}})\, {*}y .
+\]
+Every clause \emph{in $P$} is fixed-point-free, so $\ell(P) = \bot$. But
+$P \to {*}@Q \scong Q$, and $\ell(Q) = \WKL$. The level rose across a reduction whose
+own clause was trivial.
+\end{proposition}
+
+\begin{proof}
+Immediate from $*@Q \scong Q$ and the definition of level as a syntactic property of
+the clauses present.
+\end{proof}
+
+The counterexample is embarrassingly cheap, and that is the point: the mechanism is not
+some subtle cascade but the basic move of the calculus. A name is a quoted process; a
+process may carry clauses; dropping a received name installs them. \emph{Reflection
+lets a low-altitude term receive a high-altitude one.} In \cite{agency}'s language, the
+island cracks not because a boundary decision manufactured strength inside, but because
+strength was mailed in.
+
+\begin{remark}[The same suspect, three times]
+Reflection is now the suspect in three separate open questions of this programme. It
+is the conjectured source of length-asymmetric reconvergence, without which
+interference in unmodified rho is purely constructive \cite{gradedwhere}; it is
+Route R to full $\AC$ (\S\ref{ssec:reflection}); and it is the counterexample to
+subject reduction here. The recurrence is not a coincidence: all three are consequences
+of the namespace being able to carry arbitrary computational content, which is what
+$@P$ is for. Krivine's \texttt{quote} is the same primitive and it too is what buys
+choice and what breaks the standard metatheory.
+\end{remark}
+
+\subsection{The repair, and where $\AC$ ends up}
+
+\begin{definition}[Stratified \texttt{where}]\label{def:strat}
+A shard declares a level ceiling $L$. A clause \emph{elaborates at level $L$} when
+(i) its own shape is at level $\leq L$ by Definition~\ref{def:level}, and (ii) every
+occurrence of $*y$ in it, for $y$ bound by the site, is guarded by a level check on the
+received process --- refusing at run time any received term carrying a clause above
+$L$.
+\end{definition}
+
+\begin{proposition}[Subject reduction, stratified]\label{prop:srholds}
+In the fragment where every clause elaborates at level $L$ and every drop is
+level-checked, Question~\ref{q:sr} has a positive answer, and the choice type of a term
+is a reduction invariant bounded by $L$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+The only way to introduce syntax not present in $P$ is substitution of a received name
+followed by a drop; (ii) refuses drops that would raise the level; (i) bounds what is
+present initially; and no other rule of the calculus creates clauses.
+\end{proof}
+
+\begin{corollary}[$\AC$ is outside]\label{cor:acoutside}
+Route R (Construction~\ref{cons:ac-r}) is by definition unstratified, and Route E
+(Construction~\ref{cons:ac-e}) violates the hypothesis of the ceiling proposition
+rather than the stratification, so it survives stratification but only at declared
+aperture channels. Hence in a stratified shard, full $\AC$ occurs exactly at declared
+apertures, and the choice type of the interior is invariant.
+\end{corollary}
+
+\noindent
+This is the answer we would want if we could choose it. The factorisation of
+\cite{agency} is stable in the stratified fragment; $\AC$ is available, and available
+precisely where that essay says capacity lives; and the failure mode is not hidden but
+is a declared feature of a channel. Whether the stratified fragment is expressive
+enough to be worth programming in is the obvious next question and we do not answer it.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Implementation}\label{sec:impl}
+
+What changes, concretely, in rholang 1.4 and MeTTaIL \cite{omnibus}.
+
+\begin{enumerate}[label=I\arabic*.,leftmargin=2.6em,itemsep=3pt]
+\item \textbf{The graded sort grows fixed points.} Definition~\ref{def:grammar}: add
+$X$, $\mu X.\psi$, $\nu X.\psi$ and $\langle @ \rangle_\V \psi$ to the graded
+condition grammar, with guardedness checked at elaboration. The crisp sort is
+unchanged.
+\item \textbf{Unfolding is budgeted by default.} Remark~\ref{rem:budget}: the existing
+inference-token budget caps unfoldings, which keeps every clause at $\bot$ unless the
+programmer explicitly buys altitude. This makes the safe default the cheap default.
+\item \textbf{The resolver is an interface, not a fixed engine.} A resolver is a
+$J$-algebra: given a clause's value vector, return a candidate (or a distribution over
+candidates). The existing RSpace race, the Gillespie sampler of \cite{weightedgslt},
+and a Viterbi or tropical optimiser are four instances. Attainment
+(Definition~\ref{def:realise}) is the conformance law such an interface should carry,
+in the style of the existing \texttt{oslf.rs} conformance-law idiom.
+\item \textbf{Level as an elaboration-time judgement.} Definition~\ref{def:level} is
+computed from the clause's syntax tree; Definition~\ref{def:strat} adds the drop check.
+Both are decidable and neither requires running anything. This is the same shape as the
+isometry judgement proposed in \cite{gradedwhere} for the coherent fragment, and the two
+should share machinery.
+\item \textbf{Aperture channels are declared.} Route E needs a channel attribute
+distinguishing environment-fed channels from term-fed ones, which a capability
+system plausibly wants anyway. Corollary~\ref{cor:acoutside} then makes the shard's maximal
+choice type a static read-off.
+\item \textbf{Candidate identity must be by occurrence.} As \cite{gradedwhere} already
+notes, an implementation keying data by content, or allocating identifiers during
+firing, cannot represent $\Cand$ faithfully --- and the width engine of
+\S\ref{sec:engines} is precisely a statement about $|\Cand|$, so the addressing defect
+would corrupt the level judgement as well as the values.
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Open problems}\label{sec:open}
+
+\begin{enumerate}[label=O\arabic*.,leftmargin=2.6em,itemsep=3pt]
+\item \textbf{Degrees, properly.} Fix a representation of the candidate family as a
+point of a represented space and prove that each schema of \S\ref{sec:formulae} has
+the degree claimed, rather than merely imposing the corresponding obligation.
+\item \textbf{Conjecture~\ref{conj:one}.} Prove that the Escard\'o--Oliva product, the
+Weihrauch composition $\Wstar$, and chaining through $\langle K \rangle_\V$ agree, on
+the attainable fragment. This is what makes $\DC$ the $\omega$-fold product and bar
+recursion the scheduler.
+\item \textbf{Conjecture~\ref{conj:refl}.} Settle the degree of the reflective clause.
+Either exhibit a representation collapsing it to $C_{\Bai}$ --- in which case
+Route R is not a route and $\AC$ is reachable only at apertures --- or show the
+impredicativity is essential.
+\item \textbf{Diaconescu, properly.} Build the topos of graded predicates over a GSLT
+in which Principle~\ref{prin:diaconescu} is a theorem with its converse, rather than a
+forward implication and an analogy.
+\item \textbf{Expressiveness of the stratified fragment.} Proposition~\ref{prop:srholds}
+buys subject reduction by refusing drops that raise the level. Is the resulting language
+still expressive enough for the applications --- in particular, does it retain the
+self-hosting and DSL-mobility properties that motivate reflection in the first place?
+\item \textbf{Non-attainable resolvers as a monad.} \S\ref{ssec:lift} lifts the
+selection function's codomain twice, to distributions and to amplitudes. Is there a
+uniform account --- a parameterised selection monad over a choice of enrichment --- of
+which the classical, randomised and coherent resolvers are the three instances?
+\item \textbf{The altitude of consensus.} \cite{choicesched} proposes stacking its
+pipeline with the Coalition-Logic consensus extraction. With the present schemas one
+can ask a sharper question: what is the level, in the sense of
+Definition~\ref{def:level}, of the clauses a correct-by-construction consensus protocol
+requires, and is it below the ceiling a shard would want to declare?
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}\label{sec:conc}
+
+The scheduler calculus that \cite{choicesched} lists as an open problem is, we propose,
+the graded \texttt{where} clause of \cite{gradedwhere} with its fixed point restored. A
+clause is a quantifier and a resolver is a selection function; the monad morphism
+between them says when the resolver realises the clause; and attainability of the
+induced quantifier is a sharp line, computable, and drawn exactly where the algebra's
+addition stops being idempotent. Below that line the scheduler is a pure term. Above it
+the scheduler must optimise, or randomise, or --- in the coherent regime --- stop being
+a scheduler at all.
+
+The ascent through the choice hierarchy is then the reintroduction of a single
+syntactic feature, the graded fixed point, driven by three engines: depth, width, and
+reflection. Depth and width are incomparable, which is why the order on scheduler types
+is a lattice, and the incomparability is visible in the formula rather than in the
+metatheory. Full $\AC$ is reachable, by exactly two routes, and both are conspicuous:
+a channel fed by the world, or a clause that quotes. The first is where \cite{agency}
+already said capacity lives. The second is what Krivine had to add to his machine and
+what the rho calculus has had since 2005.
+
+Two facts sit at the edges of the picture and both are, we think, load-bearing rather
+than awkward. The complex-valued regime is transverse to the hierarchy, not high in it,
+because a resolver that interferes deletes a reachable witness and no section can do
+that. And the mechanism that buys full $\AC$ is the mechanism that breaks subject
+reduction, which is \cite{agency}'s open hinge with a two-line counterexample and a
+stratification that repairs it. Taken together they say that a shard can have any two
+of unrestricted reflection, invariant choice types, and coherent resolution --- and
+that the choice of which two is a language-design decision that can now be written
+down, checked at elaboration, and read off a clause.
+
+\begin{thebibliography}{99}
+
+\bibitem[Mer05]{Mer05} L. G. Meredith and M. Radestock. A reflective higher-order
+calculus. \emph{Electr.\ Notes Theor.\ Comput.\ Sci.}, 141(5):49--67, 2005.
+
+\bibitem[Agcy]{agency} L. G. Meredith. \emph{Where Does Agency Live? Nondeterminism as
+a computational resource, and agency across the computational and biological axes}.
+Manuscript, F1R3FLY, 2026.
+
+\bibitem[ChSch]{choicesched} L. G. Meredith. \emph{From the Axiom of Choice to Fair
+Scheduling: Toward a Curry--Howard Correspondence for Nondeterminism, in which choice
+principles are the types and fair schedulers are the terms}. Research Note, F1R3FLY,
+2026.
+
+\bibitem[GWhere]{gradedwhere} L. G. Meredith. \emph{Graded Where-Clauses: Non-crisp
+truth values as the syntax of non-determinism resolution in the rho calculus, with
+quantum and probabilistic-logic instances}. Research Note, F1R3FLY, 2026.
+
+\bibitem[cwZX]{cwrhozx} L. G. Meredith. \emph{Complex-Weighted Rho to ZX: Compiling
+weighted graph-structured lambda theories to the ZX-calculus by symbolic execution}.
+Research Note, F1R3FLY, 2026.
+
+\bibitem[WGSLT]{weightedgslt} L. G. Meredith. \emph{Weighted Graph-Structured Lambda
+Theories: Stochastic and quantum execution for MeTTaIL}. Research Note, F1R3FLY, 2026.
+
+\bibitem[Omni]{omnibus} L. G. Meredith. \emph{Graph-Structured Lambda Theories: A
+Reference for the Working Developer}. F1R3FLY, 2026.
+
+\bibitem[Probe]{probing} L. G. Meredith. \emph{Probing Universality: Context-Labelled
+Bisimulation and a Relative Refinement of Turing Completeness for Interactive GSLTs}.
+Research Note, F1R3FLY, 2026.
+
+\bibitem[FRho]{fuzzyrho} L. G. Meredith. \emph{A quantale-graded rho calculus}.
+Manuscript, F1R3FLY, 2026.
+
+\bibitem[BGP]{weihrauch} Vasco Brattka, Guido Gherardi, and Arno Pauly. Weihrauch
+complexity in computable analysis. In \emph{Handbook of Computability and Complexity in
+Analysis}, Springer, 2021.
+
+\bibitem[BGH]{brattkalasvegas} Vasco Brattka, Guido Gherardi, and Rupert H\"olzl.
+Probabilistic computability and choice. \emph{Information and Computation},
+242:249--286, 2015.
+
+\bibitem[EO]{escardo} Mart\'in Escard\'o and Paulo Oliva. Selection functions, bar
+recursion and backward induction. \emph{Mathematical Structures in Computer Science},
+20(2):127--168, 2010.
+
+\bibitem[Kri]{krivine} Jean-Louis Krivine. Dependent choice, `quote' and the clock.
+\emph{Theoretical Computer Science}, 308(1--3):259--276, 2003.
+
+\bibitem[Spec]{spector} Clifford Spector. Provably recursive functionals of analysis.
+In \emph{Recursive Function Theory}, AMS, 1962.
+
+\bibitem[ML]{martinlof} Per Martin-L\"of. \emph{Intuitionistic Type Theory}. Bibliopolis,
+1984.
+
+\bibitem[Dia]{diaconescu} Radu Diaconescu. Axiom of choice and complementation.
+\emph{Proc.\ Amer.\ Math.\ Soc.}, 51:176--178, 1975.
+
+\end{thebibliography}
+
+\appendix
+\section{The computations}\label{app:comp}
+
+All numbers in this note are produced by \texttt{choicesim.py}, which has no
+dependencies beyond the Python standard library. It runs five experiments.
+
+\begin{description}[leftmargin=2.2em,itemsep=3pt]
+\item[E1, attainability.] For each algebra and clause, tests over $20{,}000$ random
+payoffs whether $\phi_\psi(p)$ is a value of $p$; then verifies
+Proposition~\ref{prop:attain}(ii) by checking that ``attained'' agrees with ``the
+winning candidate carries the unit'' ($100.00\%$); then verifies the distributional
+lift by Monte Carlo over $400{,}000$ draws.
+\item[E2, the product.] Computes the Escard\'o--Oliva product of two argmax selection
+functions and the chaining of two graded sites through $\langle K \rangle_\V$ over
+$20{,}000$ random payoff tables ($0$ disagreements), with a negative control that
+chains in the wrong algebra ($4{,}483$ disagreements) so the agreement is not vacuous.
+\item[E3, $\LLPO$.] Checks that the support of the two-sided race is never empty over
+$3 \times 40 \times 60$ instance/stage pairs, and constructs, for each stage-$k$
+selector with $k \leq 7$ and each tie-break, the diagonal instance defeating it.
+\item[E4, fairness.] Runs the stripped-down forager in three configurations, exhibiting
+the bootstrap trap ($0$ firings, terminal $0.00$) and its repair by $\psi \sumv
+\epsilon$ ($179$ firings, terminal $83.80$) against the primed baseline ($197$,
+$89.20$).
+\item[E5, the deficit.] Computes the coefficient on the coinciding outcome at relative
+phases $0$, $\pi$, $\pi/2$, and minimises the corresponding $\Rnn$ sum over
+$100 \times 100$ strictly positive pairs to confirm it never vanishes.
+\end{description}
+
+\end{document}
