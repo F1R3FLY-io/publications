@@ -1,0 +1,304 @@
+\part*{Part IV --- Grading}
+\addcontentsline{toc}{part}{Part IV --- Grading}
+
+\bigskip
+\noindent
+\emph{This part lets the guard return a value instead of a bit. The syntactic
+change is small; the consequences are not. Weight maps --- the standard device for
+attaching rates to rewrite rules --- turn out to be a normal form of graded
+clauses rather than an independent mechanism, which retires an awkward
+side-condition. State-dependence becomes free. Interference becomes available, and
+with it a syntactic criterion for when a race can interfere at all. And negation,
+which has been surfacing as an obstruction since Part I, is assembled into a
+single phenomenon with five faces. Sources: \cite{GradedWhere} throughout,
+\cite{WeightedGSLT} for weight maps, \cite{FuzzyRho} for the quantale case,
+\cite{Goertzel24} for the probabilistic-logic instance.}
+\bigskip
+
+\section{The design}
+\label{sec:design}
+
+Let $\V$ be a value algebra from Table~\ref{tab:valuealgebras}. A \emph{graded
+where-clause} is a formula whose value at a candidate match lies in $\V$:
+\[
+  \psi \;::=\; \lceil \beta \rceil \;\mid\; v \;\mid\; \psi \otimes \psi
+  \;\mid\; \psi \oplus \psi \;\mid\; \langle \Ktx \rangle_{\V}\, \psi
+\]
+where $\lceil \beta \rceil$ embeds a crisp formula of the generated logic, $v$
+ranges over constants of $\V$, and $\langle \Ktx\rangle_{\V}$ is the graded
+modality --- a transfer operation summing, over the transitions available at
+$\Ktx$, the value of $\psi$ at the target.
+
+Three decisions fix the design.
+
+\paragraph{Two sorts.} The crisp sort keeps full Boolean structure and fixed
+points; the graded sort has neither. By Observation~\ref{obs:negcriterion} this is
+not an ad hoc restriction but the statement that a crisp sort is needed exactly
+when $\V$ fails to be a Girard quantale. Where $\V$ \emph{is} a Girard quantale ---
+$[0,1]$ with \L{}ukasiewicz negation, or any quantale-graded setting
+\cite{FuzzyRho} --- the graded sort can carry negation and, by Knaster--Tarski,
+fixed points too, and the two sorts collapse into one. Where $\V = \Cx$ they
+cannot, and the crisp sort earns its keep.
+
+\paragraph{Per-match evaluation.} The clause is evaluated once per candidate
+match. This is what makes the clause a \emph{function on candidates}, which is the
+object everything downstream acts on.
+
+\paragraph{The value is invisible to a classical reader except through its
+support.} A classical interpreter reads the clause as a Boolean --- fires iff the
+value is non-zero --- and behaves exactly as before. This keeps the language
+un-forked: the same program means one thing under a classical resolver and
+another under a graded one, and the graded meaning refines rather than replaces.
+
+\begin{theorem}[Conservativity]
+\label{thm:conservativity}
+At $\V = \B$ the graded design recovers the unmodified \texttt{where}-clause
+semantics exactly.
+\end{theorem}
+
+\begin{corollary}[Support adequacy]
+\label{cor:support}
+For every term $P$, $\mathrm{supp}\sem{P} \subseteq \mathrm{Reach}(P)$: the graded
+semantics assigns non-zero value only to outcomes the operational semantics can
+actually reach.
+\end{corollary}
+
+The inclusion is one-sided on purpose. Where it is \emph{strict} --- where an
+operationally reachable outcome carries value zero --- that is the
+\emph{interference deficit}, and it is the operational signature of destructive
+interference. A two-sided condition would forbid exactly the phenomenon the
+complex case exists to expose.
+
+\section{Weight maps are a normal form}
+\label{sec:dnf}
+
+The standard way to attach quantitative behaviour to a rewrite system is a
+\emph{weight map}: each rule carries a table whose keys are spatial-behavioural
+formulae refining the rule's left-hand side and whose values are weights, so that
+a redex is classified by which key it satisfies and weighted accordingly
+\cite{WeightedGSLT}. Since the successor state carries such a table, rewrites can
+update them, and weights are dynamic. This machinery supports Gillespie-style
+stochastic simulation over $\R_{\ge0}$ and a quantum continuous-time chain over
+$\Cx$.
+
+It also carries a well-known irritant. For the classification to be well defined
+the key set must be a \emph{partition} of the refinements, which has to be
+declared, checked, and enforced --- and enforcing it turned out to require a
+further requirement that keys be structural, since modal keys break the locality
+argument on which incremental recomputation of propensities depends. The
+implementation ended up funnelling every partition through a single checked
+constructor, and then had to make the relevant struct fields private after it was
+discovered that a struct literal could route around the check \cite{WeightedGSLT}.
+
+\begin{theorem}[Weight maps are graded clauses in disjunctive normal form]
+\label{thm:dnf}
+A weight map is a linear combination of crisp indicator formulae with constants
+from $\V$. General graded clauses are strictly more expressive: overlapping
+conditions are permitted, and no partition is required.
+\end{theorem}
+
+\begin{corollary}[The partition discipline is unnecessary]
+\label{cor:nopartition}
+Single-valuedness is automatic, because a formula has one value. The partition
+existed only to make a table lookup single-valued.
+\end{corollary}
+
+\begin{proposition}[Plasticity is free]
+\label{prop:plasticity}
+A clause is evaluated against the current term, so a value that depends on the
+system's state requires no update function and no separate mechanism. Later values
+depend on earlier firings automatically.
+\end{proposition}
+
+Proposition~\ref{prop:plasticity} deserves a moment, because it is not merely an
+engineering simplification. In the weight-map presentation, state-dependence is a
+side-channel: an update function mapping a table to a new table, whose composition
+order matters and whose Markov property has to be argued for. In the clause
+presentation it is the ordinary behaviour of evaluation. Part V will show that
+this same freeness is, in the choice-theoretic reading, exactly the principle of
+dependent choice --- obtained with no new syntax at all.
+
+\begin{remark}[Where the control belongs]
+There is an ergonomic claim underneath the formal one. A state-side table is a
+specification of a generator: it says what the system's dynamics are. A clause on
+a binder is an \emph{arranging instrument}: it says what this particular
+communication should prefer. A programmer trying to make interference do something
+useful is arranging, not specifying, and the control should be where the arranging
+happens.
+\end{remark}
+
+\section{What the graded reading buys, and what it costs}
+\label{sec:gradedbuys}
+
+\subsection{Sum over histories, not over interleavings}
+
+\begin{proposition}[Causality]
+\label{prop:causal}
+The value of a term must be summed over \emph{causal histories}, not over
+interleavings. Independent redexes must have their concurrency square filled.
+\end{proposition}
+
+Failing to do this inflates the value of $n$ independent sites by a factor $n!$,
+counting the linearisations of a partial order as if they were distinct histories.
+This is not hygiene; it is load-bearing. Measured: for $n = 2,3,4$ independent
+gadgets, the interleaving inflation is exactly $2$, $6$, $24$, while the causal
+computation returns squared norm $1.000000$ \cite{GradedWhere}.
+
+\subsection{The join is the recombiner}
+
+The first design question in a graded setting is how to get \emph{constructive}
+interference at all --- how two derivations can recombine so that their values add
+rather than staying in separate branches. In an ordinary race they cannot: the
+losing message survives, and that surviving message is a record of which branch
+was taken.
+
+The answer needs no new term former.
+
+\begin{theorem}[Scattering]
+\label{thm:scattering}
+An $m$-fold join $\texttt{for}(y_{1} \leftarrow x\ \&\ \cdots\ \&\ y_{m}
+\leftarrow x)$ on a channel carrying $m$ data has $m!$ candidate matches --- the
+bijections from patterns to data --- all of which consume all the data. There is
+no residual message and no which-path record. Writing $A_{ij}$ for the clause's
+value on assigning datum $j$ to pattern $i$, the symmetric outcome carries
+$\mathrm{Per}(A)$.
+\end{theorem}
+
+\begin{corollary}[Which-path erasure is decided by the continuation]
+\label{cor:whichpath}
+The candidates' outcomes coincide exactly when the continuation is symmetric in
+the bound names. No clause produces interference if the continuation distinguishes
+its bound names. Whether a race can interfere is therefore a property of the
+\emph{continuation}, not of the weights.
+\end{corollary}
+
+Symmetry is cheap to arrange, because parallel composition is commutative:
+\texttt{z!(*y1) | z!(*y2)} is symmetric and \texttt{z1!(*y1) | z2!(*y2)} is not.
+The minimal interferometer is three lines of rholang, and it is the
+Hong--Ou--Mandel experiment: one detector channel versus two. Taking the clause to
+carry the sign of the permutation gives $\mathrm{Det}(A)$ instead, and fermionic
+statistics.
+
+\begin{principle}[Interference is a false disjunction with true disjuncts]
+\label{prin:falsedisj}
+In the crisp setting a disjunction with a true disjunct is true. Once $\oplus$ has
+additive inverses this fails, and the failure is exactly cancellation. Interference
+is not an addition to the logic; it is what $\oplus$ does when the value algebra
+permits it.
+\end{principle}
+
+\subsection{The cost: the language is too powerful, not too weak}
+
+Grading over $\Cx$ makes the guard language expressive enough to write quantum
+circuits --- a one-qubit gate is a join over an input channel and a two-datum
+ancilla channel, with the clause supplying the four matrix entries; a two-qubit
+gate is the same construction with four candidates and an arbitrary $4\times4$;
+deterministic communication has a single candidate of weight one and is therefore
+amplitude-transparent, so ordinary rholang runs inside every branch and the
+classical part of a quantum algorithm costs nothing special \cite{GradedWhere}.
+
+The problem is the other direction.
+
+\begin{proposition}[Overshoot]
+\label{prop:overshoot}
+The semantics is unnormalised with the Born rule applied at observation.
+Non-isometric clauses therefore change the norm, and renormalising at the end is
+post-selection. Unrestricted graded \rhoc{} with complex clauses is thus
+$\mathsf{PostBQP} = \mathsf{PP}$ \cite{Aaronson05} --- strictly more than a
+quantum computer.
+\end{proposition}
+
+The response is a discipline rather than a retreat: declare a coherent mode in
+which clauses must be \emph{isometric}, and check the condition statically.
+Isometry is decidable by inspection for clauses in the normal form of
+Theorem~\ref{thm:dnf} with constant scalars, and not obviously so for clauses
+using the graded modality. That stratification --- \emph{the modality-free
+fragment with isometric clauses is the extractable fragment} --- is what a circuit
+compiler can consume, while the modality remains available in the stochastic and
+probabilistic regimes where no unitarity is expected. Part V shows that this same
+fragment is characterised in a completely different way, as the fragment that
+demands no choice.
+
+\section{Instances}
+\label{sec:instances4}
+
+\paragraph{$\R_{\ge0}$: propensity.} The value is a rate; the total propensity of
+a configuration is the sum over funded redexes; the resulting dynamics is a
+continuous-time Markov chain and the simulation is Gillespie's. Redex multiplicity
+must be counted --- redexes are selections from a multiset, not terms up to
+structural congruence --- or the simulator runs at the wrong rate; the mistake is
+invisible in a trace and was caught only statistically \cite{WeightedGSLT}.
+
+\paragraph{$[0,1]$ with a probabilistic logic.} Values supplied by a probabilistic
+logic network are pairs (strength, confidence). Revision in such a logic is
+\emph{not} a semiring addition --- it is idempotent, unit-free and
+non-distributive --- so the honest arrangement is that the logic supplies values
+and $\R_{\ge0}$ supplies the algebra, with the clause taking the product
+$s \cdot c$. This is exactly multiplicative under deduction in the
+high-uncertainty regime \cite{Goertzel24}. Confidence is not discarded: it enters
+the propensity, so weak evidence yields a rarely-taken branch rather than a
+forbidden one.
+
+\paragraph{A quantale.} The quantale-graded calculus \cite{FuzzyRho} is the
+setting where the graded sort loses nothing: complete lattice, hence
+Knaster--Tarski, hence graded fixed points with no convergence side-condition, and
+--- if the quantale is Girard --- negation as well. Over $\R_{\ge0}$ the fixed
+point becomes a convergence question with a spectral-radius condition; over $\Cx$
+there is no order and the fixed point becomes a budget.
+
+\paragraph{$\Cx$.} Amplitudes, interference, and the discipline of
+\S\ref{sec:gradedbuys}.
+
+\section{Negation, assembled}
+\label{sec:negation}
+
+Negation has now appeared as an obstruction five times, in five apparently
+unrelated places. Collected, they are one phenomenon.
+
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{Adequacy needs it.} A generated logic separates exactly what
+interaction separates only if the target specification supplies something like
+both a conjunction and a negation. Generators that emit type systems supply
+neither, and offer no adequacy theorem (\S\ref{sec:adequacy}).
+
+\item \textbf{The assay needs it.} The complementary guard pair literally writes
+$\lnot\varphi$ in the second receipt, so the mortal scientist's central
+experimental apparatus depends on the hypothesis logic having a negation
+(\S\ref{sec:hypothesis}) --- a dependency the original presentation did not
+advertise.
+
+\item \textbf{The graded sort cannot have it in general.} $1-x$ works on $[0,1]$;
+$\Cx$ offers no canonical candidate and De Morgan fails (\S\ref{sec:design}).
+
+\item \textbf{The container says why.} A quantale supports involutive negation
+exactly when it has a dualising element, i.e.\ when it is a Girard quantale.
+$[0,1]$ with \L{}ukasiewicz negation is one; $\Cx$ is not even a quantale
+(Observation~\ref{obs:negcriterion}). Items 2 and 3 are the same fact seen from
+the two ends of the value dial.
+
+\item \textbf{Choice classicalises, and interference is the casualty.} By
+Diaconescu's argument, full choice implies excluded middle; a value algebra with
+excluded middle reads its clauses crisply; and a crisp reading has no additive
+inverses, hence no cancellation. A resolver strong enough to realise full choice
+can exhibit no interference deficit \cite{Diaconescu75,ChoiceFormulae}. The
+converse would need a topos of graded predicates and is open.
+\end{enumerate}
+
+\begin{principle}[Negation is the connective that trades adequacy against
+gradability]
+\label{prin:negfault}
+Supplying negation buys adequacy and the complementary guard pair, and costs
+cancellation. Withholding it buys interference and costs the ability to state a
+refutation directly. The trade is not avoidable by cleverness; it is a property of
+the value algebra, and the criterion for which side one is on is whether that
+algebra is a Girard quantale.
+\end{principle}
+
+There is one graceful escape, and it is the reason the probabilistic instance
+matters more than as an application. In a Girard quantale of the
+\L{}ukasiewicz kind, refutation is $1-s$, which always exists; and confidence
+supplies a second coordinate in which the undetermined outcome lives. The
+assay's trichotomy of confirm, refute and undetermined therefore survives as a
+theorem, but as three \emph{corners of a square} rather than three cases of a
+case-split --- and the undetermined outcome stops being honest residue and becomes
+a coordinate. That is the change that lets the forager of Part VI learn.

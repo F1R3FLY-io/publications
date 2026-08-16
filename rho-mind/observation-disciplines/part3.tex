@@ -1,0 +1,255 @@
+\part*{Part III --- Placement}
+\addcontentsline{toc}{part}{Part III --- Placement}
+
+\bigskip
+\noindent
+\emph{Having a logic is not yet having an instrument. This part distinguishes
+three things one can do with a formula --- synthesise a program from it, test a
+program against it, or install it in a program as a guard --- and argues that the
+third placement is what turns an observation discipline into something a system
+can look through. It also introduces a fourth use, the formula as a revisable
+hypothesis, which is what Part VII will need. Sources: \cite{ScientistNote} for
+the assay and the hypothesis lattice, \cite{QuorumNote} for the reversal,
+\cite{GsltOmnibus,GradedWhere} for the guard syntax.}
+\bigskip
+
+\section{Three placements}
+\label{sec:placements}
+
+Fix a generated logic $\Logic(\Sig,\Rw,\Coll,\V)$ and a formula $\varphi$ of it.
+There are three essentially different things to do with $\varphi$, and they have
+different costs, different prerequisites and different users.
+
+\paragraph{Specification: $\vdash \varphi \triangleright P$.} From the formula,
+produce a program realising it. This is proofs-as-programs, and for the logics of
+Part II it is the direction with the most literature and the most open problems.
+It requires a proof system, and for the coalition row there is not yet one: the
+consensus-types development lists the extraction of a proof system as its central
+gap, and four of its seven open problems are downstream of that gap
+\cite{ConsensusTypes}.
+
+\paragraph{Test: $P \models \varphi$.} Given a program, decide --- or, within a
+budget, attempt to decide --- whether the formula holds. This requires only the
+semantics, which the generator supplies with the connectives. This is what a model
+checker does, and what an \emph{observer} does.
+
+\paragraph{Guard: $\varphi$ inside the binder.} Install the formula in a
+for-comprehension:
+\begin{center}
+\texttt{for(} $ptrn_{11} \leftarrow chan_{11}$ \texttt{\&} $\cdots$ \texttt{;}
+$\cdots$ \texttt{;} $ptrn_{1n} \leftarrow chan_{1n}$ \texttt{ where } $\varphi$
+\texttt{)}$P$
+\end{center}
+where \texttt{\&} joins within a group and \texttt{;} separates groups, and where
+the preceding clauses bind the variables the condition may mention
+\cite{GsltOmnibus}. Now the formula is evaluated when a communication is about to
+occur, against the candidate data, and its value decides whether that
+communication occurs.
+
+The three are related but not interchangeable, and the differences are the
+substance of this part.
+
+\begin{table}[h]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}llll@{}}
+\toprule
+placement & judgement & needs & who uses it \\
+\midrule
+specification & $\vdash \varphi \triangleright P$ & a proof system & the designer \\
+test          & $P \models \varphi$ & the semantics, plus a budget & the observer \\
+guard         & $\varphi$ on the binder & per-match evaluation & the system itself \\
+hypothesis    & $\varphi_{t} \rightsquigarrow \varphi_{t+1}$ & a lattice of formulae & the learner \\
+\bottomrule
+\end{tabular}
+\caption{Four uses of one formula.}
+\label{tab:placements}
+\end{table}
+
+\section{The arrow reverses, and the cheap direction is the useful one}
+\label{sec:reversal}
+
+The clearest instance of the difference is the coalition row, where the same logic
+has been developed in both directions within this corpus.
+
+The consensus-types development \cite{ConsensusTypes} reads the correspondence as
+a term assignment. Its table maps participant to channel name, open set to channel
+set, and the coalition modality at a participant to a \emph{join}; its right rule
+introduces the join, its left rule introduces a send --- ``contribute local
+evidence'' --- cut is communication, and cyclic proof is guarded recursion. The
+computational content of the quorum-intersection lemma is that any two joins share
+a channel carrying a well-typed message. It is a synthesis story: from a
+specification of a consensus property, build a protocol.
+
+A mortal observer wants the opposite. A hunting pride does not want to build a
+herd; it wants to know which way the herd will break. Its question is
+$P \models \varphi$, not $\vdash \varphi \triangleright P$.
+
+\begin{proposition}[The observation reading sidesteps the proof theory]
+\label{prop:sidestep}
+Reading a generated logic as a hypothesis language about an already-running system
+requires its semantics only. The proof-theoretic apparatus that synthesis requires
+--- and which, for the coalition logic, does not yet exist --- is not on the
+critical path.
+\end{proposition}
+
+This is the strongest strategic argument available for the whole
+observation-discipline programme, and it is worth stating in general rather than
+for one row. The generator hands you semantics for free, because the semantics
+\emph{is} the lifting of constructors and contexts. It does not hand you a proof
+system; proof systems have to be built, and building one is the expensive part of
+adopting any new logic. An observer does not need one. So the range of logics that
+are practically available for observation is far larger than the range that is
+practically available for synthesis, and the dials of Part I can be turned freely
+in the first setting long before the second catches up.
+
+\begin{remark}[Where the guard sits]
+The guard placement is on the observation side of this divide, not the synthesis
+side. Evaluating $\varphi$ against a candidate message is a satisfaction question,
+which is why a where-clause is cheap to add to a language and why it inherits
+whatever fragment discipline the model checker was already under.
+\end{remark}
+
+\section{The guard, and what it is for}
+\label{sec:guard}
+
+\noindent\emph{In plain terms: a concurrent system has to decide, constantly,
+which of several possible communications happens next. Ordinarily that decision is
+made by the hardware. A guard moves it into the language, and makes it a question
+about what the system can observe.}
+
+A term of the form
+\[
+  x!(Q_{1}) \;\mid\; \texttt{for}(y \leftarrow x)P \;\mid\; x!(Q_{2})
+\]
+is a race. Two messages are available on one channel and one receipt is waiting;
+exactly one of them will be consumed, and nothing in the calculus says which. In a
+production implementation the answer is supplied by the physical race of actual
+cores against a shared store. That is a resolution mechanism, but it is one the
+language cannot speak about, cannot reason about, and cannot vary.
+
+Installing a formula on the binder changes this. The guard is evaluated against
+each candidate, and its value determines whether --- and, once graded, with what
+propensity --- that candidate is taken. The non-determinism is still there, but it
+is now resolved by \emph{something the system can say}.
+
+\begin{principle}[The guard is where resolution becomes legible]
+\label{prin:legible}
+A logic in the specification placement describes a system. A logic in the guard
+placement participates in it: the formula's value is the mechanism by which the
+system's own non-determinism is resolved. Everything the observation discipline
+can distinguish is thereby available to the scheduler, and nothing else is.
+\end{principle}
+
+Three consequences, each developed later.
+
+\paragraph{Per-match evaluation.} The clause is evaluated once per candidate
+match, not once per channel state. This is a design decision and it is the one
+that makes the rest work: without it there is no map from candidates to values,
+and hence nothing for Part V's weighing-versus-selecting distinction to act on.
+
+\paragraph{Receipts are linear by default.} A linear receipt is consumed when it
+fires; a persistent one is not. The default matters more than it looks. Under a
+persistent receipt the term above is not a race at all: both messages are
+eventually consumed, the receipt survives either way, and the two derivations
+reconverge. It is \emph{linearity} that makes the surviving message a record of
+which branch was taken, and therefore linearity on which the whole treatment of
+racing in Parts IV and V rests \cite{GradedWhere}.
+
+\paragraph{Perception must not be able to act.} If a formula is to read structure
+without disturbing it, the reading must not itself be a communication that
+consumes something the system needed. This is a real design constraint and it
+bites in practice: in the board-game encoding, threat markers had to be given
+their own name family, because a line signalling a threat on a square's own move
+channel would rendezvous with that square's receipt and \emph{play the move}. The
+same separation is forced in the herd model, where a scan implemented with an
+ordinary receive rather than a peek would mean that the pride moves the zebra by
+looking at it \cite{GameNote,QuorumNote}. Grades of access are separated by choice
+of namespace, not by good intentions.
+
+\section{The hypothesis placement}
+\label{sec:hypothesis}
+
+The fourth use of a formula is the one a learner makes: not to check a program
+once, but to hold a guess and revise it.
+
+\subsection{The assay}
+
+The mortal-scientist development \cite{ScientistNote} makes an experiment out of
+the guard placement directly. An \emph{assay} of a hypothesis $\varphi$ against a
+specimen arriving on channel $p$ is a complementary pair of guarded receipts:
+\begin{center}
+\texttt{for(x <- p where }$\varphi(x)$\texttt{)\{ confirm \}}
+\quad $\mid$ \quad
+\texttt{for(x <- p where }$\lnot\varphi(x)$\texttt{)\{ refute \}}
+\end{center}
+Exactly one of three things then happens: the confirming branch fires, the
+refuting branch fires, or neither does before the budget runs out. That
+trichotomy --- confirm, refute, undetermined --- is the note's central
+epistemological object, and the third outcome is not a modelling convenience: for
+a mortal observer, \emph{refutation is budget-relative}. A step not yet enabled is
+indistinguishable from a step never enabled, and telling them apart is exactly
+what a finite purse cannot buy.
+
+Two features of this construction will be picked up repeatedly.
+
+First, it needs negation \emph{in the hypothesis logic}, and by
+\S\ref{sec:adequacy} a generated logic supplies negation only if the target
+specification does. The assay therefore carries an unadvertised dependency, which
+Part IV discharges.
+
+Second, the undetermined outcome has two sources that an observer cannot separate
+from the outside. In the consensus setting, one is a property of the participant
+--- stuck, faulty, Byzantine --- and the other is a property of the observer's
+purse. A mortal scientist cannot distinguish a faulty participant from an
+underfunded observation. Measured in the herd model: with a purse of $60$, $61.04\%$
+of verdicts are undetermined, of which $56.68\%$ would have been decidable with a
+richer purse; at a purse of $200$ or more the undetermined outcome disappears
+entirely \cite{QuorumNote}.
+
+\subsection{The lattice, and the shape of revision}
+
+Hypotheses are formulae, and formulae are ordered by logical strength, so the
+hypothesis space is a lattice --- the \emph{relaxation lattice}, obtained by
+weakening a characteristic formula along its structure. It also carries a metric:
+formulae agreeing to modal depth $n$ are within $2^{-n}$ of each other, which is
+an ultrametric.
+
+That geometry has consequences a designer should know before choosing a search
+strategy.
+
+\begin{itemize}[leftmargin=1.4em]
+\item The balls are nested or disjoint, every point is a centre, and there is no
+betweenness. \emph{There is no gradient.} Gradient methods are not ill-suited
+here; they are ill-typed. What is available is tree search.
+\item A revision move is a pair (locus, operation); its distance is the depth at
+which one had to back up, and its direction is which sibling one moved to.
+\item Cost is monotone in distance: a move of distance $2^{-n}$ invalidates every
+confirmation obtained at depth $\ge n$. Backtracking is not free; it discards
+evidence.
+\item \textbf{Confinement.} A walk whose steps are all shorter than $2^{-n}$ never
+leaves the ball of radius $2^{-n}$ it started in. A purely incremental learner
+cannot escape its initial basin --- not because it is not clever enough, but for
+metric reasons.
+\end{itemize}
+
+Confinement was measured, not merely proved. In the board-game study, the best
+opening \emph{reverses} as theory depth increases: at one rung the centre opening
+wins $.833$ against the corner's $.597$, while under the exactly-correct theory the
+corner wins $.896$ against the centre's $.548$. Deepening the theory while holding
+the opening fixed therefore makes things worse, $.833 \to .548$. The corner-opening
+mutant invades at identical cost and is exactly the distance-$2^{-1}$ move that
+Confinement denies an individual \cite{GameNote}.
+
+\subsection{Why this part matters for the next one}
+
+The picture just described has one degree of freedom and it is discrete. A learner
+holds a formula; to change its behaviour it must change the formula; changing the
+formula is a jump in a tree, priced by how far it had to back up, and small jumps
+cannot leave the neighbourhood.
+
+Part IV adds a second degree of freedom that is continuous and lives \emph{inside}
+each ball. The consequences for learning are taken up in Part VII, but the
+mechanism is entirely the subject of the next part: let the guard return a value
+rather than a bit.
