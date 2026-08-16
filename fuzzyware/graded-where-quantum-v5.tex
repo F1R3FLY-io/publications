@@ -2,6 +2,7 @@
 
 \usepackage[margin=1.05in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
 \usepackage{mathtools}
 \usepackage{amscd}
 \usepackage{booktabs}
@@ -65,6 +66,9 @@
 \newcommand{\str}{\mathrm{s}}
 \newcommand{\conf}{\mathrm{c}}
 \newcommand{\ket}[1]{\lvert #1 \rangle}
+% the REVERSE lollipop: head at the bound name, as in \leftarrow, because
+% the datum flows from the channel to the variable.  ASCII form: o-
+\newcommand{\lolli}{\mathrel{\reflectbox{$\multimap$}}}
 
 \lstdefinestyle{rholang}{
   basicstyle=\ttfamily\small,
@@ -256,6 +260,16 @@ is not; their suggested way out of the quantum-alternation impasse ---
 interferometry with no distinct control qubit --- is this design.
 \end{enumerate}
 
+\subsection{Reading order}
+
+\S\ref{sec:calculus} fixes the language, including the third receipt arrow
+$\lolli$ that the linear-binding discipline needs.
+\S\S\ref{sec:fa}--\ref{sec:design} are background and are close to the
+previous version. \S\S\ref{sec:namespace}--\ref{sec:fragment} are the new
+semantics and can be read on their own.
+\S\S\ref{sec:gadgets}--\ref{sec:shor} are the worked example, and
+\S\ref{sec:dilation} the containment.
+
 \subsection{What this paper does not do}
 
 It does not prove a quantum advantage. It does not prove
@@ -264,6 +278,142 @@ conjectures it for arbitrary concurrency (Conjecture~\ref{conj:global}). The
 staging condition of \S\ref{sec:fragment} is a measured survey over small
 systems, not a theorem. And it does not solve the recursion problem of
 Obligation~\ref{ob:recursion}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The calculus}\label{sec:calculus}
+
+This section fixes the language. It is the rho calculus \cite{MeredithRadestock}
+with three changes: the \texttt{where} clause of a for-comprehension takes
+values in a commutative semiring rather than in the Booleans, the clause is
+evaluated once per candidate match rather than once per communication, and a
+third receipt arrow is added for the binding discipline of
+\S\ref{sec:gadgets}.
+
+\subsection{Terms and names}
+
+\begin{definition}[Syntax]\label{def:syntax}
+Processes and names are given mutually:
+\[
+\begin{array}{rcll}
+  P,Q &::=& 0 & \text{the stopped process}\\
+      &\mid& x!(P) & \text{output}\\
+      &\mid& \textsf{for}(\,y_1 \mathbin{\alpha} x_1 \ \&\ \cdots
+             \ \&\ y_m \mathbin{\alpha} x_m \ \textsf{where}\ \psi\,)P
+             & \text{input, } m \geq 1\\
+      &\mid& P \mid Q & \text{parallel composition}\\
+      &\mid& {*}x & \text{drop}\\
+      &\mid& \textsf{new}\ x\ \textsf{in}\ P & \text{fresh name}\\[4pt]
+  x,y &::=& @P & \text{quote}\\
+      &\mid& \text{a name bound by \textsf{new} or by an input prefix}\\[4pt]
+  \alpha &::=& \Leftarrow \ \mid\ \leftarrow \ \mid\ \lolli
+             & \text{the receipt arrows, below}
+\end{array}
+\]
+A term with $m > 1$ patterns is a \emph{join}; the patterns need not sit on
+distinct channels, and when they do not the receipt is contended with itself.
+\end{definition}
+
+Names are quoted processes and $*x$ drops a name back to the process it quotes.
+This is the whole of reflection, and it is why the calculus needs no separate
+theory of higher-order values: a channel is a program and a program is a
+channel. It is also the feature that makes Lemma~\ref{lem:1q} possible, since a
+name received at runtime may be used as the channel of a send.
+
+\subsection{Structural congruence}
+
+\begin{definition}[Congruence]\label{def:cong}
+$\scong$ is the least congruence such that $(\Proc, \mid, 0)$ is a commutative
+monoid, together with $*@P \scong P$ and $@{*}x = x$, closed under
+$\alpha$-equivalence and under scope extrusion for \textsf{new}.
+\end{definition}
+
+Commutativity of $\mid$ is not a convenience. A configuration therefore records
+\emph{how many} messages rest on a channel and not which is which, which is what
+Proposition~\ref{prop:bose} turns into a statement about statistics.
+
+\subsection{The three receipt arrows}
+
+\begin{definition}[Receipts]\label{def:arrows}
+Write
+\[
+  \textsf{for}(y \Leftarrow x)P, \qquad
+  \textsf{for}(y \leftarrow x)P, \qquad
+  \textsf{for}(y \lolli x)P
+\]
+for, respectively: a \emph{persistent} receipt, which survives its own firing; a
+\emph{linear} receipt, which is consumed by it; and a linear receipt whose bound
+names are additionally used \emph{exactly once} in the continuation
+(Definition~\ref{def:linear}). In program text the third is written
+\texttt{o-}, the reverse of linear logic's lollipop \cite{Girard}: the head sits
+at the bound name, as it does in $\leftarrow$, because the datum flows from the
+channel to the variable.
+\end{definition}
+
+\begin{remark}[Receipts are linear by default]\label{rem:linear}
+Linearity of the \emph{receipt} is what makes the surviving message of
+\eqref{eq:race} a which-path record, and hence what
+Proposition~\ref{prop:stage1} rests on: under a persistent receipt both messages
+are eventually consumed, the receipt survives either way, and the two
+derivations reconverge with nothing left to weight. At a join persistence is
+harmless but idle, since a join consumes all the data at its channel and the
+surviving receipt is identical across matchings, so it distinguishes none of
+them. Persistence and linear binding are independent: a persistent receipt
+consumes each datum once and uses its bound names once per firing, which is why
+the installer contracts of \S\ref{sec:shor} are legal.
+\end{remark}
+
+The three arrows are three disciplines, not three sorts of channel. Whether a
+channel is quantum is settled by Definition~\ref{def:namespace}, and
+$\lolli$ is well formed only there.
+
+\subsection{Reduction}
+
+\begin{definition}[Candidates]\label{def:candsite}
+At a receipt $r$ in a term $P$, a \emph{candidate} is an injective assignment
+$\sigma$ of $r$'s patterns to messages resting on the corresponding channels.
+$\Cand(P,r)$ is the set of candidates.
+\end{definition}
+
+\begin{definition}[Communication]\label{def:comm}
+For a candidate $\sigma$ of a receipt $r$ with clause $\psi$ and continuation
+$P$,
+\[
+  \textsf{for}(\,\vec{y} \mathbin{\alpha} \vec{x}\ \textsf{where}\ \psi\,)P
+  \ \mid\ x_1!(Q_1) \mid \cdots \mid x_m!(Q_m)
+  \;\xrightarrow{\ \sem{\psi}(\sigma)\ }\;
+  P\{@Q_{\sigma(1)}/y_1,\dots,@Q_{\sigma(m)}/y_m\},
+\]
+the receipt being discarded for $\leftarrow$ and $\lolli$ and retained for
+$\Leftarrow$. The transition carries the clause's value at $\sigma$ as its
+weight. A candidate of weight $0$ does not fire, so the crisp sort of the clause
+keeps its gating job and the graded sort does nothing else. Reduction is closed
+under $\mid$, under \textsf{new}, and under $\scong$.
+\end{definition}
+
+\begin{definition}[Well-formedness]\label{def:wf}
+A term is \emph{well formed} when every receipt using $\lolli$ is on quantum
+channels (Definition~\ref{def:namespace}) and satisfies
+Definition~\ref{def:linear}; every clause taking values outside $\Bool$ is at a
+receipt on quantum channels; and every such clause is contractive
+(Definition~\ref{def:contractive}). Nothing else is refused.
+\end{definition}
+
+A single rule with a weight is not yet a semantics, because a term generally
+offers many candidates at many receipts and the rule says nothing about how
+their weights relate. Supplying that relation is the work of
+\S\ref{sec:completion}, and getting it wrong at the level of the receipt rather
+than the contention set is the defect this version repairs.
+
+\subsection{What is not primitive}
+
+There is no replication and no summation. Recursion is written with reflection,
+by a receipt whose continuation re-installs a quotation of itself; this is why
+Obligation~\ref{ob:recursion} is about reflection rather than about a fixed-point
+combinator. There is no restriction operator in the original presentation
+either: freshness is obtained by quoting an unguessable process. We keep
+\textsf{new} as a primitive binder because \S\ref{sec:namespace} makes its
+binding structure carry the classical/quantum distinction, and a derived form
+would leave that distinction without a syntactic anchor.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Why context-based full abstraction cannot help}\label{sec:fa}
@@ -350,7 +500,8 @@ than we had claimed, and always for the same reason.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{The graded clause, in brief}\label{sec:design}
 
-The design is developed in \cite{ResAlg}; this section fixes notation.
+The syntax is fixed in \S\ref{sec:calculus}; the algebra is developed in
+\cite{ResAlg}. This section records what is needed here.
 
 The \texttt{where} clause is two-sorted. The \emph{crisp} sort $\beta$ is the
 existing condition language, with the full Boolean structure. The \emph{graded}
@@ -363,14 +514,9 @@ There is no negation on the graded sort, since $\Cx$ has no canonical one, and
 $\sumv$ is where interference enters the logic: a disjunction may be false with
 both disjuncts true.
 
-\begin{definition}[Candidates and per-match evaluation]\label{def:cand}
-At a receipt site $r$ in a term $P$, $\Cand(P,r)$ is the set of injective
-assignments of $r$'s patterns to data admissible at its channels. The clause is
-evaluated once per candidate, not once per communication, and
-$\sem{\psi_r}(\sigma) \in V$ is its value at $\sigma$. A candidate with value
-zero does not fire, so the crisp sort keeps its gating job and the graded sort
-does nothing else.
-\end{definition}
+By Definition~\ref{def:comm} the clause is evaluated once per candidate rather
+than once per communication, and $\sem{\psi_r}(\sigma) \in V$ is its value at
+$\sigma$.
 
 Reading a bound name in the clause does not consume it: guard evaluation is
 pure, which the existing condition evaluator already enforces by construction.
@@ -774,8 +920,8 @@ $q_0!(\mathsf{zero}) \mid q_1!(\mathsf{one})$.
 Let $w$ be a fresh quantum channel carrying the two output rail names, and
 consider
 \[
-  \textsf{for}(\, y \multimap q_a \ \&\ z \multimap q_b
-   \ \&\ u_1 \multimap w \ \&\ u_2 \multimap w \ \textsf{where}\ \psi\,)
+  \textsf{for}(\, y \lolli q_a \ \&\ z \lolli q_b
+   \ \&\ u_1 \lolli w \ \&\ u_2 \lolli w \ \textsf{where}\ \psi\,)
   \ \{\; u_1!(*y) \mid u_2!(*z) \;\}.
 \]
 Every bound name is used exactly once and nothing is discarded. There are two
