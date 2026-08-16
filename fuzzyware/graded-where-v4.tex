@@ -128,7 +128,10 @@ outcome.
 
 As a worked example we build Shor's algorithm in the fragment, with every number
 computed by a simulator that enumerates candidates rather than multiplying gate
-matrices. Universality is easy and modular exponentiation is ordinary rholang,
+matrices. The whole program is given --- the three gadget contracts, modular
+exponentiation, and the instance at $N=15$ --- emitted from the same gate list
+the simulator executes, so the code and the numbers cannot drift apart.
+Universality is easy and modular exponentiation is ordinary rholang,
 but the exercise turns up a hazard rather than a triumph: with clauses
 unconstrained, renormalising at observation is post-selection, and the fragment
 computes $\mathsf{PP}$.
@@ -283,7 +286,9 @@ scattering matrix and the symmetric outcome carries its permanent.
 \item \textbf{Shor's algorithm, and an overshoot} (\S\ref{sec:shor}). The
 fragment is universal for quantum circuits (Lemmas~\ref{lem:1q}--\ref{lem:2q}),
 the circuit's DAG is the term's causal order (Proposition~\ref{prop:dag}), and
-the classical part costs nothing (Corollary~\ref{cor:modexp}). But with clauses
+the classical part costs nothing (Corollary~\ref{cor:modexp}). \S\ref{ssec:fullterm}
+gives the term in full rather than in lemmas, generated from the gate list the
+simulator runs. But with clauses
 unconstrained the fragment decides $\mathsf{PP}$ by post-selection
 (Proposition~\ref{prop:postbqp}).
 
@@ -1147,6 +1152,156 @@ compilation --- is written as ordinary rholang.
 Measured: the block computing $x \mapsto 7^x \bmod 15$ carries a $16$-term
 superposition to a $16$-term superposition with norm $1.000000000000$, exactly
 preserved.
+
+\subsection{The term, in full}\label{ssec:fullterm}
+
+The gadgets above are stated as lemmas, and lemmas are easy to believe and hard
+to run. This subsection gives the whole program. It is not transcribed: the
+listings below are emitted by \texttt{shorterm.py} from the same gate list that
+\texttt{gradedsim.py} executes to produce Table~\ref{tab:shor}, so the code and
+the numbers cannot drift apart. Running the emitted list reproduces the
+distribution of Table~\ref{tab:shor} with a worst deviation of $0$.
+
+Three conventions. A \texttt{contract} is a persistent receipt on an installer
+channel; the receipt it installs on a wire is linear, so by
+Remark~\ref{rem:linear} the persistence never touches a race. Crisp guards are
+written in brackets and multiply graded scalars, which is the normal form of
+Theorem~\ref{thm:dnf}; \texttt{cis} denotes $\theta \mapsto e^{i\theta}$, a
+scalar constant of $\V = \Cx$. Channels are passed as data in the usual way,
+so an argument is dereferenced where it is used as a channel.
+
+\begin{lstlisting}
+contract gate1( qIn, qOut, m00, m01, m10, m11 ) = {
+  new w in {
+      w!(0) | w!(1)
+    | for( v <- *qIn & u1 <- w & u2 <- w
+           where [ *v == 0 and *u1 == 0 ] * *m00
+               + [ *v == 0 and *u1 == 1 ] * *m01
+               + [ *v == 1 and *u1 == 0 ] * *m10
+               + [ *v == 1 and *u1 == 1 ] * *m11 )
+      { *qOut!(*u1) }
+  }
+}
+
+contract hadamard( qIn, qOut ) = {
+  gate1!( *qIn, *qOut,  0.7071067811865476,  0.7071067811865476,
+                        0.7071067811865476, -0.7071067811865476 )
+}
+
+contract cphase( qaIn, qbIn, qaOut, qbOut, theta ) = {
+  new wa, wb in {
+      wa!(0) | wa!(1) | wb!(0) | wb!(1)
+    | for( va <- *qaIn & vb <- *qbIn
+         & ua1 <- wa & ua2 <- wa & ub1 <- wb & ub2 <- wb
+           where [ *ua1 == *va and *ub1 == *vb ]
+               * ( [ *va == 1 and *vb == 1 ] * cis(*theta)
+                 + [ not (*va == 1 and *vb == 1) ] * 1 ) )
+      { *qaOut!(*ua1) | *qbOut!(*ub1) }
+  }
+}
+
+contract swap( qaIn, qbIn, qaOut, qbOut ) = {
+  new wa, wb in {
+      wa!(0) | wa!(1) | wb!(0) | wb!(1)
+    | for( va <- *qaIn & vb <- *qbIn
+         & ua1 <- wa & ua2 <- wa & ub1 <- wb & ub2 <- wb
+           where [ *ua1 == *vb and *ub1 == *va ] * 1 )
+      { *qaOut!(*ua1) | *qbOut!(*ub1) }
+  }
+}
+
+// Modular exponentiation: one candidate at every step, clause value 1.
+contract modexp( ret, base, expn, modulus ) = {
+  new loop in {
+      contract loop( acc, b, e ) = {
+        if ( *e == 0 ) { *ret!(*acc) }
+        else {
+          if ( *e % 2 == 1 ) {
+            loop!( (*acc * *b) % *modulus, (*b * *b) % *modulus, *e / 2 )
+          } else {
+            loop!( *acc, (*b * *b) % *modulus, *e / 2 )
+          }
+        }
+      }
+    | loop!( 1, *base % *modulus, *expn )
+  }
+}
+\end{lstlisting}
+
+The instance follows. Every wire carries an explicit stage index, because
+gadgets compose in series on \emph{fresh} channels
+(Proposition~\ref{prop:dag}): \texttt{q3\_5} is the fourth wire after five
+gates. The indices are the circuit's wires, drawn out.
+
+\begin{lstlisting}
+new q0_0, q0_1, q0_2, q0_3, q0_4, q0_5, q0_6, q0_7, q1_0, q1_1, q1_2,
+    q1_3, q1_4, q1_5, q1_6, q1_7, q2_0, q2_1, q2_2, q2_3, q2_4, q2_5,
+    q2_6, q2_7, q3_0, q3_1, q3_2, q3_3, q3_4, q3_5, q3_6, q3_7, q4_0,
+    q4_1, q5_0, q5_1, q6_0, q6_1, q7_0, q7_1, done in {
+
+    // 1. the input register
+    q0_0!(0) |
+    q1_0!(0) |
+    q2_0!(0) |
+    q3_0!(0) |
+    q4_0!(0) |
+    q5_0!(0) |
+    q6_0!(0) |
+    q7_0!(1) |
+
+    hadamard!( *q0_0, *q0_1 ) |
+    hadamard!( *q1_0, *q1_1 ) |
+    hadamard!( *q2_0, *q2_1 ) |
+    hadamard!( *q3_0, *q3_1 ) |
+
+    // 2. modular exponentiation, entangling work with counting
+    //    y0..y3 are discarded: the work register is overwritten
+    for( x0 <- *q0_1 & x1 <- *q1_1 & x2 <- *q2_1 & x3 <- *q3_1
+       & y0 <- *q4_0 & y1 <- *q5_0 & y2 <- *q6_0 & y3 <- *q7_0 ) {
+      new r in {
+        modexp!( *r, 7, 8 * *x0 + 4 * *x1 + 2 * *x2 + *x3, 15 ) |
+        for( m <- r ) {
+          q0_2!(*x0) | q1_2!(*x1) | q2_2!(*x2) | q3_2!(*x3) |
+          q4_1!( (*m / 8) % 2 ) | q5_1!( (*m / 4) % 2 ) |
+          q6_1!( (*m / 2) % 2 ) | q7_1!( *m % 2 )
+        }
+      }
+    } |
+
+    // 3. the transform on the counting register
+    hadamard!( *q0_2, *q0_3 ) |
+    cphase!( *q1_2, *q0_3, *q1_3, *q0_4, 2*pi/4 ) |
+    cphase!( *q2_2, *q0_4, *q2_3, *q0_5, 2*pi/8 ) |
+    cphase!( *q3_2, *q0_5, *q3_3, *q0_6, 2*pi/16 ) |
+    hadamard!( *q1_3, *q1_4 ) |
+    cphase!( *q2_3, *q1_4, *q2_4, *q1_5, 2*pi/4 ) |
+    cphase!( *q3_3, *q1_5, *q3_4, *q1_6, 2*pi/8 ) |
+    hadamard!( *q2_4, *q2_5 ) |
+    cphase!( *q3_4, *q2_5, *q3_5, *q2_6, 2*pi/4 ) |
+    hadamard!( *q3_5, *q3_6 ) |
+    swap!( *q0_6, *q3_6, *q0_7, *q3_7 ) |
+    swap!( *q1_6, *q2_6, *q1_7, *q2_7 ) |
+
+    // 4. read the counting register
+    for( c0 <- *q0_7 & c1 <- *q1_7 & c2 <- *q2_7 & c3 <- *q3_7 ) {
+      done!( 8 * *c0 + 4 * *c1 + 2 * *c2 + *c3 )
+    }
+}
+\end{lstlisting}
+
+\begin{remark}[What the listing exposes]\label{rem:listing}
+Three things are visible here that the lemmas state but do not show. The first
+is that the whole quantum content of the program sits in the \texttt{where}
+clauses of three contracts, and everything else is rholang. The second is that
+the ancilla patterns \texttt{u2}, \texttt{ua2}, \texttt{ub2} are bound and never
+used, and neither are \texttt{y0}--\texttt{y3} in the modular exponentiation
+step; those four discards are the weakening that \S\ref{ssec:linear} shows the
+construction cannot do without. The third is that the term contains no
+scheduling of any kind. The order of the transform is carried entirely by the
+stage indices --- each gadget waits for its input channel --- so the twelve
+lines of \S\S2--3 may be written in any order at all without changing the
+program.
+\end{remark}
 
 \subsection{The instance, assembled}
 
