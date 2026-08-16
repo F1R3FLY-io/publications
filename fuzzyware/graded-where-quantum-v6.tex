@@ -1,0 +1,1815 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{mathtools}
+\usepackage{amscd}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+\usepackage[T1]{fontenc}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\setlength{\emergencystretch}{2.5em}
+% msbm has no double-struck digits, so \Id renders as a wrong glyph;
+% this is the identity operator throughout.
+\newcommand{\Id}{\mathrm{1}\hspace{-0.30em}\mathrm{l}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Theorem environments
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{principle}[theorem]{Principle}
+\newtheorem{obligation}[theorem]{Obligation}
+\newtheorem{finding}[theorem]{Empirical finding}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros.  NOTATION RULES OBSERVED THROUGHOUT:
+%   * the rho calculus is never written with the Greek letter rho
+%   * quoting is @P, dropping is *x; corner quotes are pre-2016 notation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\grho}{\textsf{rho}_{\V}}
+\newcommand{\sem}[1]{[\![#1]\!]}
+\newcommand{\V}{\mathbb{V}}
+\newcommand{\Bool}{\mathbb{B}}
+\newcommand{\Rnn}{\mathbb{R}_{\geq 0}}
+\newcommand{\Cx}{\mathbb{C}}
+\newcommand{\Nat}{\mathbb{N}}
+\newcommand{\Proc}{\mathcal{P}}
+\newcommand{\Names}{\mathcal{N}}
+\newcommand{\NF}{\mathrm{NF}}
+\newcommand{\Reach}{\mathrm{Reach}}
+\newcommand{\supp}{\mathrm{supp}}
+\newcommand{\Per}{\mathrm{Per}}
+\newcommand{\Det}{\mathrm{Det}}
+\newcommand{\scong}{\equiv}
+\newcommand{\tensorv}{\otimes}
+\newcommand{\sumv}{\oplus}
+\newcommand{\Cand}{\mathrm{Cand}}
+\newcommand{\Out}{\mathrm{out}}
+\newcommand{\crisp}[1]{\lceil #1 \rceil}
+\newcommand{\pow}{\mathrm{pow}}
+\newcommand{\str}{\mathrm{s}}
+\newcommand{\conf}{\mathrm{c}}
+\newcommand{\ket}[1]{\lvert #1 \rangle}
+\newcommand{\bra}[1]{\langle #1 \rvert}
+% the REVERSE lollipop: head at the bound name, as in \leftarrow, because
+% the datum flows from the channel to the variable.  ASCII form: o-
+\newcommand{\lolli}{\mathrel{\reflectbox{$\multimap$}}}
+
+\lstdefinestyle{rholang}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  morekeywords={for,new,in,where,contract,match,if,else},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  framesep=5pt,
+  rulecolor=\color{black!35},
+  xleftmargin=6pt,
+  aboveskip=9pt,
+  belowskip=9pt
+}
+\lstset{style=rholang}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{\bfseries Races Decided by the Born Rule\\[4pt]
+\large The complex instance of graded where-clauses: a quantum namespace,\\
+contention-set completion, and the fragment on which a process term\\
+denotes a quantum state}
+
+\author{L.\,G.\ Meredith\\ \small F1R3FLY.io}
+
+\date{F1R3FLY.io working note --- August 2026\\[2pt]
+\normalsize Version 5. Paper I of three; supersedes the quantum half of
+\emph{Graded Where-Clauses}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The rho calculus does not say how the non-determinism of a race is resolved. An
+implementation must supply that mechanism, and quantum mechanics is one of the
+available choices: it supplies amplitudes for the branches of a race and the
+Born rule for turning them into outcomes. This note takes that instantiation
+seriously and asks what has to be true of a program before its denotation is a
+quantum state.
+
+The design is one line of grammar, carried over from the companion paper on
+resolution algebras: the \texttt{where} clause of a for-comprehension is valued
+in a commutative semiring rather than in the Booleans, and is evaluated per
+candidate match. Here $\V = \Cx$ throughout.
+
+Four things are new. First, a \emph{quantum namespace}: names bound by
+\texttt{new} are unforgeable and are the only ones on which a clause may take
+complex values, while quoted names are classical. Unforgeability yields
+\emph{authority}, not linear ownership --- a capability may be copied even when
+it cannot be guessed --- and linear ownership turns out to be neither obtained
+nor needed, because what may not be cloned is the datum and a message is
+consumed exactly once. The herald of a non-unitary step lands in the classical
+namespace by construction, which is what gives measurement a place to happen,
+and the instrument it performs is defined rather than gestured at. Second, the denotation is \emph{register-indexed}: $\sem{P}$ lives in a graded
+space over the names $P$ can act on, with an explicit embedding whenever a name
+becomes active, and parallel composition combines states by adding occupancies.
+Because parallel composition is associative-commutative, a configuration records
+how many messages rest on a channel and not which is which, so structural
+congruence induces exactly the permutation symmetry responsible for
+\emph{permanent-valued recombination} --- which we take to be the paper's
+central result. Identifying the resulting graded space with normalised bosonic
+Fock space is a further semantic choice, and we say which choice we make. Third, the completion condition that makes a step
+norm-preserving is stated over the \emph{contention set} --- the connected
+components of the conflict relation, with maximal matchings as the alternatives
+and the fibre-summed amplitudes normalised --- and conflict components tensor
+rather than sum. The race equation, the join, and the two-receipt race are the
+special cases. Fourth, we identify the fragment on which the one-step operator
+is an isometry. It is not the whole calculus: absorbing normal forms and
+spectator tokens each break it, and both are visible syntactically. Under halt
+tagging, staging, and a dual-rail encoding the failures disappear in every case
+we have been able to construct.
+
+The dual-rail encoding also settles a question the previous version got wrong.
+Under the payload encoding, a step that uses each bound name exactly once is
+block-diagonal in the input basis, hence not a gate; that is a fact about the
+encoding, and under dual rail every $2\times 2$ and the entangling
+$4 \times 4$s are realised with no discard anywhere. Shor's algorithm is
+rebuilt on that basis, with the whole term given, generated from the same gate
+list the simulator runs.
+
+Non-unitary clauses are contained rather than excluded: contractivity is a
+judgement, the defect is dilated at the site, and the ancilla is neither traced
+nor projected but written as a classical message which a retry loop may read
+and the resource ledger charges. What was free post-selection becomes a bill of
+$2^n$ firings.
+
+We are explicit about what is not established: norm preservation is proved at a
+configuration and conjectured for arbitrary concurrency; the staging condition
+is a measured survey and not a theorem; the complexity containment is a
+conjecture; and quantum alternation is known to be incompatible with the
+standard fixed-point semantics for recursion, which our budget does not repair.
+\end{abstract}
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}\label{sec:intro}
+
+\subsection{Where the choice is}
+
+A rho program does not determine its own execution. Write
+\begin{equation}\label{eq:race}
+  x!(Q_1) \mid \textsf{for}(y \leftarrow x)P \mid x!(Q_2)
+\end{equation}
+and the operational semantics permits two reductions. It does not say which one
+happens, and it does not say with what tendency. This is not an oversight; it is
+the defining feature of a mobile process calculus, and it is what makes the
+calculus a specification of interaction rather than of a machine.
+
+An implementation must close the gap. RSpace closes it by presenting the
+parallel fragment as a store from channels to polarity-homogeneous bags and
+letting the physical race between cores decide which produce is zipped with
+which consume. That is a resolution mechanism, and it is a choice.
+
+The resolution mechanism is a \emph{parameter}, and other values of the
+parameter are available. Quantum mechanics is one: it supplies amplitudes for
+the branches of a race and the Born rule for turning them into outcomes. This
+note develops that instantiation. The companion paper \cite{ResAlg} develops the
+parameter itself --- the resolution algebra, the conservativity of the Boolean
+value, the normal-form theorem for weight maps --- and a second companion
+\cite{PLNPaper} develops the non-negative real instance and its use in
+inference-driven execution. Everything here is $\V = \Cx$.
+
+\subsection{The thesis, and the boundary it draws}\label{ssec:scope}
+
+Stated plainly, and before anything is built:
+
+\begin{quote}
+A finite, contractive, staged fragment of graded rho admits a candidate quantum
+interpretation. The extension to unrestricted reflective concurrency remains
+open.
+\end{quote}
+
+Two languages are in play throughout and it is worth naming them now. The
+\emph{quantum-safe fragment} of \S\ref{sec:fragment} --- token-conserving,
+discard-free, halt tagged, staged, dual-rail, with contractive clauses --- is
+the one for which the interpretation is becoming credible; the Shor construction
+of \S\ref{sec:shor} lives entirely inside it. The full reflective calculus is
+not covered: recursion by reflection runs into a known incompatibility between
+quantum alternation and the standard fixed-point semantics
+(Obligation~\ref{ob:recursion}), unrestricted concurrency leaves global norm
+preservation conjectural (Conjecture~\ref{conj:global}), and the staging
+condition itself is supported by an exhaustive finite search rather than by a
+theorem (Finding~\ref{find:safe}, Conjecture~\ref{conj:safe}).
+
+We nonetheless develop the semantics over the whole calculus, because the two
+failure modes of \S\ref{sec:fragment} are only visible once one has tried, and
+because the boundary is more informative than a restriction imposed at the
+outset would have been.
+
+\subsection{What this paper must answer}
+
+The previous version of this material \cite{GWv4} was reviewed, and the review
+was right about four things. Non-contractive clauses were legal but had no
+dilation. Dilating a receipt site does not make the one-step operator
+norm-preserving, because the operator sums over sites as well as over
+candidates. The herald was simultaneously a coherent ancilla and an ordinary
+message, with no account of the transition between them. And the stage-one
+proposition had a counterexample.
+
+Two further defects were not raised and are addressed here. Norm preservation of
+each column is only half of $T^{\dagger}T = \Id$; the other half is that
+distinct columns be orthogonal, and that fails for reasons having nothing to do
+with weights. And a process term is not, in general, the carrier of a quantum
+state at all --- states must be indexed by a register, and states over
+overlapping registers do not combine.
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=3pt]
+\item \textbf{The quantum namespace} (\S\ref{sec:namespace}). Names bound by
+\texttt{new} are unforgeable; quoted names are not. Take the first as the
+quantum namespace. Unforgeability yields \emph{authority} and not linear
+ownership (Proposition~\ref{prop:ownership}); we show that linear ownership is
+not needed, since what may not be cloned is the datum and every receipt on a
+quantum channel is linear by Definition~\ref{def:wf}
+(Remark~\ref{rem:noownership}). The herald channel $h(r) := @r$ is classical
+because it is a quotation, so the classical/quantum boundary is drawn by the
+calculus and not by us, and Definition~\ref{def:instrument} says what happens
+there.
+
+\item \textbf{The denotation is register-indexed} (\S\ref{sec:register}).
+$\sem{P}$ lives in a graded space over the names $P$ can act on, with an
+explicit isometric embedding whenever a name becomes active
+(Definition~\ref{def:activate}). Composition adds occupancies, and is injective
+exactly when the registers are disjoint; overlapping registers forget which side
+supplied which quanta, which is indistinguishability. Since $\mid$ is
+associative-commutative, structural congruence induces \textbf{the permutation
+symmetry behind permanent-valued recombination}
+(Proposition~\ref{prop:bose}, Theorem~\ref{thm:scattering}); identifying that
+symmetry with normalised bosonic Fock space is a further choice
+(Remark~\ref{rem:convention}).
+
+\item \textbf{Contention-set completion} (\S\ref{sec:completion}). The unit of
+normalisation is the connected component of the conflict relation; the
+alternatives within a component are its maximal matchings; the fibre-summed
+amplitudes are what must have unit norm. Components factor --- as
+\emph{events} in general (Proposition~\ref{prop:eventfact}) and as a tensor
+product of \emph{state spaces} under staging and unit occupancy
+(Proposition~\ref{prop:statefact}), a distinction the previous version ran
+together. Proposition~\ref{prop:complete} and Table~\ref{tab:conventions},
+which measures the three wrong answers against the right one.
+
+\item \textbf{The quantum-safe fragment} (\S\ref{sec:fragment}). Column
+orthogonality fails in two ways, both syntactic: \emph{absorption}, where a
+normal form idles into a configuration another branch is still flowing towards,
+and \emph{spectators}, where a parked token is indistinguishable from an emitted
+one. Halt tagging removes the first, staging removes the second, and dual rail
+removes both --- reported as Finding~\ref{find:safe}, an exhaustive finite
+search, with the invariant itself stated as Conjecture~\ref{conj:safe}.
+
+\item \textbf{Linearity does not cost universality} (\S\ref{sec:gadgets}). The
+previous version proved that a step using every bound name exactly once is
+block-diagonal in the input basis. The proposition is true and its hypothesis is
+a property of the encoding. Under dual rail every $2\times 2$ is realised with
+no discard (Lemma~\ref{lem:1q}), and so is every entangling $4\times4$
+(Lemma~\ref{lem:2q}).
+
+\item \textbf{Shor, in full} (\S\ref{sec:shor}). The whole term, gadget
+contracts and instance, generated from the gate list the simulator runs.
+
+\item \textbf{Heralds and the price} (\S\ref{sec:dilation}). Contractivity is a
+judgement; the defect is dilated at the site; the ancilla is written as a
+classical message; post-selection becomes a retry loop that the ledger charges
+at $2^n$ firings.
+
+\item \textbf{Position} (\S\ref{sec:related}). The right comparison class is
+quantum control, not quantum process calculus. Two of Bădescu and Panangaden's
+negative results \cite{BadescuPanangaden} are discharged by the design and one
+is not; their suggested way out of the quantum-alternation impasse ---
+interferometry with no distinct control qubit --- is this design.
+\end{enumerate}
+
+\subsection{Reading order}
+
+\S\ref{sec:calculus} fixes the language, including the third receipt arrow
+$\lolli$ that the linear-binding discipline needs.
+\S\S\ref{sec:fa}--\ref{sec:design} are background and are close to the
+previous version. \S\S\ref{sec:namespace}--\ref{sec:fragment} are the new
+semantics and can be read on their own.
+\S\S\ref{sec:gadgets}--\ref{sec:shor} are the worked example, and
+\S\ref{sec:dilation} the containment. A reader who wants only the boundary
+should read \S\ref{ssec:scope} and \S\ref{sec:fragment}.
+
+\subsection{What this paper does not do}
+
+It does not prove a quantum advantage. It does not prove
+Conjecture~\ref{conj:ledger}. It proves norm preservation at a configuration and
+conjectures it for arbitrary concurrency (Conjecture~\ref{conj:global}). The
+staging condition of \S\ref{sec:fragment} is a measured survey over small
+systems, not a theorem. And it does not solve the recursion problem of
+Obligation~\ref{ob:recursion}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The calculus}\label{sec:calculus}
+
+This section fixes the language. It is the rho calculus \cite{MeredithRadestock}
+with three changes: the \texttt{where} clause of a for-comprehension takes
+values in a commutative semiring rather than in the Booleans, the clause is
+evaluated once per candidate match rather than once per communication, and a
+third receipt arrow is added for the binding discipline of
+\S\ref{sec:gadgets}.
+
+\subsection{Terms and names}
+
+\begin{definition}[Syntax]\label{def:syntax}
+Processes and names are given mutually:
+\[
+\begin{array}{rcll}
+  P,Q &::=& 0 & \text{the stopped process}\\
+      &\mid& x!(P) & \text{output}\\
+      &\mid& \textsf{for}(\,y_1 \mathbin{\alpha} x_1 \ \&\ \cdots
+             \ \&\ y_m \mathbin{\alpha} x_m \ \textsf{where}\ \psi\,)P
+             & \text{input, } m \geq 1\\
+      &\mid& P \mid Q & \text{parallel composition}\\
+      &\mid& {*}x & \text{drop}\\
+      &\mid& \textsf{new}\ x\ \textsf{in}\ P & \text{fresh name}\\[4pt]
+  x,y &::=& @P & \text{quote}\\
+      &\mid& \text{a name bound by \textsf{new} or by an input prefix}\\[4pt]
+  \alpha &::=& \Leftarrow \ \mid\ \leftarrow \ \mid\ \lolli
+             & \text{the receipt arrows, below}
+\end{array}
+\]
+A term with $m > 1$ patterns is a \emph{join}; the patterns need not sit on
+distinct channels, and when they do not the receipt is contended with itself.
+\end{definition}
+
+Names are quoted processes and $*x$ drops a name back to the process it quotes.
+This is the whole of reflection, and it is why the calculus needs no separate
+theory of higher-order values: a channel is a program and a program is a
+channel. It is also the feature that makes Lemma~\ref{lem:1q} possible, since a
+name received at runtime may be used as the channel of a send.
+
+\subsection{Structural congruence}
+
+\begin{definition}[Congruence]\label{def:cong}
+$\scong$ is the least congruence such that $(\Proc, \mid, 0)$ is a commutative
+monoid, together with $*@P \scong P$ and $@{*}x = x$, closed under
+$\alpha$-equivalence and under scope extrusion for \textsf{new}.
+\end{definition}
+
+Commutativity of $\mid$ is not a convenience. A configuration therefore records
+\emph{how many} messages rest on a channel and not which is which, which is what
+Proposition~\ref{prop:bose} turns into a statement about statistics.
+
+\subsection{The three receipt arrows}
+
+\begin{definition}[Receipts]\label{def:arrows}
+Write
+\[
+  \textsf{for}(y \Leftarrow x)P, \qquad
+  \textsf{for}(y \leftarrow x)P, \qquad
+  \textsf{for}(y \lolli x)P
+\]
+for, respectively: a \emph{persistent} receipt, which survives its own firing; a
+\emph{linear} receipt, which is consumed by it; and a linear receipt whose bound
+names are additionally used \emph{exactly once} in the continuation
+(Definition~\ref{def:linear}).
+
+The third arrow is the \emph{reverse} of linear logic's lollipop
+\cite{Girard}. Linear implication is written $A \multimap B$, with the ball at
+the $B$ end, so that the ball marks the target; $\lolli$ is that symbol
+reflected, and in $y \lolli x$ the ball therefore sits at $y$. It points the
+same way as $\leftarrow$ and for the same reason: the datum flows from the
+channel to the variable, so the head belongs at the variable. Where the glyph is
+unavailable --- in program text, and in the listings of
+\S\S\ref{sec:gadgets}--\ref{sec:shor} --- $\lolli$ is transliterated
+\texttt{o-}, ball first, in the same orientation.
+\end{definition}
+
+\begin{remark}[Receipts are linear by default]\label{rem:linear}
+Linearity of the \emph{receipt} is what makes the surviving message of
+\eqref{eq:race} a which-path record, and hence what
+Proposition~\ref{prop:stage1} rests on: under a persistent receipt both messages
+are eventually consumed, the receipt survives either way, and the two
+derivations reconverge with nothing left to weight. At a join persistence is
+harmless but idle, since a join consumes all the data at its channel and the
+surviving receipt is identical across matchings, so it distinguishes none of
+them. Persistence and linear binding are independent: a persistent receipt
+consumes each datum once and uses its bound names once per firing, which is why
+the installer contracts of \S\ref{sec:shor} are legal.
+\end{remark}
+
+The three arrows are three disciplines, not three sorts of channel. Whether a
+channel is quantum is settled by Definition~\ref{def:namespace}, and
+$\lolli$ is well formed only there.
+
+\subsection{Reduction}
+
+\begin{definition}[Candidates]\label{def:candsite}
+At a receipt $r$ in a term $P$, a \emph{candidate} is an injective assignment
+$\sigma$ of $r$'s patterns to messages resting on the corresponding channels.
+$\Cand(P,r)$ is the set of candidates.
+\end{definition}
+
+\begin{definition}[Communication]\label{def:comm}
+For a candidate $\sigma$ of a receipt $r$ with clause $\psi$ and continuation
+$P$,
+\[
+  \textsf{for}(\,\vec{y} \mathbin{\alpha} \vec{x}\ \textsf{where}\ \psi\,)P
+  \ \mid\ x_1!(Q_1) \mid \cdots \mid x_m!(Q_m)
+  \;\xrightarrow{\ \sem{\psi}(\sigma)\ }\;
+  P\{@Q_{\sigma(1)}/y_1,\dots,@Q_{\sigma(m)}/y_m\},
+\]
+the receipt being discarded for $\leftarrow$ and $\lolli$ and retained for
+$\Leftarrow$. The transition carries the clause's value at $\sigma$ as its
+weight. A candidate of weight $0$ does not fire, so the crisp sort of the clause
+keeps its gating job and the graded sort does nothing else. Reduction is closed
+under $\mid$, under \textsf{new}, and under $\scong$.
+\end{definition}
+
+\begin{definition}[Well-formedness]\label{def:wf}
+A term is \emph{well formed} when
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt,topsep=2pt]
+\item every receipt whose subject is a quantum name uses $\lolli$ and satisfies
+      Definition~\ref{def:linear};
+\item every clause taking values outside $\Bool$ sits at such a receipt; and
+\item every such clause is contractive (Definition~\ref{def:contractive}).
+\end{enumerate}
+Nothing else is refused. Clause~(1) is the direction that matters and it was
+stated backwards in the previous version, which constrained receipts
+\emph{using} $\lolli$ rather than receipts \emph{on} quantum channels and so
+left a $\leftarrow$ receipt free to duplicate a quantum datum. By
+Definition~\ref{def:namespace} a receipt whose subject is a received name falls
+under clause~(1) as well, which is what makes the check local: an installer
+contract that passes rail names on to a gadget need not know their provenance,
+because the gadget's own receipt is linear either way.
+\end{definition}
+
+A single rule with a weight is not yet a semantics, because a term generally
+offers many candidates at many receipts and the rule says nothing about how
+their weights relate. Supplying that relation is the work of
+\S\ref{sec:completion}, and getting it wrong at the level of the receipt rather
+than the contention set is the defect this version repairs.
+
+\subsection{What is not primitive}
+
+There is no replication and no summation. Recursion is written with reflection,
+by a receipt whose continuation re-installs a quotation of itself; this is why
+Obligation~\ref{ob:recursion} is about reflection rather than about a fixed-point
+combinator. There is no restriction operator in the original presentation
+either: freshness is obtained by quoting an unguessable process. We keep
+\textsf{new} as a primitive binder because \S\ref{sec:namespace} makes its
+binding structure carry the classical/quantum distinction, and a derived form
+would leave that distinction without a syntactic anchor.
+
+Fresh \emph{classical} names are then derived rather than primitive. Write
+\[
+  \textsf{newc}\ x\ \textsf{in}\ P
+  \quad:=\quad
+  \textsf{new}\ k\ \textsf{in}\ P\{@(k!(0))/x\},
+\]
+which is unguessable because $k$ is, and classical because it is a quotation of
+a process not of the form ${*}k$ --- the congruence $@{*}k = k$ makes that
+proviso necessary. This is the binder used for heralds, installer channels and
+result channels in \S\ref{sec:shor}, and it is why a gadget contract may mention
+its parameters only inside a clause: its own receipt is classical and carries no
+linearity obligation.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Why context-based full abstraction cannot help}\label{sec:fa}
+
+Going from the pi calculus into rho, the question of how non-determinism is
+resolved never arises, because both languages are silent in the same way.
+Mapping rho to quantum mechanics is different: quantum mechanics makes a
+definite commitment about resolution, namely the Born rule. A repair that
+enlarges the class of rho contexts therefore cannot expose the additional
+structure, because contexts can \emph{create} apertures --- add contention ---
+but cannot \emph{read} them. Every context is itself resolved by the same
+unspecified mechanism.
+
+This is not merely an observation about rho.
+
+\begin{proposition}[No extensional semantics, after
+\cite{BadescuPanangaden}]\label{prop:noext}
+A conditional that applies a global phase in one branch and the identity in the
+other implements a controlled phase, although the two branches are physically
+indistinguishable as quantum operations. Hence there is no structural semantics
+for quantum alternation based on operations with extensional equality.
+\end{proposition}
+
+Our situation is the process-calculus shadow of that statement: the resolver is
+exactly the datum that an extensional semantics discards, so no amount of
+context can recover it.
+
+\begin{definition}[Resolver separation]\label{def:sep}
+Fix a family $\mathcal{R}$ of resolvers. The object of study is
+$\mathcal{R} \times \Proc \to$ distributions over normal forms. Two resolvers
+are \emph{separated} at $P$ when their images at $P$ differ. Quantum advantage,
+if it exists, is a separation, not a full-abstraction theorem.
+\end{definition}
+
+\begin{definition}[Support adequacy and the interference
+deficit]\label{def:deficit}
+The one-sided obligation on a resolver is
+$\supp(\sem{P}) \subseteq \Reach(P)$. The \emph{interference deficit}
+$\mathcal{D}(P) := \Reach(P) \setminus \supp(\sem{P})$ is the set of
+operationally reachable normal forms carrying amplitude zero. Destructive
+interference is exactly the failure of the reverse inclusion.
+\end{definition}
+
+Contexts remain useful, but as apparatus rather than as observers: an
+arrangement that converts a phase difference into a difference of support is an
+interferometer, and \S\ref{sec:erasure} builds the smallest one.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{What unmodified rho already gives}\label{sec:stage1}
+
+Read \eqref{eq:race} as an equational constraint with uniform weights. The
+question is which derivations can reconverge, since interference requires
+reconvergence and a non-zero relative phase and nothing else.
+
+The previous version asserted that reconvergence in unmodified rho requires
+structurally congruent racing messages. That is false, and the counterexample is
+instructive. Take $Q_1 \not\scong Q_2$ and
+\[
+  x!(Q_1) \mid x!(Q_2)
+  \mid \textsf{for}(y \leftarrow x)\{a!(0)\}
+  \mid \textsf{for}(z \leftarrow x)\{b!(0)\} .
+\]
+The two complete matchings send $Q_1$ to $y$ and $Q_2$ to $z$, or the reverse.
+Both yield $a!(0) \mid b!(0)$. Non-congruent racers reconverge.
+
+They reconverge because $y$ and $z$ are \emph{discarded}. That is the general
+mechanism, and it is worth stating in the form that survives.
+
+\begin{proposition}[Stage one, restated]\label{prop:stage1}
+Under \eqref{eq:race} with uniform non-negative weights, two derivations
+reconverge exactly when the outcome does not record which datum went where.
+Congruence of the racing messages is one way to achieve this; discarding the
+bound names is another. In either case the interference is constructive, since
+non-negative reals cannot cancel.
+\end{proposition}
+
+The example is not an anomaly but an instance: it is a \emph{distributed join},
+the case of Theorem~\ref{thm:scattering} in which the patterns of a contention
+set are spread over several receipts rather than gathered into one. The
+constructive half of the old proposition survives; the confinement to congruent
+racers does not, and its loss is a gain --- unmodified rho interferes more often
+than we had claimed, and always for the same reason.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The graded clause, in brief}\label{sec:design}
+
+The syntax is fixed in \S\ref{sec:calculus}; the algebra is developed in
+\cite{ResAlg}. This section records what is needed here.
+
+The \texttt{where} clause is two-sorted. The \emph{crisp} sort $\beta$ is the
+existing condition language, with the full Boolean structure. The \emph{graded}
+sort takes values in a commutative semiring $\V$:
+\[
+  \psi ::= \crisp{\beta} \mid v \mid \psi \tensorv \psi \mid \psi \sumv \psi
+  \mid \langle K \rangle_{\V}\,\psi \qquad (v \in V).
+\]
+There is no negation on the graded sort, since $\Cx$ has no canonical one, and
+$\sumv$ is where interference enters the logic: a disjunction may be false with
+both disjuncts true.
+
+By Definition~\ref{def:comm} the clause is evaluated once per candidate rather
+than once per communication, and $\sem{\psi_r}(\sigma) \in V$ is its value at
+$\sigma$.
+
+Reading a bound name in the clause does not consume it: guard evaluation is
+pure, which the existing condition evaluator already enforces by construction.
+This exemption is used throughout \S\ref{sec:gadgets} and is what allows a
+clause to depend on both the datum received and the assignment chosen.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The quantum namespace}\label{sec:namespace}
+
+Existing quantum process calculi separate classical from quantum data and use a
+type system to guarantee that each qubit is owned by a unique process
+\cite{GayNagarajanCQP,GayNagarajanTypes}. The rho calculus already has the
+distinction, in its introduction forms.
+
+\begin{definition}[The two namespaces]\label{def:namespace}
+A name is \emph{quantum} if it is bound by \texttt{new}. Every other name --- in
+particular every quotation $@P$ --- is \emph{classical}. A name bound by a
+receipt has no statically determined sort, and is treated conservatively as
+quantum. A clause may take values outside $\Bool$ only at a receipt whose
+channels are quantum.
+\end{definition}
+
+Sorting is by binding structure rather than by syntactic form, because $@(*x)$
+is a quotation denoting the \texttt{new}-bound name $x$; reflection makes the
+surface form unreliable and the binder does not.
+
+\begin{proposition}[Authority from unforgeability]\label{prop:ownership}
+A \texttt{new}-bound name cannot be denoted by any process that was not given
+it, whereas $@P$ can be constructed by anyone who can write $P$. Hence no
+process acquires a reference to a quantum channel except by receiving one, and a
+datum resting on a quantum channel is consumed by at most one firing.
+\end{proposition}
+
+This is \emph{authority}, in the sense of a capability, and it is weaker than
+the linear ownership that quantum process calculi obtain from a type system. A
+capability that cannot be guessed can still be copied:
+\[
+  \textsf{new}\ q\ \textsf{in}\ \{\, a!({*}q) \mid b!({*}q) \,\}
+\]
+is well formed and leaves two processes holding $q$. The previous version of
+this paper claimed unique ownership on the strength of unforgeability, and that
+claim was false.
+
+\begin{remark}[Ownership is not needed]\label{rem:noownership}
+What must not be cloned is not the name but the \emph{datum}, and a message is
+consumed by exactly one firing whoever holds the channel. Two holders of $q$
+therefore do not duplicate a state; they contend for it, which by
+Remark~\ref{rem:contention-ownership} is the case the Born rule is here to
+decide, and by \S\ref{sec:completion} their weights are completed jointly.
+
+What does need forbidding is duplication of a \emph{received} datum, and that is
+what Definition~\ref{def:wf} forbids by requiring every receipt on a quantum
+channel to use $\lolli$. So the discipline needed is linear \emph{use}, which
+the calculus already has, and not linear \emph{ownership}, which it does not.
+\end{remark}
+
+Two further consequences.
+
+\begin{remark}[Contention is not ownership]\label{rem:contention-ownership}
+Unique ownership does not forbid several receipts listening on one quantum
+channel. A race has exactly one winner per datum, so the race is a competition
+\emph{over} ownership and not a violation of it. This is the point on which the
+present design departs from the quantum process calculi: they resolve process
+non-determinism by scheduling and take probability only from measurement, so the
+branching of a race is never coherent. Here it is the only place coherence comes
+from.
+\end{remark}
+
+\begin{remark}[The herald is classical by construction]\label{rem:herald-class}
+The herald channel of \S\ref{sec:dilation} is $h(r) := @r$, the quotation of the
+site. By Definition~\ref{def:namespace} it is classical. So the boundary between
+the coherent and the classical parts of a run is drawn by the calculus, and
+reading a herald is a classical receive --- which is where the instrument acts.
+\end{remark}
+
+Freshness in the classical namespace is not lost: quoting a process that
+mentions a \texttt{new} name, as in $@(c!(*x))$, is fresh and classical.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The denotation is register-indexed}\label{sec:register}
+
+A process term cannot be the carrier of a quantum state, for a reason that shows
+up as soon as one asks how two of them combine: there is no operation taking two
+quantum states to a quantum state. What there is, is a tensor product of states
+on \emph{disjoint} systems. So the denotation must be indexed.
+
+\begin{definition}[Register and state space]\label{def:register}
+The \emph{register} of $P$, written $\mathrm{reg}(P)$, is the set of quantum
+names at which $P$ can produce or consume. A name occurring only as inert
+payload is not in the register. For a register $S$,
+\[
+  H_S \;:=\; \bigotimes_{x \in S} \mathcal{F}(x),
+\]
+where $\mathcal{F}(x)$ is the space graded by the occupancy of $x$ --- the
+number of messages resting on that channel --- with the occupancy states taken
+as an orthonormal basis (Remark~\ref{rem:convention}) and $\ket{0}_x$ the
+\emph{vacuum} at $x$. Then $\sem{P} \in H_{\mathrm{reg}(P)}$.
+\end{definition}
+
+\begin{definition}[Activation]\label{def:activate}
+A name may be inert in $P$ and active in a reduct of $P$, so the register is not
+invariant under reduction. For $S \subseteq S'$ let
+\[
+  \iota_{S,S'} : H_S \longrightarrow H_{S'},
+  \qquad
+  \iota_{S,S'}(\xi) \;=\; \xi \otimes \bigotimes_{x \in S'\setminus S}\ket{0}_x ,
+\]
+the embedding that assigns the vacuum to every newly active mode.
+$\iota_{S,S'}$ is an isometry, and $\textsf{new}$ is the term former that
+invokes it. Accordingly the one-step operator of a term $P$ is a map
+\[
+  T_P : H_{\mathrm{reg}(P)} \longrightarrow H_{\mathrm{reg}(P')},
+\]
+its codomain the register of the reducts, and the norm condition on it is
+\emph{isometry}, $T_P^{\dagger}T_P = \Id$, not unitarity. Wherever domain and
+codomain differ they are related by $\iota$, so the condition is well posed.
+\end{definition}
+
+\begin{proposition}[Permutation symmetry from congruence]\label{prop:bose}
+Parallel composition is associative and commutative, so a configuration records
+how many messages rest on a channel and not which is which. Hence the basis of
+$\mathcal{F}(x)$ is indexed by occupancies rather than by sequences, the
+alternatives of an $m$-fold contention are indexed by $S_m$, and the coherent
+sum over matchings with a common outcome is symmetric under that action --- a
+permanent rather than a determinant (Theorem~\ref{thm:scattering}).
+\end{proposition}
+
+What this establishes is a \emph{combinatorial} symmetry: the quotient fixes the
+basis. It does not by itself supply the inner product, the factorial
+normalisation of the occupancy states, or a creation-annihilation algebra, and
+the previous version of this paper claimed more than that when it said bosonic
+statistics were forced by the structural rules. The distance between an
+unordered multiset of $n$ messages and the normalised $n$-particle sector of
+bosonic Fock space is not nothing.
+
+\begin{remark}[The convention we adopt]\label{rem:convention}
+We take the occupancy states to be orthonormal, so that
+$\langle \vec{n} \mid \vec{m}\rangle = \delta_{\vec{n}\vec{m}}$ and no factorial
+appears; the alternative, matching the usual convention
+$\ket{n} = (a^{\dagger})^{n}\ket{0}/\sqrt{n!}$, rescales the coefficients but
+leaves Theorem~\ref{thm:scattering} and everything downstream of it unchanged,
+since the permanent is a statement about one fibre of $\Out$ at fixed
+occupancies. Which convention makes the identification with bosonic Fock space
+canonical is a question we do not settle here.
+\end{remark}
+
+The symmetry is nonetheless the thing that decides a question the previous
+version treated as a fork: whether an $m$-fold degeneracy carries weight $m$ or
+$m^{2}$ is fixed by whether the degenerate matchings are summed before or after
+the modulus, and Proposition~\ref{prop:complete} sums first because
+Proposition~\ref{prop:bose} says they are alternatives with a common outcome. A
+calculus whose parallel composition were not commutative would give a different
+answer, and there is no such calculus here.
+
+\begin{proposition}[Composition, and when it forgets]\label{prop:compose}
+There is a map $H_S \otimes H_T \to H_{S \cup T}$ adding occupancies, defined
+for all $S, T$. It is injective if and only if $S \cap T = \emptyset$. On
+overlap it identifies $\ket{2}\otimes\ket{0}$, $\ket{1}\otimes\ket{1}$ and
+$\ket{0}\otimes\ket{2}$, forgetting which side supplied which quanta.
+\end{proposition}
+
+The forgetting is not a defect. It is indistinguishability, and it is where the
+permanent of Theorem~\ref{thm:scattering} comes from. What genuinely fails on
+overlapping registers is something else:
+
+\begin{remark}[The interaction term]\label{rem:interaction}
+$\sem{P \mid Q}$ is not determined by $\sem{P}$ and $\sem{Q}$ when the registers
+overlap, because $P \mid Q$ has candidates neither factor has. The failure of
+compositionality is coextensive with the presence of a race
+(\S\ref{sec:completion}), and is the same phenomenon as an interaction term in a
+joint Hamiltonian. Non-compositionality is also the expected condition in this
+area rather than a peculiarity of the present design; see \cite{YingYuFeng} and
+\S\ref{sec:related}.
+\end{remark}
+
+\begin{remark}[Separation]\label{rem:separation}
+A partial tensor defined on disjoint registers is a separation algebra, and the
+separating conjunction the generated logic of \cite{ResAlg} already carries is
+that tensor. The structure was visible on the logic side before it was visible
+on the semantics side.
+\end{remark}
+
+Allocation and discard are now visible as the two directions of one thing.
+\texttt{new} grows the register, adjoining a factor in its vacuum, which is an
+isometry. Discard shrinks it, which is a partial trace. \S\ref{sec:dilation}
+dilates the second; \S\ref{sec:fragment} identifies when the first suffices.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Contention-set completion}\label{sec:completion}
+
+The one-step operator sums over receipt sites as well as over candidates:
+\begin{equation}\label{eq:onestep}
+  T(P) \;=\; \sum_{r}\ \sum_{\sigma \in \Cand(P,r)}
+    \sem{\psi_r}(\sigma)\;\cdot\;\Out(r,\sigma).
+\end{equation}
+A condition on one site therefore cannot make $T$ norm-preserving. Worse, the
+outer sum conflates two different things: candidates at different sites may be
+alternatives, or they may be concurrent, and only the first should be summed.
+
+\begin{definition}[Conflict, components, matchings]\label{def:conflict}
+Two candidates \emph{conflict} when they share a datum or share a receipt.
+A \emph{contention component} at $P$ is a connected component of that relation.
+A \emph{step} of a component is one of its \emph{maximal matchings}: a maximal
+set of pairwise non-conflicting candidates.
+\end{definition}
+
+The terminology follows event structures, where conflict names events that
+cannot both occur \cite{Winskel}. It is the phenomenon the Born rule is here to
+decide, and not the failure mode; the failure modes of \S\ref{sec:fragment} are
+called \emph{collisions}.
+
+Two distinct claims are involved, and the previous version ran them together.
+
+\begin{proposition}[Event factorisation]\label{prop:eventfact}
+Let $C_1,\dots,C_k$ be the contention components at $P$. The maximal matchings
+of $P$ are exactly the elements of $\prod_i \mathrm{Match}(C_i)$: a step chooses
+one matching per component, independently, and all of them fire.
+\end{proposition}
+
+\begin{proof}
+Candidates in distinct components neither share a datum nor share a receipt, so
+a set of candidates is pairwise non-conflicting iff its restriction to each
+component is; maximality is likewise componentwise.
+\end{proof}
+
+That is a statement about the \emph{choice variables} of the transition, and it
+holds in general. It does not by itself give a tensor decomposition of the
+operator, because two components may consume from a common channel or produce
+into one, and then they act on a shared factor of $H$. For that a hypothesis is
+needed, and staging supplies it.
+
+\begin{proposition}[State-space factorisation]\label{prop:statefact}
+Suppose $P$ is staged (Definition~\ref{def:staging}) and every quantum channel
+carries occupancy at most one. Then distinct contention components read and
+write disjoint sets of channels, and
+\[
+  T_P \;=\; \bigotimes_i T_{C_i}
+\]
+as an operator on $H_{\mathrm{reg}(P)}$, modulo the embedding of
+Definition~\ref{def:activate}.
+\end{proposition}
+
+\begin{proof}
+Under unit occupancy two candidates consuming from a common channel consume the
+same datum, hence conflict, hence lie in one component; so distinct components
+read disjoint channels. Staging gives that distinct receipts emit to disjoint
+channels, and that no channel emitted to is occupied by a spectator, so distinct
+components write disjoint channels and write nowhere they read. The factors
+$\mathcal{F}(x)$ involved are therefore disjoint, and by
+Proposition~\ref{prop:eventfact} the choices are independent.
+\end{proof}
+
+Unit occupancy is exactly what Definition~\ref{def:wire} provides, so the
+hypothesis is discharged on the fragment the paper is about; outside it,
+Proposition~\ref{prop:eventfact} is what survives.
+
+\begin{proposition}[Completion]\label{prop:complete}
+$T_P$ is an isometry at $P$ if, for each contention component,
+\[
+  \sum_{o \,\in\, \Out(C_i)}
+  \Bigl| \sum_{\substack{m \,\text{a maximal matching of } C_i\\ \Out(m) = o}}
+          w(m) \Bigr|^{2} \;=\; 1 ,
+\]
+together with the column-orthogonality condition of \S\ref{sec:fragment}. Under
+the hypotheses of Proposition~\ref{prop:statefact} the condition is also
+necessary.
+\end{proposition}
+
+Two things in that statement do work. Candidates in
+different components are concurrent and both fire, so treating them as
+alternatives double-counts. The alternatives within a component are its maximal
+\emph{matchings}, not its individual candidates --- this is the RSpace zip, the
+bag of data and the bag of patterns admissibly pairable. And the norm is taken
+\emph{after} summing over the fibre of $\Out$, since matchings with coinciding
+outcomes interfere before they are measured. Column norms are what this
+proposition controls; column orthogonality is a separate matter and is the
+subject of \S\ref{sec:fragment}.
+
+Every familiar case is an instance. \eqref{eq:race} is one receipt with two
+data. A single receipt with $m$ patterns and $m$ data has $m!$ matchings, which
+is Theorem~\ref{thm:scattering}. Two receipts competing for one datum is the
+partial-matching case, and its completion condition is literally
+\eqref{eq:race}'s. The distributed join of \S\ref{sec:stage1} is two receipts
+and two data with a one-element fibre.
+
+Measured, over five configurations and four candidate conventions:
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+configuration & site & candidate & matching & \textbf{fibre} \\
+\midrule
+the race equation \eqref{eq:race}     & $1$ & $1$ & $1$ & $\mathbf{1}$ \\
+two receipts, one datum               & $2$ & $1$ & $1$ & $\mathbf{1}$ \\
+the distributed join                  & $8$ & $4$ & $2$ & $\mathbf{1}$ \\
+the two-fold join                     & $2$ & $2$ & $2$ & $\mathbf{1}$ \\
+two independent races                 & $2$ & $1$ & $1$ & $\mathbf{1}$ \\
+\bottomrule
+\end{tabular}
+\caption{Squared norm of the image under four normalisation conventions;
+$1$ is preservation. Only the fibre convention survives. Normalising over
+candidates gets the right number on independent races for the wrong reason: it
+treats concurrency as choice.}\label{tab:conventions}
+\end{table}
+
+\begin{remark}[Maximal progress on quantum channels]\label{rem:maxprog}
+If a component may decline to fire, then ``$c_1$ then $c_2$'' and ``both at
+once'' are distinct histories reaching one configuration, and the interleaving
+inflation Proposition~\ref{prop:causal} exists to remove returns by another
+door. We therefore take maximal progress \emph{on quantum channels}, leaving
+classical channels to interleave as usual. Definition~\ref{def:namespace} is
+what makes that expressible. It has a defensible reading: under a Born-rule
+resolver an enabled race is resolved, and declining is not among the options.
+\end{remark}
+
+\begin{proposition}[Causal histories, not interleavings]\label{prop:causal}
+Independent redexes must be counted once. Summing over interleavings instead
+inflates the squared norm of a layer of $n$ independent sites by $n!$; measured,
+the inflation is exactly $2$, $6$ and $24$ for $n = 2,3,4$ against a causal
+squared norm of $1.000000$. Under Definition~\ref{def:conflict} and
+Remark~\ref{rem:maxprog} the quotient is not imposed on histories: concurrent
+firings are bundled into one matching and independent components tensor, so the
+inflation cannot arise.
+\end{proposition}
+
+\begin{remark}[Two honest costs]\label{rem:costs}
+Completion is \emph{nonlocal}: a clause can be normalised only in the light of
+what else is contending, so isometry is a property of a configuration and not of
+a clause. And the sum over maximal matchings is permanent-shaped, hence $\#P$
+--- which is the physics \cite{AaronsonArkhipov} but bites an implementation, so
+what a compiler checks must be a syntactic sufficient condition such as a bound
+on component size.
+\end{remark}
+
+\begin{conjecture}[Global norm preservation]\label{conj:global}
+Proposition~\ref{prop:complete} holds at a configuration. That the induced
+operator preserves norm along arbitrary concurrent execution, with components
+merging and splitting as data are produced and consumed, is conjectured and not
+proved.
+\end{conjecture}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The join is the recombiner}\label{sec:erasure}
+
+Interference needs reconvergence, and reconvergence needs the outcome to forget
+which datum went where. No new term former is required.
+
+\begin{definition}[Symmetric continuation]\label{def:sym}
+$P$ is \emph{symmetric} in $y_1,\dots,y_m$ when
+\[
+  P\{@Q_{\sigma(1)}/y_1,\dots\} \;\scong\; P\{@Q_{\tau(1)}/y_1,\dots\}
+\]
+for all bijections $\sigma,\tau$ and all payloads.
+\end{definition}
+
+Symmetry is cheap to arrange, because parallel composition is commutative:
+$z!(*y_1) \mid z!(*y_2)$ is symmetric and $z_1!(*y_1) \mid z_2!(*y_2)$ is not.
+
+\begin{theorem}[Scattering]\label{thm:scattering}
+Let $C$ be a contention component with $m$ patterns and $m$ data, and let
+$A_{ij}$ be the clause value on the matching assigning datum $j$ to pattern $i$.
+If the continuations are symmetric then all $m!$ matchings coincide and the
+outcome carries $\Per(A)$. If a clause carries the sign of the permutation, the
+outcome carries $\Det(A)$ instead.
+\end{theorem}
+
+\begin{corollary}[Which-path, syntactically]\label{cor:whichpath}
+No clause produces interference at a component whose continuations distinguish
+their bound names. Whether a race interferes is decided by the continuation, not
+by the weights.
+\end{corollary}
+
+The patterns of $C$ need not belong to one receipt. Theorem~\ref{thm:scattering}
+covers the distributed join of \S\ref{sec:stage1}, which is why the
+counterexample there is an instance rather than a refutation.
+
+\subsection{The minimal interferometer}\label{ssec:interferometer}
+
+Take $m = 2$ and a clause returning $a$ on the identity assignment and $b$ on
+the transposition. With a symmetric continuation there is one outcome with
+amplitude $a+b$; with a distinguishing continuation there are two, with
+$|a|^2$ and $|b|^2$. For $a = b = 1/\sqrt2$ and relative phase $0$, $\pi$,
+$\pi/2$ the coherent weights are $2.000000$, $0.000000$, $1.000000$ against an
+incoherent $1.000000$ throughout. Three lines of rholang, and it is
+Hong--Ou--Mandel \cite{HOM}: $z$ is one detector, $z_1$ and $z_2$ are two.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{When is $\sem{P}$ a quantum state?}\label{sec:fragment}
+
+Proposition~\ref{prop:complete} makes each column of $T$ a unit vector. That is
+half of $T^{\dagger}T = \Id$. The other half is that distinct columns be
+orthogonal, and it fails for reasons that have nothing to do with weights.
+
+\begin{definition}[Collision]\label{def:collision}
+Two configurations occurring in one reachable superposition \emph{collide} when
+their images share support, so that orthogonality becomes a constraint linking
+the weights of different configurations. The collision is \emph{severe} when one
+image is contained in the other, since orthogonality then requires forbidding a
+transition outright.
+\end{definition}
+
+\begin{proposition}[Absorption]\label{prop:absorb}
+A configuration with no enabled component is a fixed point of $T$ under the
+fictitious identity jump. If another configuration in the same superposition
+reduces to it, the two columns are nested and no choice of weights makes them
+orthogonal. Termination is not a unitary phenomenon.
+\end{proposition}
+
+\begin{definition}[Halt tagging]\label{def:halt}
+A configuration with no enabled component does not idle; it becomes
+\emph{halted}, tagged with the step at which it halted, and is thereafter
+frozen.
+\end{definition}
+
+The tag records \emph{when}, never \emph{which}: branches halting together share
+it, so it is a coarsening of history in the same sense as the herald of
+\S\ref{sec:dilation}, and by Corollary~\ref{cor:whichpath} it writes no
+which-path record.
+
+\begin{definition}[Spectator]\label{def:spectator}
+A token not consumed by a step is a \emph{spectator}. A spectator resting on a
+channel that a firing emits to is indistinguishable from the emitted quantum, by
+Proposition~\ref{prop:bose}.
+\end{definition}
+
+\begin{definition}[Staging]\label{def:staging}
+A term is \emph{staged} when every receipt emits only to quantum channels that
+no other receipt emits to and that no spectator occupies --- fresh wires per
+stage, which is what a circuit is.
+\end{definition}
+
+Measured, over six systems, at one to three tokens and depth three, with
+collisions counted over all reachable layers:
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+& \multicolumn{2}{c}{plain}
+& \multicolumn{2}{c}{halt tagging}
+& \multicolumn{2}{c}{tagging + staging}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+system & all & severe & all & severe & all & severe\\
+\midrule
+cascade                & $47$ & $\mathbf{20}$ & $29$ & $\mathbf{2}$ & $132$ & $\mathbf{0}$\\
+join                   & $16$ & $\mathbf{12}$ & $4$  & $\mathbf{0}$ & $6$   & $\mathbf{0}$\\
+beamsplitter, spectator& $6$  & $0$ & $6$ & $0$ & $8$ & $\mathbf{0}$\\
+dual rail, two stages  & $\mathbf{0}$ & $\mathbf{0}$ & $\mathbf{0}$ & $\mathbf{0}$ & $\mathbf{0}$ & $\mathbf{0}$\\
+\bottomrule
+\end{tabular}
+\caption{Collisions found by exhaustive search. Of the $32$ severe pairs in the
+plain column, $30$ have a normal form on one side; of the $39$ non-severe pairs,
+all $39$ involve a spectator. Dual rail with staging has none of either, at
+every token count and depth searched.}\label{tab:collisions}
+\end{table}
+
+\begin{finding}[Finite-state search of the candidate safe fragment]\label{find:safe}
+Over the systems and depths of Table~\ref{tab:collisions}, every term with a
+fixed register that conserves tokens, discards nothing, is halt tagged and
+staged, and uses the dual-rail encoding of Definition~\ref{def:wire} has columns
+of $T$ with pairwise disjoint support in every reachable layer. No collision of
+either kind was found.
+\end{finding}
+
+\begin{conjecture}[The quantum-safe fragment]\label{conj:safe}
+\emph{Halt tagged, staged, dual-rail and token-conserving implies pairwise
+orthogonal columns.} Consequently, on such terms orthogonality is automatic and
+isometry reduces to Proposition~\ref{prop:complete}, which is local.
+\end{conjecture}
+
+Finding~\ref{find:safe} is evidence for Conjecture~\ref{conj:safe} and is not a
+proof of it; the search is finite in every parameter. What the search does
+establish is the \emph{diagnosis}: the two ways a term leaves the fragment are
+absorption and spectators, and both are visible in the syntax. That no third way
+exists is exactly what is not established.
+
+\begin{remark}[Why the previous version saw no symptom]\label{rem:blind}
+Circuit-shaped terms on fresh channels have one receipt per contention
+component, so the per-site condition of \cite{GWv4} coincides there with
+Proposition~\ref{prop:complete}, and they are staged, so they collide nowhere.
+The construction was right; the semantics under it was not. A worked example
+drawn from the circuit model cannot exercise this part of the theory.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Gadgets, and why linearity costs nothing}\label{sec:gadgets}
+
+\begin{definition}[Linear binding]\label{def:linear}
+At a receipt on quantum channels, every bound name is used exactly once in the
+continuation. Occurrences in the clause do not count, guard evaluation being
+pure.
+\end{definition}
+
+Linearity is what makes a step reversible in the bookkeeping sense: weakening is
+the partial trace and contraction is the copy, and Hilbert space is monoidal
+rather than cartesian, so a semantics with free discard of amplitude-bearing
+data cannot be unitary. The previous version declined this restriction on the
+ground that it costs the gate construction. It does, under the encoding that
+version used.
+
+\begin{proposition}[Weakening-free steps are block-diagonal]\label{prop:blockdiag}
+Suppose the payload multiset of the outcome is the consumed multiset together
+with the continuation's literals, and suppose distinct input basis states
+present distinct payload multisets. Then no outcome lies in the image of two
+distinct inputs, the one-step operator is block-diagonal in the input basis, and
+no site realises a basis-changing map.
+\end{proposition}
+
+The second hypothesis is about the \emph{encoding}. A qubit encoded as which
+datum sits on a channel satisfies it. A qubit encoded as which channel holds a
+conserved token does not: every basis state presents the same multiset,
+differing only in assignment.
+
+\begin{definition}[Dual-rail encoding]\label{def:wire}
+A qubit is a pair of quantum channels, each carrying exactly one of two
+designated tokens $\mathsf{one}$ and $\mathsf{zero}$. The basis states are
+$q_0!(\mathsf{one}) \mid q_1!(\mathsf{zero})$ and
+$q_0!(\mathsf{zero}) \mid q_1!(\mathsf{one})$.
+\end{definition}
+
+\begin{lemma}[Arbitrary one-qubit gate, linearly]\label{lem:1q}
+Let $w$ be a fresh quantum channel carrying the two output rail names, and
+consider
+\[
+  \textsf{for}(\, y \lolli q_a \ \&\ z \lolli q_b
+   \ \&\ u_1 \lolli w \ \&\ u_2 \lolli w \ \textsf{where}\ \psi\,)
+  \ \{\; u_1!(*y) \mid u_2!(*z) \;\}.
+\]
+Every bound name is used exactly once and nothing is discarded. There are two
+candidates, the assignments of the output rails to $u_1$ and $u_2$; reflection
+makes a received name usable as the channel of a send, so the candidate chooses
+where each token lands. Both inputs reach both output configurations, so the
+outcomes coincide across inputs, and since $\psi$ may read both $y$ and $u_1$
+without consuming them, every $2\times2$ matrix over $\Cx$ is realised.
+\end{lemma}
+
+Computed by enumerating the site's candidates: the Hadamard, $X$, $Z$, $T$ and a
+$50{:}50$ beamsplitter are each realised with worst entry deviation $0$, as are
+$500$ pseudorandom unitaries; the realised matrix is unitary to $2.2\times
+10^{-16}$ or exactly. Under the payload encoding the same linearity gives row
+supports $\{0,1\}$ and $\{2,3\}$ with empty overlap --- block-diagonal, as
+Proposition~\ref{prop:blockdiag} says.
+
+\begin{lemma}[Arbitrary two-qubit gate, linearly]\label{lem:2q}
+Four input rails, four output rails and four ancilla patterns give $24$
+candidates per input and $16$ reachable input/outcome pairs at uniform
+multiplicity $4$, so the coinciding candidates form a permanent-shaped sum
+rather than an artefact. CNOT is realised exactly, as are $200$ pseudorandom
+product unitaries.
+\end{lemma}
+
+\begin{remark}[What changed, and what did not]\label{rem:notprin}
+The previous version concluded that a design may have structural unitarity or
+circuit-shaped expressiveness but not both. That was an artefact of
+Definition~\ref{def:wire}'s predecessor. Proposition~\ref{prop:blockdiag}
+survives with its hypothesis made explicit, and its role is now to explain why
+the encoding had to change.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{A worked example: Shor's algorithm}\label{sec:shor}
+
+Every number below is computed by a simulator that realises each gate
+\emph{through the dual-rail site}, enumerating that site's candidates rather
+than multiplying gate matrices, and the listings are emitted from the same gate
+list the simulator runs.
+
+\subsection{The gadgets}
+
+\begin{lstlisting}
+// Rails are bound by `new`, hence quantum, and every receipt on a quantum
+// channel uses `o-`.  Installer and result channels are bound by `newc`, the
+// derived binder for fresh CLASSICAL names, so their receipts carry no
+// linearity obligation -- which is what lets a gadget contract mention its
+// parameters only inside a clause.  A qubit is ONE token distributed over TWO
+// rails.
+
+contract gate1( r0In, r1In, r0Out, r1Out, m00, m01, m10, m11 ) = {
+  new w in {
+      w!(*r0Out) | w!(*r1Out)                 // the two output rail names
+    | for( y o- *r0In & z o- *r1In & u1 o- w & u2 o- w
+           where [ *y == one and *u1 == *r0Out ] * *m00
+               + [ *y == one and *u1 == *r1Out ] * *m10
+               + [ *y == zero and *u1 == *r0Out ] * *m01
+               + [ *y == zero and *u1 == *r1Out ] * *m11 )
+      { u1!(*y) | u2!(*z) }
+  }
+}
+
+contract hadamard( r0In, r1In, r0Out, r1Out ) = {
+  gate1!( *r0In, *r1In, *r0Out, *r1Out,
+           0.7071067811865476,  0.7071067811865476,
+           0.7071067811865476, -0.7071067811865476 )
+}
+
+// Two-qubit gates join four input rails with four ancilla patterns carrying the
+// four output rail names.  The clause reads the tokens and the assignment, so
+// it determines both the input and the output basis state; entries off the
+// intended support return 0 and those candidates do not fire.
+
+// `bit` reads a rail token as 0 or 1 and `rail` writes one; both are ordinary
+// rholang and neither touches an amplitude.
+contract bit( t ) = { if (*t == one) { 0 } else { 1 } }
+contract rail( r0, r1, b ) = {
+  if (*b == 0) { *r0!(one) | *r1!(zero) } else { *r0!(zero) | *r1!(one) }
+}
+
+contract gate2( a0In, a1In, b0In, b1In, a0Out, a1Out, b0Out, b1Out, m ) = {
+  new w in {
+      w!(*a0Out) | w!(*a1Out) | w!(*b0Out) | w!(*b1Out)
+    | for( ya o- *a0In & za o- *a1In & yb o- *b0In & zb o- *b1In
+         & u1 o- w & u2 o- w & u3 o- w & u4 o- w
+           where entry( *m, basisIn(*ya, *yb), basisOut(*u1, *u3) ) )
+      { u1!(*ya) | u2!(*za) | u3!(*yb) | u4!(*zb) }
+  }
+}
+\end{lstlisting}
+
+\subsection{The instance}
+
+$N = 15$, $a = 7$, four counting and four work qubits, hence sixteen rail pairs.
+Each wire carries a stage index, because gadgets compose in series on fresh
+channels: \texttt{q3\_5\_0} is the first rail of wire $3$ after five gates. The
+staging of Definition~\ref{def:staging} is exactly this discipline, so the term
+is in the fragment of Proposition~\ref{conj:safe} by construction.
+
+\begin{lstlisting}
+new q0_0_0, q0_0_1, q1_0_0, q1_0_1, q2_0_0, q2_0_1, q3_0_0, q3_0_1,
+    q4_0_0, q4_0_1, q5_0_0, q5_0_1, q6_0_0, q6_0_1, q7_0_0, q7_0_1,
+    q0_1_0, q0_1_1, q1_1_0, q1_1_1, q2_1_0, q2_1_1, q3_1_0, q3_1_1,
+    q0_2_0, q0_2_1, q1_2_0, q1_2_1, q2_2_0, q2_2_1, q3_2_0, q3_2_1,
+    q4_1_0, q4_1_1, q5_1_0, q5_1_1, q6_1_0, q6_1_1, q7_1_0, q7_1_1,
+    q0_3_0, q0_3_1, q1_3_0, q1_3_1, q0_4_0, q0_4_1, q2_3_0, q2_3_1,
+    q0_5_0, q0_5_1, q3_3_0, q3_3_1, q0_6_0, q0_6_1, q1_4_0, q1_4_1,
+    q2_4_0, q2_4_1, q1_5_0, q1_5_1, q3_4_0, q3_4_1, q1_6_0, q1_6_1,
+    q2_5_0, q2_5_1, q3_5_0, q3_5_1, q2_6_0, q2_6_1, q3_6_0, q3_6_1,
+    q0_7_0, q0_7_1, q3_7_0, q3_7_1, q1_7_0, q1_7_1, q2_7_0, q2_7_1 in
+newc out in {
+
+    // 1. the input register, one token per rail pair
+    q0_0_0!(one) | q0_0_1!(zero) |
+    q1_0_0!(one) | q1_0_1!(zero) |
+    q2_0_0!(one) | q2_0_1!(zero) |
+    q3_0_0!(one) | q3_0_1!(zero) |
+    q4_0_0!(one) | q4_0_1!(zero) |
+    q5_0_0!(one) | q5_0_1!(zero) |
+    q6_0_0!(one) | q6_0_1!(zero) |
+    q7_0_0!(zero) | q7_0_1!(one) |
+
+    hadamard!( *q0_0_0, *q0_0_1, *q0_1_0, *q0_1_1 ) |
+    hadamard!( *q1_0_0, *q1_0_1, *q1_1_0, *q1_1_1 ) |
+    hadamard!( *q2_0_0, *q2_0_1, *q2_1_0, *q2_1_1 ) |
+    hadamard!( *q3_0_0, *q3_0_1, *q3_1_0, *q3_1_1 ) |
+
+    // 2. modular exponentiation: one candidate, clause value 1,
+    //    so amplitudes pass through untouched.  Every rail is
+    //    consumed and every token re-emitted: no discard.
+    for( x0 o- *q0_1_0 & x0' o- *q0_1_1
+       & x1 o- *q1_1_0 & x1' o- *q1_1_1
+       & x2 o- *q2_1_0 & x2' o- *q2_1_1
+       & x3 o- *q3_1_0 & x3' o- *q3_1_1
+       & y0 o- *q4_0_0 & y0' o- *q4_0_1
+       & y1 o- *q5_0_0 & y1' o- *q5_0_1
+       & y2 o- *q6_0_0 & y2' o- *q6_0_1
+       & y3 o- *q7_0_0 & y3' o- *q7_0_1 ) {
+      newc r in {
+        modexp!( *r, 7,
+                 8 * bit(*x0) + 4 * bit(*x1) + 2 * bit(*x2) + bit(*x3), 15 ) |
+        for( m <- r ) {
+          q0_2_0!(*x0) | q0_2_1!(*x0') | q1_2_0!(*x1) | q1_2_1!(*x1') |
+          q2_2_0!(*x2) | q2_2_1!(*x2') | q3_2_0!(*x3) | q3_2_1!(*x3') |
+          rail( q4_1_0, q4_1_1, (*m / 8) % 2 ) |
+          rail( q5_1_0, q5_1_1, (*m / 4) % 2 ) |
+          rail( q6_1_0, q6_1_1, (*m / 2) % 2 ) |
+          rail( q7_1_0, q7_1_1, *m % 2 ) |
+          done!(Nil)
+        }
+      }
+    } |
+
+    // 3. the transform on the counting register
+    hadamard!( *q0_2_0, *q0_2_1, *q0_3_0, *q0_3_1 ) |
+    gate2!( *q1_2_0, *q1_2_1, *q0_3_0, *q0_3_1,
+            *q1_3_0, *q1_3_1, *q0_4_0, *q0_4_1, cphase(2*pi/4) ) |
+    gate2!( *q2_2_0, *q2_2_1, *q0_4_0, *q0_4_1,
+            *q2_3_0, *q2_3_1, *q0_5_0, *q0_5_1, cphase(2*pi/8) ) |
+    gate2!( *q3_2_0, *q3_2_1, *q0_5_0, *q0_5_1,
+            *q3_3_0, *q3_3_1, *q0_6_0, *q0_6_1, cphase(2*pi/16) ) |
+    hadamard!( *q1_3_0, *q1_3_1, *q1_4_0, *q1_4_1 ) |
+    gate2!( *q2_3_0, *q2_3_1, *q1_4_0, *q1_4_1,
+            *q2_4_0, *q2_4_1, *q1_5_0, *q1_5_1, cphase(2*pi/4) ) |
+    gate2!( *q3_3_0, *q3_3_1, *q1_5_0, *q1_5_1,
+            *q3_4_0, *q3_4_1, *q1_6_0, *q1_6_1, cphase(2*pi/8) ) |
+    hadamard!( *q2_4_0, *q2_4_1, *q2_5_0, *q2_5_1 ) |
+    gate2!( *q3_4_0, *q3_4_1, *q2_5_0, *q2_5_1,
+            *q3_5_0, *q3_5_1, *q2_6_0, *q2_6_1, cphase(2*pi/4) ) |
+    hadamard!( *q3_5_0, *q3_5_1, *q3_6_0, *q3_6_1 ) |
+    gate2!( *q0_6_0, *q0_6_1, *q3_6_0, *q3_6_1,
+            *q0_7_0, *q0_7_1, *q3_7_0, *q3_7_1, swapMatrix ) |
+    gate2!( *q1_6_0, *q1_6_1, *q2_6_0, *q2_6_1,
+            *q1_7_0, *q1_7_1, *q2_7_0, *q2_7_1, swapMatrix ) |
+
+    // 4. read the counting register
+    for( c0 o- *q0_7_0 & c1 o- *q1_7_0 & c2 o- *q2_7_0 & c3 o- *q3_7_0 ) {
+      out!( 8 * bit(*c0) + 4 * bit(*c1) + 2 * bit(*c2) + bit(*c3) )
+    }
+}
+\end{lstlisting}
+
+\subsection{What it computes}
+
+\begin{proposition}[Deterministic communication is amplitude-transparent]\label{prop:free}
+A component with a single maximal matching and a crisp clause contributes the
+value $1$. Amplitudes are unchanged by deterministic reduction, and the length
+of a derivation does not affect its weight.
+\end{proposition}
+
+\begin{corollary}\label{cor:modexp}
+Modular exponentiation is ordinary rholang, running inside every branch at no
+cost in the semantics. In the listing above it consumes every rail and re-emits
+every token, so it discards nothing and stays inside
+Definition~\ref{def:linear}.
+\end{corollary}
+
+The run fires $8$ one-qubit and $8$ two-qubit dual-rail sites. The worst
+deviation between the matrix a gadget realises and the matrix intended is $0$.
+The counting register reads $0$, $4$, $8$ and $12$ at $0.250000000$ each and
+everything else at zero, totalling $1.000000000000$; continued fractions give
+$r = 4$, and $\gcd(7^2-1,15) = 3$, $\gcd(7^2+1,15) = 5$. The worst deviation
+from the payload-encoded run of \cite{GWv4} is $0$: the encoding changed and the
+algorithm did not.
+
+Twelve of the sixteen reachable outcomes carry amplitude zero. By
+Definition~\ref{def:deficit} they are the interference deficit, so Shor's
+algorithm in this semantics \emph{is} a large deficit arranged on purpose.
+
+\subsection{What the example shows, and what it does not}
+
+It shows that linearity is not the obstacle, and that the fragment of
+Conjecture~\ref{conj:safe} is expressive enough to encode this circuit model
+and, concretely, this instance. Universality rests on
+Lemmas~\ref{lem:1q}--\ref{lem:2q} and not on the example; one factorisation of
+$15$ is evidence that the compilation scheme works, not a theorem about the
+scheme.
+
+It does not show that graded rho has a quantum idiom of its own: every gate is a
+hand-built gadget and the encoding is circuit-shaped. By
+Remark~\ref{rem:blind} a circuit-shaped example also cannot exercise
+\S\S\ref{sec:completion}--\ref{sec:fragment}, which is precisely why those
+sections are tested by search rather than by this example. The one primitive the
+design offers that a circuit does not hand over is
+Theorem~\ref{thm:scattering}: an $m$-fold contention is a BosonSampling instance
+\cite{AaronsonArkhipov} in a single term former, and since matchings are
+permutation sets the ambient symmetry group is $S_m$ rather than $\mathbb{Z}_N$.
+
+Finally, writing Shor is not running Shor. Classical evaluation of the
+denotation is exponential; the value of the term is as a compilation source.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Dilation, heralds, and the price of erasure}\label{sec:dilation}
+
+Nothing so far forbids a clause whose matrix is not an isometry, and
+renormalising at observation is post-selection.
+
+\begin{proposition}[Overshoot]\label{prop:postbqp}
+With $\V = \Cx$ and clauses unrestricted by
+Definition~\ref{def:contractive}, every $\mathsf{PostBQP}$ computation is
+simulated by a graded term of size polynomial in the circuit, under the Born
+reading with renormalisation at observation. Hence
+$\mathsf{PostBQP} \subseteq \mathsf{gradedrho}_{\Cx}$, and by
+\cite{Aaronson} $\mathsf{PP} \subseteq \mathsf{gradedrho}_{\Cx}$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+By Lemmas~\ref{lem:1q}--\ref{lem:2q} the staged dual-rail gadgets realise an
+arbitrary gate of a universal set, one gadget per gate, with term size linear in
+the circuit and reduction depth equal to its depth. The clause
+$\mathrm{diag}(1,\epsilon)$ is expressible at a one-qubit site and is not a
+contraction onto its image; applying it to the post-selection register and then
+renormalising at observation reproduces conditioning on that register up to
+error $O(\epsilon)$, and $\epsilon$ may be taken exponentially small at no cost
+in term size since it is a scalar constant of the clause.
+\end{proof}
+
+We claim the inclusion only. The converse --- that the unrestricted fragment is
+\emph{no more} than $\mathsf{PostBQP}$ --- would need a simulation of graded rho
+by a post-selected circuit, and the graded modality
+$\langle K \rangle_{\V}$, whose entries depend on the reachable successors, is
+not obviously bounded in that way. The previous version asserted equality.
+
+\begin{definition}[Contractive clause]\label{def:contractive}
+A clause is \emph{contractive} at a component when its matrix satisfies
+$\|A\| \leq 1$. Contractivity is a well-formedness judgement, checked at
+elaboration; for a clause in the normal form of \cite{ResAlg} with constant
+scalars the matrix is a finite table and the check is by inspection.
+\end{definition}
+
+This is the one thing the design refuses, and it must be refused rather than
+repaired: a per-site rescaling is not a global scalar, since branches passing
+through different numbers of sites acquire different factors.
+
+\begin{definition}[Defect and heralded step]\label{def:heraldedstep}
+For a contraction $A$, put $D_A := \sqrt{\Id - A^{\dagger}A}$ and
+$D_{A^{\dagger}} := \sqrt{\Id - AA^{\dagger}}$. The heralded step is
+\[
+  V_A : \ket{\gamma} \longmapsto
+    A\ket{\gamma}\otimes\ket{\mathsf{ok}}
+    + D_A\ket{\gamma}\otimes\ket{\mathsf{fail}},
+\]
+with unitary completion the Julia--Halmos two-defect block
+$\begin{psmallmatrix} A & D_{A^{\dagger}} \\ D_A & -A^{\dagger}\end{psmallmatrix}$
+\cite{SzNagyFoias}. The two-defect form is used because a matrix arising from a
+directed rewrite need not be normal.
+\end{definition}
+
+\begin{proposition}[The dilation is faithful]\label{prop:dilation}
+$V_A$ is an isometry and the block is unitary for every contraction $A$, and the
+$\mathsf{ok}$ block is $A$ unaltered --- so on the branch where nothing was lost
+the semantics is unchanged. Computed over the filter clause
+$\mathrm{diag}(1,10^{-3})$ and $200$ pseudorandom contractions, the worst
+deviation of $U^{\dagger}U$ from the identity is $2.220\times10^{-15}$ and the
+worst deviation of the $\mathsf{ok}$ block from $A$ is exactly zero.
+\end{proposition}
+
+The dilation is indexed by the contention component, not by the site and not by
+a global step; Proposition~\ref{prop:causal} forbids the last of these.
+
+\begin{definition}[Heralded reduction]\label{def:heraldedred}
+The communication rule is amended so that a firing at component $r$ emits one
+further message: $h(r)!(\mathsf{ok})$ on the $A$ branch and
+$h(r)!(\mathsf{fail})$ on the defect branch, where $h(r) := @r$. No term former
+is added; by Remark~\ref{rem:herald-class} the herald channel is classical.
+\end{definition}
+
+\begin{proposition}[The herald carries the defect bit only]\label{prop:defectbit}
+If the herald ranges over $\{\mathsf{ok},\mathsf{fail}\}$ the outcomes of
+coinciding matchings remain congruent and Theorem~\ref{thm:scattering} is
+unaffected. If it names the matching, every fibre of $\Out$ becomes a singleton
+and the coherent sum degenerates to the incoherent one at every component of the
+program.
+\end{proposition}
+
+Measured on the interferometer of \S\ref{ssec:interferometer}: bare weights
+$2.000000$, $0.000000$, $1.000000$; with an $\mathsf{ok}$ herald, identical;
+with a matching-naming herald, $1.000000$ throughout.
+
+\begin{corollary}[Uniform heralding is free where it should be]\label{cor:inert}
+At a component whose clause is an isometry the defect branch carries amplitude
+zero, so the herald reads $\mathsf{ok}$ on every matching and is inert. Heralding
+every component therefore costs nothing exactly where the static check applies,
+which demotes that check from an admission criterion to a compiler optimisation:
+it says which heralds may be elided.
+\end{corollary}
+
+Saying that the herald channel is classical says \emph{where} the quantum/classical
+boundary is. It does not say what happens there, and that has to be written down.
+
+\begin{definition}[The instrument]\label{def:instrument}
+Let $r$ be a component with clause matrix $A$. A receive on $h(r)$ performs the
+instrument
+\[
+  \mathcal{I}_r : \rho \;\longmapsto\;
+    A\rho A^{\dagger} \otimes \ket{\mathsf{ok}}\bra{\mathsf{ok}}
+  \;+\;
+    D_A\rho D_A^{\dagger} \otimes \ket{\mathsf{fail}}\bra{\mathsf{fail}},
+\]
+a trace-preserving completely positive map whose classical outcome is the datum
+delivered to the continuation. Consuming a herald is the only construct of the
+semantics that is not linear on states.
+\end{definition}
+
+$\mathcal{I}_r$ is the Stinespring pair of Definition~\ref{def:heraldedstep}
+read the other way: $V_A$ is the isometry, and reading its ancilla in the
+$\{\mathsf{ok},\mathsf{fail}\}$ basis is $\mathcal{I}_r$. Nothing else in the
+language performs a measurement, and a program containing no herald receive is
+purely isometric.
+
+\begin{remark}[Three perspectives on an unread herald]\label{rem:uncompute}
+The previous version said that leaving a herald unread \emph{is} a decoherence
+event. That is loose, and the three cases must be kept apart.
+
+\emph{Globally.} If the herald is never consumed, the joint state
+$A\ket{\psi}\ket{\mathsf{ok}} + D_A\ket{\psi}\ket{\mathsf{fail}}$ is pure and
+coherent. Nothing has decohered; the record merely exists.
+
+\emph{Relative to a subsystem that ignores it.} The reduced state of the
+program, $\mathrm{Tr}_{h(r)}$ of the above, is
+$A\rho A^{\dagger} + D_A\rho D_A^{\dagger}$, which is decohered in the
+$\{\mathsf{ok},\mathsf{fail}\}$ basis. So an unread herald decoheres
+\emph{the reduced description}, and by Corollary~\ref{cor:whichpath} that is
+what a continuation not mentioning $h(r)$ can observe.
+
+\emph{When read.} Consuming it applies $\mathcal{I}_r$ and classicalises the
+outcome, which is the retry.
+
+The slogan ``neither traced nor projected but addressed'' is about the
+\emph{semantics}, which never applies a trace or a projection of its own: the
+herald is a term, and what becomes of it is decided by the program. The trace of
+the second case is an observer's bookkeeping, not a step.
+\end{remark}
+
+\begin{proposition}[Post-selection is not a step]\label{prop:nopostsel}
+Under Definitions~\ref{def:contractive} and \ref{def:heraldedred} no step loses
+norm, so the renormalisation at observation has nothing to do, and
+$\mathrm{diag}(1,\epsilon)$ is a heralded step followed by a projection onto
+$\mathsf{ok}$. Projection is not a construct of the semantics; it is available
+only as a retry loop, whose failures are firings.
+\end{proposition}
+
+\begin{proposition}[Expected attempts]\label{prop:attempts}
+If a component heralds $\mathsf{ok}$ with probability $p$ and the retry loop
+restores its inputs before each attempt, the expected number of firings before
+an $\mathsf{ok}$ is $1/p$ and the expected charge is $\kappa/p$ for $\kappa$ the
+cost of one firing.
+\end{proposition}
+
+Applied to a Hadamard layer on $n$ wires followed by $\mathrm{diag}(1,10^{-3})$
+on each: surviving norms $0.250001$, $0.125000$, $0.062500$, $0.031250$ and
+success probabilities $0.062500$, $0.015625$, $0.003906$, $0.000977$ for
+$n = 4,6,8,10$, hence expected attempts $16$, $64$, $256$, $1024$ --- exactly
+$2^{n}$. The filter that was free costs $2^n$ firings.
+
+\begin{conjecture}[Containment by the ledger]\label{conj:ledger}
+A graded program funded by a budget polynomial in the size of the term does not
+decide $\mathsf{PP}$, since the post-selection witnessing
+Proposition~\ref{prop:postbqp} requires an exponentially small success
+probability, hence by Proposition~\ref{prop:attempts} an exponentially large
+expected charge.
+\end{conjecture}
+
+Proposition~\ref{prop:attempts} assumes independent attempts. An adaptive retry
+schedule is not geometric, and adaptivity is exactly the resource that makes
+linear optics universal \cite{KLM}; the two demands meet somewhere that has not
+been located.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Related work, and where this sits}\label{sec:related}
+
+The closest comparison for coherent race resolution is quantum control and
+quantum alternation. Quantum process calculi remain directly relevant, and
+supply the contrasting treatments of ownership, communication and measurement
+against which \S\S\ref{sec:namespace} and \ref{sec:dilation} should be read.
+
+CQP \cite{GayNagarajanCQP,GayNagarajanTypes} adds measurement and unitary
+transformation to the pi calculus, transmits qubits along channels, and uses a
+type system to guarantee that each qubit has a unique owner. Its operational
+semantics combines non-determinism arising exactly as in the pi calculus with
+the probabilistic results of measurement; the quantum state is a separate
+component of the configuration and norm preservation is an invariant of that
+component. Process branching is never coherent. Later work carries distributions
+over configurations \cite{QuantumBarbs}, but they remain probability
+distributions. That architecture does not face the question of this paper,
+because it declines the premise: here the branching of a race \emph{is} the
+quantum state. It nonetheless sets the standard on the three points where this
+paper is weakest --- ownership, which Remark~\ref{rem:noownership} argues is not
+needed here rather than obtained; observational equivalence, which
+Definition~\ref{def:sep} replaces rather than establishes; and measurement,
+which Definition~\ref{def:instrument} now supplies.
+
+The literature that does face it is quantum alternation. QML
+\cite{AltenkirchGrattage} superposes branches under an orthogonality judgement;
+QGCL \cite{YingYuFeng} does it with an auxiliary system of quantum coins ---
+a control register, which is the branch register of the compilation route ---
+and notes that the resulting superoperator semantics is not compositional.
+Bădescu and Panangaden \cite{BadescuPanangaden} keep the control superposed and
+show that the semantics must then be given by Kraus decompositions rather than
+superoperators.
+
+Three of their findings bear on this design. Proposition~\ref{prop:noext} is one
+of them, and it converts \S\ref{sec:fa}'s negative result from an argument into
+a citation. Non-compositionality is the expected condition in this area, which
+is what Remark~\ref{rem:interaction} leans on. And their proposition that
+quantum alternation is not monotone in the Löwner order, hence incompatible with
+the standard fixed-point semantics for recursion, applies here and is not
+repaired by anything in this paper; see Obligation~\ref{ob:recursion}.
+
+Their suggested way out is worth quoting in substance. They propose looking at
+quantum optics, where a Mach--Zehnder interferometer is a physically real
+alternation, and they observe that in such a device the system being split is
+the system the alternate operations act on, with no distinct control qubit. That
+is the architecture developed here: the race is the split, there is no control
+register, and Definition~\ref{def:wire} makes the interferometer literal. Ying's
+other route to recursion, via second quantisation \cite{YingSecondQ}, is also
+where Proposition~\ref{prop:bose} lands.
+
+The weighted-history pattern itself --- multiply along a path, sum across paths
+--- is standard in semiring-weighted computation \cite{DrosteKuichVogler}, and
+stochastic process calculi are long established \cite{Priami,SPiM}. The specific
+claim here is narrower and, we think, new: a semiring-valued expression placed
+exactly at candidate-match resolution, with rho's joins as explicit recombiners
+of weighted alternative histories.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Open problems}\label{sec:open}
+
+\begin{obligation}[Global norm preservation]\label{ob:global}
+Conjecture~\ref{conj:global}: prove Proposition~\ref{prop:complete} along
+arbitrary concurrent execution, with components merging and splitting.
+\end{obligation}
+
+\begin{obligation}[Staging as a theorem]\label{ob:staging}
+Prove Conjecture~\ref{conj:safe}, or find the third failure mode.
+Finding~\ref{find:safe} bounds the search, not the claim.
+\end{obligation}
+
+\begin{obligation}[No-aliasing, if it is wanted]\label{ob:aliasing}
+Remark~\ref{rem:noownership} argues that linear ownership of quantum names is
+not needed, aliasing producing contention rather than cloning. If that argument
+fails somewhere --- most plausibly where a received name is used as the subject
+of a receipt whose sort the static rule of Definition~\ref{def:namespace} only
+approximates --- then a linear capability discipline, guaranteeing that each
+quantum capability occurs in exactly one live ownership context, is the repair.
+\end{obligation}
+
+\begin{obligation}[Recursion and the Löwner order]\label{ob:recursion}
+Quantum alternation is not monotone in the standard order on completely positive
+maps \cite{BadescuPanangaden}, so it is incompatible with the usual fixed-point
+semantics for recursion. Rho's recursion is by reflection, and the budget in the
+denotation is precisely a stand-in for a fixed point. This is the deepest open
+problem here and nothing above addresses it.
+\end{obligation}
+
+\begin{obligation}[The price, made exact]\label{ob:price}
+Conjecture~\ref{conj:ledger} assumes independent attempts, and the charge for a
+herald has not been fixed against the cost model. Until it is,
+``polynomially funded'' names an intention.
+\end{obligation}
+
+\begin{obligation}[Herald garbage]\label{ob:garbage}
+Heralds at deficient components accumulate. Collecting them without reading them
+--- which commits to an outcome --- or discarding them --- which is the trace
+this design avoids --- is open.
+\end{obligation}
+
+\begin{obligation}[Categorical status]\label{ob:cat}
+The register-indexed denotation with its partial tensor is a separation algebra
+valued in Fock spaces. Making Remark~\ref{rem:separation} precise, and relating
+it to the generated logic's separating conjunction, is the natural next step.
+\end{obligation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}\label{sec:conc}
+
+The rho calculus does not say how its races are settled, and quantum mechanics
+is one of the available answers. Taking that seriously turns out to require four
+things that were not in the original design.
+
+A term is not a quantum state. The denotation must be indexed by a register of
+unforgeable names, graded by occupancy over those names, with a tensor that is
+partial and forgets which side supplied which quanta when the registers overlap,
+and with an explicit isometric embedding whenever a name becomes active. The
+forgetting is indistinguishability; and because parallel composition is
+associative-commutative, the alternatives at a contention are indexed by a
+symmetric group and the coherent sum over a fibre is a permanent. That much
+follows from the structural rules. Calling the result bosonic statistics is a
+further identification, and one the paper flags rather than assumes.
+
+The unit at which amplitudes must be completed is the contention set: connected
+components of the conflict relation, with maximal matchings as the alternatives
+and the fibre-summed amplitudes normalised. The components factor as events
+always, and as state spaces once staging and unit occupancy hold. The race
+equation we began from is the smallest instance.
+
+Not every term denotes a state, and the ways of failing are syntactic.
+Absorption --- termination, which is not a unitary phenomenon --- and spectators
+--- parked quanta indistinguishable from emitted ones --- are the two we have
+found, and halt tagging, staging and a dual-rail encoding remove them in every
+case an exhaustive search has been able to construct --- which is evidence for
+the invariant and not a proof of it.
+
+And what cannot be excluded can be priced. Non-contractive clauses are refused;
+the residual defect is dilated at the component; the ancilla is written as a
+message in the classical namespace, and consuming it performs a definite
+instrument, which is where measurement was always going to have to happen. A
+programmer who wants post-selection may have it, as a retry loop, at $2^n$
+firings.
+
+What remains is not small, and \S\ref{ssec:scope} said so before any of it was
+built. Isometry is proved at a configuration and conjectured in general; the
+staged fragment is searched and not proved; the containment by the ledger is a
+conjecture; and quantum alternation's incompatibility with the standard
+semantics of recursion is a problem this design inherits and does not solve.
+The defensible claim is the one stated at the outset: a finite, contractive,
+staged fragment of graded rho admits a candidate quantum interpretation, and the
+extension to unrestricted reflective concurrency is open. The shape of the
+object is now clear enough to say what would settle it.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{thebibliography}{99}\small
+
+\bibitem{Aaronson} S.~Aaronson.
+Quantum computing, postselection, and probabilistic polynomial-time.
+\emph{Proc. Roy. Soc. A} 461:3473--3482, 2005.
+
+\bibitem{AaronsonArkhipov} S.~Aaronson and A.~Arkhipov.
+The computational complexity of linear optics. \emph{STOC}, 2011.
+
+\bibitem{AltenkirchGrattage} T.~Altenkirch and J.~Grattage.
+A functional quantum programming language. \emph{LICS}, 2005.
+
+\bibitem{BadescuPanangaden} C.~B\u{a}descu and P.~Panangaden.
+Quantum alternation: prospects and problems.
+\emph{QPL 2015}, EPTCS 195:33--42.
+
+\bibitem{Bennett} C.~H.~Bennett.
+Logical reversibility of computation.
+\emph{IBM J. Res. Develop.} 17(6):525--532, 1973.
+
+\bibitem{CoeckeDuncan} B.~Coecke and R.~Duncan.
+Interacting quantum observables: categorical algebra and diagrammatics.
+\emph{New J. Phys.} 13:043016, 2011.
+
+\bibitem{DrosteKuichVogler} M.~Droste, W.~Kuich and H.~Vogler, editors.
+\emph{Handbook of Weighted Automata}. Springer, 2009.
+
+\bibitem{GayNagarajanCQP} S.~J.~Gay and R.~Nagarajan.
+Communicating quantum processes. \emph{POPL}, 145--157, 2005.
+
+\bibitem{GayNagarajanTypes} S.~J.~Gay and R.~Nagarajan.
+Types and typechecking for communicating quantum processes.
+\emph{Math. Struct. Comp. Sci.} 16(3):375--406, 2006.
+
+\bibitem{Gillespie} D.~T.~Gillespie.
+Exact stochastic simulation of coupled chemical reactions.
+\emph{J. Phys. Chem.} 81(25):2340--2361, 1977.
+
+\bibitem{Girard} J.-Y.~Girard.
+Linear logic. \emph{Theoret. Comput. Sci.} 50(1):1--102, 1987.
+
+\bibitem{Goertzel} B.~Goertzel, M.~Ikl\'e, I.~F.~Goertzel and A.~Heljakka.
+\emph{Probabilistic Logic Networks}. Springer, 2009.
+
+\bibitem{GWv4} L.~G.~Meredith.
+Graded where-clauses, versions 4 and 5. F1R3FLY.io working notes, 2026.
+
+\bibitem{HOM} C.~K.~Hong, Z.~Y.~Ou and L.~Mandel.
+Measurement of subpicosecond time intervals between two photons by
+interference. \emph{Phys. Rev. Lett.} 59(18):2044--2046, 1987.
+
+\bibitem{KLM} E.~Knill, R.~Laflamme and G.~J.~Milburn.
+A scheme for efficient quantum computation with linear optics.
+\emph{Nature} 409:46--52, 2001.
+
+\bibitem{Kraus} K.~Kraus.
+\emph{States, Effects and Operations}. Lecture Notes in Physics 190,
+Springer, 1983.
+
+\bibitem{Landauer} R.~Landauer.
+Irreversibility and heat generation in the computing process.
+\emph{IBM J. Res. Develop.} 5(3):183--191, 1961.
+
+\bibitem{MeredithRadestock} L.~G.~Meredith and M.~Radestock.
+A reflective higher-order calculus.
+\emph{Electron. Notes Theor. Comput. Sci.} 141(5):49--67, 2005.
+
+\bibitem{Milner} R.~Milner, J.~Parrow and D.~Walker.
+A calculus of mobile processes, I and II.
+\emph{Inform. and Comput.} 100(1):1--77, 1992.
+
+\bibitem{NielsenChuang} M.~A.~Nielsen and I.~L.~Chuang.
+\emph{Quantum Computation and Quantum Information}.
+Cambridge University Press, 2000.
+
+\bibitem{PLNPaper} L.~G.~Meredith.
+Graded where-clauses: the probabilistic-logic instance.
+F1R3FLY.io working note, in preparation.
+
+\bibitem{Priami} C.~Priami.
+Stochastic pi-calculus. \emph{Computer Journal} 38(7):578--589, 1995.
+
+\bibitem{QuantumBarbs} Quantum bisimilarity via barbs and contexts:
+curbing the power of non-deterministic observers. arXiv:2311.06116, 2023.
+
+\bibitem{ResAlg} L.~G.~Meredith.
+Resolution algebras: non-crisp truth values as the syntax of non-determinism
+resolution in the rho calculus. F1R3FLY.io working note, in preparation.
+
+\bibitem{Reynolds} J.~C.~Reynolds.
+Separation logic: a logic for shared mutable data structures.
+\emph{LICS}, 55--74, 2002.
+
+\bibitem{Selinger} P.~Selinger.
+Towards a quantum programming language.
+\emph{Math. Struct. Comp. Sci.} 14(4):527--586, 2004.
+
+\bibitem{SelingerValiron} P.~Selinger and B.~Valiron.
+A lambda calculus for quantum computation with classical control.
+\emph{TLCA}, 354--368, 2005.
+
+\bibitem{Shor} P.~W.~Shor.
+Polynomial-time algorithms for prime factorization and discrete logarithms on a
+quantum computer. \emph{SIAM J. Comput.} 26(5):1484--1509, 1997.
+
+\bibitem{SPiM} A.~Phillips and L.~Cardelli.
+A correct abstract machine for the stochastic pi-calculus.
+\emph{Bioconcur}, 2004.
+
+\bibitem{Stinespring} W.~F.~Stinespring.
+Positive functions on $C^{*}$-algebras.
+\emph{Proc. Amer. Math. Soc.} 6:211--216, 1955.
+
+\bibitem{SzNagyFoias} B.~Sz.-Nagy and C.~Foias.
+\emph{Harmonic Analysis of Operators on Hilbert Space}.
+North-Holland, 1970.
+
+\bibitem{Winskel} G.~Winskel.
+Event structures. In \emph{Petri Nets: Applications and Relationships to Other
+Models of Concurrency}, LNCS 255:325--392, 1987.
+
+\bibitem{YingSecondQ} M.~Ying.
+Quantum recursion and second quantisation. arXiv:1405.4443, 2014.
+
+\bibitem{YingYuFeng} M.~Ying, N.~Yu and Y.~Feng.
+Alternation in quantum programming: from superposition of data to superposition
+of programs. arXiv:1402.5172, 2014.
+
+\end{thebibliography}
+
+\end{document}

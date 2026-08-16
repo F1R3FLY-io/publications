@@ -143,11 +143,12 @@ def run(gates):
 # emission
 # ---------------------------------------------------------------------------
 
-PREAMBLE = r"""// Every channel below is bound by `new`, hence quantum: unforgeable, and the
-// only namespace in which a graded clause may take complex values.  Installer
-// channels are quantum too; a persistent receipt consumes each datum once and
-// uses its bound names once per firing, so persistence never breaks linearity.
-// A qubit is ONE token distributed over TWO rails.
+PREAMBLE = r"""// Rails are bound by `new`, hence quantum, and every receipt on a quantum
+// channel uses `o-`.  Installer and result channels are bound by `newc`, the
+// derived binder for fresh CLASSICAL names, so their receipts carry no
+// linearity obligation -- which is what lets a gadget contract mention its
+// parameters only inside a clause.  A qubit is ONE token distributed over TWO
+// rails.
 
 contract gate1( r0In, r1In, r0Out, r1Out, m00, m01, m10, m11 ) = {
   new w in {
@@ -265,7 +266,7 @@ def emit(gates):
             weights = " + ".join(
                 (f"bit(*x{i})" if i == N_COUNT - 1
                  else f"{2 ** (N_COUNT - 1 - i)} * bit(*x{i})") for i in range(N_COUNT))
-            body.append(f"      new r in {{")
+            body.append(f"      newc r in {{")
             body.append(f"        modexp!( *r, {A},")
             body.append(f"                 {weights}, {N} ) |")
             body.append("        for( m <- r ) {")
@@ -297,15 +298,23 @@ def emit(gates):
     body.append(f"      out!( {val} )")
     body.append("    }")
 
+    names.append("__SPLIT__")
     names.append("out")
-    decl, cur = [], "new "
-    for i, nm in enumerate(names):
-        piece = nm + ("," if i < len(names) - 1 else " in {")
-        if len(cur) + len(piece) > 72:
-            decl.append(cur.rstrip())
-            cur = "    "
-        cur += piece + " "
-    decl.append(cur.rstrip())
+    q_names = names[:names.index("__SPLIT__")]
+    c_names = names[names.index("__SPLIT__") + 1:]
+
+    def binder(kw, ns, tail):
+        out, cur = [], kw + " "
+        for i, nm in enumerate(ns):
+            piece = nm + ("," if i < len(ns) - 1 else tail)
+            if len(cur) + len(piece) > 72:
+                out.append(cur.rstrip())
+                cur = "    "
+            cur += piece + " "
+        out.append(cur.rstrip())
+        return out
+
+    decl = binder("new", q_names, " in") + binder("newc", c_names, " in {")
 
     lines = decl + [""] + body + ["}"]
     return PREAMBLE + "\n" + "\n".join(lines) + "\n"
