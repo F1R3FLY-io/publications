@@ -24,7 +24,6 @@
 \newcommand{\rhoc}{rho calculus}
 \newcommand{\In}[2]{\mathsf{for}(\,#1 \leftarrow #2\,)}
 \newcommand{\Inp}[2]{\mathsf{for}(\,#1 \Leftarrow #2\,)}
-\newcommand{\Join}[4]{\mathsf{for}(\,#1 \leftarrow #2\ \&\ #3 \leftarrow #4\,)}
 \newcommand{\rt}[1]{\sqrt{#1}}
 \newcommand{\nrt}[2]{\sqrt[#1]{#2}}
 \newcommand{\barb}[1]{\downarrow_{#1}}
@@ -52,7 +51,7 @@
 \maketitle
 
 \begin{abstract}
-The square root of a process $P$ is a process $\rt{P}$ such that $\rt{P} \mid \rt{P}$ is bisimilar to $P$; the $n$-th root is the corresponding $n$-fold statement. This note works out, in detail, a construction sketched in a 2018 RChain research deck. Three things are established and one is proposed. First, exact roots are governed by divisibility: modulo a unique-parallel-decomposition hypothesis, a process has an $n$-th root exactly when every parallel prime occurs with multiplicity divisible by $n$, so almost no process has one, while idempotent processes have all of them trivially. Second, the naive root computed by structural recursion is correct on the determinate fragment but fails at contention, and it fails for two independent reasons: multiplicity of messages is observable to arbitrary contexts, which forces the correctness statement to be relative to the image of the root map; and the copies of a doubled race may resolve it differently, which no rearrangement of the clauses can repair. Third, the repair is an \emph{arbiter}: a term that joins on the contended deposits, contributes a bit drawn from its own copy's nondeterminism, and decides by a function symmetric in the contributions, so that every copy decides alike. Symmetry is the agreement condition, and it is what the original sketch's decision table silently supplied. Finally, we argue that because contention is a runtime rather than a syntactic property, the arbiter cannot be installed per race but must own the channel, so that the fixed point of the construction is a node that serialises a namespace --- which is the sense in which taking roots and running consensus are the same activity. Throughout, the arbiter is read as an instrument for making a family of independent \emph{resolvers} of nondeterminism behave as one. A rholang implementation of the square root of a racing process accompanies the note.
+The square root of a process $P$ is a process $\rt{P}$ such that $\rt{P} \mid \rt{P}$ is bisimilar to $P$; the $n$-th root is the corresponding $n$-fold statement. This note works out, in detail, a construction sketched in a 2018 RChain research deck. Three things are established and one is proposed. First, exact roots are governed by divisibility: modulo a unique-parallel-decomposition hypothesis, a process has an $n$-th root exactly when every parallel prime occurs with multiplicity divisible by $n$, so almost no process has one, while idempotent processes have all of them trivially. Second, the naive root computed by structural recursion is correct on the determinate fragment but fails at contention, and it fails for two independent reasons: multiplicity of messages is observable to arbitrary contexts, which forces the correctness statement to be relative to the image of the root map; and the copies of a doubled race may resolve it differently, which no rearrangement of the clauses can repair. Third, the repair is an \emph{arbiter}: a term that joins on the contended deposits, contributes a bit drawn from its own copy's nondeterminism, and decides by a function symmetric in the contributions, so that every copy decides alike. Symmetry is the agreement condition, and it is what the original sketch's decision table silently supplied. Finally, we argue that because contention is a runtime rather than a syntactic property, the arbiter cannot be installed per race but must own the channel, so that the fixed point of the construction is a node that serialises a namespace --- which is the sense in which taking roots and running consensus are the same activity. A further section separates three things the word \emph{asynchrony} is made to carry --- asynchronous sending, unbounded delay, and unreliable delivery --- and reifies the medium as a process, which puts the fault model inside the calculus as a perturbation of a term rather than beside it as an assumption, and which exhibits the arbiter as a channel that $n$ copies are constrained to agree on. Throughout, the arbiter is read as an instrument for making a family of independent \emph{resolvers} of nondeterminism behave as one. A rholang implementation of the square root of a racing process accompanies the note.
 \end{abstract}
 
 \section{Introduction}
@@ -391,6 +390,69 @@ The \rhoc{} is silent about resolution, so no term can \emph{describe} a resolve
 In the accompanying implementation the local coin is written as a two-message race with one receipt, and the value obtained is whatever the copy's interpreter chooses. This is not a stopgap for a missing primitive. It is the point: the copy's own resolver is the only source of nondeterminism available to it, and arbitration is the discipline of combining $n$ such sources symmetrically so that the composite behaves as one.
 \end{remark}
 
+\section{What the calculus assumes about delivery}\label{sec:medium}
+
+The caveat the sketch attaches to its arbiter --- that messages are neither lost nor indefinitely delayed --- bundles two assumptions that fail in different places, and the word \emph{asynchrony} is routinely made to carry a third that is not an assumption at all. It is worth separating them before drawing any conclusion about consensus.
+
+\begin{description}
+\item[(a) Asynchronous sending.] $x!(Q)$ has no continuation: a sender does not wait for a receiver. This is a presentational choice about the term language, made here and in the asynchronous $\pi$-calculus \cite{HondaTokoro,Boudol}, and it says nothing whatever about a network.
+\item[(b) Unbounded delay.] The reduction relation imposes no schedule and no fairness condition, so a datum may remain unmatched for arbitrarily many steps while other reductions proceed. This is the distributed-systems sense of asynchrony, and the \rhoc{} already has it: it is a property of the \emph{resolver} of Section~\ref{sec:resolver}, which is free to keep choosing elsewhere, and not of the message discipline.
+\item[(c) Reliable delivery.] A datum, once emitted, is delivered exactly once, to some receipt at its name, uncorrupted. This the \rhoc{} does assume, and it is the assumption that a network violates. Note that ordering is not among the assumptions: data at a name form a multiset, so reordering is native and costs nothing to model.
+\end{description}
+
+\begin{remark}
+Section~\ref{sec:consensus} as first drafted, and the sketch before it, treated ``lost'' and ``indefinitely delayed'' as one caveat and called its removal asynchrony. They are not the same, they are not removed by the same move, and the calculus's position on them is not the same: (b) is already granted, (c) is already assumed. What follows separates them by making (c) a term rather than a side condition.
+\end{remark}
+
+\subsection{Channels as processes}
+
+To speak about delivery one moves from a name to a \emph{channel}: a process interposed between two names, carrying the traffic from one to the other. Where the calculus writes $\In{y}{x}P \mid x!(Q)$, we write
+\[
+  \In{y}{x_1}P \;\mid\; \mathsf{Chan}(x_1, x_2) \;\mid\; x_2!(Q) ,
+  \qquad
+  \mathsf{Chan}(x_1,x_2) \;=\; \Inp{y}{x_2}\, x_1!({*}y) .
+\]
+
+\begin{proposition}[Transparency]\label{prop:chan}
+The honest forwarder is transparent: for every $P$ and $Q$, the interposed term above is weakly barbed bisimilar to $\In{y}{x}P \mid x!(Q)$ up to the renaming of the interface, and the interposition costs one additional reduction per message.
+\end{proposition}
+
+This is the standard forwarder or link result for asynchronous name-passing calculi \cite{HondaTokoro,MerroSangiorgi}, and the qualification ``up to the renaming of the interface'' is the usual one: the composite has barbs at $x_1$ and $x_2$ where the original has one at $x$, which is again a statement relative to a class of observers rather than an absolute one.
+
+What the reification buys is that $\mathsf{Chan}$ need not be honest.
+
+\begin{definition}[Sinister channels]\label{def:sinister}
+Writing $\mathsf{coin}$ for the local race of Definition~\ref{def:arbiter}:
+\begin{align*}
+  \mathsf{Drop}(x_1,x_2) &= \Inp{y}{x_2}\ \mathsf{if}\ \mathsf{coin}\ \mathsf{then}\ x_1!({*}y)\ \mathsf{else}\ 0 \\
+  \mathsf{Dup}(x_1,x_2) &= \Inp{y}{x_2}\ \big(\,x_1!({*}y) \mid x_1!({*}y)\,\big) \\
+  \mathsf{Corrupt}(x_1,x_2) &= \Inp{y}{x_2}\ x_1!(F({*}y)) \quad \text{for some } F \\
+  \mathsf{Delay}(x_1,x_2) &= \Inp{y}{x_2}\ \mathsf{park}!({*}y) \ \mid\ \Inp{z}{\mathsf{park}}\ x_1!({*}z)
+\end{align*}
+\end{definition}
+
+$\mathsf{Delay}$ is worth a word: it does not delay in any timing sense, because the calculus has no clock. It converts a datum into a datum at another name, which the resolver may then decline to choose for as long as it likes. That is the whole content of (b), and it confirms that unbounded delay needs no channel at all --- an honest medium already permits it. Loss, duplication and corruption are what genuinely need a sinister medium, and they are exactly what (c) rules out.
+
+\begin{proposition}[The medium replicates for free]\label{prop:chanidem}
+$\mathsf{Chan}$ is a persistent receipt whose continuation does not contend, so by Proposition~\ref{prop:idem} it is idempotent and is its own $n$-th root for every $n$.
+\end{proposition}
+
+Proposition~\ref{prop:chanidem} localises the difficulty of this note rather precisely. The transport layer needs no arbitration: replicating it is free, and the copies of the medium may be composed without coordination. Everything the arbiter is for lives in the \emph{linear} traffic that the medium carries.
+
+\begin{remark}[The fault model becomes a perturbation of a term]\label{rem:faultmodel}
+Section~\ref{sec:consensus} says that making the consensus correspondence a theorem needs a fault model, and that no fault model is given here. With the medium reified, the shape such a model would take is visible: it is the class of systems obtained from $\rt{S}$ by replacing the medium in some copies with a variant from Definition~\ref{def:sinister}. Omission faults are $\mathsf{Drop}$; a network-level Byzantine fault is $\mathsf{Corrupt}$; a node-level Byzantine fault is a copy whose \emph{arbiter}, rather than whose medium, departs from Definition~\ref{def:arbiter}. The point is that all of these are terms, so the fault model can be stated inside the calculus and the correctness of an arbiter against it becomes an ordinary equivalence question rather than a metalevel stipulation.
+\end{remark}
+
+\begin{principle}[The arbiter is a channel]\label{prin:arbchan}
+Definition~\ref{def:arbiter} consumes data at the deposit names and emits at the delivered name. That is the shape of $\mathsf{Chan}$, with a policy inside: the arbiter drops nothing but defers some of what it receives (Remark~\ref{rem:loser}), and it chooses which. So the arbiter and the sinister channel are the same construction, and what distinguishes a consensus protocol from a faulty network is not the shape of the term but a guarantee \emph{across} copies. A consensus protocol is a family of media, one per copy, constrained to make the same choices.
+\end{principle}
+
+Principle~\ref{prin:arbchan} is Section~\ref{sec:resolver}'s slogan at the level of the medium, and it makes the internalisation pattern of this programme visible three times over in one construction: a graded where-clause moves the resolver's policy into the syntax, the arbiter moves the resolver's agreement into the syntax, and $\mathsf{Chan}$ moves delivery into the syntax. In each case a parameter of the interpretation becomes a term, and in each case what was an assumption one states about a model becomes a process one may reason about.
+
+\begin{remark}[What existing protocols deliver]
+Assumption (c) is not extravagant. Over a live connection, TCP \cite{RFC793} delivers exactly once, uncorrupted, and in order --- more than the calculus asks on ordering and precisely what it asks on reliability. What TCP does not supply is that the connection remains live; a partition is the failure of (b) and (c) together and is not detectable from inside. So the gap between the \rhoc{}'s message discipline and a real transport is smaller than the phrase ``the network is unreliable'' suggests, and the reified medium is there for the residue: partition, and adversarial peers.
+\end{remark}
+
 \section{The consensus analogy}\label{sec:consensus}
 
 The sketch's second slide observes that a consensus protocol runs $n$ copies of a node coordinating $n$ copies of a contract, so arranged that the copies result in a single execution --- which is the root equation. We present the correspondence as an analogy, and mark plainly what would be needed to make it a theorem.
@@ -405,13 +467,14 @@ Validity: the decision is some proposal & The decision selects a candidate of th
 Termination & Lemma~\ref{lem:progress}: atomicity of the joins, under reliable delivery \\
 Randomised agreement & Lemma~\ref{lem:coin}: parity of the local coins \\
 Ordering the log, not one value & Remark~\ref{rem:loser} and Section~\ref{sec:every}: the arbiter defers the remainder of the race and must persist \\
+Reliable channels & Assumption (c) of Section~\ref{sec:medium}, reified as $\mathsf{Chan}$ and removable term-by-term \\
 \hline
 \end{tabular}
 \end{center}
 
-The sketch's own caveat is the honest one: the arbiter assumes messages are neither lost nor indefinitely delayed, and assumes the arbiter does not lie. Removing the first assumption is asynchrony; removing the second is Byzantine behaviour; and a protocol such as Casper exists to address both in a decentralised setting.
+The sketch's own caveat names the right two things, and Section~\ref{sec:medium} says where each of them lives. The arbiter assumes reliable delivery --- assumption (c), which is the calculus's own and which a sinister medium removes --- and it assumes that the arbiter does not lie, which no medium can repair. It does \emph{not} assume anything about delay: assumption (b) is already absent, since the resolver is under no fairness obligation, and Lemmas~\ref{lem:progress} and \ref{lem:exh} are stated as reachability rather than as timing. So the two axes are unreliable delivery and dishonest participants, not ``asynchrony'' and Byzantine behaviour; and a protocol such as Casper exists to address both, together with the delay the calculus already permits, in a decentralised setting.
 
-Two remarks about the shape a theorem would take, offered as orientation and not as results. First, the correspondence has an obvious direction: an arbiter that is correct in a model with crash faults would decide a binary value agreed by all copies, which is what the classical impossibility result for deterministic asynchronous consensus \cite{FLP} forbids --- so in such a model the coin of Lemma~\ref{lem:coin} would not be a stylistic choice but a necessity, and the neighbourhood to look in is randomised agreement \cite{BenOr}. Second, the general site of Section~\ref{sec:every} asks for agreement on a serialisation rather than on a value, which is atomic broadcast, and hence the replicated state machine construction \cite{Schneider}. Making either remark precise requires a fault model, a definition of correctness for an arbiter under it, and a reduction; none of that is attempted here.
+Two remarks about the shape a theorem would take, offered as orientation and not as results. First, the correspondence has an obvious direction: an arbiter that is correct in a model with crash faults would decide a binary value agreed by all copies, which is what the classical impossibility result for deterministic asynchronous consensus \cite{FLP} forbids --- so in such a model the coin of Lemma~\ref{lem:coin} would not be a stylistic choice but a necessity, and the neighbourhood to look in is randomised agreement \cite{BenOr}. The separation of Section~\ref{sec:medium} is what makes this remark say anything: the impossibility result assumes \emph{reliable} channels and drops only the timing assumption --- (c) held, (b) absent --- which is exactly the position the \rhoc{} is already in, and which is therefore the setting the arbiter of Section~\ref{sec:arb} would have to be judged in first. Second, the general site of Section~\ref{sec:every} asks for agreement on a serialisation rather than on a value, which is atomic broadcast, and hence the replicated state machine construction \cite{Schneider}. Making either remark precise requires a fault model, a definition of correctness for an arbiter under it, and a reduction; none of that is attempted here.
 
 \section{$n$-th roots}\label{sec:nth}
 
@@ -447,6 +510,8 @@ The corrections of Section~\ref{sec:arb} are all visible in the listing: the mul
 
 \paragraph{The uniform arbiter.} Section~\ref{sec:every} specifies the per-namespace arbiter and does not construct it. Constructing it, and proving the operational correspondence relative to image contexts, is the main piece of work this note leaves open.
 
+\paragraph{The arbiter against a sinister medium.} Remark~\ref{rem:faultmodel} says where a fault model would live but does not build one. The first question to ask of it is narrow and answerable: which of Lemmas~\ref{lem:progress}, \ref{lem:exh} and \ref{lem:agree} survive the replacement of one copy's medium by $\mathsf{Drop}$, and which by $\mathsf{Dup}$. Duplication looks the more dangerous of the two, since Lemma~\ref{lem:exh} counts.
+
 \paragraph{Cost and occupancy.} The residues of Section~\ref{sec:arb} are held storage, not performed reductions, and pricing them belongs to the same unfinished treatment of namespace pragmatics that owns the derived-name question.
 
 \paragraph{Graded arbitration.} Lemma~\ref{lem:coin} uses a uniform coin. A graded arbiter would weight the contributions, and the resulting non-uniform shared coin is a weighted leader election; stating the agreement lemma over a general value algebra is a small piece of work with an interesting reading.
@@ -455,7 +520,7 @@ The corrections of Section~\ref{sec:arb} are all visible in the listing: the mul
 
 The equation $\rt{P} \mid \rt{P} \approx P$ looks like a curiosity about parallel composition and turns out to be a compact statement of what replication is for. Read arithmetically, it says that exact roots are governed by divisibility and hence are rare, so a system that manufactures them for arbitrary $P$ must be changing what parallel composition means. Read operationally, it says that the obstruction lies exactly at contention, that no structural recursion can remove it, and that the removal is a term which forces independently resolved copies to resolve alike. Read as a design, it says that because contention is dynamic the removing term cannot be attached to a race but must own a namespace --- and a replicated agent that owns a namespace and agrees with its siblings on the order of its traffic is a node.
 
-The distance between the arbiter of Section~\ref{sec:arb} and a protocol that works on the open Internet is exactly the two assumptions the original sketch named: that messages arrive, and that the arbiter is honest. That the distance is only those two assumptions is the point of the exercise.
+The distance between the arbiter of Section~\ref{sec:arb} and a protocol that works on the open Internet is exactly the two assumptions the original sketch named: that messages arrive, and that the arbiter is honest. It is not, as one is tempted to say, a matter of asynchrony: the calculus imposes no schedule and no fairness, so unbounded delay is granted already, and what a network takes away is delivery. Once the medium is a process, that difference is a difference between terms, and the arbiter turns out to be a medium too --- one that $n$ copies are obliged to agree on. That the distance is only those two assumptions is the point of the exercise.
 
 \subsection*{Acknowledgement}
 
@@ -472,6 +537,14 @@ Claude (Anthropic) assisted with the review of the source material, the drafting
 \bibitem{Abramsky} S. Abramsky. Computational interpretations of linear logic. \emph{Theoretical Computer Science} 111(1--2):3--57, 1993.
 
 \bibitem{BenOr} M. Ben-Or. Another advantage of free choice: completely asynchronous agreement protocols. \emph{PODC}, 1983.
+
+\bibitem{Boudol} G. Boudol. Asynchrony and the $\pi$-calculus. INRIA Research Report 1702, 1992.
+
+\bibitem{HondaTokoro} K. Honda and M. Tokoro. An object calculus for asynchronous communication. \emph{ECOOP}, 1991.
+
+\bibitem{MerroSangiorgi} M. Merro and D. Sangiorgi. On asynchrony in name-passing calculi. \emph{Mathematical Structures in Computer Science} 14(5):715--767, 2004.
+
+\bibitem{RFC793} J. Postel (ed.). Transmission Control Protocol. RFC 793, 1981.
 
 \bibitem{Blum} M. Blum. Coin flipping by telephone: a protocol for solving impossible problems. \emph{ACM SIGACT News} 15(1):23--27, 1983.
 

@@ -138,3 +138,75 @@ new root, xl, xr, sx, park, out in {
 // the n contributions it consumed, so a contention site costs n
 // rendezvous and O(n^2) messages.
 // -------------------------------------------------------------------
+
+
+// -------------------------------------------------------------------
+// PART 3.  The medium, reified.
+//
+// The calculus assumes exactly-once, uncorrupted delivery.  It assumes
+// nothing about delay: the reduction relation carries no schedule and
+// no fairness condition, so a datum may sit unmatched indefinitely
+// while other reductions proceed.  Those are different assumptions and
+// they fail in different places -- delay is the resolver's business,
+// delivery is the medium's.  To speak about delivery, interpose a
+// process between two names.
+//
+//   for( y <- x )P | x!( Q )
+//     becomes
+//   for( y <- x1 )P | Chan( x1, x2 ) | x2!( Q )
+//
+// An honest Chan forwards and is transparent up to weak bisimulation,
+// at the cost of one reduction per message.  It is also a persistent
+// receipt, hence idempotent, hence its own n-th root: the transport
+// layer replicates for free, and everything the arbiter of PART 2 is
+// for lives in the linear traffic the medium carries.
+// -------------------------------------------------------------------
+
+new Chan, Drop, Dup, Corrupt, Delay in {
+
+  // honest: forward
+  contract Chan( x1, x2 ) = {
+    for( y <= *x2 ) { *x1!( *y ) }
+  }
+
+  // omission: forward or discard, decided by the local resolver
+  | contract Drop( x1, x2 ) = {
+      for( y <= *x2 ) {
+        new coin in {
+            coin!( 0 ) | coin!( 1 )
+          | for( b <- coin ) {
+              match *b { 0 => { *x1!( *y ) }  1 => { Nil } }
+            }
+        }
+      }
+    }
+
+  // duplication: note this is the variant that threatens Lemma
+  // "exhaustion" in the note, since that lemma counts
+  | contract Dup( x1, x2 ) = {
+      for( y <= *x2 ) { *x1!( *y ) | *x1!( *y ) }
+    }
+
+  // corruption: a network-level Byzantine fault
+  | contract Corrupt( x1, x2 ) = {
+      for( y <= *x2 ) { *x1!( @"corrupted"!( *y ) ) }
+    }
+
+  // "delay": no clock is involved.  The datum is moved to another
+  // name, which the resolver may decline to choose for as long as it
+  // likes -- which is why unbounded delay needs no sinister medium.
+  | contract Delay( x1, x2 ) = {
+      new held in {
+          for( y <= *x2 ) { held!( *y ) }
+        | for( z <= held ) { *x1!( *z ) }
+      }
+    }
+}
+
+// -------------------------------------------------------------------
+// The arbiter of PART 2 has the shape of a Chan: it consumes at the
+// deposit names and emits at the delivered name, with a policy inside.
+// The difference between a faulty network and a consensus protocol is
+// not the shape of the term but a guarantee across copies -- that the
+// n media make the same choices.
+// -------------------------------------------------------------------
