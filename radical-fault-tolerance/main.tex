@@ -1,0 +1,496 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage{listings}
+\usepackage{array}
+
+\setlength{\emergencystretch}{2.5em}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{hypothesis}[theorem]{Hypothesis}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{principle}[theorem]{Principle}
+\newtheorem{example}[theorem]{Example}
+
+\newcommand{\rhoc}{rho calculus}
+\newcommand{\In}[2]{\mathsf{for}(\,#1 \leftarrow #2\,)}
+\newcommand{\Inp}[2]{\mathsf{for}(\,#1 \Leftarrow #2\,)}
+\newcommand{\Join}[4]{\mathsf{for}(\,#1 \leftarrow #2\ \&\ #3 \leftarrow #4\,)}
+\newcommand{\rt}[1]{\sqrt{#1}}
+\newcommand{\nrt}[2]{\sqrt[#1]{#2}}
+\newcommand{\barb}[1]{\downarrow_{#1}}
+\newcommand{\wbarb}[1]{\Downarrow_{#1}}
+\newcommand{\Proc}{\mathcal{P}}
+\newcommand{\Names}{\mathcal{N}}
+\newcommand{\parn}[1]{{#1}^{\,\|\,n}}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  frame=none,
+  xleftmargin=1.5em
+}
+
+\title{Radical Fault Tolerance\\[0.4em]
+\large Roots of processes, arbitration, and the resolver that consensus supplies}
+\author{L.\,G. Meredith}
+\date{F1R3FLY.io Research Note\\ August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The square root of a process $P$ is a process $\rt{P}$ such that $\rt{P} \mid \rt{P}$ is bisimilar to $P$; the $n$-th root is the corresponding $n$-fold statement. This note works out, in detail, a construction sketched in a 2018 RChain research deck. Three things are established and one is proposed. First, exact roots are governed by divisibility: modulo a unique-parallel-decomposition hypothesis, a process has an $n$-th root exactly when every parallel prime occurs with multiplicity divisible by $n$, so almost no process has one, while idempotent processes have all of them trivially. Second, the naive root computed by structural recursion is correct on the determinate fragment but fails at contention, and it fails for two independent reasons: multiplicity of messages is observable to arbitrary contexts, which forces the correctness statement to be relative to the image of the root map; and the copies of a doubled race may resolve it differently, which no rearrangement of the clauses can repair. Third, the repair is an \emph{arbiter}: a term that joins on the contended deposits, contributes a bit drawn from its own copy's nondeterminism, and decides by a function symmetric in the contributions, so that every copy decides alike. Symmetry is the agreement condition, and it is what the original sketch's decision table silently supplied. Finally, we argue that because contention is a runtime rather than a syntactic property, the arbiter cannot be installed per race but must own the channel, so that the fixed point of the construction is a node that serialises a namespace --- which is the sense in which taking roots and running consensus are the same activity. Throughout, the arbiter is read as an instrument for making a family of independent \emph{resolvers} of nondeterminism behave as one. A rholang implementation of the square root of a racing process accompanies the note.
+\end{abstract}
+
+\section{Introduction}
+
+Fault tolerance by replication starts from a program and makes copies of it. The copies are not independent: they are arranged so that $n$ executions amount to one execution. Written as an equation in a process calculus, that arrangement says something arithmetic. If $R$ is what each of $n$ nodes runs, and the network of nodes is to be indistinguishable from a single execution of $P$, then
+\[
+  \parn{R} \;=\; \underbrace{R \mid \cdots \mid R}_{n} \;\approx\; P ,
+\]
+which is to say that $R$ is an $n$-th root of $P$ under parallel composition. The pun in the title is the observation: a replicated system is a radical, and a consensus protocol is whatever makes the radical exist.
+
+The equation is due to a 2018 RChain research deck, which stated it, gave a structural recursion computing roots, exhibited the obstruction that recursion meets at a race, sketched a coordinating process $C$ that removes the obstruction for a single two-message race, noted that $C$ assumes reliable delivery and honesty --- ``this is effectively the difference between $C$ and Casper'' --- and left the $n$-ary case as an exercise. This note works the sketch out.
+
+\paragraph{What we found.} Four things in the sketch needed correcting or supplying, and each turned out to be load-bearing rather than clerical.
+
+\begin{enumerate}
+\item The decision table in the sketch is symmetric in its two arguments --- the two agreeing pairs choose one payload, the two disagreeing pairs choose the other --- and that symmetry is exactly what makes the copies agree, since they read the contributions in whatever order they happen to. Symmetry is the agreement condition (Lemma~\ref{lem:agree}), and it also makes the shared bit unbiased when either copy's local coin is (Lemma~\ref{lem:coin}).
+\item The multi-binding receipts must be \emph{joins}. In the notation of rholang~1.4, \texttt{\&} joins within a group and \texttt{;} separates groups; read sequentially, the two arbiters can each take one half of what they need and deadlock (Lemma~\ref{lem:progress}).
+\item The arbiter consumes both contending messages and re-emits only the winner, so the loser is destroyed --- but the source process retains it, and retains its barb. The loser has to be parked, and it cannot be parked on the delivered channel without re-opening the very divergence the arbiter was installed to close (Remark~\ref{rem:loser}).
+\item Multiplicity of messages is observable, so $\rt{P} \mid \rt{P} \approx P$ is false against arbitrary contexts even for $P = x!(0)$, where no race occurs at all (Proposition~\ref{prop:mult}). The correctness statement has to be relative to a class of contexts, and the right class is the image of the root map: the observer is replicated along with the observed.
+\end{enumerate}
+
+\paragraph{What is new here.} Section~\ref{sec:div} places exact roots in the arithmetic of the process monoid, where they are governed by divisibility and are therefore rare. Section~\ref{sec:every} argues that contention is a runtime property, not a syntactic one, so an arbiter cannot be attached to a race the way the sketch attaches it; it must own the channel, and the general contention site requires agreement on a matching rather than on a bit. Section~\ref{sec:resolver} reads the whole construction in terms of \emph{resolvers}: the \rhoc{} is silent about how nondeterminism is fulfilled, and the root equation is the first equation we know of in which that silence is not benign, since it demands that $n$ independently resolved copies behave as one resolved copy.
+
+\paragraph{What is not claimed.} The relationship to consensus is presented as an analogy (Section~\ref{sec:consensus}) and not as a theorem. We say what corresponds to what, and say plainly which of the standard correctness conditions our lemmas are shadows of, but we do not define a fault model and prove an impossibility result inside it. Threshold roots --- the $k$-of-$n$ weakening that would make the construction fault \emph{tolerant} rather than merely fault \emph{replicating} --- are named in Section~\ref{sec:future} and not developed.
+
+\section{The calculus, and what we observe}
+
+We work in the \rhoc{} \cite{MR05}. Names are quoted processes; there is no name restriction operator, and freshness is obtained by construction rather than by binding.
+
+\begin{align*}
+  P,Q \;&::=\; 0 \;\mid\; \In{y}{x}P \;\mid\; x!(P) \;\mid\; {*}x \;\mid\; P \mid Q \\
+  x,y \;&::=\; @P
+\end{align*}
+
+Structural congruence $\equiv$ makes $(\,\cdot \mid \cdot\,, 0)$ a commutative monoid and identifies ${*}@P$ with $P$. The single reduction rule is communication:
+\[
+  \In{y}{x}P \;\mid\; x!(Q) \;\longrightarrow\; P\{@Q/y\} .
+\]
+Receipts are linear by default; $\Inp{y}{x}P$ denotes the persistent receipt, which survives the rendezvous. Substitution does not descend under a quote. We write $\mathsf{for}(y_1 \leftarrow x_1\ \&\ \cdots\ \&\ y_m \leftarrow x_m)P$ for the $m$-fold join, whose firing is atomic: it consumes one datum at each of the $m$ listed channels in a single step, or it does not fire.
+
+\begin{remark}
+The join arity matters throughout this note, and joins on a \emph{repeated} channel are used essentially: $\mathsf{for}(e_1 \leftarrow o\ \&\ e_2 \leftarrow o)P$ consumes two data from $o$ at once, and the two data may be assigned to the two patterns in either order. Every arbitration below turns on that atomicity and on that order-indifference.
+\end{remark}
+
+\begin{definition}[Observation]
+$P \barb{x}$ iff $P \equiv x!(Q) \mid R$ for some $Q, R$; $P \wbarb{x}$ iff $P \longrightarrow^{*} P'$ for some $P' \barb{x}$. Weak barbed bisimilarity, written $\approx_{\bullet}$, is the largest symmetric relation closed under reduction and preserving weak barbs. For a class $\mathcal{D}$ of contexts, $P \approx_{\mathcal{D}} Q$ iff $C[P] \approx_{\bullet} C[Q]$ for every $C \in \mathcal{D}$; taking $\mathcal{D}$ to be all \rhoc{} contexts gives barbed congruence, written $\approx$.
+\end{definition}
+
+Weak barbed bisimilarity is insensitive to the multiplicity of a message: $x!(0) \approx_{\bullet} x!(0) \mid x!(0)$, since both have the barb at $x$ and neither reduces. Barbed congruence is not, and Proposition~\ref{prop:mult} turns that difference into the first design constraint on the root map.
+
+\section{Roots and divisibility}\label{sec:div}
+
+\begin{definition}[Root]\label{def:root}
+Let $\simeq$ be an equivalence on processes that is a congruence for $\mid$. A process $R$ is an \emph{$n$-th root of $P$ with respect to $\simeq$} iff $\parn{R} \simeq P$.
+\end{definition}
+
+Roots are not unique --- Definition~\ref{def:root} defines a relation --- so $\rt{P}$ always denotes a chosen \emph{construction} of a root and never ``the'' root. The first question is how many processes have one at all, and the answer is arithmetic. Write $\mathcal{M} = (\Proc/{\simeq}, \mid, 0)$, a commutative monoid. In additive notation an $n$-th root is a solution of $nX = P$, so the question is one of divisibility in $\mathcal{M}$.
+
+\begin{definition}
+$P$ is \emph{parallel prime} iff $P \not\simeq 0$ and $P \simeq Q \mid R$ implies $Q \simeq 0$ or $R \simeq 0$.
+\end{definition}
+
+\begin{hypothesis}[Unique decomposition]\label{hyp:ud}
+On the fragment under consideration, every process is $\simeq$ a finite parallel product of parallel primes, uniquely up to permutation of the factors.
+\end{hypothesis}
+
+Hypothesis~\ref{hyp:ud} is a genuine hypothesis and not a citation. Unique parallel decomposition is a theorem for finite behaviours in CCS-like calculi modulo strong bisimilarity \cite{MilnerMoller}, and has been substantially generalised \cite{Luttik}; the weak case is delicate, and neither the reflective structure of the \rhoc{} nor infinite behaviour is covered by the existing results. We use it to say what the arithmetic \emph{would} be, and we flag in Section~\ref{sec:future} that establishing or refuting it for the \rhoc{} is the first piece of unfinished business.
+
+\begin{proposition}[Divisibility]\label{prop:divis}
+Assume Hypothesis~\ref{hyp:ud} and that $\mathcal{M}$ has no idempotents other than $0$. Then $\mathcal{M}$ is free commutative on the parallel primes, and $P$ has an $n$-th root iff $n$ divides the multiplicity of every prime factor of $P$. When a root exists it is unique.
+\end{proposition}
+
+\begin{proof}
+A free commutative monoid on a set $S$ is $\bigoplus_{S} \mathbb{N}$, in which $nX = P$ has a solution iff every coordinate of $P$ is divisible by $n$, and then exactly one.
+\end{proof}
+
+\begin{proposition}[Idempotents]\label{prop:idem}
+If $P \mid P \simeq P$ then $P$ is an $n$-th root of itself for every $n$.
+\end{proposition}
+
+The \rhoc{} instance of Proposition~\ref{prop:idem} is the persistent receipt: a pure server $\Inp{y}{x}Q$, with $Q$ not itself contending, satisfies $\Inp{y}{x}Q \mid \Inp{y}{x}Q \approx_{\bullet} \Inp{y}{x}Q$, because each copy survives every rendezvous and the pair delivers what one delivers. So the interesting content of the root equation is a statement about \emph{linear} receipts, which is also why the sketch's obstruction is where it is: a linear receipt makes the loser of a race into a durable record of which branch was taken.
+
+\begin{proposition}\label{prop:atom}
+$x!(0)$ is parallel prime for barbed congruence, and hence has no $n$-th root for $n \ge 2$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Suppose $Q \mid R \approx x!(0)$ with $Q, R \not\approx 0$. Since $x!(0)$ does not reduce and has exactly the barb $x$, neither $Q$ nor $R$ may reduce, at most one carries a barb, and the other is a stuck term. A stuck term is not barbed congruent to $0$: if it is a receipt at some name $z$, the context $\In{w}{z}\omega!(0) \mid z!(0) \mid [\,\cdot\,]$ distinguishes it from $0$, since supplying a datum at $z$ lets the term consume it and the surrounding receipt then cannot. Composing with the divisibility statement: the multiplicity of the prime $x!(0)$ in itself is $1$, which no $n \ge 2$ divides.
+\end{proof}
+
+The picture is a dichotomy, and neither half is where replication lives.
+
+\begin{principle}[The two regimes]
+In the free regime, roots exist only by an accident of multiplicity: almost no process has one. In the idempotent regime, roots exist but say nothing: a process is its own root. A replicated system is in neither, because it takes an arbitrary $P$ --- with no divisibility to appeal to and no idempotence to fall back on --- and produces something whose $n$-fold parallel composition acts like $P$. It can only do so by changing what parallel composition means. The coordinating process of the next sections is precisely that change: it is the price of embedding the process monoid in a divisible hull, and consensus is that price paid at runtime.
+\end{principle}
+
+\section{Roots by structural recursion}\label{sec:homo}
+
+The sketch proposes computing a root from the syntax of a process. The clauses are these, with $\rt{\cdot}$ defined simultaneously on processes and on names.
+
+\begin{definition}[The homomorphic root]\label{def:homo}
+\begin{align*}
+  \rt{0} &= 0 &
+  \rt{{*}x} &= {*}\rt{x} \\
+  \rt{\In{y}{x}P} &= \In{\rt{y}}{\rt{x}}\rt{P} &
+  \rt{x!(P)} &= \rt{x}!(\rt{P}) \\
+  \rt{@P} &= @\rt{P} &
+  \rt{P \mid Q} &= \rt{P} \mid \rt{Q} \quad \text{if } P \# Q
+\end{align*}
+where $P \# Q$ asserts that $P$ and $Q$ do not interact.
+\end{definition}
+
+\begin{lemma}[Injectivity]\label{lem:inj}
+$\rt{\cdot}$ is injective on processes and on names.
+\end{lemma}
+
+\begin{proof}
+Each clause is headed by a distinct term constructor and is injective in its arguments; induct.
+\end{proof}
+
+\begin{lemma}[Substitution]\label{lem:subst}
+$\rt{P\{@Q/y\}} = \rt{P}\{@\rt{Q}/\rt{y}\}$.
+\end{lemma}
+
+\begin{proof}
+By induction on $P$. The only clause requiring comment is the quote. Substitution in the \rhoc{} does not descend under $@$, while $\rt{\cdot}$ does; but both sides then leave the quoted subterm's occurrences of $\rt{y}$ untouched, since the left-hand side does not substitute there and the right-hand side does not either. Injectivity (Lemma~\ref{lem:inj}) rules out a collision creating a substitution on the right that the left does not perform.
+\end{proof}
+
+Lemma~\ref{lem:subst} is what makes an inductive correctness argument possible at all, and it is also the reason the payload delivered by an arbiter must be $\rt{Q}$ and not $Q$: the sketch's decision table writes the unrooted payload, which breaks the induction hypothesis at the first delivery.
+
+\subsection{Multiplicity is observable}
+
+\begin{proposition}\label{prop:mult}
+$\rt{x!(0)} \mid \rt{x!(0)} \not\approx x!(0)$.
+\end{proposition}
+
+\begin{proof}
+Take $C = \In{y}{\rt{x}}\In{z}{\rt{x}}\,\omega!(0) \mid [\,\cdot\,]$. Then $C[\rt{x}!(0) \mid \rt{x}!(0)] \wbarb{\omega}$ and the corresponding one-message term does not.
+\end{proof}
+
+No race occurs in Proposition~\ref{prop:mult}; the failure is pure counting, and it is unavoidable for any map that sends a message to a message. It forces the correctness statement to be relative to a class of contexts, and it tells us which class: the observer must be replicated along with the observed, exactly as a client of a replicated service either is itself replicated or sits behind an adapter that hides the multiplicity. We therefore take the following as the statement to be proved.
+
+\begin{definition}[Root of a system]\label{def:sysroot}
+$R$ is a \emph{square root of $P$} iff for every \rhoc{} context $C$ and every name $\omega$,
+\[
+  C[P] \wbarb{\omega}
+  \quad\Longleftrightarrow\quad
+  (\rt{C})[R] \mid (\rt{C})[R] \;\wbarb{\rt{\omega}} ,
+\]
+where $\rt{C}$ is the image of $C$ under Definition~\ref{def:homo}, extended to the hole by $\rt{[\,\cdot\,]} = [\,\cdot\,]$. The $n$-ary version replaces the two copies by $n$.
+\end{definition}
+
+\begin{remark}
+Definition~\ref{def:sysroot} is $\approx_{\mathcal{D}}$ for $\mathcal{D}$ the image of the root map, and it is the same manoeuvre as the $\mathcal{D}$-relative full abstraction used elsewhere in this programme for the encoding of the $\pi$-calculus into the \rhoc{}: an absolute claim is unavailable, a claim relative to the image contexts is exactly what the construction supports, and the residues the construction leaves behind live on names outside that image.
+\end{remark}
+
+\subsection{The determinate fragment}
+
+\begin{definition}[Contention site, candidate, determinacy]\label{def:site}
+A \emph{contention site} in a state $S$ is a name $x$ together with the multiset of pending messages at $x$ and the multiset of receipts at $x$. A \emph{candidate} at the site is a matching of receipts to messages. The site is \emph{determinate} iff all candidates lead to weakly barbed bisimilar successors. $S$ is determinate iff every site in every state reachable from $S$ is.
+\end{definition}
+
+\begin{theorem}[Homomorphic root on the determinate fragment]\label{thm:det}
+If $P$ is determinate then $\rt{P}$ of Definition~\ref{def:homo} is a square root of $P$ in the sense of Definition~\ref{def:sysroot}.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Doubling a determinate state can create contention where there was none --- $\In{y}{x}Q \mid x!(R)$ has one candidate, its double has two --- but every candidate of the doubled site is a pairing of copies of the same message with copies of the same receipt, so all candidates coincide up to $\equiv$, and the doubled site is determinate. Set
+\[
+  \mathcal{R} = \{\,(\,\rt{S} \mid \rt{S'},\; S''\,) \;:\; S, S' \text{ reachable from } P,\ S'' \text{ a common reduct}\,\},
+\]
+and check that $\mathcal{R}$ is a weak barbed bisimulation up to $\equiv$: a step of $S''$ is matched by the corresponding step in each copy, taken in either order, and determinacy plus the diamond property reconvergence closes the square. Barbs correspond by Lemma~\ref{lem:inj}, and payload correspondence is Lemma~\ref{lem:subst}. Multiplicity is invisible because the observing context is doubled too.
+\end{proof}
+
+Theorem~\ref{thm:det} is the positive content of the structural recursion, and it is worth stating that the recursion's side condition $P \# Q$ is stronger than it needs to be: what is required is not absence of interaction but determinacy of the interaction.
+
+\section{The obstruction}\label{sec:race}
+
+\begin{proposition}[The race obstruction]\label{prop:race}
+Let $Q_1 = a!(0)$, $Q_2 = b!(0)$, and
+\[
+  P \;=\; \In{y}{x}{*}y \;\mid\; x!(Q_1) \;\mid\; x!(Q_2) .
+\]
+Then $\rt{P}$ of Definition~\ref{def:homo} is not a square root of $P$.
+\end{proposition}
+
+\begin{proof}
+$P$ has exactly two maximal reducts, $Q_1 \mid x!(Q_2)$ and $Q_2 \mid x!(Q_1)$; in each, exactly one of the barbs $a, b$ is exposed, the other payload remaining sealed inside a message. Now
+\begin{align*}
+  \rt{P} \mid \rt{P}
+  \;=\;&
+  \In{\rt{y}}{\rt{x}}{*}\rt{y} \mid \rt{x}!(\rt{Q_1}) \mid \rt{x}!(\rt{Q_2}) \\
+  \mid\;&
+  \In{\rt{y}}{\rt{x}}{*}\rt{y} \mid \rt{x}!(\rt{Q_1}) \mid \rt{x}!(\rt{Q_2}) ,
+\end{align*}
+in which two receipts face four messages. The candidate assigning $\rt{Q_1}$ to the first receipt and $\rt{Q_2}$ to the second yields a state exposing $\rt{a}$ and $\rt{b}$ simultaneously. Taking $C = [\,\cdot\,]$ and $\omega = b$ in Definition~\ref{def:sysroot} together with the run of $P$ that exposes $a$: the two sides disagree.
+\end{proof}
+
+The failure is not an artefact of the clauses. Whatever the map, the two copies each contain a decision to make, they make it independently, and nothing in the term relates the two decisions. The repair therefore cannot be a better recursion; it has to be a term that relates them.
+
+\section{The arbiter}\label{sec:arb}
+
+Fix the site of Proposition~\ref{prop:race}: one receipt, two messages with distinct payloads. We split the delivered name $\rt{x}$ into two \emph{deposit} names $(\rt{x})^{\ell}$ and $(\rt{x})^{r}$, one per message of the contention set, and let the root of the site be
+\begin{align*}
+  \rt{\Big[\,\In{y}{x}P \mid x!(Q_1) \mid x!(Q_2)\,\Big]}
+  \;=\;&
+  \In{\rt{y}}{\rt{x}}\rt{P}
+  \;\mid\; (\rt{x})^{\ell}!(\rt{Q_1}) \\
+  &\;\mid\; (\rt{x})^{r}!(\rt{Q_2})
+  \;\mid\; C ,
+\end{align*}
+where $C$ is the arbiter of Definition~\ref{def:arbiter}, the coordination channel is
+\[
+  o \;=\; @\big(\,{*}(\rt{x})^{\ell} \mid {*}(\rt{x})^{r}\,\big) ,
+\]
+and $\mathsf{park}$ is a parking name derived in the same way.
+
+\begin{remark}[On the derived names]
+The tag structure $\{\ell, r\}$ is the address extension of Abramsky's contraction and copy rules \cite{Abramsky}, and it is the same device used elsewhere in this programme to give the \rhoc{} a namespace discipline without a name server: a name is split, and the split is later rejoined by quoting a composite of its parts. The coordination name $o$ is derived rather than fresh, so it is unguessable but not unforgeable --- any context that knows the two deposit names can construct it. That is tolerable here because the correctness statement is relative to image contexts, and it is exactly the distinction that a serious treatment of namespace pragmatics has to price.
+\end{remark}
+
+\begin{definition}[The arbiter]\label{def:arbiter}
+\[
+\begin{array}{l}
+C \;=\; \mathsf{for}\big(\,q_1 \leftarrow (\rt{x})^{\ell}\ \&\ q_2 \leftarrow (\rt{x})^{r}\,\big)\big\{ \\
+\qquad o!(\,\mathsf{coin}\,) \\
+\qquad \mid\ \mathsf{for}\big(\,e_1 \leftarrow o\ \&\ e_2 \leftarrow o\,\big)\big\{ \\
+\qquad\qquad \mathsf{match}\ ({*}e_1, {*}e_2)\ \mathsf{with}\ \{ \\
+\qquad\qquad\quad (0,0) \Rightarrow \rt{x}!({*}q_1) \mid \mathsf{park}!({*}q_2) \mid o!(0) \mid o!(0) \\
+\qquad\qquad\quad (1,1) \Rightarrow \rt{x}!({*}q_1) \mid \mathsf{park}!({*}q_2) \mid o!(1) \mid o!(1) \\
+\qquad\qquad\quad (0,1) \Rightarrow \rt{x}!({*}q_2) \mid \mathsf{park}!({*}q_1) \mid o!(0) \mid o!(1) \\
+\qquad\qquad\quad (1,0) \Rightarrow \rt{x}!({*}q_2) \mid \mathsf{park}!({*}q_1) \mid o!(1) \mid o!(0) \\
+\qquad\qquad \} \\
+\qquad \} \\
+\}
+\end{array}
+\]
+where $\mathsf{coin}$ abbreviates a local two-message race, $\mathsf{new}\ c\ \mathsf{in}\ \{\,c!(0) \mid c!(1) \mid \In{b}{c}\,\cdots\}$, whose outcome is whatever the copy's own interpreter chooses.
+\end{definition}
+
+Three lemmas carry the construction. Throughout, ``the doubled term'' means $\rt{S} \mid \rt{S}$ where $\rt{S}$ is the rooted site above, so that there are two arbiters, two messages under each tag, and two receipts at $\rt{x}$.
+
+\begin{lemma}[Progress]\label{lem:progress}
+In the doubled term, the two arbiters between them consume all four deposits, and each acquires one message under each tag. If the multi-binding receipts of Definition~\ref{def:arbiter} are read as sequential groups rather than as joins, there is a reachable deadlock.
+\end{lemma}
+
+\begin{proof}
+The outer receipt is an atomic two-way join, so an arbiter either takes one datum from each tag or takes nothing; with two data under each tag the two arbiters are served exactly once each. Read sequentially, the schedule in which the first arbiter takes both $\ell$-deposits and the second takes both $r$-deposits leaves both blocked on their second binding.
+\end{proof}
+
+\begin{lemma}[Exhaustion]\label{lem:exh}
+At every point of the arbitration, the channel $o$ carries exactly two data, and the inner join is therefore taken by at most one arbiter at a time; the arbiter that takes it restores the pair it consumed. Consequently both arbiters read the same multiset of contributions.
+\end{lemma}
+
+\begin{proof}
+Each arbiter contributes one datum, so the multiset has size two once both have contributed. The inner join consumes both atomically and each branch of the table re-emits both. The other arbiter's inner join therefore sees the same two values, possibly assigned to its patterns in the other order.
+\end{proof}
+
+\begin{lemma}[Agreement]\label{lem:agree}
+Let the decision be $f(e_1, e_2)$ for a function $f$ into $\{\,\text{left},\text{right}\,\}$. Both arbiters decide alike for every schedule iff $f$ is symmetric, $f(u,v) = f(v,u)$. The table of Definition~\ref{def:arbiter} is symmetric; it is exclusive-or.
+\end{lemma}
+
+\begin{proof}
+By Lemma~\ref{lem:exh} the two arbiters see the same pair of values and differ only in the order of assignment to $e_1, e_2$; nothing in the term fixes that order. Symmetry is therefore necessary and sufficient.
+\end{proof}
+
+\begin{lemma}[The shared coin]\label{lem:coin}
+With $f$ exclusive-or, the decision is the parity of the two contributions. If either copy's local race is fair, the decision is unbiased, and no single copy can determine it alone.
+\end{lemma}
+
+Lemma~\ref{lem:coin} is the classical shared-coin argument, and it says why the sketch's table is the right one rather than merely a symmetric one: symmetry buys agreement, and parity buys the property that agreement is not agreement on one copy's preference.
+
+\begin{theorem}[Single-site root]\label{thm:site}
+Let $P$ be the process of Proposition~\ref{prop:race} and $\rt{P}$ the rooted site above, with the delivered payloads rooted. Then $\rt{P}$ is a square root of $P$ in the sense of Definition~\ref{def:sysroot}.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+By Lemma~\ref{lem:progress} both arbiters fire; by Lemmas~\ref{lem:exh} and \ref{lem:agree} they deliver the same payload $\rt{Q_i}$; so the doubled term reaches $\rt{x}!(\rt{Q_i}) \mid \rt{x}!(\rt{Q_i})$ facing two receipts, a determinate site, and Theorem~\ref{thm:det} applies from there, with Lemma~\ref{lem:subst} supplying the payload correspondence. The state so reached is the double of $\rt{\,\cdot\,}$ applied to the reduct of $P$ that selects $Q_i$, except for the parked loser and the residue on $o$, both of which live on names outside the image of the root map and are therefore invisible to the contexts of Definition~\ref{def:sysroot}. Since both values of $i$ are reachable, the correspondence holds in both directions.
+\end{proof}
+
+\begin{remark}[The loser must be parked, and not returned]\label{rem:loser}
+The reduct of $P$ retains the losing message and its barb at $x$, so the arbiter cannot simply discard the loser; the sketch does discard it. It also cannot return it to $\rt{x}$: two arbiters would return two copies of the loser alongside two copies of the winner, four messages facing two receipts, and the receipts could then split --- which is Proposition~\ref{prop:race} again, one round later. The loser is therefore parked on a derived name, whence a later arbitration may retrieve it. The situation is worth naming: \emph{arbitration does not consume a race, it defers the rest of it}, which is the reason the next section's arbiter has to persist.
+\end{remark}
+
+\begin{remark}[Residue]
+Two contributions remain on $o$ forever. They are unreachable by image contexts, but they are not nothing: in a cost-accounted reading they are storage held open by an arbitration that has completed, which is exactly the occupancy cost that a treatment of rent must charge and that a treatment of reduction cost does not.
+\end{remark}
+
+\section{From one race to every race}\label{sec:every}
+
+Definition~\ref{def:arbiter} arbitrates a race that the writer of the root map could see. That is the limitation the rest of the construction has to remove, and the argument is short.
+
+\begin{principle}[Contention is dynamic]
+Whether a name is contended is a property of reachable states, not of syntax. A message and a receipt that contend may be created by different branches of the term, brought together by substitution, or manufactured by an environment. A root map defined by structural recursion cannot locate the contention sites, so it cannot install arbiters at them.
+\end{principle}
+
+The consequence is that arbitration must be attached to names rather than to races. The uniform version of the construction replaces every send with a deposit, every receipt with a delivery request, and installs, per name, an arbiter owning the traffic:
+\begin{align*}
+  \rt{x!(P)} &= (\rt{x})^{\mathsf{dep}}!(\rt{P}), \\
+  \rt{\In{y}{x}P} &= (\rt{x})^{\mathsf{req}}!(\cdots) \mid \In{\rt{y}}{(\rt{x})^{\mathsf{del}}}\rt{P}, \\
+  \rt{\,\cdot\,} &\ \text{installs } A_{\rt{x}} \text{ for each name } \rt{x} .
+\end{align*}
+Each copy runs its own $A_{\rt{x}}$; the copies of $A_{\rt{x}}$ agree, by the mechanism of Section~\ref{sec:arb}, on which deposit is delivered to which request, and then deliver it. Two things change relative to the single-site case, and both are the substance of the general problem rather than bookkeeping.
+
+First, the general contention site has $m$ requests and $k$ deposits, so the arbiters must agree not on a bit but on a \emph{matching} --- a candidate in the sense of Definition~\ref{def:site}, which for the store of an implementation is the zip of a bag of produces against a bag of consumes. Agreement on a bit generalises to agreement on a permutation, and a symmetric decision function generalises to a function of the multiset of contributions valued in matchings. The shared coin still works: the parity of the contributions selects an index into an enumeration of the candidates that both copies compute identically from the same multiset.
+
+Second, once the arbiter owns the name it does not terminate. It agrees on one rendezvous, delivers, retrieves the parked remainder, and agrees again. What it produces over its lifetime is an agreed serialisation of all traffic at that name.
+
+\begin{principle}[The fixed point of the construction]
+Applying the root map uniformly does not yield a process with arbiters sprinkled through it. It yields, per namespace, a replicated agent that accepts requests and deposits, agrees with its siblings on an order, and executes in that order. That agent is a node. The root of a process is what a node runs; agreement on the serialisation is what makes $n$ of them compose to one.
+\end{principle}
+
+We do not develop the uniform construction here. What Section~\ref{sec:arb} establishes is that the mechanism exists and what its correctness conditions are; what this section establishes is that a static placement of that mechanism cannot be complete, and where the complete version must live.
+
+\section{Resolvers}\label{sec:resolver}
+
+The \rhoc{} says which reductions are possible and says nothing about which one happens. That silence is usually harmless: an implementation supplies the missing datum --- in a conventional interpreter, the physical races of cores against a store --- and the language is indifferent to how. It is convenient to name the missing datum.
+
+\begin{definition}[Resolver]
+A \emph{resolver} is a map assigning, to each state and each contention site in it, a choice of candidate (or a distribution over candidates). The meaning of a program is a function of the pair (term, resolver), not of the term alone.
+\end{definition}
+
+This reading is the one taken in the graded where-clause line of work, where the value algebra of a guard is precisely a specification of the resolver's policy, and where quantum, probabilistic and Boolean readings of a program are the same term under three resolvers. The root equation puts a different demand on the same object.
+
+\begin{principle}[The root problem is a resolver problem]
+$\parn{R} \approx P$ asks that $n$ copies, each resolved by its own resolver, be indistinguishable from one copy resolved by one resolver. Call a family $(\varrho_1, \ldots, \varrho_n)$ \emph{coherent for $P$} when, at every contention site of the $n$-fold composite, the choices the family makes are the image of a single choice at the corresponding site of $P$. Then: the homomorphic root of Definition~\ref{def:homo} is a root exactly when the family is coherent, Theorem~\ref{thm:det} is the observation that determinacy makes every family coherent for free, and the arbiter is a term that manufactures coherence from an incoherent family, at the price of one round of communication per site.
+\end{principle}
+
+Two consequences are worth recording.
+
+\begin{remark}[Why no recursion could have worked]
+The \rhoc{} is silent about resolution, so no term can \emph{describe} a resolver. But a term can \emph{constrain} one: the arbiter does not tell the interpreter which candidate to pick, it removes the candidates it does not want by consuming their inputs and re-presenting a site with a unique outcome. The root equation is the first equation in this programme where the calculus's silence about nondeterminism is not benign --- the equation is simply unsatisfiable by a homomorphism --- and the response is the same one taken elsewhere: move what was a parameter of the interpretation into the syntax. The graded where-clause moves the resolver's \emph{policy}; the arbiter moves the resolver's \emph{agreement}. They are two halves of one manoeuvre, and they compose: a graded arbiter is one whose shared coin is non-uniform, which is to say that weighted leader election is a graded shared coin.
+\end{remark}
+
+\begin{remark}[The coin is a race]
+In the accompanying implementation the local coin is written as a two-message race with one receipt, and the value obtained is whatever the copy's interpreter chooses. This is not a stopgap for a missing primitive. It is the point: the copy's own resolver is the only source of nondeterminism available to it, and arbitration is the discipline of combining $n$ such sources symmetrically so that the composite behaves as one.
+\end{remark}
+
+\section{The consensus analogy}\label{sec:consensus}
+
+The sketch's second slide observes that a consensus protocol runs $n$ copies of a node coordinating $n$ copies of a contract, so arranged that the copies result in a single execution --- which is the root equation. We present the correspondence as an analogy, and mark plainly what would be needed to make it a theorem.
+
+\begin{center}
+\begin{tabular}{@{}p{0.42\linewidth}p{0.52\linewidth}@{}}
+\hline
+\textbf{Consensus} & \textbf{Arbitration, as above} \\
+\hline
+Agreement: no two correct processes decide differently & Lemma~\ref{lem:agree}: symmetry of the decision function \\
+Validity: the decision is some proposal & The decision selects a candidate of the site, so the delivered payload is one of the deposits \\
+Termination & Lemma~\ref{lem:progress}: atomicity of the joins, under reliable delivery \\
+Randomised agreement & Lemma~\ref{lem:coin}: parity of the local coins \\
+Ordering the log, not one value & Remark~\ref{rem:loser} and Section~\ref{sec:every}: the arbiter defers the remainder of the race and must persist \\
+\hline
+\end{tabular}
+\end{center}
+
+The sketch's own caveat is the honest one: the arbiter assumes messages are neither lost nor indefinitely delayed, and assumes the arbiter does not lie. Removing the first assumption is asynchrony; removing the second is Byzantine behaviour; and a protocol such as Casper exists to address both in a decentralised setting.
+
+Two remarks about the shape a theorem would take, offered as orientation and not as results. First, the correspondence has an obvious direction: an arbiter that is correct in a model with crash faults would decide a binary value agreed by all copies, which is what the classical impossibility result for deterministic asynchronous consensus \cite{FLP} forbids --- so in such a model the coin of Lemma~\ref{lem:coin} would not be a stylistic choice but a necessity, and the neighbourhood to look in is randomised agreement \cite{BenOr}. Second, the general site of Section~\ref{sec:every} asks for agreement on a serialisation rather than on a value, which is atomic broadcast, and hence the replicated state machine construction \cite{Schneider}. Making either remark precise requires a fault model, a definition of correctness for an arbiter under it, and a reduction; none of that is attempted here.
+
+\section{$n$-th roots}\label{sec:nth}
+
+The sketch closes by setting the $n$-ary case as an exercise. It goes through, with the following changes.
+
+\begin{itemize}
+\item The deposit tags range over the contention set rather than over $\{\ell, r\}$, and the outer join has the arity of that set.
+\item Each of the $n$ copies contributes one value on $o$, and the inner join has arity $n$. Each copy consumes all $n$ contributions atomically and re-emits all $n$.
+\item The decision function must be symmetric in $n$ arguments --- a function of the multiset --- for the reason of Lemma~\ref{lem:agree}, since each copy assigns the same multiset to its patterns in its own order. Parity generalises to the sum modulo the number of candidates.
+\end{itemize}
+
+\begin{lemma}[$n$-ary exhaustion]
+With exactly $n$ contributions present and an atomic $n$-fold join, at most one copy is reading at any time, and it restores what it consumed; so all $n$ copies read the same multiset.
+\end{lemma}
+
+\begin{proposition}[Cost of a site]
+Arbitrating one contention site among $n$ copies costs $n$ contributions, $n$ inner rendezvous, and $n^{2}$ re-emissions: $\Theta(n)$ rendezvous and $\Theta(n^{2})$ messages, plus a residue of $n$ messages held on $o$.
+\end{proposition}
+
+The quadratic message count is the familiar shape of all-to-all agreement, and it is not an artefact of writing the protocol in this calculus: it is the cost of every copy learning every contribution. In a cost-accounted reading, this is a levy assessed per contention site, which suggests the design rule that one buys fault tolerance by the race and not by the program --- a determinate program is replicated for free, by Theorem~\ref{thm:det}.
+
+\section{The implementation}\label{sec:impl}
+
+Appendix~\ref{app:rho} gives the square root of a racing rholang process, in two parts. The first is the naive homomorphic root of Definition~\ref{def:homo}, doubled, which reaches a state exposing both barbs and so exhibits Proposition~\ref{prop:race} concretely. The second is the coordinated root: two copies, each carrying its own arbiter, its own coin written as a local race, and the symmetric decision table, delivering the agreed payload on the delivered channel and parking the loser.
+
+The corrections of Section~\ref{sec:arb} are all visible in the listing: the multi-binding receipts are joins, written \texttt{\&}; the delivered payloads are the rooted ones; the loser is parked rather than dropped or returned; and the residues sit on names outside the image of the root map. The file has not been executed against an interpreter.
+
+\section{Future work}\label{sec:future}
+
+\paragraph{Threshold roots.} The construction of this note replicates faults rather than tolerating them: an exact root needs all $n$ copies, and losing one loses $P$. The weakening that repairs this asks that \emph{any $k$} of the $n$ copies compose to $P$, which is a quorum condition rather than an equation, and which puts quorum intersection where divisibility was in Section~\ref{sec:div}. That is where the classical resilience bounds would enter, and it is the obvious sequel.
+
+\paragraph{Unique decomposition for the \rhoc{}.} Hypothesis~\ref{hyp:ud} is assumed and not proved. Reflection and infinite behaviour both put the existing results out of reach, and either a proof or a counterexample would sharpen Proposition~\ref{prop:divis} from a picture into a theorem.
+
+\paragraph{The uniform arbiter.} Section~\ref{sec:every} specifies the per-namespace arbiter and does not construct it. Constructing it, and proving the operational correspondence relative to image contexts, is the main piece of work this note leaves open.
+
+\paragraph{Cost and occupancy.} The residues of Section~\ref{sec:arb} are held storage, not performed reductions, and pricing them belongs to the same unfinished treatment of namespace pragmatics that owns the derived-name question.
+
+\paragraph{Graded arbitration.} Lemma~\ref{lem:coin} uses a uniform coin. A graded arbiter would weight the contributions, and the resulting non-uniform shared coin is a weighted leader election; stating the agreement lemma over a general value algebra is a small piece of work with an interesting reading.
+
+\section{Conclusion}
+
+The equation $\rt{P} \mid \rt{P} \approx P$ looks like a curiosity about parallel composition and turns out to be a compact statement of what replication is for. Read arithmetically, it says that exact roots are governed by divisibility and hence are rare, so a system that manufactures them for arbitrary $P$ must be changing what parallel composition means. Read operationally, it says that the obstruction lies exactly at contention, that no structural recursion can remove it, and that the removal is a term which forces independently resolved copies to resolve alike. Read as a design, it says that because contention is dynamic the removing term cannot be attached to a race but must own a namespace --- and a replicated agent that owns a namespace and agrees with its siblings on the order of its traffic is a node.
+
+The distance between the arbiter of Section~\ref{sec:arb} and a protocol that works on the open Internet is exactly the two assumptions the original sketch named: that messages arrive, and that the arbiter is honest. That the distance is only those two assumptions is the point of the exercise.
+
+\subsection*{Acknowledgement}
+
+Claude (Anthropic) assisted with the review of the source material, the drafting of this note, and the checking of its statements.
+
+\appendix
+
+\section{sqrt.rho}\label{app:rho}
+
+\lstinputlisting{sqrt.rho}
+
+\begin{thebibliography}{99}
+
+\bibitem{Abramsky} S. Abramsky. Computational interpretations of linear logic. \emph{Theoretical Computer Science} 111(1--2):3--57, 1993.
+
+\bibitem{BenOr} M. Ben-Or. Another advantage of free choice: completely asynchronous agreement protocols. \emph{PODC}, 1983.
+
+\bibitem{Blum} M. Blum. Coin flipping by telephone: a protocol for solving impossible problems. \emph{ACM SIGACT News} 15(1):23--27, 1983.
+
+\bibitem{Castro} M. Castro and B. Liskov. Practical Byzantine fault tolerance. \emph{OSDI}, 1999.
+
+\bibitem{FLP} M. Fischer, N. Lynch and M. Paterson. Impossibility of distributed consensus with one faulty process. \emph{Journal of the ACM} 32(2):374--382, 1985.
+
+\bibitem{Luttik} B. Luttik. Unique parallel decomposition in branching and weak bisimulation semantics. \emph{Theoretical Computer Science} 612:29--44, 2016.
+
+\bibitem{MR05} L.\,G. Meredith and M. Radestock. A reflective higher-order calculus. \emph{Electronic Notes in Theoretical Computer Science} 141(5):49--67, 2005.
+
+\bibitem{MilnerBook} R. Milner. \emph{Communication and Concurrency}. Prentice Hall, 1989.
+
+\bibitem{MilnerMoller} R. Milner and F. Moller. Unique decomposition of processes. \emph{Theoretical Computer Science} 107(2):357--363, 1993.
+
+\bibitem{Schneider} F.\,B. Schneider. Implementing fault-tolerant services using the state machine approach: a tutorial. \emph{ACM Computing Surveys} 22(4):299--319, 1990.
+
+\bibitem{Deck} L.\,G. Meredith. Radical fault tolerance. RChain Research deck, 2018.
+
+\end{thebibliography}
+
+\end{document}

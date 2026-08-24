@@ -1,0 +1,140 @@
+// ===================================================================
+// sqrt.rho -- the square root of a rholang process
+//
+// Companion artifact to "Radical Fault Tolerance".
+//
+// The source process is a two-message race:
+//
+//    P  =  for( y <- x ) *y  |  x!( @"a"!(0) )  |  x!( @"b"!(0) )
+//
+// P has exactly two maximal reductions.  One exposes a barb on "a"
+// and leaves a message on x carrying @"b"!(0); the other exposes a
+// barb on "b" and leaves a message on x carrying @"a"!(0).  In no
+// reachable state of P are both "a" and "b" exposed.
+//
+// PART 1 shows the naive homomorphic root doubled with itself.  It
+// reaches a state exposing BOTH barbs, so it is not a root.
+//
+// PART 2 shows the coordinated root.  Each copy carries an arbiter;
+// the two arbiters agree, so exactly one of the two barbs is exposed
+// (twice), and the loser is parked rather than lost.
+//
+// Notation is rholang 1.4: `<-` is a linear receipt, `&` joins within
+// a group, `;` separates groups.  Every multi-binding receipt below is
+// a JOIN and must be written with `&`: with `;` the two arbiters can
+// each take one half of what they need and deadlock.
+//
+// NOT EXECUTED: this file has not been run against an interpreter in
+// the session that produced it.
+// ===================================================================
+
+
+// -------------------------------------------------------------------
+// PART 1.  The naive root, doubled.  BROKEN.
+//
+//   sqrt[ for( y <- x )*y | x!(Q1) | x!(Q2) ]
+//     =  for( sy <- sx )*sy | sx!(sqrt Q1) | sx!(sqrt Q2)
+//
+// Doubling gives two receivers and four messages on sx.  Nothing
+// forces the two receivers to take payloads from the same side of
+// the original race, so the term below can expose "a" and "b" at
+// once -- a state with no counterpart in P.
+// -------------------------------------------------------------------
+
+new naive in {
+  contract naive( @copy ) = {
+      for( sy <- @"sx" ) { *sy }
+    | @"sx"!( @"a"!(0) )
+    | @"sx"!( @"b"!(0) )
+  }
+  |
+  naive!( 1 ) | naive!( 2 )
+}
+
+|
+
+// -------------------------------------------------------------------
+// PART 2.  The coordinated root.
+//
+// The channel sx is split into two tagged deposit channels, xl and
+// xr, one per message of the original contention set.  Each copy
+// deposits its own pair, so after doubling xl carries two messages
+// and xr carries two messages.
+//
+// Each copy runs an arbiter.  An arbiter
+//   (1) joins on one message from each tag -- so the two arbiters
+//       partition the deposits between them, one pair each;
+//   (2) contributes one bit to the shared channel `out`;
+//   (3) joins on TWO bits from `out`, decides by a function that is
+//       SYMMETRIC in the pair, re-emits the pair it consumed so its
+//       sibling reads the same multiset, delivers the winner on sx,
+//       and parks the loser.
+//
+// Symmetry of the decision table is what makes the two arbiters
+// agree: they may read the two bits in either order.  The table is
+// exclusive-or -- agree on Q1, disagree on Q2 -- which is also what
+// makes the shared bit unbiased when either copy's local coin is.
+//
+// The local coin is a race, not a primitive: two messages, one
+// receiver.  The nondeterminism the interpreter uses to resolve that
+// race IS the copy's resolver, exposed as a term.  Arbitration is
+// then the business of turning two independent resolvers into one.
+// -------------------------------------------------------------------
+
+new root, xl, xr, sx, park, out in {
+
+  contract root( @copy ) = {
+
+      // ---- the rooted receiver: the image of  for( y <- x )*y
+      for( sy <- sx ) { *sy }
+
+      // ---- the rooted messages, deposited under their tags
+    | xl!( @"a"!(0) )
+    | xr!( @"b"!(0) )
+
+      // ---- this copy's arbiter
+    | for( q1 <- xl & q2 <- xr ) {
+        new coin in {
+            // the local resolver, as a race
+            coin!( 0 ) | coin!( 1 )
+          | for( c <- coin ) {
+              // contribute this copy's bit
+                out!( *c )
+                // read the whole multiset of contributions
+              | for( e1 <- out & e2 <- out ) {
+                  match ( *e1, *e2 ) {
+                    // agree  => the left deposit wins
+                    ( 0, 0 ) => { sx!( *q1 ) | park!( *q2 ) | out!( 0 ) | out!( 0 ) }
+                    ( 1, 1 ) => { sx!( *q1 ) | park!( *q2 ) | out!( 1 ) | out!( 1 ) }
+                    // disagree => the right deposit wins
+                    ( 0, 1 ) => { sx!( *q2 ) | park!( *q1 ) | out!( 0 ) | out!( 1 ) }
+                    ( 1, 0 ) => { sx!( *q2 ) | park!( *q1 ) | out!( 1 ) | out!( 0 ) }
+                  }
+                }
+            }
+        }
+      }
+  }
+  |
+  root!( 1 ) | root!( 2 )
+}
+
+// -------------------------------------------------------------------
+// What to observe.
+//
+// PART 1 can reach a state with a barb on "a" and a barb on "b".
+// PART 2 cannot: both arbiters compute the same function of the same
+// pair of bits, so both deliver the same payload, and the doubled
+// system exposes one barb twice.  Two bits remain on `out` and two
+// messages remain on `park`; both residues live on names outside the
+// image of the root map, which is why the correctness statement is
+// relative to the image contexts and not to arbitrary ones.
+//
+// Read as a protocol rather than as a term: `out` is a shared coin,
+// the symmetric table is the agreement rule, `park` is the loser's
+// place in the queue, and the join arities are the quorum.  The
+// n-copy version replaces the pair by an n-fold join and the table
+// by any function symmetric in n arguments; each copy then re-emits
+// the n contributions it consumed, so a contention site costs n
+// rendezvous and O(n^2) messages.
+// -------------------------------------------------------------------
