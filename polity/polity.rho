@@ -1,0 +1,205 @@
+// polity.rho --- the minimal polity: three citizens, quorum two, one
+// rent-bearing office, two token colours.
+//
+// Companion listing for "Votes and Capital".  Written in the cost-accounted
+// surface syntax of f1r3node-rust (branch feature/cost-accounting-transpiler):
+//
+//    s :: ()          mint a token of signature s        ==>  Sig[s]!(Nil)
+//    {% P %}[s]       gate P on one s-token              ==>  for(t <- Sig[s]){*t | P}
+//    for(@x <- c where G)  guarded receive; a failed guard leaves the
+//                          message in the tuple space
+//
+// Every token stack is LOCATED: it is held as a message on a channel, and the
+// right to spend from it is exactly the right to receive on that channel
+// (finrho, Sec 2.2).  Authority is possession of a name, never adjacency.
+//
+// Colours.  Two signatures are in play:
+//    "V"   the franchise.  Constitutive in origin, possessive in circulation.
+//    "C"   capital.        Possessive throughout.
+// Both are linear: a token is consumed by the receive that reads it.
+
+new roll,            // the register: the unrestricted zone, Gamma
+    issue,           // the pre-election phase: dereliction of Gamma into Delta
+    ballot,          // the ballot contract: consumes V, produces the office
+    tally,           // the ballot's private accumulator
+    office,          // the office capability: one holder per tenure
+    rent,            // the rent engine: office |-> C
+    market,          // the market: C |-> goods and services
+    attest,          // co-authentication: a fresh drawing on the roll
+    epoch,           // the clock
+    stdout(`rho:io:stdout`)
+in {
+
+  // ==================================================================
+  // 0.  The roll.  A persistent, non-rivalrous claim about an identity.
+  //     Contraction is sound here: reading the roll does not deplete it.
+  //     This is the unrestricted context Gamma of the mixed-zone calculus.
+  // ==================================================================
+
+  contract roll(@sig, ret) = {
+    // In a deployed shard this consults the registrar's state; here the
+    // three citizens are registered and nobody else is.
+    match sig {
+      "A" => ret!(true)
+      "B" => ret!(true)
+      "C3" => ret!(true)
+      _   => ret!(false)
+    }
+  } |
+
+  // ==================================================================
+  // 1.  The pre-election phase.  Registration issues exactly one linear V
+  //     token per registered signature per epoch, into a LOCATED stack
+  //     whose channel is manufactured by quotation from the signature.
+  //
+  //     This is the dereliction  !Citizen(A)  |-->  V(A):  a persistent
+  //     claim metered to one linear token per epoch.  V is a SOURCE keyed
+  //     to identity, not a mint: nothing is created that was not already
+  //     entailed by the roll.
+  // ==================================================================
+
+  contract issue(@e) = {
+    new done in {
+      // one located franchise stack per citizen, this epoch
+      roll!("A",  *done) | roll!("B", *done) | roll!("C3", *done) |
+      for (@ok1 <- done; @ok2 <- done; @ok3 <- done
+           where ok1 == true and ok2 == true and ok3 == true) {
+        // v_i = @[*roll, e, sig] --- fresh by quotation, unforgeable
+        @[*roll, e, "A" ]!( ("V", "A",  e) ) |
+        @[*roll, e, "B" ]!( ("V", "B",  e) ) |
+        @[*roll, e, "C3"]!( ("V", "C3", e) ) |
+        stdout!(["issued", e])
+      }
+    }
+  } |
+
+  // ==================================================================
+  // 2.  The ballot.  Quorum two of three.  The guard is what makes this a
+  //     ballot rather than a market: it consumes a V token, checks that the
+  //     token belongs to the current epoch, and refuses everything else.
+  //
+  //     NOTE the shape of the guard.  It inspects the token, not the sender.
+  //     A rho send carries no sender.  So this ballot cannot distinguish a
+  //     cast by A from a cast by whoever holds A's stack channel: constitutive
+  //     TYPING alone obstructs nothing (Prop, "anonymity of send").
+  // ==================================================================
+
+  contract ballot(@(colour, voter, e), @choice, ack) = {
+    // draw the citizen's franchise from its located stack
+    for (@tok <- @[*roll, e, voter]
+         where tok == (colour, voter, e) and colour == "V") {
+      tally!((choice, e)) | ack!(true)
+    }
+  } |
+
+  // the accumulator: two ballots for the same choice in the same epoch
+  // release the office capability for one tenure
+  for (@(c1, e1) <= tally; @(c2, e2) <= tally
+       where c1 == c2 and e1 == e2) {
+    office!((c1, e1)) | stdout!(["elected", c1, "epoch", e1])
+  } |
+
+  // ==================================================================
+  // 3.  The rent engine.  Holding the office releases R units of C per
+  //     epoch for T epochs.  This is the edge that closes the political
+  //     cycle; delete it and the bribe edge becomes a bridge.
+  // ==================================================================
+
+  contract rent(@(holder, e), @r, @t) = {
+    new loop in {
+      loop!(t) |
+      for (@k <= loop) {
+        if (k > 0) {
+          // R units of capital, located on the holder's purse
+          @[*market, "purse", holder]!( ("C", r) ) |
+          loop!(k - 1)
+        } else { Nil }
+      }
+    }
+  } |
+
+  // ==================================================================
+  // 4.  The market.  Capital unlocks goods and services.  The guard is a
+  //     price, not a franchise check: anyone holding C may draw.
+  // ==================================================================
+
+  contract market(@buyer, @good, @price, ret) = {
+    for (@("C", bal) <- @[*market, "purse", buyer] where bal >= price) {
+      @[*market, "purse", buyer]!( ("C", bal - price) ) |
+      ret!(["delivered", good, "to", buyer])
+    }
+  } |
+
+  // ==================================================================
+  // 5.  THE FORBIDDEN EDGE.  The conversion engine that must not exist.
+  //     It is one persistent contract.  Nothing in the calculus prevents
+  //     anyone from writing it; what the polity can control is whether
+  //     anyone holds the capability its left leg needs.
+  //
+  //     Note what it actually takes: not the V token, which any process may
+  //     be handed, but the located stack CHANNEL @[*roll, e, voter].  The
+  //     sale is a transfer of a capability, and the calculus has no rule
+  //     that forbids sending a name one holds.
+  // ==================================================================
+
+  // new exchange in {
+  //   contract exchange(@voter, @e, @theta, seller) = {
+  //     for (@("C", bal) <- @[*market, "purse", "briber"] where bal >= theta) {
+  //       @[*market, "purse", "briber"]!( ("C", bal - theta) ) |
+  //       @[*market, "purse", voter  ]!( ("C", theta) ) |
+  //       // the briber now casts the seller's franchise
+  //       ballot!(("V", voter, e), "briber", *seller)
+  //     }
+  //   }
+  // } |
+
+  // ==================================================================
+  // 6.  THE CO-AUTHENTICATING BALLOT.  The repair, and its price.
+  //
+  //     The guard now demands the linear token AND a fresh attestation
+  //     drawn from the roll at cast time.  Transferring the token no longer
+  //     enables a cast.  What the briber must obtain instead is a standing
+  //     capability that draws on the roll --- and the roll is unrestricted,
+  //     so that capability is not consumed by use.  The sale has become a
+  //     DELEGATION: cheaper per tenure by a factor of T, and, unlike the
+  //     sale, it leaves a persistent forwarder in the term.
+  // ==================================================================
+
+  contract attest(@sig, ret) = {
+    new ok in { roll!(sig, *ok) | for (@b <- ok where b == true) { ret!((sig, "att")) } }
+  } |
+
+  new ballot2 in {
+    contract ballot2(@(colour, voter, e), @choice, @att, ack) = {
+      for (@tok <- @[*roll, e, voter]
+           where tok == (colour, voter, e) and att == (voter, "att")) {
+        tally!((choice, e)) | ack!(true)
+      }
+    } |
+
+    // A DELEGATION.  Alice hands her delegate a forwarder rather than a
+    // token.  The forwarder is persistent: it is bought once and serves
+    // every epoch of the tenure.  It is also the thing an auditor can see:
+    // an interposed medium on the franchise path, which is a spatial
+    // formula, unlike a sale, which leaves nothing behind.
+    new delegateA in {
+      contract delegateA(@e, @choice, ack) = {
+        new got in {
+          attest!("A", *got) |
+          for (@a <- got) { ballot2!(("V", "A", e), choice, a, *ack) }
+        }
+      }
+    }
+  } |
+
+  // ==================================================================
+  // 7.  One epoch, honestly run.
+  // ==================================================================
+
+  new ack in {
+    issue!(0) |
+    ballot!(("V", "A",  0), "north", *ack) |
+    ballot!(("V", "B",  0), "north", *ack) |
+    rent!(("north", 0), 1200, 4)
+  }
+}
