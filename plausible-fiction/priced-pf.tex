@@ -51,7 +51,9 @@
   morekeywords={contract,for,new,in,match,where,if,else,true,false,Nil,
     bid,ask,book,clear,reserve,refund,plug,holes,grounded,resolve,publish,
     republish,armCDT,armMarket,broker,run,dispatch,monitor,succeed,fail,
-    settle,abstract,let,select,on},
+    settle,abstract,let,select,on,
+    Module,Theory,theory,Types,Exports,Replacements,Terms,Equations,Rewrites,
+    Empty,then,subst,fold,import,from,as},
   morecomment=[l]{//},
   columns=fullflexible,
   keepspaces=true,
@@ -99,6 +101,18 @@ example (Alice's venue, priced and cleared), and an honest accounting of what is
 conjectural --- in particular that the clearing \emph{rule} is policy, not a theorem of the calculus,
 and that pricing a nature-resolved branch wants a probability layer.
 \end{abstract}
+
+\begin{center}
+\begin{minipage}{0.95\linewidth}\small
+\textbf{Revision note (26 August 2026).} This revision re-expresses the object-language delta in the
+MeTTaIL surface frozen by the DDL and module decisions of 19 August 2026. The
+\texttt{language!} form is withdrawn; every language is a \texttt{Theory}. The delta of
+\S\ref{sec:lang} is now a \emph{parametric} theory, \texttt{Theory PricedPFLam(pf: PFLam)}, so the
+extension is checked against \PFLam{} rather than described alongside it; and \texttt{val} is stated
+once, at the bridge, rather than twice. The design is unchanged.
+\end{minipage}
+\end{center}
+\vspace{0.6em}
 
 \tableofcontents
 
@@ -236,9 +250,10 @@ forwarder broker used to be (Figure~\ref{fig:strata}).
  \(q \modelsT T\) \(\cdot\) \(\grounded\) \(\cdot\) \(\plug{p}{h}{q}\) \(\cdot\) \(\holes\to\CDT\)
  \(\cdot\) \(\textbf{\val}\) \emph{(new: PJES valuation over CDT)} \(\cdot\)
  \(\textbf{\clear}\) \emph{(new: feasible-set crossing)}};
-\node[box,below=of bridge] (lang) {\textbf{Object language \PFLam{}} --- \texttt{language!}\\
+\node[box,below=of bridge] (lang) {\textbf{Object language} --- \texttt{Theory PricedPFLam(pf: PFLam)}\\
  dependent \(\Pi/\Sigma/\textsf{Type}\) \(\cdot\) finite variants \(+\) \texttt{case} \(\cdot\)
- typed holes \(\cdot\) \(\holes\to\CDT\) \(\cdot\) \(\textbf{price annotations}\) \emph{(new)}};
+ typed holes \(\cdot\) \(\textbf{price annotations}\) \emph{(new)}\\
+ {\scriptsize a parametric extension of \texttt{Theory PFLam()}; \(\holes\to\CDT\) and \(\val\) are host operations at the bridge}};
 \draw[-{Latex}] (coord) -- node[right]{\scriptsize calls} (bridge);
 \draw[-{Latex}] (bridge) -- node[right]{\scriptsize delegates} (lang);
 \end{tikzpicture}
@@ -254,41 +269,63 @@ read PJES structure off a term. A price is a value in the preference quantale $\
 (\S\ref{sec:val}); the object language treats it opaquely (an element of a \texttt{Price} sort) and
 the bridge interprets it.
 
-\begin{lstlisting}
-language! {  // delta over PFLam (sec. 4 of the PF note); only additions shown
-  types {
-    Price            // an element of the preference quantale Q (opaque to PFLam)
-    Obsv             // a time-varying observable: a persistent channel returning Q
-  },
-  terms {
-    // A reservation price annotation on a hole: "this hole is offered/sought at p".
-    // Pure: it rides with the hole; the bridge's val/clear interpret it.
-    Priced . h:HoleId, ty:Term, p:Price |- "?" h ":" ty "@" p : Term;
+Under the MeTTaIL surface frozen on 2026-08-19 this delta is no longer a prose annotation on a
+listing --- ``only additions shown'' --- but a declaration in its own right. The priced language is a
+\emph{parametric theory} taking \PFLam{} as its parameter, and the additions are literally the
+builders chained onto it. Everything proved about \PFLam{} arrives with the parameter; nothing is
+restated, and nothing can silently diverge from the note it extends.
 
-    // Scale a (sub-)demand by an observable, exactly PJES scale(o,c).
-    Scale  . o:Obsv, c:Term |- "scale" "(" o "," c ")" : Term;
+\begin{lstlisting}[style=rho]
+Theory PricedPFLam(pf: PFLam) {
+  pf
+    Types {
+      Price;         // an element of the preference quantale Q (opaque to PFLam)
+      Obsv;          // a time-varying observable: a persistent channel returning Q
+    }
+    Terms {
+      // A reservation price annotation on a hole: "this hole is offered or
+      // sought at p". Pure: it rides with the hole; the bridge's val and
+      // clear interpret it.
+      Priced . h:HoleId, ty:Term, p:Price
+             |- "?" h ":" ty "@" p                    : Term;
 
-    // Reverse polarity: the PJES give. Swaps which side funds the leg, hence
-    // swaps bid<->ask when the bridge prices it (sec. 2.3, 5.2).
-    Give   . c:Term |- "give" "(" c ")" : Term;
+      // Scale a (sub-)demand by an observable, exactly PJES scale(o, c).
+      Scale  . o:Obsv, c:Term  |- "scale" "(" o "," c ")" : Term;
 
-    // val(p): the PJES denotation of p as a demand price over its CDT (sec. 5).
-    Val    . p:Term |- "val" "(" p ")" : Term ![{
-               crate::pflam::value_over_cdt(&p)   // -> Term::Price(_)
-             }] fold;
-  },
-  equations {
-    // give is an involution; scaling by the constant-1 observable is identity.
-    GiveInv . |- (give (give c)) = c ;
-    Scale1  . |- (scale one_obs c) = c ;
-  },
+      // Reverse polarity: the PJES give. Swaps which side funds the leg,
+      // hence swaps bid <-> ask when the bridge prices it (sec. 2.3, 5.2).
+      Give   . c:Term          |- "give" "(" c ")"        : Term;
+
+      // The constant-one observable, needed to state Scale's unit law
+      // inside the theory rather than beside it.
+      ObsOne .                 |- "one"                   : Obsv;
+    }
+    Equations {
+      // give is an involution; scaling by the constant-one observable is
+      // the identity.
+      (Give (Give c)) == c;
+      (Scale (ObsOne) c) == c;
+    }
 }
 \end{lstlisting}
 
-\noindent Two points. First, \texttt{Priced} attaches a reservation price to a hole without changing
-its \emph{type}: admissibility ($q \modelsT T$) is untouched, so all of \PF{}'s decidability and
-termination results carry over verbatim. Second, \texttt{val} is a pure fold: pricing is a total,
-deterministic computation over the term's demand structure, performed by the bridge, never a search.
+\noindent Three points. First, \texttt{Priced} attaches a reservation price to a hole without
+changing its \emph{type}: admissibility ($q \modelsT T$) is untouched, so all of \PF{}'s decidability
+and termination results carry over verbatim. Second, \texttt{val} --- the PJES denotation of a term
+as a demand price over its CDT --- is \emph{not} a constructor of this theory. It was written as a
+term former carrying a native fold in the previous revision; it is a pure analysis over the term,
+delivering a \texttt{Price} rather than a \texttt{Term}, so it belongs with the other host operations
+at the bridge (\S\ref{sec:bridge}), where it was already stated. Removing the duplicate leaves
+\texttt{PricedPFLam} escape-free, exactly as \PFLam{} now is. Third, the parametric form makes the
+extension \emph{checkable}: if a future revision of \PFLam{} renames \texttt{Hole} or changes its
+arity, the elaborator reports the break here rather than letting two listings drift apart.
+
+\paragraph{A note on sharing.} \texttt{PricedPFLam} takes \PFLam{} as a parameter rather than
+redeclaring any of its categories. That matters when a venue composes theories: a market that also
+imports, say, a reputation theory over the same \texttt{HoleId} category joins the two over their
+shared \PFLam{} instance, and the join is a pushout that identifies \texttt{HoleId} once. Passing
+two independently instantiated copies of \PFLam{} would instead be rejected, and correctly so ---
+it would assert that the priced holes and the reputed holes are different holes.
 
 \section{Valuation: the PJES denotation over the demand tree}\label{sec:val}
 
@@ -757,7 +794,10 @@ including the preference (``earlier is better'') instances. (3) Add the probabil
 \texttt{Obs} branches, turning conservative bounds into expectations and opening the prediction
 market. (4) Decide the seam $\kappa$ relating price to phlogiston. (5) Specify priced templating
 (price-prior maintenance; lgg over price-annotated terms). (6) Design the escrow dispute-resolution
-and where economic penalties attach on failed attestation.
+and where economic penalties attach on failed attestation. (7) Settle whether \texttt{Price} and
+\texttt{Obsv} are ground categories pinned to host types or theory-defined ones --- the same
+question the \PF{} note leaves open for \texttt{HoleId} and \texttt{Tag}, and the answer should be
+uniform across both.
 
 
 \appendix

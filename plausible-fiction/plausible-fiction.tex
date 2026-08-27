@@ -83,10 +83,10 @@
   literate={->}{{$\rightarrow$}}2 {~>}{{$\;\rightsquigarrow\;$}}2
 }
 
-% MeTTaIL language! definitions
+% MeTTaIL Theory / Module definitions (syntax of 2026-08-19)
 \lstdefinelanguage{mettail}{
-  morekeywords={language,name,types,literals,terms,equations,rewrites,logic,as,fold,prefix,relation,if,let},
-  morekeywords=[2]{Term,HoleId,Ty,Lvl,Tag,Bool,Int,Str,Proc,Name,List,Map,Set,Bag},
+  morekeywords={Module,Theory,theory,import,from,as,Types,Exports,Replacements,Terms,Equations,Rewrites,Empty,free,let,in,if,then,subst,fold,relation},
+  morekeywords=[2]{Term,HoleId,MetaId,Tag,Lvl,VariantAlt,CaseBranch,Price,Obsv,Proc,Name,HashBag,HashSet,List,Map,Ctx},
   sensitive=true,
   morecomment=[l]{//},
   morestring=[b]",
@@ -126,7 +126,7 @@ holes is a \emph{context}. We refine that framing by distinguishing holes that m
 \emph{other agents} in the market from holes that are filled by \emph{ordinary computation}. This
 document specifies the system in two layers on top of MeTTaIL (rholang~1.4): (i)~an object language
 --- a dependently typed $\lambda$-calculus with typed holes --- given as a MeTTaIL
-\lstinline[language=mettail,basicstyle=\ttfamily\small]|language!| definition, whose terms ride on
+\lstinline[language=mettail,basicstyle=\ttfamily\small]|Theory| declaration, whose terms ride on
 rho channels; and (ii)~a coordination protocol written in MeTTaIL's built-in embedded rholang that
 manages the full PF lifecycle: publish, match, broker, ground, run, monitor, and either promote to a
 \emph{template} on success or \emph{retire} (hide or advertise) on failure. Because a PF can branch
@@ -138,6 +138,22 @@ illustrations throughout, a lifecycle state machine, a numbered requirements cat
 end-to-end example, and an honest accounting of what is established versus conjectural.
 \end{abstract}
 
+\begin{center}
+\begin{minipage}{0.95\linewidth}\small
+\textbf{Revision note (26 August 2026).} This revision re-expresses the object language in the
+MeTTaIL surface frozen by the DDL and module decisions of 19 August 2026. The
+\lstinline[language=mettail,basicstyle=\ttfamily\small]|language!| form is withdrawn; every language
+is a \texttt{Theory}. Substantively: \texttt{PFLam} is now an escape-free theory (\S\ref{sec:theorydecl});
+\texttt{grounded}, \texttt{holes} and \texttt{plug} are host operations at the bridge rather than term
+formers carrying native folds, and the bidirectional checker is stated beside the theory
+(\S\ref{sec:whatmoved}); the eta side condition and variant-arm selection are now expressible in the
+theory itself, so the \texttt{selectArm} helper is gone; and the \texttt{case} motive acquires
+concrete syntax. The design is unchanged. Two open questions the rewrite generated for MeTTaIL are
+recorded in \S\ref{sec:open}.
+\end{minipage}
+\end{center}
+\vspace{0.6em}
+
 \tableofcontents
 \vspace{1em}
 
@@ -147,8 +163,8 @@ end-to-end example, and an honest accounting of what is established versus conje
 This document specifies \emph{what} the Plausible Fiction service must do and \emph{how} it maps onto
 MeTTaIL, at a level of detail sufficient to begin implementation and to anchor continued design
 discussion with the Topos Institute. It is deliberately concrete about the MeTTaIL surface: the
-object language is given as a \lstinline[language=mettail,basicstyle=\ttfamily\small]|language!|
-specification, and every coordination behaviour is given as embedded rholang. It is deliberately
+object language is given as a \lstinline[language=mettail,basicstyle=\ttfamily\small]|Theory|
+declaration, and every coordination behaviour is given as embedded rholang. It is deliberately
 honest about its open problems (\S\ref{sec:open}): several matching and templating questions are
 undecidable in full generality, and the design's central move is to \emph{delegate} those problems to
 the market rather than to a solver.
@@ -250,9 +266,11 @@ the acceptance test. See \S\ref{sec:open} for the formal consequences.
 Three strata (Figure~\ref{fig:arch}):
 \begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
   \item \textbf{Object language \texttt{PFLam}} (\S\ref{sec:pflam}): a dependently typed
-  $\lambda$-calculus with typed holes, defined with MeTTaIL's
-  \lstinline[language=mettail,basicstyle=\ttfamily\small]|language!|. Pure, total operations:
-  bidirectional typing, $\Holes(\cdot)$, $\grounded(\cdot)$, and $\plug$.
+  $\lambda$-calculus with typed holes, declared as a MeTTaIL
+  \lstinline[language=mettail,basicstyle=\ttfamily\small]|Theory|. Pure and total: the syntax,
+  the conversion theory, and directed reduction. Bidirectional typing, $\Holes(\cdot)$,
+  $\grounded(\cdot)$, and $\plug$ are \emph{host} operations over that syntax and are stated
+  with the bridge (\S\ref{sec:bridge}), not inside the theory.
   \item \textbf{Bridge} (\S\ref{sec:bridge}): a small set of rho-callable predicates/operators ---
   \code{pf |= ty}, \code{grounded(pf)}, \code{plug(pf,h,q)}, \code{holes(pf)} (now returning a CDT),
   and \code{resolve(pf,s)} --- that lift \texttt{PFLam} operations into embedded rholang as
@@ -270,11 +288,12 @@ Three strata (Figure~\ref{fig:arch}):
   \node[layer] (coord) {\textbf{Coordination — embedded rholang}\\[2pt]
     namespaces $\cdot$ publish/offer $\cdot$ broker forwarders $\cdot$ \texttt{where} matching
     $\cdot$ grounding $\cdot$ dispatch \& monitoring $\cdot$ template/retire};
-  \node[layer,below=of coord] (bridge) {\textbf{Bridge — rho-callable folds}\\[2pt]
-    \texttt{pf |= ty}\quad\texttt{grounded(pf)}\quad\texttt{plug(pf,h,q)}\quad\texttt{holes(pf)}};
-  \node[layer,below=of bridge] (obj) {\textbf{Object language \texttt{PFLam} — \texttt{language!}}\\[2pt]
+  \node[layer,below=of coord] (bridge) {\textbf{Bridge — rho-callable folds (host operations)}\\[2pt]
+    \texttt{pf |= ty}\quad\texttt{grounded(pf)}\quad\texttt{plug(pf,h,q)}\quad\texttt{holes(pf)}\quad\texttt{resolve(pf,s)}\\[1pt]
+    {\scriptsize bidirectional checker (ascent) sits here, beside the theory}};
+  \node[layer,below=of bridge] (obj) {\textbf{Object language \texttt{PFLam} — \texttt{Theory PFLam()}}\\[2pt]
     dependent $\Pi/\Sigma/\mathsf{Type}$ $\cdot$ finite variants + \texttt{case} $\cdot$ typed holes
-    $\cdot$ bidirectional checker $\cdot$ \texttt{holes}$\to$CDT $\cdot$ $\grounded$ $\cdot$ $\plug$};
+    $\cdot$ conversion ($\beta\eta$, projections, variant-$\beta$) $\cdot$ directed reduction};
   \draw[-{Stealth[length=6pt]},accent,thick] (coord) -- (bridge)
      node[midway,right=2pt,font=\scriptsize]{calls};
   \draw[-{Stealth[length=6pt]},accent,thick] (bridge) -- (obj)
@@ -308,26 +327,32 @@ at the plug site. This is exactly why Spivak's hole-filling reads as application
 $\hole{h}{\Pi\tele_h.T_h}$ and applied to $\tele_h$. The minimal spec below keeps \rul{Hole} binary
 ($h$, $T$) with the telescope folded into $T$ via $\Pi$.
 
-\subsection{The \texttt{language!} specification}
+\subsection{The \texttt{Theory} declaration}\label{sec:theorydecl}
+Below is \texttt{PFLam} in the MeTTaIL surface frozen on 2026-08-19: one declaration form
+(\texttt{Theory}), capitalised builders, judgement-form term rules
+(\lstinline[language=mettail,basicstyle=\ttfamily\small]!Label . ctx |- syntax : Cat!), \texttt{==}
+for equations, and mandatory labels on rewrites. Three things that the withdrawn block carried
+\emph{inside} the language definition are no longer there, and \S\ref{sec:whatmoved} says where they
+went and why the move is an improvement rather than a concession.
+
 \begin{lstlisting}[language=mettail]
-language! {
-    name: PFLam,
+Theory PFLam() {
 
-    types {
-        Term                       // dependent: terms and types share one sort
-        ![String] as HoleId        // agent-hole identifiers (market-visible)
-        ![String] as MetaId        // computation-hole / elaboration metavars
-        ![String] as Tag           // variant labels (outcome constructors)
-        ![u64]    as Lvl           // universe levels
-        VariantAlts                // sequence of  (Tag : Term)   alternatives
-        CaseBranch                 // one  (Tag x => body)  arm
-        CaseBranches               // sequence of CaseBranch
-    },
+    Types {
+        Term;          // dependent: terms and types share one sort
+        HoleId;        // agent-hole identifiers (market-visible)
+        MetaId;        // computation-hole / elaboration metavariables
+        Tag;           // variant labels (outcome constructors)
+        Lvl;           // universe levels
+        VariantAlt;    // one  (Tag : Term)  alternative
+        CaseBranch;    // one  (Tag x => body)  arm
+    }
 
-    terms {
+    Terms {
         // ---- core dependent calculus -------------------------------------
+        // No `Var` rule: variables arise only from binders, which are the
+        // abstraction sort `^x.body:[Term -> Term]` (G4).
         Univ . l:Lvl                      |- "Type" l            : Term;
-        Var  . x:Term                     |- x                   : Term;  // bound via HOAS below
 
         Pi   . dom:Term, ^x.cod:[Term -> Term]
              |- "Pi" "(" x ":" dom ")" "." cod                   : Term;
@@ -343,93 +368,129 @@ language! {
         Snd  . p:Term                     |- "snd" p             : Term;
 
         // ---- finite (dependent) variants: model outcomes / branching -----
-        // A finite labelled sum  < l_1 : A_1 | ... | l_n : A_n >  (Spivak's O_venue).
-        Variant . alts:VariantAlts        |- "<" alts ">"        : Term;
-        Alt     . lbl:Tag, ty:Term        |- lbl ":" ty          : VariantAlts;  // seq-folded
-        Inj     . lbl:Tag, val:Term       |- "inj" lbl val       : Term;
-        // Dependent eliminator: motive mot, one arm per label; the arm binds the payload.
-        Case    . scrut:Term, mot:Term, brs:CaseBranches
-                |- "case" scrut "of" "{" brs "}"                 : Term;
+        // A finite labelled sum  < l_1 : A_1 | ... | l_n : A_n >  (Spivak's
+        // O_venue). The alternatives are a collection sort (G2), rendered
+        // inline with a separator projection rather than a grammar pragma.
+        Variant . alts:HashBag(VariantAlt)
+                |- "<" alts.*sep("|") ">"                        : Term;
+        Alt     . lbl:Tag, ty:Term        |- lbl ":" ty           : VariantAlt;
+        Inj     . lbl:Tag, val:Term       |- "inj" lbl val        : Term;
+
+        // Dependent eliminator: the motive is now WRITTEN, not merely passed.
+        // Every argument in the context must appear exactly once in the
+        // concrete syntax (G6), which the old positional form let us skip.
+        Case    . scrut:Term, mot:Term, brs:HashBag(CaseBranch)
+                |- "case" scrut "return" mot "of" "{" brs.*sep(";") "}"
+                                                                 : Term;
         CaseBr  . lbl:Tag, ^x.body:[Term -> Term]
                 |- lbl " " x "=>" body                           : CaseBranch;
 
         // ---- THE distinguishing constructors -----------------------------
         // Agent hole (filler-resolved): supplied by another participant's PF.
-        // ty is the Pi-closed interface  Pi Gamma_h . T_h  (see sec. 4.1).
-        Hole . h:HoleId, ty:Term          |- "?" h ":" ty        : Term;
+        // ty is the Pi-closed interface  Pi Gamma_h . T_h  (sec. 4.1).
+        Hole . h:HoleId, ty:Term          |- "?" h ":" ty         : Term;
 
         // Observation hole (outcome-resolved): an agent hole whose value is
-        // revealed by RUNNING a step (attestation), not by a market plug. It is
-        // a legitimate case-scrutinee and a CDT branch point (sec. 4.4, 6.x).
-        Obs  . h:HoleId, ty:Term          |- "observe" h ":" ty  : Term;
+        // revealed by RUNNING a step (attestation), not by a market plug. It
+        // is a legitimate case-scrutinee and a CDT branch point (sec. 4.4).
+        Obs  . h:HoleId, ty:Term          |- "observe" h ":" ty   : Term;
 
-        // Computation hole: an elaboration metavariable, solved by unification.
-        // NEVER advertised to the market; discharged by the elaborator.
-        Meta . m:MetaId, ty:Term          |- "%" m ":" ty        : Term;
+        // Computation hole: an elaboration metavariable, solved by
+        // unification. NEVER advertised to the market.
+        Meta . m:MetaId, ty:Term          |- "%" m ":" ty         : Term;
+    }
 
-        // ---- pure operations exposed to the bridge -----------------------
-        // grounded(p): the REALIZED path carries no agent holes. Reduction now
-        // includes case-reduction (CaseRw), so once a scrutinee hole resolves
-        // its branch is taken and only that branch's holes remain (sec. 4.4).
-        Grounded . p:Term  |- "grounded" "(" p ")" : Term ![{
-            crate::pflam::no_agent_holes(&p)        // -> Term::BoolLit(_)
-        }] fold;
+    Equations {
+        // beta / eta / projections / variant-beta are CONVERSION: the
+        // equational theory used by type conversion and by the matching
+        // test |=. Equations are unlabelled; rewrites below carry labels.
+        (App (Lam a ^x.b) c) == (subst ^x.b c);
 
-        // holes(p): the open agent demands as a CONDITIONAL DEMAND TREE (sec 4.4)
-        // -- a finite dependent polynomial: a now-frontier of holes armed in
-        // parallel, plus outcome-indexed edges over unresolved scrutinees.
-        // NOT a flat list: the owed-set is a function of outcomes not yet seen.
-        HolesOf  . p:Term  |- "holes" "(" p ")"    : Term ![{
-            crate::pflam::demand_tree(&p)           // -> CDT (see grammar, sec 4.4)
-        }] fold;
+        // eta, with its side condition now EXPRESSIBLE. The withdrawn block
+        // could only write "x not free in f" as a comment.
+        if x # f then (Lam a ^x.(App f x)) == f;
 
-        // plug(p, h, q): fill agent hole h in p with filler q (capture-avoiding;
-        // q is the Pi-closed filler, re-applied to the local telescope).
-        Plug . p:Term, h:HoleId, q:Term
-             |- "plug" "(" p "," h "," q ")"        : Term ![{
-            crate::pflam::plug_hole(&p, &h, &q)
-        }] fold;
-    },
+        (Fst (Pair a b)) == a;
+        (Snd (Pair a b)) == b;
 
-    equations {
-        // beta / eta / projection are CONVERSION (the equational theory used by
-        // type conversion and by the matching test |=).
-        Beta . |- ( (lam (x : A) . b) a ) = (subst b x a) ;
-        Eta  . |- (lam (x : A) . (f x)) = f ;          // x not free in f
-        SigB1 . |- (fst < a , b >) = a ;
-        SigB2 . |- (snd < a , b >) = b ;
-        // variant beta: case of a known injection selects and substitutes its arm.
-        CaseB . |- (case (inj l a) mot { ... ; l x => body ; ... }) = (subst body x a) ;
-    },
+        // variant beta. Selecting the matching arm out of the branch bag is
+        // a remainder pattern (G3) with a repeated label variable `l` -- the
+        // same shape as rho's COMM rule, which repeats the channel `n`.
+        // No `selectArm` helper is needed: the pattern IS the selection.
+        (Case (Inj l a) mot { (CaseBr l ^x.body), ...rest })
+            == (subst ^x.body a);
+    }
 
-    rewrites {
-        // directed reduction = "filling computation holes by standard computation"
-        BetaRw . |- ( (lam (x : A) . b) a ) ~> (subst b x a) ;
-        Fst1   . |- (fst < a , b >) ~> a ;
-        Snd1   . |- (snd < a , b >) ~> b ;
-        // CASE on a KNOWN injection reduces (computation). On a NEUTRAL scrutinee
-        // -- one stuck on an unresolved Hole/Obs -- it does NOT reduce: it is a
-        // branch point of the demand tree (sec. 4.4).
-        CaseRw . |- (case (inj l a) mot brs) ~> (selectArm brs l a) ;
-        // plug reduces structurally once its filler is present; if it resolves a
-        // scrutinee, the enclosing CaseRw then fires, realizing a branch.
-        PlugRw . |- (plug p h q) ~> (subst_hole p h q) ;
-        // congruences (elided): AppCongL/R, PiCong, LamCong, SigCong, PairCong,
-        //                       CaseCongScrut, CaseCongArm, ...
-    },
+    Rewrites {
+        // Directed reduction = "filling computation holes by standard
+        // computation". Labels are mandatory: an anonymous rule cannot be
+        // subtracted by `\` or retargeted by `Replacements`.
+        RBeta : (App (Lam a ^x.b) c) ~> (subst ^x.b c);
+        RFst  : (Fst (Pair a b)) ~> a;
+        RSnd  : (Snd (Pair a b)) ~> b;
 
-    logic {
-        // Bidirectional typing as an ascent relation (sketch, sec. 4.3).
-        // check(ctx, term, ty)  and  synth(ctx, term, ty).
-        // matching test:  models(q, ty)  iff  exists A. synth([], q, A), sub(A, ty).
-        relation check(Ctx, Term, Term);
-        relation synth(Ctx, Term, Term);
-        relation sub(Term, Term);                 // conversion + universe cumulativity
-        relation models(Term, Term);
-        models(q, ty) <-- synth(ctx0(), q, a), sub(a, ty);
-    },
+        // CASE on a KNOWN injection reduces (computation). On a NEUTRAL
+        // scrutinee -- one stuck on an unresolved Hole/Obs -- no rule
+        // applies: that stuck term is a branch point of the demand tree
+        // (sec. 4.4). Stuckness is now a property of the rule set rather
+        // than a comment on the rule.
+        RCase : (Case (Inj l a) mot { (CaseBr l ^x.body), ...rest })
+                  ~> (subst ^x.body a);
+
+        // congruences, as conditional rewrites
+        RAppFun : if S ~> T then (App S c) ~> (App T c);
+        RAppArg : if S ~> T then (App c S) ~> (App c T);
+        RScrut  : if S ~> T then (Case S mot brs) ~> (Case T mot brs);
+        RArm    : if S ~> T then (Case c mot { (CaseBr l ^x.S), ...rest })
+                                   ~> (Case c mot { (CaseBr l ^x.T), ...rest });
+        // RPiDom, RPiCod, RLamDom, RLamBody, RSigFst, RSigSnd,
+        // RPairL, RPairR, RFstArg, RSndArg: elided, all of this shape.
+    }
 }
 \end{lstlisting}
+
+\subsection{What moved out of the language definition, and why}\label{sec:whatmoved}
+Three elements of the withdrawn \lstinline[language=mettail,basicstyle=\ttfamily\small]|language!|
+block have no counterpart in the \texttt{Theory} form. In each case the relocation is the one the
+architecture (\S\ref{sec:arch}) already asked for.
+
+\begin{description}[leftmargin=0pt,style=nextline,itemsep=4pt]
+  \item[\texttt{grounded}, \texttt{holes}, \texttt{plug} were term formers carrying native folds.]
+  They are now \emph{host operations} and appear only at the bridge (\S\ref{sec:bridge}). This is a
+  correction, not a workaround. None of the three is a constructor of the calculus of meaning:
+  $\grounded$ is a predicate \emph{about} a term, $\Holes(\cdot)$ is an analysis \emph{of} a term
+  returning an object (the CDT) that is not a \texttt{Term} at all, and $\plug$ substitutes for a
+  \emph{hole identifier} rather than for a bound variable --- it is what the market does to a term,
+  not a reduction inside it. Having them as \texttt{Term}-sorted formers with folds \emph{and}
+  again as \texttt{Proc}-sorted folds at the bridge was a duplication the old surface concealed.
+  With them gone, \texttt{PFLam} is a pure, escape-free theory: syntax, conversion, reduction. The
+  \rul{PlugRw} rule of the withdrawn block disappears with it.
+  \item[The \texttt{logic \{ relation \dots \}} block.] The \texttt{Theory} form has builders for
+  \texttt{Types}, \texttt{Exports}, \texttt{Replacements}, \texttt{Terms}, \texttt{Equations} and
+  \texttt{Rewrites}, and no builder for a relational program. The bidirectional checker therefore
+  rides \emph{beside} the theory rather than inside it (\S\ref{sec:typing}). Whether \texttt{Theory}
+  should grow a \texttt{Logic} builder is an open question we do not prejudge here
+  (\S\ref{sec:open}); the checker is a consumer of the elaborated presentation either way.
+  \item[Ground categories written as native-type aliases.] The withdrawn block wrote
+  \lstinline[language=mettail,basicstyle=\ttfamily\small]|![String] as HoleId| and
+  \lstinline[language=mettail,basicstyle=\ttfamily\small]|![u64] as Lvl|. \texttt{Types} declares
+  categories; how a category is pinned to a host ground type is exactly the question the DDL plan
+  leaves open under the heading of BNFC's \texttt{token} pragma. We declare \texttt{HoleId},
+  \texttt{MetaId}, \texttt{Tag} and \texttt{Lvl} as ordinary categories and flag their groundness in
+  \S\ref{sec:open}; nothing in this design depends on which spelling wins.
+\end{description}
+
+\paragraph{Two requirements this refresh generates for the DDL.} Writing \texttt{PFLam} in the
+\texttt{Theory} form is not a translation exercise; it is a load test, and it returns two findings.
+\emph{(i)} The alternatives of a variant and the arms of a \texttt{case} are keyed by a
+\texttt{Tag} and must be label-unique. \texttt{HashBag} is the only collection sort the frozen
+surface exercises, and it is a bag: it admits duplicates. Either the sort vocabulary gains a keyed
+sort (a set, or a map \texttt{Tag $\to$ Term}), or label-uniqueness is a side condition the
+elaborator must check. \emph{(ii)} The motive of \texttt{Case} had no concrete syntax in the
+withdrawn block, which the positional BNFC form tolerated. Under the rule that every argument in
+the context is referenced exactly once, it must be written, so we write it
+(\texttt{case $s$ return $M$ of \{\dots\}}). Both are consequences of the \texttt{Theory} form
+catching what the record form let pass, which is the argument for the \texttt{Theory} form.
 
 \subsection{Bidirectional typing and the matching relation}\label{sec:typing}
 The equational theory ($\beta\eta$, projections) is \emph{conversion}, written $\conv$. Subtyping
@@ -458,19 +519,38 @@ $q \sat T$ --- iff $\tele_h \vdash q \Leftarrow T$, equivalently (\rul{Sub}) iff
 $A$ with $A \subt T$. This is the predicate the rho \code{where} guard evaluates. It is decidable on
 the chosen normalizing fragment; the search for $q$ is \emph{not} performed here (\S\ref{sec:marketsearch}).
 
+\paragraph{The checker, stated beside the theory.} Since \texttt{Theory} has no relational builder
+(\S\ref{sec:whatmoved}), the judgments above are given as an \texttt{ascent} program over
+\texttt{PFLam}'s elaborated presentation rather than as a block inside the declaration. The
+interface is unchanged; only its residence is.
+
+\begin{lstlisting}[language=mettail]
+// Bidirectional checker for PFLam. Consumes the elaborated presentation;
+// lives beside `Theory PFLam()`, not inside it.
+relation check(Ctx, Term, Term);      // ctx |- term <= ty
+relation synth(Ctx, Term, Term);      // ctx |- term => ty
+relation sub(Term, Term);             // conversion + universe cumulativity
+relation models(Term, Term);          // the matching test  q |= ty
+
+models(q, ty) <-- synth(ctx0(), q, a), sub(a, ty);
+\end{lstlisting}
+
 \paragraph{Plugging, precisely.} For $q \sat T_h$,
 \[
   p \plug_h q \;\;:=\;\; \mathtt{subst\_hole}(p, h, q),
 \]
 the capture-avoiding replacement of every $\hole{h}{T_h}$ in $p$ by $q$ (with $q$ applied to the local
-telescope $\tele_h$ per \S\ref{sec:teleholes}). \emph{Crucially, $q$ may itself contain agent holes.}
+telescope $\tele_h$ per \S\ref{sec:teleholes}). This is a host operation over \texttt{PFLam} syntax,
+not a \texttt{PFLam} reduction: it substitutes for a \emph{hole identifier}, which the theory's
+\lstinline[language=mettail,basicstyle=\ttfamily\small]|subst| --- substitution into an abstraction
+$\hat{x}.p$ for a \emph{bound variable} --- cannot express (\S\ref{sec:whatmoved}). \emph{Crucially, $q$ may itself contain agent holes.}
 On the \emph{flat} fragment (no branching) this gives the hole-set recurrence
 \(
   \Holes(p \plug_h q) = (\Holes(p)\setminus\{h\}) \cup \Holes(q),
 \)
 the recursive engine of the marketplace: filling a hole can introduce new holes, deferred to new
 participants. With branching this becomes a splice on the demand \emph{tree} rather than the set, and
-if $h$ was a \emph{scrutinee} its plug fires \rul{CaseRw}, realizing a branch and pruning the others
+if $h$ was a \emph{scrutinee} its plug fires \rul{RCase}, realizing a branch and pruning the others
 (\S\ref{sec:cdt}). $\grounded(p)$ holds iff the demand tree of the realized path is empty.
 
 \subsection{The demand polynomial: \texttt{holes(\(\cdot\))} as a CDT}\label{sec:cdt}
@@ -686,7 +766,7 @@ new publish, armCDT in {
           pf2!( plug(pf, h, cand) ) |                            // fill the hole
           for( @next <- pf2 ) {
             recordProvenance!( u, pfId, h, cand ) |
-            // if h was a scrutinee, plug fired CaseRw: the branch is now realized,
+            // if h was a scrutinee, plug fired RCase: the branch is now realized,
             // so re-deriving holes(next) yields the correct residual CDT.
             republish!( u, pfId, next )
           }
@@ -744,7 +824,7 @@ supplied it. Termination of \emph{a particular} PF is exactly: every realized pa
 grounded fillers --- a liveness property of the market, not a theorem (\S\ref{sec:open}).
 
 \subsection{Grounding detection: $\to$ Grounded}
-Grounding is now \emph{path-realized}, not set-empty. As branches resolve, \rul{CaseRw} prunes the
+Grounding is now \emph{path-realized}, not set-empty. As branches resolve, \rul{RCase} prunes the
 untaken arms, and \code{holes(pf)} of the residual term shrinks toward
 \code{< now: [], wait: [] >}. When \code{armCDT} reaches that node --- the realized path owes nothing
 and waits on nothing --- it emits on \code{@[u,"ground",pfId]}. That event is the precondition for
@@ -952,7 +1032,7 @@ the matching branch's sub-CDT \emph{only} when that outcome lands. A branch hole
 on a path that does not realize its branch (no spurious obligations).}
 \req{FR-4}{Acceptance shall \code{plug} the candidate, record provenance (hole $\mapsto$ party,
 filler), and republish the resulting term, re-deriving its CDT --- including any branch just realized
-(\rul{CaseRw}) and any holes the filler itself introduces.}
+(\rul{RCase}) and any holes the filler itself introduces.}
 \req{FR-5}{Participants shall be able to offer PFs (supply) and brokers shall be able to create
 type-filtered forwarders from supply to demand; brokers shall not be able to cause an ill-typed plug.}
 \req{FR-6}{When the realized path's residual CDT is empty (\code{now=[]}, \code{wait=[]}) the system
@@ -1032,7 +1112,7 @@ broker!( bob,   alice, "event", "hVenue", O_venue )
 broker!( carol, alice, "event", "hCater", Catering )
 
 // 3. hCater and hVenue match CONCURRENTLY behind Alice's guards; each plugs+republishes.
-//    Plugging hVenue with an Outdoor filler fires CaseRw -> the Outdoor branch is realized:
+//    Plugging hVenue with an Outdoor filler fires RCase -> the Outdoor branch is realized:
 //    resolve(pf, hVenue) delivers [Outdoor, v_out], so armCDT now arms the fiber:
 //      armDemand!( alice, "event", "hTent", Tent v_out )   // tent demanded ONLY now
 //    (had bob supplied an Indoor venue, resolve delivers [Indoor, v_in]; hTent never arms.)
@@ -1121,6 +1201,16 @@ We separate what the design \emph{relies on and gets} from what it \emph{hopes f
   enforced by rho; NFR-4 reduces it to attestations from trusted oracles/timers. The trust model for
   those oracles, and the dispute resolution when attestations conflict, are out of scope here and
   should be designed next (this is also the natural seam for an economic/escrow layer).
+  \item \emph{The keyed-collection sort.} \texttt{VariantAlt} and \texttt{CaseBranch} collections
+  must be label-unique, and the frozen surface offers only \texttt{HashBag}, which is not. Either
+  the sort vocabulary grows a keyed sort or the elaborator carries the side condition. This is a
+  MeTTaIL question, raised by \texttt{PFLam}, not a \texttt{PFLam} question.
+  \item \emph{Ground categories.} \texttt{HoleId}, \texttt{MetaId}, \texttt{Tag} and \texttt{Lvl}
+  are pinned to host ground types. How a \texttt{Types} declaration expresses that pinning is open
+  (\S\ref{sec:whatmoved}).
+  \item \emph{Whether \texttt{Theory} should carry a \texttt{Logic} builder.} The checker is stated
+  beside the theory today. If generated logics are to be derived from a presentation uniformly, the
+  relational program arguably belongs inside it; we take no position here.
   \item \emph{Matching beyond checking.} If we later want the system to \emph{propose} partial fillers
   (not just accept offered ones), we re-enter higher-order unification; a pragmatic middle path is
   Miller-pattern unification, decidable on the pattern fragment.
@@ -1133,7 +1223,9 @@ and the precise variant/eliminator rules (motive discipline). (2)~Specify \code{
 valuation layer: choose $Q$, the play-payoff, and how the market consumes it to rank offers and price
 branches. (5)~Define the oracle/attestation trust model and where escrow attaches. (6)~Decide whether
 brokers are privileged matchmakers, open auctions, or both, and what reputation signal (templates
-vs.\ caveats) they consume.
+vs.\ caveats) they consume. (7)~Settle the two surface questions this revision surfaced: the keyed
+collection sort for label-indexed alternatives and arms, and the spelling by which a \texttt{Types}
+declaration pins a category to a host ground type.
 
 % ===========================================================================
 \section*{Glossary}
