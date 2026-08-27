@@ -1,0 +1,321 @@
+\section{Where the pattern and the condition come from}
+\label{sec:ddl}
+
+\subsection{The question the comprehension cannot answer}
+
+The comprehension of \S\ref{sec:cfl} presupposes two things it does not supply.
+Its pattern \texttt{@spec} must have a grammar of terms to match against. Its condition \texttt{Chi(spec)} is a claim about
+structure, so there must be a notion of what structure a specimen has.
+
+In SQL both come from the schema. \texttt{spec} is a row of a known table with
+known column types, and \texttt{chi} is a predicate over those columns. The
+schema is the data definition language, and the query language leans on it
+entirely.
+
+Rholang's schema is the \texttt{language!} block, and the reason to keep reading
+is that it is a great deal more than a schema.
+
+\subsection{A \texttt{language!} block, whole}
+
+Here is one, complete~\cite{mettailrust}. It defines the \rhoc{}
+calculus~\cite{MR05} itself --- which is a
+useful thing to see early, because it shows that the calculus rholang is built
+on is not privileged: it is one language definition among others, expressible in
+the same block a developer would use for an invoice format.
+
+\begin{lstlisting}[language=mettail]
+language! {
+    name: RhoCalc,
+
+    types {
+        Proc
+        Name
+    },
+
+    terms {
+        PZero  . |- "0" : Proc;
+        PDrop  . n:Name |- "*" "(" n ")" : Proc;
+        POutput. n:Name, q:Proc |- n "!" "(" q ")" : Proc;
+        PInput . n:Name, ^x.p:[Name -> Proc] |- n "?" x "." "{" p "}" : Proc;
+        PPar   . ps:HashBag(Proc) |- "{" ps.*sep("|") "}" : Proc;
+        NQuote . p:Proc |- "@" "(" p ")" : Name;
+    },
+
+    equations {
+        (NQuote (PDrop N)) = N;
+    },
+
+    rewrites {
+        (PPar {(PInput n ^x.p), (POutput n q), ...rest})
+            ~> (PPar {(subst ^x.p (NQuote q)), ...rest});
+
+        (PDrop (NQuote P)) ~> P;
+
+        if S ~> T then (PPar {S, ...rest}) ~> (PPar {T, ...rest});
+    },
+}
+\end{lstlisting}
+
+Four blocks. \texttt{types} names the syntactic categories. \texttt{terms} gives
+one constructor per line, each with its arguments, its concrete syntax, and its
+result type --- so the grammar and the pretty-printer come from the same
+declaration. \texttt{equations} says which distinct terms are to be regarded as
+the same. \texttt{rewrites} says how terms move --- in the style Plotkin introduced for
+operational semantics~\cite{Plotkin81} and Milner used to such effect for
+processes~\cite{Milner92}.
+
+From that block, the toolchain generates the abstract syntax types, a parser and
+a bidirectional printer, capture-avoiding substitution that respects binding,
+and a rewrite engine.
+
+\subsection{The three rungs}
+
+The four blocks form a ladder, and where a given language definition stops on
+that ladder determines what kind of thing it is.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.26\textwidth}L{0.32\textwidth}L{0.32\textwidth}@{}}
+\toprule
+\textbf{Blocks populated} & \textbf{What you can present} & \textbf{The familiar name} \\
+\midrule
+\texttt{types}, \texttt{terms} &
+free term algebras &
+algebraic data types \\[3pt]
+$+$ \texttt{equations} &
+quotients of free algebras &
+finitely presentable universal algebra \\[3pt]
+$+$ \texttt{rewrites} &
+theories with dynamics &
+domain-specific languages \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+An ordinary data definition language stops on the first rung. Records, sums,
+products, lists, maps: that is the whole of what most type systems can say about
+data, and it is a lot. The second and third rungs are where this differs, and
+the second rung is the one that will surprise a working developer most, so take
+it first.
+
+\subsection{Rung two: equations, or the comment your type system cannot read}
+
+Every codebase of any size contains comments of this form:
+
+\begin{quote}\small
+\emph{This is a list, but order doesn't matter --- always compare as a set.}\\
+\emph{This is a string, but compare case-insensitively.}\\
+\emph{Addresses with an empty line-2 are equal to the same address without it.}
+\end{quote}
+
+Each is an equation. Each is being maintained by hand, in prose, because the
+type system cannot express it. The consequences are familiar: a hand-written
+\texttt{equals}, a normalisation function called on the way in and forgotten in
+one code path, a cache keyed by the wrong representative, and a class of bug
+that only appears when two spellings of the same value meet.
+
+An \texttt{equations} block moves that comment into the definition:
+
+\begin{lstlisting}[language=mettail]
+equations {
+    (NQuote (PDrop N)) = N;
+}
+\end{lstlisting}
+
+The payoff is not that the compiler now checks something. It is that
+\emph{pattern matching happens up to the equations}. When the comprehension of
+\S\ref{sec:cfl} matches \texttt{@spec} against a datum, it matches modulo the
+theory that types the channel. A developer never writes normalisation, never
+chooses a canonical form, and never has the bug where one code path forgot.
+
+This is why the \texttt{PPar} constructor above takes a \texttt{HashBag} rather
+than a list: parallel composition is associative and commutative, and rather
+than being a special case hard-wired into an interpreter, that is a property of
+the data declaration. The same mechanism is available for an invoice.
+
+\begin{aside}[The reach of the second rung]
+``Finitely presentable universal algebra'' is the mathematician's name for the
+second rung, and it is worth translating: it means anything you can specify by
+saying what the constructors are and which combinations of them are equal.
+Monoids, groups, lattices, sets-as-quotients-of-lists, normalised paths,
+case-insensitive strings, and commutative parallel composition are all on this
+rung. Most of a data model's invisible invariants live here.
+\end{aside}
+
+\subsection{Rung three: rewrites, or data that wiggles}
+
+The third rung adds \texttt{rewrites}, and with it the thing an ordinary schema
+cannot do: the data moves on its own.
+
+\begin{lstlisting}[language=mettail]
+rewrites {
+    Beta      . |- (App (Lam fun) arg) ~> (eval fun arg);
+    AppCongL  . | M0 ~> M1 |- (App M0 N) ~> (App M1 N);
+}
+\end{lstlisting}
+
+That is the lambda calculus, in two of the four lines a real definition takes.
+The first line is the computation rule; the second is a congruence rule saying
+where the first is allowed to fire. Together they make a term of type
+\texttt{Term} not an inert value but a small running program.
+
+Once a channel is typed by such a definition, sending on that channel means
+sending a term of a language --- a term that can be inspected, matched against,
+and stepped by the recipient. Two agents that share a language definition can
+exchange programs in a domain-specific language constructed for the purpose, and
+the recipient knows what it received because the definition came with it.
+
+The slogan for this rung is \emph{the data can wiggle}, and its practical form
+is that the boundary between data and code, which most systems maintain by
+convention and defend with a serialisation format, is a dial here rather than a
+wall.
+
+\subsection{Channels are typed by language definitions}
+
+The connection back to \S\ref{sec:cfl} is one sentence: \emph{a channel's type
+is a language definition}.
+
+That single design decision explains the rest of the note. Sending on the
+channel means sending a term of that theory. Matching a pattern on it means
+matching a term of that theory, up to that theory's equations. And --- the point
+of \S\ref{sec:logic} --- asking a condition about what arrived means asking a
+question in a logic that is \emph{generated from} that theory, because the
+theory says what there is to ask about.
+
+For the forager, this means the specimen language is a language definition,
+\texttt{Chi} is a formula in the logic that definition generates, and there was
+never a moment at which someone hand-designed a predicate vocabulary.
+
+\subsection{MeTTa, and what this adds to it}
+\label{sec:metta}
+
+Readers coming from SingularityNET's Hyperon stack~\cite{Hyperon} will have
+recognised the shape of the third rung, because MeTTa is built on it. The relationship is worth
+stating precisely, in both directions.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.24\textwidth}L{0.30\textwidth}L{0.38\textwidth}@{}}
+\toprule
+\textbf{MeTTa} & \textbf{MeTTaIL} & \textbf{Relationship} \\
+\midrule
+rules &
+the \texttt{rewrites} block &
+subsumed; MeTTa's rules are rewrites in this sense \\[3pt]
+atom spaces &
+channels &
+subsumed, and typed: a channel carries terms of a declared language, an
+atom space carries atoms \\[3pt]
+--- &
+the \texttt{equations} block &
+\textbf{absent in MeTTa}: no equational layer, so every quotient must be
+hand-coded as rules, and confluence becomes the programmer's problem \\[3pt]
+query, then update &
+one witnessed communication &
+\textbf{absent in MeTTa}: query and update are separate acts, so there is no
+atomic multi-party meeting and no witness \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The two gaps compound. Without equations, a developer who wants ``these two
+atoms are the same'' writes rewrite rules that say so, and then owns the
+confluence question --- whether the order in which rules fire can change the
+answer. Without a witnessed transaction, a developer who wants two atom spaces
+updated together writes a protocol, and then owns the partial-failure question.
+Both are exactly the questions the two blocks and the communication rule
+answer for free.
+
+None of which is a dismissal. MeTTa has a large working ecosystem, a substantial
+body of practice around the atom space as a shared knowledge medium, and
+Probabilistic Logic Networks~\cite{PLN}, which is a serious piece of engineering for
+reasoning under uncertainty. It is worth saying plainly that PLN is not left
+behind here: in \S\ref{sec:graded} it comes back as one of the value algebras a
+\texttt{where} clause can be graded in, which is to say that PLN inference can
+drive execution rather than sitting beside it. The relationship this note is
+proposing is embedding with an addition, not replacement.
+
+\subsection{What an operation costs}
+\label{sec:cost}
+
+One more piece belongs to the data definition story, because it is the thing
+that makes the forager's budget real rather than notional.
+
+Cost accounting in this system adds exactly two surface forms, and both of them
+lower to ordinary rholang:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Surface} & \textbf{Lowers to} & \textbf{Which is} \\
+\midrule
+\texttt{s :: ()} & \texttt{$\Sigma\sem{s}$!(Nil)} & a send: mint a token \\
+\texttt{\{\% P \%\}[s]} & \texttt{for(t <- $\Sigma\sem{s}$)\{*t | P\}} & a receipt: run \texttt{P} once a token arrives \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+That is the entire mechanic. Spending fuel \emph{is} a communication: the gate
+consumes one token, releases its payload, and then \texttt{P} runs. If no token
+is available on the signature channel, the gate parks forever and \texttt{P}
+never runs --- and that is what metering means here. A budget is a stack of
+nested sends, and its depth is how many operations it funds.
+
+Two things follow that a developer should notice.
+
+First, metering is not a virtual-machine feature bolted onto a language. It is a
+program \emph{in} the language, and the transpiler's job is only to write it for
+you. Anything true of ordinary rholang is true of metered rholang.
+
+Second, it composes with Claim~\ref{claim:witness} in a satisfying way. A
+communication that is not funded is a communication that does not happen, and it
+is indistinguishable from a communication whose guard failed. Both are
+non-events. There is no separate failure mode for running out of budget, no
+exception, and nothing to unwind --- which is exactly the property that lets the
+forager's death be modelled as ``it stops'' rather than as an error path.
+
+The repository~\cite{f1r3node} ships a worked demonstration of this at scale: a supply chain in
+which factories produce, carriers ship, sellers wholesale and buyers retail,
+with money and inventory both conserved, and every single operation gated by a
+token. It is the best available answer to ``show me this doing something real''.
+
+\subsection{What actually runs}
+\label{sec:status}
+
+Honesty about status is more useful to a developer than enthusiasm, so:
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.40\textwidth}L{0.52\textwidth}@{}}
+\toprule
+\textbf{Capability} & \textbf{Status} \\
+\midrule
+\texttt{language!} blocks: types, terms, equations, rewrites; generated parser,
+printer, substitution, rewrite engine &
+implemented in \texttt{mettail-rust}~\cite{mettailrust}, with language
+definitions shipped for
+lambda, ambient, the \rhoc{} calculus, a space calculus and a calculator \\[3pt]
+\texttt{where} guards on receipts, and \texttt{where} guards on \texttt{match}
+cases with fall-through &
+implemented on the \texttt{cost-accounting-transpiler} branch of
+\texttt{f1r3node-rust}~\cite{f1r3node}, with runnable examples and compile tests \\[3pt]
+Cost accounting: minting, gates, compound signatures, budget stacks &
+implemented on the same branch, with a transpiler and a documented demo \\[3pt]
+Conditions drawn from the \emph{generated logic} (\S\ref{sec:logic}) rather than
+from ordinary boolean expressions &
+partial. The guard slot exists and is evaluated before commit; the structural
+and behavioural connectives are specified in the research notes and are being
+brought into the branch \\[3pt]
+Graded conditions and simulation (\S\ref{sec:graded}) &
+implemented as a separate simulator crate~\cite{WeightedGSLT}, with the
+stochastic and quantum readings both built and tested; not part of the node's execution path, by
+design (\S\ref{sec:simnotinterp}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The condition language a developer can write \emph{today} is boolean expressions
+over the variables the patterns bound --- \texttt{x > 0}, and so on. Everything
+in the next section is about what that slot is going to hold, and why the choice
+is more interesting than it looks.

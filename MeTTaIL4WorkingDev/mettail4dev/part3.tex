@@ -1,0 +1,235 @@
+\section{Widening one: what a condition can see}
+\label{sec:logic}
+
+\subsection{The condition language is generated, not designed}
+
+Here is the claim of this section, stated first so the rest can be read as
+support for it.
+
+The vocabulary available in a \texttt{where} clause is not a fixed list of
+built-in predicates, and nobody sat down and designed it. It is
+\emph{constructed from the language definition} that types the channel. Change
+the language definition, and the condition language changes with it,
+automatically and in a specified way.
+
+That is worth dwelling on because the alternative --- a fixed predicate library
+--- is what every other system does, and its failure mode is familiar. A query
+language ships with the predicates its designers anticipated. When a developer
+needs one that was not anticipated, the escape hatch is a user-defined function,
+which is opaque to the optimiser, the index, and the type system. Generated
+conditions have no escape hatch because they have no fixed list to escape from.
+
+A generated condition language has three components, and the account of why it
+has exactly these three is a realizability argument set out
+elsewhere~\cite{Zeus}. Two of them come from the language definition and one is
+a choice.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.22\textwidth}L{0.30\textwidth}L{0.40\textwidth}@{}}
+\toprule
+\textbf{Component} & \textbf{Where it comes from} & \textbf{What it lets you say} \\
+\midrule
+structural & one connective per term
+constructor in the \texttt{terms} block & ``this term is a send on a channel
+satisfying \dots'', ``this splits into two parts sharing nothing'' \\[3pt]
+behavioural & one modality per rule in the
+\texttt{rewrites} block, and per position it could fire at & ``after one step of
+\emph{this} rule, \dots holds'' \\[3pt]
+collection & \textbf{a choice}: what
+container holds the witnesses & which logical connectives exist at all, and how
+they behave \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Structural connectives: pattern matching that can talk about namespaces}
+
+The structural component is the easiest to get a feel for, because it is
+recognisably a generalisation of pattern matching.
+
+Every constructor in the \texttt{terms} block yields a connective. If the theory
+has \texttt{POutput . n:Name, q:Proc |- n "!" "(" q ")" : Proc}, the logic gets a
+way to say ``a send, on a name satisfying $\varphi$, of a term satisfying
+$\psi$''. Nested, these compose into descriptions of arbitrary shape.
+
+Two of the generated connectives are worth naming because they do things
+ordinary patterns cannot.
+
+\paragraph{Separating conjunction.} Because parallel composition is
+associative-commutative --- an equation, from rung two --- the connective it
+generates is not ordinary conjunction but a \emph{separating} one: $\varphi \mid
+\psi$ holds of a term that splits into two parts, one satisfying $\varphi$ and
+one satisfying $\psi$, \emph{with the split being a real partition}. This is the
+same idea as separation logic's separating conjunction~\cite{Reynolds02}, and
+the same connective the spatial logics for concurrency
+carry~\cite{CairesCardelli03}, and it is what lets a
+condition say ``there are two of these, and they are not the same one'' --- a
+sentence ordinary conjunction cannot express.
+
+\paragraph{The name predicate.} Because names are quoted terms, a condition can
+descend from a name into the term it quotes~\cite{NamespaceLogic}: \texttt{@}$\varphi$ holds of a name
+whose quoted process satisfies $\varphi$. In developer terms, this means a
+condition can talk about \emph{namespaces} --- about the shape of the addresses
+involved, not just the payloads. The forager's belief channel and the specimen
+channel are distinguishable to a condition by what kind of name they are, which
+is how one describes a region of the address space rather than enumerating it.
+
+\subsection{Behavioural connectives: asking about the future}
+
+The behavioural component is the one with no analogue in a query language. For
+each rewrite rule, and each position in the term where that rule could fire, the
+logic gets a modality $\langle K \rangle \varphi$ --- a refinement of the
+modality of Hennessy--Milner logic~\cite{HM85}, indexed by rewrite rule and
+position rather than by action~\cite{Hypercube} --- read: \emph{there is a step of
+this rule at this position, after which $\varphi$ holds}.
+
+The forager's use for this is immediate. \texttt{Chi(spec)} as written is a
+structural question --- does this specimen \emph{look} a certain way. A
+behavioural question is different: does this specimen, if poked, \emph{do} a
+certain thing. Both are legitimate hypotheses. They are priced very differently.
+
+\begin{remark}[Read or drive]
+\label{rem:readordrive}
+There are two ways to learn any property of the environment. \emph{Read} it, if
+the environment has already computed the property into visible structure --- and
+pay only for looking. Or \emph{drive} it, by making the environment take a step
+and observing what happens --- and pay for the step. The structural connectives
+price the first, the behavioural connectives price the second, and which is
+cheaper is a fact about the environment rather than about the observer.
+\end{remark}
+
+Remark~\ref{rem:peek} now acquires a sharper form. Driving means acting, and
+acting on the thing you are trying to observe changes it. A system that wants
+perception to be non-disturbing must arrange that its observational apparatus
+uses peeks and its interactions use linear receipts --- and the two must sit in
+different namespaces, so that a formula meant to look cannot accidentally claim.
+In the forager, reading the specimen's structure and opening the specimen must
+be different names, or the assessment eats the subject.
+
+\subsection{The collection component is a dial}
+
+The third component is a choice, and it is the most consequential one in this
+section. A logic needs somewhere to put its witnesses --- the things that make a
+formula true --- and the container chosen determines which logical operations
+even exist.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.24\textwidth}L{0.28\textwidth}L{0.40\textwidth}@{}}
+\toprule
+\textbf{Container} & \textbf{Logic you get} & \textbf{What the \texttt{where} can now ask} \\
+\midrule
+sets (powerset) &
+the usual Boolean operations: and, or, not, implication &
+``does this hold?'' --- the familiar case, and what the implementation does
+today \\[3pt]
+quantales~\cite{Rosenthal90,Yetter90} &
+the linear connectives~\cite{Girard87} &
+``is there \emph{exactly one} of these, to be consumed once?'' --- resource
+questions, where using a witness spends it \\[3pt]
+join semi-lattices &
+coalition logic~\cite{Pauly02,GabbayLosa} &
+``does some group of these participants agree?'' --- quorum questions, asked
+about a population without running a protocol \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The distinction between the first two rows is the distinction between counting
+and noticing. A Boolean condition, asked whether there are three red items,
+answers a question about presence: there \emph{are} red ones. It cannot count
+them, because in a set two witnesses of the same kind collapse into one. A linear
+condition keeps them apart, because in a quantale they do not collapse. If you
+have ever wanted a query that says ``at least three distinct matching rows, and
+consuming one of them consumes it for everyone'', the second row is where that
+lives.
+
+The third row is stranger and more useful than it sounds. Coalition logic asks
+about groups: is there a set of participants such that, together, they can bring
+something about. Read as a condition on a running population --- other programs
+in the environment --- it asks whether a quorum has formed~\cite{HerdNote}. The forager can use
+this to ask whether the specimens around it are of a kind that behaves as a
+group, without participating in any protocol they might be running.
+
+\begin{remark}[Same question, three sights]
+The reason to present this as a dial rather than three logics is that the
+question being asked is the same question, and the theory being asked about is
+the same theory. The structural and behavioural connectives are unchanged. What
+changes is only what a witness is, and therefore what conjunction and
+disjunction do to witnesses. This is why the arrangement is not ad hoc: a
+developer is not choosing among logics somebody designed, but among
+\emph{observation disciplines} over a structure that was already
+there~\cite{ObsDisc}.
+\end{remark}
+
+\subsection{What the dial costs}
+
+Turning the dial up is not free, and the price is worth stating in the terms a
+developer cares about.
+
+\paragraph{A more expressive condition may not terminate.} The behavioural
+modality asks about steps, and a term can step forever. Fixed points over the
+modality --- ``it keeps being able to do this'' --- are expressive and
+unbounded. The mitigation is that evaluating a guard is metered like everything
+else: a budget bounds the check, and an unfunded check is a non-event by
+\S\ref{sec:cost}, so it fails safe.
+
+\paragraph{Restricting to make checking terminate loses something real.} A
+developer who wants guards that always answer can restrict to a fragment ---
+fewer connectives, or a smaller slice of the theory. That works. What is
+surrendered is \emph{adequacy}: the property that the logic can distinguish any
+two programs that actually behave differently. In general, a logic whose model
+checking always terminates cannot be adequate for a Turing-complete theory. This
+is not a defect of the construction; it is the shape of the trade, and the dial
+exists precisely so it can be made deliberately rather than by accident.
+
+\paragraph{Adequacy is a property of the target, not of the generator.} It is
+tempting to assume that a machine-generated logic comes with a guarantee. It
+does not, and it should not: whether the generated logic is adequate depends on
+which connectives were asked for. Without something like a negation and a
+conjunction, it will not be. A generated \emph{type system}, for instance, is
+generated by the same family of algorithms and is not expected to be adequate at
+all~\cite{Hypercube,GSLTintro}.
+
+\subsection{The forager's ladder}
+
+Return to the running example. \texttt{Chi(spec)} was a placeholder for one
+hypothesis. The dial says there is a whole ladder of possible hypotheses, from
+cheap structural ones to expensive behavioural ones, and the forager can afford
+to sit anywhere on it.
+
+That is not a metaphor: it has been measured. In a companion
+study~\cite{GameNote}, a learner of
+exactly this shape was equipped with a ladder of hypotheses expressed as
+\texttt{where} clauses, each priced by the depth of the formula it installs, and
+run to exhaustion against a fixed environment.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.52\textwidth}L{0.40\textwidth}@{}}
+\toprule
+\textbf{Measurement} & \textbf{What it says} \\
+\midrule
+The non-modal rungs delivered $92.3\%$ of the total gain for $34.3\%$ of the
+total cost &
+structural sight is the bargain; behavioural sight is the luxury \\[3pt]
+The single best purchase on the whole ladder was a \emph{name-level} predicate
+at modal depth zero &
+namespaces are cheap to look at and highly informative \\[3pt]
+The rung that quantified over all replies to all moves was the worst purchase
+measured &
+alternating quantification over the future is where cost explodes \\[3pt]
+A learner holding the \emph{complete, correct} theory was dominated by a
+learner holding a cheaper wrong one &
+truth buys safety, not yield; and the environment, not the learner, decides
+whether truth is affordable \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The last row is the one to carry forward. It says that the right position on the
+dial is not a property of the problem, and certainly not a matter of rigour. It
+is an economic question about the environment the program is deployed into, and
+it is answerable --- because both the sight and the acting are priced in the same
+currency.

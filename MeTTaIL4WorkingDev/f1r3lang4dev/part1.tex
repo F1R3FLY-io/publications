@@ -1,0 +1,338 @@
+\section{The control flow language}
+\label{sec:cfl}
+
+\subsection{The forager, as a query}
+
+Start with the forager's problem, stated the way a developer would state it
+first. There is a table of specimens. There is a cheap test, $\chi$. The
+question is which specimens pass the test.
+
+\begin{lstlisting}[language=SQL,morekeywords={SELECT,FROM,WHERE}]
+SELECT   spec
+FROM     prey
+WHERE    chi(spec)
+\end{lstlisting}
+
+Three clauses. \texttt{FROM} says where the data lives. \texttt{WHERE} says
+which of it we want. \texttt{SELECT} says what shape to hand back. The shape is
+so useful that it has been reinvented in every decade since it was
+introduced~\cite{Codd70,ChamberlinBoyce74}.
+
+\begin{center}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Dialect} & \textbf{The same query} \\
+\midrule
+SQL & \texttt{SELECT spec FROM prey WHERE chi(spec)} \\
+LINQ & \texttt{from spec in prey where Chi(spec) select spec} \\
+XQuery (FLWOR) & \texttt{for \$spec in \$prey where chi(\$spec) return \$spec} \\
+Python & \texttt{[spec for spec in prey if chi(spec)]} \\
+Haskell & \texttt{[ spec | spec <- prey, chi spec ]} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The four descendants are LINQ~\cite{LINQ}, XQuery's
+FLWOR~\cite{XQuery}, and the list comprehension in the form Wadler gave
+it~\cite{Wadler87}. The persistence of the shape across five languages with
+nothing else in common
+is the fact worth taking seriously. It is not a syntax fashion. The comprehension
+is what data access looks like when you write down honestly what you are doing:
+naming a source, filtering it, and projecting the survivors.
+
+\subsection{What LINQ was actually for}
+
+There is a step in this history that is usually told as a story about
+convenience and is better told as a story about expressiveness.
+
+SQL is a complete language for asking. It is not a language for acting. A query
+returns a result set to \emph{someone else} --- an application, in another
+language, which then does whatever is to be done. The boundary between the two
+is where the impedance mismatch lives, and every ORM ever written is an attempt
+to plaster over it.
+
+LINQ exists for precisely this reason: it embeds the query comprehension
+\emph{into} a host language, so that a developer can at last express the
+\texttt{DO}. That is the whole point. Once \texttt{from-where-select} is a
+first-class expression of C\# or F\#, the result of a query is an ordinary value
+in a language that can act on it, and the mismatch is gone --- for reads.
+XQuery's FLWOR has the same ambition inside XML, and the same limit; XQuery
+Update~\cite{XQueryUpdate} was bolted on afterwards precisely because the
+\texttt{return} clause
+cannot cause anything.
+
+\flang{} takes the desideratum LINQ identified and goes the rest of the way.
+Rather than embedding the comprehension in a host language, it builds the
+language \emph{around} the comprehension. The comprehension is not a query
+expression that yields a value; it is the sole way anything happens at all.
+
+\subsection{\texttt{SELECT-FROM-WHERE-DO}}
+
+Here is the forager's query again, in \flang{}.
+
+\begin{lstlisting}
+for( @spec <- prey where Chi(spec) ) {
+  Break!(spec)
+}
+\end{lstlisting}
+
+Clause by clause, against the SQL:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{SQL} & \textbf{\flang{}} & \textbf{What changed} \\
+\midrule
+\texttt{FROM prey} & \texttt{<- prey} & the source is a \emph{channel}, not a table \\
+\texttt{WHERE chi(spec)} & \texttt{where Chi(spec)} & nothing yet; \S\ref{sec:logic} widens it \\
+\texttt{SELECT spec} & \texttt{@spec} & the pattern \emph{is} the projection \\
+--- & \texttt{\{ Break!(spec) \}} & the \texttt{DO} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two of those rows deserve more than a line.
+
+\paragraph{The pattern is the projection, and it is stronger than one.}
+A \texttt{SELECT} list picks columns. A \flang{} pattern matches structure: it
+can destructure nested terms, bind sub-terms to variables, and --- as
+\S\ref{sec:ddl} explains --- it matches \emph{up to the equations of the theory
+that types the channel}, so two spellings of the same value match the same
+pattern without the developer arranging it. A pattern is a projection in the
+same sense that a regular expression is a substring test.
+
+\paragraph{The \texttt{DO} is a process, not a value.}
+The continuation \texttt{\{ Break!(spec) \}} is not returned to a caller. It
+runs. It may send on channels, spawn further comprehensions, or do nothing.
+There is no host language to hand results back to, because there is no outside.
+
+\subsection{The other half: the write}
+
+A query language has one privileged verb. \flang{} has two, and the second is the
+reason the first behaves differently than it does in SQL:
+
+\begin{lstlisting}
+prey!( spec )
+\end{lstlisting}
+
+That is the write. It is a term, it composes in parallel with everything else
+using \texttt{|}, and --- this is the part with consequences --- it is
+\emph{addressed the same way the read is}. The reader names \texttt{prey}; the
+writer names \texttt{prey}; neither names the other.
+
+Being explicit about both halves is what distinguishes this from a query
+language with side effects bolted on. In SQL, \texttt{INSERT} and
+\texttt{SELECT} are different kinds of statement, mediated by an engine that
+owns the table. Here they are two terms in one program, and the table is not
+owned by anybody.
+
+\subsection{The translation table}
+\label{sec:table}
+
+The following is probably the most useful page of this note for a reader coming
+from SQL. \flang{} distinguishes three ways of reading --- inheriting the
+distinction, and the notation, from rholang --- and it is exactly the
+distinction a database developer already makes between a destructive read, a
+standing query, and a plain look.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.36\textwidth}L{0.56\textwidth}@{}}
+\toprule
+\textbf{\flang{}} & \textbf{SQL reading} \\
+\midrule
+\texttt{x!(Q)} &
+\texttt{INSERT} --- put a row on \texttt{x} \\[3pt]
+\texttt{for(p <- x)P} &
+\texttt{SELECT ... FOR UPDATE}, then \texttt{DELETE}, then act. The datum is
+consumed by exactly one reader. \\[3pt]
+\texttt{for(p <= x)P} &
+a standing query, or a trigger: the reader persists and fires again on the
+next matching write. \\[3pt]
+\texttt{for(p <<- x)P} &
+plain \texttt{SELECT} --- a peek. Reads without consuming, so the datum remains
+for others. \\[3pt]
+\texttt{where cond} &
+\texttt{WHERE} \\[3pt]
+\texttt{\&} &
+a join --- and simultaneously a distributed atomic commit across the joined
+channels. \\[3pt]
+\texttt{;} &
+sequence: this group of receipts, then that one. \\[3pt]
+the pattern &
+the projection, structural rather than columnar, and matching up to the
+theory's equations. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The three arrows are worth committing to memory, because choosing among them is
+the main design decision in a \flang{} program and the choice is invisible in the
+SQL vocabulary that motivates it. A linear receipt \texttt{<-} is the default.
+It consumes. Persistence \texttt{<=} and peeking \texttt{<<-} are the deviations,
+and each gives something up: a persistent receipt gives up the guarantee that a
+datum is handled once; a peek gives up the guarantee that reading it means
+nobody else will.
+
+\begin{remark}[Perception must not be able to act]
+\label{rem:peek}
+The difference between \texttt{<-} and \texttt{<<-} is not efficiency. It is
+whether looking changes the world. A forager that reads the environment with
+\texttt{<-} consumes what it observes; one that reads with \texttt{<<-} observes
+without disturbing. In the running example this matters immediately: the
+forager's cheap test $\chi$ must be a peek, or the act of assessing a specimen
+would itself claim the specimen. Getting this wrong produces a system that
+cannot observe anything without changing it, which is a real bug and not a
+philosophical one.
+\end{remark}
+
+\subsection{Joins, groups, and where the \texttt{where} goes}
+
+The full form of the comprehension is a sequence of groups, and each group is a
+set of receipts that must occur \emph{together}:
+
+\begin{lstlisting}
+for( ptrn_11 <- chan_11 & ... & ptrn_1n <- chan_1n  where cond_1 ;
+     ...                                                         ;
+     ptrn_k1 <- chan_k1 & ... & ptrn_km <- chan_km  where cond_k ) P
+\end{lstlisting}
+
+Inside a group, \texttt{\&} means simultaneity: all of those receipts happen at
+once or none of them do. Between groups, \texttt{;} means sequence. Each group
+carries its own \texttt{where}, and \texttt{cond\_j} may mention any variable
+bound by a pattern in group $i$ for $i \leq j$ --- so the guard on a later group
+can test what an earlier group received. The comprehension commits only when
+every pattern matches and every condition holds.
+
+A SQL developer will recognise \texttt{\&} as a join and should immediately
+notice the difference. A SQL join is over static extents: the rows are all
+already there, and the join is a computation over them. A \flang{} join is over
+\emph{concurrent writers}: the rows are being produced by other running
+programs, and the join is a rendezvous. It succeeds when a matching datum is
+available on every joined channel at once, and until then it waits.
+
+\begin{aside}[A note for readers of the papers]
+Several of the research notes in this line write a single trailing
+\texttt{where} at the end of the whole comprehension. That is an abbreviation.
+The implemented form is the per-group one above, and it is the better one to
+learn from, because it makes visible exactly which bindings are in scope for
+which condition.
+\end{aside}
+
+\subsection{The witnessed transaction}
+\label{sec:transaction}
+
+Now the payoff for having made both halves explicit.
+
+When a reader and a writer meet on a channel, one rule fires. In the \flang{}
+presentation of the calculus~\cite{mettailrust} it is written like this --- and this is a real
+excerpt from a language definition, not pseudocode:
+
+\begin{lstlisting}[language=mettail]
+(PPar {(PInput n ^x.p), (POutput n q), ...rest})
+    ~> (PPar {(subst ^x.p (NQuote q)), ...rest});
+\end{lstlisting}
+
+In words: a parallel composition containing a receipt on \texttt{n} and a send
+on \texttt{n} rewrites to the same composition with both of them replaced by the
+receipt's body, with the sent term substituted for the bound variable. Everything
+else, \texttt{...rest}, is untouched.
+
+The substitution is the point. After the step, the running term \emph{contains
+the evidence} that this reader met this writer over this datum: the datum is
+sitting in the continuation, in the position the pattern named. Nothing external
+recorded the event. The event left a mark on the program.
+
+\begin{claim}[Transactions are a property of the term]
+\label{claim:witness}
+A communication is atomic, and its atomicity requires no support from the
+runtime. The condition is evaluated before the step commits; if it fails,
+nothing is consumed, so there is no partial state and nothing to compensate. If
+it succeeds, exactly one reader and one writer are consumed and the substitution
+records that they were the ones. There is no state in which the read happened
+and the write did not.
+\end{claim}
+
+This is not a subtle argument, and the implementation makes it concrete. The
+comment at the head of the shipped example~\cite{f1r3node} says it plainly: a
+failing guard
+leaves the message in the tuple space, exactly as a non-matching pattern does. A
+failed transaction is not rolled back; it never began.
+
+\begin{lstlisting}
+// Receive-side `where` guard: only commit when both the spatial pattern
+// matches AND the guard evaluates to true. Failing the guard leaves the
+// message in the tuple space -- same as a non-matching pattern.
+new chan, stdout(`rho:io:stdout`) in {
+    chan!(-3) |
+    chan!(0)  |
+    chan!(7)  |
+    for (@x <- chan where x > 0) {
+        stdout!(("kept", x))
+    }
+}
+\end{lstlisting}
+
+Three consequences a developer will care about.
+
+\paragraph{Multi-party commit is a language construct.}
+A join \texttt{\&} across $m$ channels is one transaction over $m$ resources. It
+either takes a datum from each or takes none. The protocol machinery that would
+normally implement this --- prepare, vote, commit, the coordinator, the timeout
+--- is not written, because the rule that fires is the multi-channel one.
+
+\paragraph{The witness is where cost attaches.}
+Because there is an identified event, there is something to charge for. This is
+what makes the metering of \S\ref{sec:cost} possible without instrumenting an
+interpreter: the unit of billing is the same unit as the unit of commitment.
+
+\paragraph{Candidates.}
+For a join across several channels with several available data, there may be
+more than one way to assign data to patterns. Each such assignment is a
+\emph{candidate}. Ordinarily one of them happens and the others do not, and a
+developer never thinks about it. Keep the word anyway: candidates are the thread
+that runs through the rest of this note. In \S\ref{sec:logic} a condition is
+evaluated per candidate; in \S\ref{sec:graded} a candidate carries a weight
+rather than a verdict, and everything interesting follows from that.
+
+\subsection{The forager, in full}
+
+Enough machinery is now on the table to write the running example properly. The
+forager has a belief, held as data on a channel. It races two courses of action:
+open the specimen, or ignore it and graze a low-yield but safe alternative.
+
+\begin{lstlisting}
+new bel, prey, wall in {
+  bel!( (1, 0.5) ) |                    // (n, s): one unit of prior evidence
+
+  // the two branches race for the belief and the specimen
+  for( @(n,s) <- bel ; @spec <- prey  where  Chi(spec) ) {
+    Break!(spec) | bel!( revise(n, s, spec) )
+  } |
+  for( @(n,s) <- bel ; @spec <- prey  where  g ) {
+    Graze!(*wall) | bel!( (n, s) )
+  }
+}
+\end{lstlisting}
+
+Read it as a developer. Two comprehensions compete for the same two resources:
+the belief and the next specimen. Whichever fires consumes both, does its work,
+and puts an updated belief back. Because the belief is consumed, the two
+branches cannot both act on the same specimen --- mutual exclusion is not
+arranged, it is what a linear receipt means.
+
+Three questions are now unavoidable, and they are the agenda for the rest of
+this note.
+
+\begin{enumerate}[leftmargin=2.2em]
+\item \texttt{Chi(spec)} is a condition about the \emph{structure} of a
+  specimen. Where does the vocabulary for saying that come from?
+  (\S\ref{sec:ddl}.)
+\item What else could a condition say, beyond structure --- and what does saying
+  more cost? (\S\ref{sec:logic}.)
+\item \texttt{g} in the second branch is not a Boolean. It is a number. What is
+  a numeric \texttt{where} clause, and what does a program mean when its
+  conditions stop answering yes or no? (\S\ref{sec:graded}.)
+\end{enumerate}
