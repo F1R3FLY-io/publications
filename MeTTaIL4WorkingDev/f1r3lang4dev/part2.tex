@@ -1,0 +1,689 @@
+\section{Where the pattern and the condition come from}
+\label{sec:ddl}
+
+\subsection{The question the comprehension cannot answer}
+
+The comprehension of \S\ref{sec:cfl} presupposes two things it does not supply.
+Its pattern \texttt{@spec} must have a grammar of terms to match against. Its condition \texttt{Chi(spec)} is a claim about
+structure, so there must be a notion of what structure a specimen has.
+
+In SQL both come from the schema. \texttt{spec} is a row of a known table with
+known column types, and \texttt{chi} is a predicate over those columns. The
+schema is the data definition language, and the query language leans on it
+entirely.
+
+\flang{}'s schema is the \texttt{Theory} declaration, and the reason to keep
+reading is that it is a great deal more than a schema.
+
+\subsection{A \texttt{Theory} declaration, whole}
+
+Here is one, complete~\cite{modulesyntax}. It defines the \rhoc{}
+calculus~\cite{MR05} itself --- which is a
+useful thing to see early, because it shows that the calculus \flang{} is built
+on is not privileged: it is one language definition among others, written in
+the same form a developer would use for an invoice format.
+
+\begin{lstlisting}[language=mettail]
+Theory RhoCalc() {
+    Types {
+        Proc;
+        Name;
+    }
+    Terms {
+        PZero  . |- "0" : Proc;
+        PDrop  . n:Name |- "*" "(" n ")" : Proc;
+        POutput. n:Name, q:Proc |- n "!" "(" q ")" : Proc;
+        PInput . n:Name, ^x.p:[Name -> Proc] |- n "?" x "." "{" p "}" : Proc;
+        PPar   . ps:HashBag(Proc) |- "{" ps.*sep("|") "}" : Proc;
+        NQuote . p:Proc |- "@" "(" p ")" : Name;
+    }
+    Equations {
+        (NQuote (PDrop N)) == N;
+    }
+    Rewrites {
+        RComm : (PPar {(PInput n ^x.p), (POutput n q), ...rest})
+                  ~> (PPar {(subst ^x.p (NQuote q)), ...rest});
+        RDrop : (PDrop (NQuote P)) ~> P;
+        RPar  : if S ~> T then (PPar {S, ...rest}) ~> (PPar {T, ...rest});
+    }
+}
+\end{lstlisting}
+
+Four blocks. \texttt{Types} names the syntactic categories. \texttt{Terms} gives
+one constructor per line: a label, then the arguments it takes with their sorts,
+then --- after the turnstile --- the concrete syntax written in terms of those
+argument names, then the category it produces. So the grammar and the
+pretty-printer come from the same declaration. \texttt{Equations} says which
+distinct terms are to be regarded as the same. \texttt{Rewrites} says how terms
+move --- in the style Plotkin introduced for operational
+semantics~\cite{Plotkin81} and Milner used to such effect for
+processes~\cite{Milner92}.
+
+From that block, the toolchain generates the abstract syntax types, a parser and
+a bidirectional printer, capture-avoiding substitution that respects binding,
+and a rewrite engine.
+
+Three details in the \texttt{Terms} block repay a second look, because each is
+carrying weight a conventional schema language has no way to carry.
+\texttt{\^{}x.p:[Name -> Proc]} declares that \texttt{PInput}'s second argument
+is an \emph{abstraction}: \texttt{x} binds in \texttt{p}. Binding is part of the
+data declaration, which is why substitution can be generated rather than
+hand-written. \texttt{ps:HashBag(Proc)} declares that \texttt{PPar} takes an
+unordered collection with multiplicity, and \texttt{ps.*sep("|")} says how to
+render one. And in \texttt{RComm}, \texttt{...rest} binds whatever else was in
+the bag and puts it back --- which is what lets a rule fire on two participants
+inside an arbitrary parallel composition without saying anything about the
+others.
+
+\subsection{The four rungs}
+\label{sec:rungs}
+
+The blocks form a ladder, and where a given language definition stops on
+that ladder determines what kind of thing it is.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.26\textwidth}L{0.32\textwidth}L{0.32\textwidth}@{}}
+\toprule
+\textbf{Blocks populated} & \textbf{What you can present} & \textbf{The familiar name} \\
+\midrule
+\texttt{Types}, \texttt{Terms} &
+free term algebras &
+algebraic data types \\[3pt]
+$+$ \texttt{Equations} &
+quotients of free algebras &
+finitely presentable universal algebra \\[3pt]
+$+$ \texttt{Rewrites} &
+theories with dynamics &
+domain-specific languages \\[3pt]
+$+$ parameters, and the algebra of theories &
+theories built from other theories &
+modules, in the sense of ML functors \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+An ordinary data definition language stops on the first rung. Records, sums,
+products, lists, maps: that is the whole of what most type systems can say about
+data, and it is a lot. The second and third rungs are where this differs, and
+the second rung is the one that will surprise a working developer most, so take
+it first. The fourth is the subject of \S\ref{sec:reuse}--\S\ref{sec:module},
+and answers the question every developer asks on seeing the declaration above:
+\emph{can I reuse part of one of these?}
+
+\subsection{Rung two: equations, or the comment your type system cannot read}
+
+Every codebase of any size contains comments of this form:
+
+\begin{quote}\small
+\emph{This is a list, but order doesn't matter --- always compare as a set.}\\
+\emph{This is a string, but compare case-insensitively.}\\
+\emph{Addresses with an empty line-2 are equal to the same address without it.}
+\end{quote}
+
+Each is an equation. Each is being maintained by hand, in prose, because the
+type system cannot express it. The consequences are familiar: a hand-written
+\texttt{equals}, a normalisation function called on the way in and forgotten in
+one code path, a cache keyed by the wrong representative, and a class of bug
+that only appears when two spellings of the same value meet.
+
+An \texttt{equations} block moves that comment into the definition:
+
+\begin{lstlisting}[language=mettail]
+Equations {
+    (NQuote (PDrop N)) == N;
+}
+\end{lstlisting}
+
+The payoff is not that the compiler now checks something. It is that
+\emph{pattern matching happens up to the equations}. When the comprehension of
+\S\ref{sec:cfl} matches \texttt{@spec} against a datum, it matches modulo the
+theory that types the channel. A developer never writes normalisation, never
+chooses a canonical form, and never has the bug where one code path forgot.
+
+This is why the \texttt{PPar} constructor above takes a \texttt{HashBag} rather
+than a list: parallel composition is associative and commutative, and rather
+than being a special case hard-wired into an interpreter, that is a property of
+the data declaration. The same mechanism is available for an invoice.
+
+\begin{aside}[The reach of the second rung]
+``Finitely presentable universal algebra'' is the mathematician's name for the
+second rung, and it is worth translating: it means anything you can specify by
+saying what the constructors are and which combinations of them are equal.
+Monoids, groups, lattices, sets-as-quotients-of-lists, normalised paths,
+case-insensitive strings, and commutative parallel composition are all on this
+rung. Most of a data model's invisible invariants live here.
+\end{aside}
+
+\subsection{Rung three: rewrites, or data that wiggles}
+
+The third rung adds \texttt{rewrites}, and with it the thing an ordinary schema
+cannot do: the data moves on its own.
+
+\begin{lstlisting}[language=mettail]
+Rewrites {
+    Beta     : (App (Lam ^x.body) arg) ~> (subst ^x.body arg);
+    AppCongL : if M0 ~> M1 then (App M0 N) ~> (App M1 N);
+}
+\end{lstlisting}
+
+That is the lambda calculus, in two of the four lines a real definition takes.
+The first line is the computation rule --- and note that beta reduction is
+literally the substitution of an argument into an abstraction, written as such.
+The second is a congruence rule saying where the first is allowed to fire; the
+\texttt{if \dots then} premise is the horizontal bar of an inference rule. Together they make a term of type
+\texttt{Term} not an inert value but a small running program.
+
+Once a channel is typed by such a definition, sending on that channel means
+sending a term of a language --- a term that can be inspected, matched against,
+and stepped by the recipient. Two agents that share a language definition can
+exchange programs in a domain-specific language constructed for the purpose, and
+the recipient knows what it received because the definition came with it.
+
+The slogan for this rung is \emph{the data can wiggle}, and its practical form
+is that the boundary between data and code, which most systems maintain by
+convention and defend with a serialisation format, is a dial here rather than a
+wall.
+
+\subsection{Rung four: a language definition takes parameters}
+\label{sec:reuse}
+
+A developer who has just written the \texttt{RhoCalc} declaration above will
+notice something about it. Parallel composition is associative, it is
+commutative, and \texttt{PZero} is its unit. That is a commutative monoid. It is
+also, verbatim, the structure of integer addition, of string concatenation up to
+reordering, of set union, and of every other commutative monoid the developer
+has ever implemented. Writing it out again is the same waste it always was.
+
+The fourth rung is the answer, and it is the familiar one.
+
+\begin{lstlisting}[language=mettail]
+Theory EmptySet() {
+    Types { Elem; }
+    Exports { Elem; }
+}
+
+Theory Monoid(s: EmptySet) {
+    s
+      Terms {
+        One  . |- "1" : Elem;
+        Mult . x:Elem, y:Elem |- "(" x "*" y ")" : Elem;
+      }
+      Equations {
+        (Mult (Mult x y) z) == (Mult x (Mult y z));
+        (Mult x (One)) == x;
+        (Mult (One) x) == x;
+      }
+}
+
+Theory CommutativeMonoid(m: Monoid) {
+    m
+      Replacements {
+        One  => Zero . |- "0" : Elem;
+        Mult => Plus . x:Elem, y:Elem |- "(" x "+" y ")" : Elem;
+      }
+      Equations {
+        (Plus x y) == (Plus y x);
+      }
+}
+\end{lstlisting}
+
+Two things are happening, and the second is the unfamiliar one.
+
+\texttt{Monoid} takes a theory as a parameter and extends it. That is an ML
+functor, or a generic class, or whatever the reader's language calls a module
+parameterised by another module. Note where the parameter appears: not only in
+the head, but as the \emph{first thing in the body}. \texttt{s} is the theory the
+chain starts from, and each block after it applies to the result of the one
+before. A body is not a record of five fields; it is a pipeline.
+
+And \texttt{CommutativeMonoid} does something a generic class cannot: a
+\texttt{Replacements} block \emph{renames an inherited constructor and gives it
+new concrete syntax}. \texttt{Zero} and \texttt{Plus} are not new operations
+sitting alongside \texttt{One} and \texttt{Mult}; they \emph{are} \texttt{One}
+and \texttt{Mult}, spelled additively. Every equation proved of the one holds of
+the other, because they are the same element of the same theory. This is the
+distinction that the rest of \S\ref{sec:sharing} turns on, so it is worth
+naming now: a replacement changes a spelling and preserves an identity.
+
+Which is what lets \flang{}'s parallel composition be defined rather than
+declared:
+
+\begin{lstlisting}[language=mettail]
+Theory ParMonoid(cm: u.CommutativeMonoid) {
+    cm
+      Exports {
+        Elem => Proc;
+      }
+      Replacements {
+        Zero => PZero . |- "0" : Proc;
+        Plus => PPar  . ps:HashBag(Proc) |- "{" ps.*sep("|") "}" : Proc;
+      }
+      Rewrites {
+        RPar : if S ~> T then (PPar {S, ...rest}) ~> (PPar {T, ...rest});
+      }
+}
+\end{lstlisting}
+
+Parallel composition is commutative-monoid multiplication with the carrier
+renamed to \texttt{Proc}. That is the whole definition. Associativity,
+commutativity, and the unit law arrive with it and are not restated.
+
+\begin{aside}[Why the bag, again]
+Notice what \texttt{PPar} did to arity on its way through. \texttt{Plus} is
+binary. \texttt{PPar} takes a \texttt{HashBag}. A bag is precisely a sequence
+quotiented by associativity and commutativity, so moving to a bag turns two of
+the inherited equations from things checked during matching into things true of
+the representation. This is the second rung and the first rung meeting: an
+equation, made structural. It is also the one place where the surface currently
+outruns its own checking, and \S\ref{sec:status} says so.
+\end{aside}
+
+\subsection{The module declaration}
+\label{sec:module}
+
+Theories do not float free. They are declared inside a \texttt{Module}, which is
+the unit of distribution --- the thing that has a name, gets published to an
+address, and is imported by other people's code.
+
+\begin{lstlisting}[language=mettail]
+import "UnivAlg.module" as u
+import Monoid from "UnivAlg.module"
+
+Module Rholang {
+
+    Theory ParMonoid(cm: u.CommutativeMonoid) { ... }
+    Theory QuoteDropCalc(pm: ParMonoid)       { ... }
+    Theory RhoCalc(qd: QuoteDropCalc)         { ... }
+    Theory NewReplCalc(qd: QuoteDropCalc)     { ... }
+
+    Theory Rholang(nr: NewReplCalc, rc: RhoCalc) {
+        nr \/ rc
+    }
+
+    Theory FreeRholang() {
+        let s  = u.EmptySet() in (
+        let m  = u.Monoid(s) in (
+        let cm = u.CommutativeMonoid(m) in (
+        let pm = ParMonoid(cm) in (
+        let qd = QuoteDropCalc(pm) in (
+        let nr = NewReplCalc(qd) in (
+        let rc = RhoCalc(qd) in (
+        Rholang(nr, rc)
+        )))))))
+    }
+
+    theory FreeRholang()
+}
+\end{lstlisting}
+
+The theory names are the historical ones and are worth reading as such:
+\texttt{Rholang} here names the calculus \flang{} inherited its control flow
+from, presented as one theory among others. Naming it is the point ---
+\S\ref{sec:ddl} began by saying the calculus underneath is not privileged, and
+this is what that looks like in a file.
+
+Four things in that skeleton are worth calling out, because each is a decision a
+developer will meet on the first afternoon.
+
+\paragraph{Imports name an address, not a path.} \texttt{import "\dots" as u}
+brings a whole module in under an alias, after which its theories are reached by
+dotted path --- \texttt{u.CommutativeMonoid}. \texttt{import Monoid from "\dots"}
+brings one theory in unqualified. The string is a URL. This is the choice that
+aligns the module system with the deployment target: a language definition
+published on chain has an address, and importing it is the same act whether it
+came from the next directory or from another party's node. Resolution happens at
+compile time, in the client toolchain. A node never fetches anything.
+
+\paragraph{Capital \texttt{Theory} declares; lowercase \texttt{theory}
+instantiates.} A module full of \texttt{Theory} declarations has produced no
+language yet; it has produced a vocabulary for building one. The final
+\texttt{theory FreeRholang()} is the entry point, and it is what the elaborator
+runs. The last such line in the entry module wins. Keeping the two acts apart is
+what allows a library module to ship a dozen theories and commit to none of
+them.
+
+\paragraph{A theory body is an expression, and it has a grammar.} Everything
+between the braces of a \texttt{Theory} declaration is one expression built from
+three kinds of thing.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.20\textwidth}L{0.34\textwidth}L{0.36\textwidth}@{}}
+\toprule
+\textbf{Kind} & \textbf{Forms} & \textbf{What it does} \\
+\midrule
+atoms &
+\texttt{Empty}, \texttt{free(Path)}, a parameter name, an application
+\texttt{QuoteDropCalc(pm)}, \texttt{let x = e in (e)} &
+starts a chain, or names an instance so it can be used twice \\[3pt]
+postfix builders &
+\texttt{Types}, \texttt{Exports}, \texttt{Replacements}, \texttt{Terms},
+\texttt{Equations}, \texttt{Rewrites} &
+each takes the theory to its left and returns a larger one; they chain, and
+they may repeat \\[3pt]
+combinators &
+$/\!\backslash$ then $\backslash\!/$ then $\backslash$, tightest to loosest &
+common fragment, combination, subtraction \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Because the builders form an ordered chain rather than a record, they can
+interleave --- \texttt{AbelianGroup} in the universal-algebra module does a
+\texttt{Replacements} block and then joins with a sibling --- and they carry an
+obligation the record form did not: \emph{a \texttt{Terms} block must precede
+any \texttt{Equations} or \texttt{Rewrites} block that mentions its labels}.
+A forward reference is a diagnostic, not a resolution pass.
+
+\paragraph{\texttt{Types} declares, \texttt{Exports} publishes.} These are two
+jobs and they used to be one, which is worth a sentence because the separation
+is what turns a class of modelling error into a compiler message.
+\texttt{Types} brings a syntactic category into being. \texttt{Exports} controls
+which of them a consumer can see, and optionally renames them on the way out
+--- \texttt{Elem => Proc} above. A theory can now have a category that is real
+and private. More to the point, two theories that each declare a category
+called \texttt{Name} are now visibly declaring two different categories, which
+is exactly the mistake \S\ref{sec:sharing} is about.
+
+\begin{aside}[What a replacement does not need any more]
+An earlier form of \texttt{Replacements} carried an integer profile ---
+\texttt{[0,1]} --- to say how the replacement's arguments corresponded to the
+original's. Term rules now name their arguments, so the correspondence is read
+off the names and the profile is gone. Compare \texttt{Mult}'s context
+\texttt{x:Elem, y:Elem} with \texttt{Plus}'s: identical names, identity
+mapping. Naming them in the other order permutes them. This is a small thing
+that removes an entire category of silent error.
+\end{aside}
+
+\subsection{What sharing means, and why the compiler argues about it}
+\label{sec:sharing}
+
+The combination operator has a subtlety that is worth a developer's attention,
+because the compiler will raise it whether or not the developer was expecting
+the conversation.
+
+Look again at \texttt{FreeRholang}. One theory adds restriction and replication,
+another adds send and receive, and both are built on \texttt{QuoteDropCalc}.
+Combining them must not produce two parallel compositions, two \texttt{Name}
+categories, and two quotation operators.
+
+The \texttt{let} chain is what prevents it. \texttt{QuoteDropCalc(pm)} is
+elaborated once and bound to \texttt{qd}; both \texttt{nr} and \texttt{rc} are
+built from that one instance; so when they are combined, everything they
+inherited from it is recognised as the same thing arriving by two routes, and
+appears once. The combination is a pushout over the shared ancestor rather than
+a union.
+
+What makes that work mechanically is that every element gets an identity token
+when it is introduced, and carries it through inheritance --- including through
+a \texttt{Replacements} block, which is why renaming preserves sharing. Two
+elements are the same element if they have the same origin. Combination
+identifies elements by origin, the common fragment intersects by origin, and
+subtraction removes by origin. Names have nothing to do with it.
+
+The practical consequence is that \emph{sharing is a claim, and the compiler
+holds you to it}. Build the two halves from two separate instances and combine
+them, and the result is a diagnostic rather than a silently doubled calculus.
+The reference elaborator ships a corpus of these; the four that a working
+developer is most likely to trip over are worth having seen once:
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.30\textwidth}L{0.62\textwidth}@{}}
+\toprule
+\textbf{Diagnostic} & \textbf{What you did, and what it means} \\
+\midrule
+\texttt{[join-collision]} &
+combined two theories that each introduced a label or a category
+independently. They are two things with one spelling. Either they should have
+descended from a shared instance, or they should have different names \\[3pt]
+\texttt{[unshared-name]} &
+the same, in its most common disguise: two independently instantiated copies of
+the same parameter theory passed into one combination \\[3pt]
+\texttt{[repeat-label]} &
+declared a label twice in one theory. A replacement retargets an existing
+label; it does not introduce a second one \\[3pt]
+\texttt{[forward-reference]} &
+an \texttt{Equations} or \texttt{Rewrites} block mentioned a label its own
+chain had not yet introduced \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This is unfamiliar and it is worth sitting with, because it is the same
+diagnostic that catches genuine modelling errors. A rig has one carrier and two
+monoid structures on it --- addition and multiplication --- and the natural way
+to write it is to instantiate \texttt{Monoid} once and pass it as both
+arguments. That is wrong: it asserts that addition and multiplication are the
+same operation. The compiler says so. Instantiating \texttt{Monoid} twice over
+one shared \texttt{EmptySet} is the correct structure, and it says exactly what
+a rig is: two monoids, one carrier.
+
+A developer used to inheritance will recognise the diamond problem here, and
+should notice that the resolution is different in kind. There is no linearised
+method resolution order and no ``last one wins''. Two elements are the same
+element if they have the same origin, and otherwise they are two elements; if
+they also have the same name, that is an error rather than a silent override.
+
+\subsection{The parameter as a contract: extending a theory you did not write}
+\label{sec:loadtest}
+
+The reuse story so far is about not repeating yourself. There is a second
+payoff, and for anyone maintaining a language definition alongside other people
+it is the larger one.
+
+Consider a design that has an object language --- a dependently typed calculus
+with typed holes, used as the specification format for a marketplace of partly
+specified programs~\cite{PF} --- and a second design that adds prices to it. The
+priced language is not a copy of the first with extra lines. It is a theory that
+takes the first as a parameter:
+
+\begin{lstlisting}[language=mettail]
+Theory PricedPFLam(pf: PFLam) {
+    pf
+      Types {
+        Price;       // an element of the preference quantale
+        Obsv;        // a time-varying observable
+      }
+      Terms {
+        Priced . h:HoleId, ty:Term, p:Price
+               |- "?" h ":" ty "@" p                  : Term;
+        Scale  . o:Obsv, c:Term |- "scale" "(" o "," c ")" : Term;
+        Give   . c:Term         |- "give" "(" c ")"        : Term;
+      }
+      Equations {
+        (Give (Give c)) == c;
+      }
+}
+\end{lstlisting}
+
+Everything established about \texttt{PFLam} arrives with the parameter. Nothing
+is restated. And --- the point --- if a later revision of \texttt{PFLam} renames
+\texttt{Hole} or changes its arity, the break is reported \emph{here}, at
+elaboration, rather than discovered later by a reader noticing that two
+documents disagree. Before the fourth rung existed, this delta was written as
+prose on a listing: \emph{only additions shown}. A prose annotation cannot be
+checked. A parameter can.
+
+The same applies at combination. If a venue also imports a reputation theory
+over the same hole identifiers, the two join over their shared \texttt{PFLam}
+instance and the identifiers are identified once. Passing two independently
+instantiated copies is rejected, and correctly: it would assert that the priced
+holes and the reputed holes are different holes.
+
+\subsection{Channels are typed by language definitions}
+
+The connection back to \S\ref{sec:cfl} is one sentence: \emph{a channel's type
+is a language definition} --- which is to say, an elaborated \texttt{Theory}.
+
+That single design decision explains the rest of the note. Sending on the
+channel means sending a term of that theory. Matching a pattern on it means
+matching a term of that theory, up to that theory's equations. And --- the point
+of \S\ref{sec:logic} --- asking a condition about what arrived means asking a
+question in a logic that is \emph{generated from} that theory, because the
+theory says what there is to ask about.
+
+For the forager, this means the specimen language is a language definition,
+\texttt{Chi} is a formula in the logic that definition generates, and there was
+never a moment at which someone hand-designed a predicate vocabulary.
+
+\subsection{MeTTa, and what this adds to it}
+\label{sec:metta}
+
+Readers coming from SingularityNET's Hyperon stack~\cite{Hyperon} will have
+recognised the shape of the third rung, because MeTTa is built on it. The relationship is worth
+stating precisely, in both directions.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.24\textwidth}L{0.30\textwidth}L{0.38\textwidth}@{}}
+\toprule
+\textbf{MeTTa} & \textbf{\flang{}} & \textbf{Relationship} \\
+\midrule
+rules &
+the \texttt{Rewrites} block &
+subsumed; MeTTa's rules are rewrites in this sense \\[3pt]
+atom spaces &
+channels &
+subsumed, and typed: a channel carries terms of a declared language, an
+atom space carries atoms \\[3pt]
+--- &
+the \texttt{Equations} block &
+\textbf{absent in MeTTa}: no equational layer, so every quotient must be
+hand-coded as rules, and confluence becomes the programmer's problem \\[3pt]
+query, then update &
+one witnessed communication &
+\textbf{absent in MeTTa}: query and update are separate acts, so there is no
+atomic multi-party meeting and no witness \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The two gaps compound. Without equations, a developer who wants ``these two
+atoms are the same'' writes rewrite rules that say so, and then owns the
+confluence question --- whether the order in which rules fire can change the
+answer. Without a witnessed transaction, a developer who wants two atom spaces
+updated together writes a protocol, and then owns the partial-failure question.
+Both are exactly the questions the two blocks and the communication rule
+answer for free.
+
+None of which is a dismissal. MeTTa has a large working ecosystem, a substantial
+body of practice around the atom space as a shared knowledge medium, and
+Probabilistic Logic Networks~\cite{PLN}, which is a serious piece of engineering for
+reasoning under uncertainty. It is worth saying plainly that PLN is not left
+behind here: in \S\ref{sec:graded} it comes back as one of the value algebras a
+\texttt{where} clause can be graded in, which is to say that PLN inference can
+drive execution rather than sitting beside it. The relationship this note is
+proposing is embedding with an addition, not replacement.
+
+\subsection{What an operation costs}
+\label{sec:cost}
+
+One more piece belongs to the data definition story, because it is the thing
+that makes the forager's budget real rather than notional.
+
+Cost accounting in this system adds exactly two surface forms, and both of them
+lower to ordinary \flang{}:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Surface} & \textbf{Lowers to} & \textbf{Which is} \\
+\midrule
+\texttt{s :: ()} & \texttt{$\Sigma\sem{s}$!(Nil)} & a send: mint a token \\
+\texttt{\{\% P \%\}[s]} & \texttt{for(t <- $\Sigma\sem{s}$)\{*t | P\}} & a receipt: run \texttt{P} once a token arrives \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+That is the entire mechanic. Spending fuel \emph{is} a communication: the gate
+consumes one token, releases its payload, and then \texttt{P} runs. If no token
+is available on the signature channel, the gate parks forever and \texttt{P}
+never runs --- and that is what metering means here. A budget is a stack of
+nested sends, and its depth is how many operations it funds.
+
+Two things follow that a developer should notice.
+
+First, metering is not a virtual-machine feature bolted onto a language. It is a
+program \emph{in} the language, and the transpiler's job is only to write it for
+you. Anything true of unmetered \flang{} is true of metered \flang{}.
+
+Second, it composes with Claim~\ref{claim:witness} in a satisfying way. A
+communication that is not funded is a communication that does not happen, and it
+is indistinguishable from a communication whose guard failed. Both are
+non-events. There is no separate failure mode for running out of budget, no
+exception, and nothing to unwind --- which is exactly the property that lets the
+forager's death be modelled as ``it stops'' rather than as an error path.
+
+The repository~\cite{f1r3node} ships a worked demonstration of this at scale: a supply chain in
+which factories produce, carriers ship, sellers wholesale and buyers retail,
+with money and inventory both conserved, and every single operation gated by a
+token. It is the best available answer to ``show me this doing something real''.
+
+\subsection{What actually runs}
+\label{sec:status}
+
+Honesty about status is more useful to a developer than enthusiasm, so the
+table below separates three things a reader has every right to keep apart:
+\emph{specified} means the surface is frozen and written down; \emph{implemented}
+means there is code a reader can run; \emph{planned} means neither yet.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.40\textwidth}L{0.52\textwidth}@{}}
+\toprule
+\textbf{Capability} & \textbf{Status} \\
+\midrule
+\texttt{Theory} declarations: types, terms, equations, rewrites; generated
+parser, printer, substitution, rewrite engine &
+implemented, in the reference elaborator and in
+\texttt{mettail-rust}~\cite{mettailrust}, with language definitions shipped for
+lambda, ambient, the \rhoc{} calculus and a calculator \\[3pt]
+The fourth rung (\S\ref{sec:reuse}, \S\ref{sec:module}): theory parameters,
+\texttt{Types}, \texttt{Exports}, \texttt{Replacements}, the algebra of
+theories, and pushout sharing (\S\ref{sec:sharing}) &
+implemented, as the \texttt{mettail-elab} crate on the
+\texttt{feature/module-syntax} branch of
+\texttt{f1r3node-rust}~\cite{modulesyntax}. Dependency-free, with the
+universal-algebra tower and the \rhoc{} calculus as its worked corpus and a
+corpus of negative cases for the diagnostics of \S\ref{sec:sharing} \\[3pt]
+The same surface in the \emph{live} parser &
+\emph{not yet}. The grammar delta for the tree-sitter parser sits beside the
+elaborator as a patch rather than an applied change, and the elaborator is not
+yet on the node's workspace build. This is the next step, and it is the honest
+boundary of this section \\[3pt]
+\texttt{Module}, and imports by URL &
+specified and implemented in the elaborator; resolution is a compile-time step
+in the client toolchain, so a node never performs it \\[3pt]
+\texttt{where} guards on receipts, and \texttt{where} guards on \texttt{match}
+cases with fall-through &
+implemented on the \texttt{cost-accounting-transpiler} branch of
+\texttt{f1r3node-rust}~\cite{f1r3node}, with runnable examples and compile tests \\[3pt]
+Cost accounting: minting, gates, compound signatures, budget stacks &
+implemented on the same branch, with a transpiler and a documented demo \\[3pt]
+Arity-changing replacements (the bag in \texttt{ParMonoid}) &
+accepted by the elaborator, \emph{not} checked. Replacing a binary constructor
+by a collection-valued one leaves the inherited binary equations written over a
+constructor that no longer has that shape. Either replacements should be
+arity-preserving, or there should be a way to say that an inherited equation has
+become structural. Open \\[3pt]
+Conditions drawn from the \emph{generated logic} (\S\ref{sec:logic}) rather than
+from ordinary boolean expressions &
+planned. The guard slot exists and is evaluated before commit, but a condition
+today is an ordinary boolean expression; the structural and behavioural
+connectives are specified in the research notes, and connecting an elaborated
+theory to the guard is what would close the gap \\[3pt]
+Graded conditions and simulation (\S\ref{sec:graded}) &
+implemented as a separate simulator crate~\cite{WeightedGSLT}, with the
+stochastic and quantum readings both built and tested; not part of the node's execution path, by
+design (\S\ref{sec:simnotinterp}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The condition language a developer can write \emph{today} is boolean expressions
+over the variables the patterns bound --- \texttt{x > 0}, and so on. Everything
+in the next section is about what that slot is going to hold, and why the choice
+is more interesting than it looks.

@@ -1,0 +1,299 @@
+\section{Widening two: when the condition stops answering yes or no}
+\label{sec:graded}
+
+\subsection{The move}
+
+A guard returns a truth value, and the communication fires or does not. That is
+one choice, not the only one. The second widening is to let a condition return a
+value in some other algebra --- a probability, a rate, a cost, a complex
+amplitude --- and to interpret that value as \emph{how much} this candidate
+happens rather than \emph{whether} it happens.
+
+Before anything else, the reassurance a developer needs:
+
+\begin{proposition}[Conservativity]
+\label{prop:cons}
+When the value algebra is the Booleans, a graded \texttt{where} clause is
+exactly the \texttt{where} clause of \S\ref{sec:cfl}. Nothing about existing
+programs changes, and no existing program acquires a new meaning.
+\end{proposition}
+
+So this is an extension in the strict sense. A developer who never grades a
+condition never encounters any of what follows. A developer who grades one gets
+something that turns out to be much larger than a weighted choice.
+
+\subsection{What a value algebra has to supply}
+
+Not every set of values will do. The condition language has conjunction and
+disjunction in it, so whatever the values are, there must be an operation to
+interpret each. The requirement is mild: a commutative semiring~\cite{GradedWhere}. Multiplication
+$\tensorv$ interprets conjunction, addition $\sumv$ interprets disjunction, and
+the units behave as true and false do.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.16\textwidth}L{0.20\textwidth}L{0.26\textwidth}L{0.30\textwidth}@{}}
+\toprule
+\textbf{Values} & \textbf{$\tensorv$, $\sumv$} & \textbf{A condition means} & \textbf{Running the program means} \\
+\midrule
+$\mathbb{B}$ &
+and, or &
+a guard &
+executing, as today \\[3pt]
+$\Rnn$ &
+$\times$, $+$ &
+a rate or propensity &
+a stochastic simulation \\[3pt]
+$[0,1]$ with PLN values &
+$\times$, $+$ on the power $\str\conf$ &
+a graded belief &
+inference driving execution \\[3pt]
+Viterbi $(\max,\times)$ &
+$\max$, $\times$ &
+the best explanation &
+finding the most likely path \\[3pt]
+tropical $(\min,+)$ &
+$\min$, $+$ &
+a cost &
+finding the cheapest path \\[3pt]
+$\mathbb{C}$ &
+$\times$, $+$ &
+an amplitude &
+a quantum simulation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Which value algebra a program is read in is not merely a choice of numerics: it
+fixes how much of the non-determinism a resolver has to decide, and that
+question has a precise
+hierarchy behind it~\cite{ChoiceFormulae}. One casualty is worth naming
+immediately, because it surprises people. Negation
+does not survive. Over $[0,1]$ the map $x \mapsto 1-x$ behaves well enough, but
+over the complex numbers there is no canonical negation and De~Morgan fails. The
+practical consequence is that the design keeps two sorts of formula: a
+\emph{crisp} sort with the full Boolean structure, used for gating, and a
+\emph{graded} sort with a semiring only, used for weighting. A \texttt{where}
+clause keeps its old job and gains a new slot.
+
+\subsection{The guard becomes a weight}
+
+Recall candidates from \S\ref{sec:transaction}: for a comprehension with data
+available, each way of assigning data to patterns is a candidate. In the crisp
+setting the condition is evaluated per candidate and admits or refuses it. In
+the graded setting the condition is evaluated per candidate and \emph{scores}
+it.
+
+That is the entire mechanism, and three worthwhile things fall out of it without
+further work.
+
+\paragraph{The propensity is the formula's value, and formulas move.} A crisp
+guard is a fixed policy: it fires on the same specimens forever, because the
+formula does not change. A graded guard's behaviour is the formula's
+\emph{value}, evaluated against the current state --- and the current state
+includes whatever the program has learned. Nothing needs to be scheduled.
+
+\paragraph{Weight tables are unnecessary.} A common design for stochastic
+execution~\cite{WeightedGSLT} attaches a table of rates to each rule, keyed by conditions, and then
+requires those conditions to partition the space so that lookup is
+single-valued. A graded clause needs none of that: a formula has one value, so
+single-valuedness is free, and overlapping conditions are simply fine.
+
+\paragraph{Plasticity is free.} Because the clause is evaluated against the
+current term, weights that change during execution require no update mechanism.
+The weight is not stored; it is computed.
+
+\subsection{Three readings of one program}
+
+Here is where the section earns its title. The same program text, under three
+different value algebras, is three different kinds of artefact.
+
+\paragraph{Booleans: a state transition.} The program is what it has been all
+along --- code running in a node, manipulating state, committing transactions.
+Programming in the small.
+
+\paragraph{Non-negative reals: a stochastic simulation.} Each candidate carries a
+rate. The total rate at a configuration determines how long the system waits and
+which step it takes; this is the standard Gillespie construction~\cite{Gillespie77}, and it turns
+the program into a generator of trajectories --- the same move that took the
+$\pi$-calculus to the stochastic $\pi$-calculus and to
+SPiM~\cite{Priami95,PhillipsCardelli07}, and that the weighted reading of a
+language definition generalises~\cite{WeightedGSLT}. Running it many times gives you
+the distribution of outcomes rather than one outcome. Programming in the large:
+the subject is no longer this program's state but the behaviour of a
+\emph{population} of them.
+
+\paragraph{Complex numbers: a quantum simulation.} Each candidate carries an
+amplitude~\cite{GWQuantum}, and candidates that reach the same outcome have
+their amplitudes added before magnitudes are taken --- which is to say, they interfere. Two
+branches that are individually possible can cancel --- the effect Shor's
+algorithm is built out of~\cite{Shor97}. A developer's summary:
+disjunction stops being monotone, and a false disjunction with true disjuncts
+becomes expressible.
+
+\begin{remark}[The simulator is not the interpreter]
+\label{sec:simnotinterp}
+This matters operationally and is easy to get wrong. The graded readings do not
+run inside the node. They are a separate execution path with its own state,
+running offline, whose output is a graph or an ensemble rather than a committed
+state change. That separation is what makes things affordable there that are not
+affordable in the node --- exhaustive construction of the reachable graph, model
+checking, fixed points --- and it is what keeps a consensus-critical execution
+path free of any of it.
+\end{remark}
+
+\subsection{Programming in the small, programming in the large}
+
+The reason to care is not that a simulator exists. Simulators exist. The reason
+to care is that \emph{it is the same program text}.
+
+The usual arrangement in industry is two artefacts: the system, written in one
+language by one team, and the model of the system, written in another language
+by another team, for capacity planning or risk or verification. The model is
+always a little wrong, it goes stale immediately, and the discrepancy is
+discovered in production.
+
+Here the model and the system are the same source. A developer writes a
+comprehension with a graded condition; under the node's resolver it is a
+transaction, and under the simulator's resolver it is a model of what a
+population of such transactions would do. There is no translation step in which
+fidelity is lost, because there is no translation step.
+
+The practical questions this makes askable, in the language the system is
+written in:
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item If this contract is deployed a thousand times against that environment,
+  what is the distribution of outcomes?
+\item Which of these two policies survives longer under a shift in the
+  environment?
+\item Is there a configuration reachable from here that we would consider a
+  failure, and how much would getting there cost an adversary?
+\end{itemize}
+
+\subsection{The forager, graded}
+
+Now the running example, all the way through. The forager's clause becomes:
+
+\begin{lstlisting}
+new bel, prey, wall in {
+  bel!( (1, 0.5) ) |                    // (n, s): one unit of prior evidence
+
+  for( @(n,s) <- bel ; @spec <- prey  where  Chi(spec) * Pow(n,s) ) {
+    Break!(spec) | bel!( revise(n, s, spec) )
+  } |
+  for( @(n,s) <- bel ; @spec <- prey  where  g ) {
+    Graze!(*wall) | bel!( (n, s) )
+  }
+}
+\end{lstlisting}
+
+\texttt{Chi(spec)} is the crisp structural predicate of \S\ref{sec:logic},
+entering the graded sort as an indicator. \texttt{Pow(n,s)} is a graded ground
+formula whose value is the PLN power $\str \cdot \conf$, where $\conf = n/(n+k)$
+is confidence and $k$ is the learner's scepticism~\cite{PLN}. \texttt{*} is graded
+conjunction. \texttt{g} is a scalar: the value of grazing.
+
+Two comprehensions, each with a weight. The forager opens the specimen with
+propensity $\str\conf$ against the wall's $g$. Everything below was measured by
+running exactly this.
+
+\paragraph{The bootstrap trap, and why exploration is a disjunct.} A belief with
+no evidence has $\conf = 0$, hence power $0$, hence a clause value of zero, hence
+a receipt that never fires --- so it never acquires evidence. Measured: a forager
+initialised with no prior evidence opens $0.00$ specimens across $400$
+encounters and ends with exactly the grazing baseline, against $3543.7$ for the
+same forager given one unit of prior evidence.
+
+The remedy is written in the clause language, not in a framework. Either the
+belief carries prior evidence $n_0 \geq 1$, or the clause is
+$\mathrm{Pow}(n,s) \sumv \varepsilon$ for a small scalar $\varepsilon$. That
+second form is $\varepsilon$-greedy exploration, and it is a \emph{disjunct}.
+
+\paragraph{Confidence buys variance, not yield.} Four foragers, two worlds,
+$20{,}000$ lives each. In the benign world the crisp forager --- which acts on a
+satisfied guard from its first encounter --- has the \emph{highest} mean terminal
+holdings, $4084.7$, and the \emph{lowest} survival, $0.8501$. The graded forager
+has survival $0.9485$ and holdings $3543.7$. That is the trade a mortal program
+actually faces, and a Boolean guard cannot express it.
+
+\paragraph{A Boolean guard has no coordinate in which to record disappointment.}
+In the hostile world, where opening is a net loss, the crisp forager survives
+$0.29\%$ of the time. It cannot do otherwise: its policy \emph{is} the formula,
+and the formula does not change. The graded forager's policy is the formula's
+value, which moves:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+opening & $\str$ & $\conf$ & power & $\Pr[\text{open}]$ \\
+\midrule
+1 & $0.7500$ & $0.3333$ & $0.2500$ & $0.3333$ \\
+2 & $0.5000$ & $0.4286$ & $0.2143$ & $0.3000$ \\
+3 & $0.3750$ & $0.5000$ & $0.1875$ & $0.2727$ \\
+5 & $0.2500$ & $0.6000$ & $0.1500$ & $0.2308$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Strength falls as decoys accumulate, confidence rises, the product falls, and
+with it the willingness to open. The forager learns to stop. Note that nothing in
+the clause is a schedule: early caution and late decisiveness are consequences of
+a coordinate of the truth value, not of a hyperparameter someone tuned.
+
+\paragraph{Your \texttt{where} clause has become a learning rule.} This is the
+point at which the exposition arrives somewhere a developer would not have
+predicted from \S\ref{sec:cfl}. In a one-dimensional grading, the revision step
+that updates the belief turns out to be a \emph{natural gradient}
+step~\cite{Amari98} on the underlying likelihood --- to machine precision, verified over $20{,}000$ random
+instances at a worst discrepancy of $1.1 \times 10^{-16}$. Better, it is an
+\emph{implicit} step in the sense of stochastic approximation~\cite{RobbinsMonro51},
+and therefore unconditionally stable: it cannot leave the
+valid range of values for any observation, where the explicit version can. The
+confidence coordinate is not a second belief. It is the metric with respect to
+which the first one is being learned.
+
+The score that the gradient is assembled from decomposes into contributions
+computable at each communication site, from what the site already has --- which
+is the identity that makes policy-gradient methods
+implementable~\cite{Williams92} and, here, makes the gradient a message rather
+than a backward pass. The developer's version of that sentence: grading a
+condition gives you gradient descent in the small, correctly conditioned, without importing a learning
+framework and without a separate training loop. The learning rule is the
+clause.
+
+\subsection{What is settled and what is not}
+
+Three honest boundaries, since the previous subsection was enthusiastic.
+
+\paragraph{The stochastic reading is solid; the quantum reading has a fence
+around it.} The complex-valued case is established for a restricted fragment ---
+finite, contractive, staged --- and not for the language as a whole. Two
+specific hazards sit behind that fence. Left unrestricted, the construction
+buys post-selection, and a language with free post-selection decides more than
+quantum computers do~\cite{Aaronson05}. And the coherent branching this needs
+is quantum \emph{control} rather than the architecture of the quantum process
+calculi, which keep the quantum state beside the process rather than in the
+branching~\cite{GayNagarajan05,YingYuFeng14,BadescuPanangaden15}. The
+research note that develops it~\cite{GWQuantum} states its own boundary as: a finite, contractive,
+staged fragment of graded \rhoc{} admits a candidate quantum interpretation, and
+the extension to unrestricted reflective concurrency remains open. That fence is
+where it is for good reasons, and a developer should read the complex row of the
+table above as ``there is a real construction here for circuit-shaped programs''
+rather than ``\flang{} is a quantum language''.
+
+\paragraph{Learning under a moving target is not solved.} The measured
+experiments include a regime shift, and under it every arm's accuracy degrades
+in proportion to how much evidence it had accumulated. Accumulated confidence
+makes a learner rigid, and rigidity is exactly wrong when the world changes.
+This is a known gap, named as such in the companion note~\cite{GWPLN}, and it is the most
+consequential one.
+
+\paragraph{Two searches, not one.} Grading gives a gradient \emph{within} a
+hypothesis --- tuning the numbers in a clause. It does not give a gradient
+\emph{between} hypotheses --- changing which formula the clause contains. That
+second search is discrete and looks like recombination rather than
+descent~\cite{ComposeNote}. The
+split between the two is not an engineering decision; it follows from the shape
+of the hypothesis space.
