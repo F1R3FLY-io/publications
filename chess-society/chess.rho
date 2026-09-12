@@ -11,7 +11,9 @@
 //    Sec. 7    coordination     -- Franchise, Advocate, Gate  (quorum = arity)
 //    Sec. 7.6  rounds           -- Clock                      (+ last resort)
 //    Sec. 8    coalition rung   -- Ladder rung 6              (//! ideal)
-//    Sec. 9    material         -- Harvest, Live              (conservation)
+//    Sec. 9    lookahead        -- Check, Shadow              (reflection)
+//    Sec. 10   material         -- Harvest, Live              (conservation)
+//    Sec. 10.1 the treasury     -- Treasury, Disburse         (a source)
 //
 //  CONVENTION. A parameter written `c` is a NAME (a channel); a parameter
 //  written `@d` is DATA. To pass a channel one sends `*c`, since @(*c) = c.
@@ -30,6 +32,26 @@
 //  `where`; guards using a structural, modal or coalition connective are
 //  marked `//! ideal` and specify a check rather than perform one.
 //
+//  LOOKAHEAD IS REFLECTION (Sec. 9). A naive reading of this architecture
+//  says search is beyond it: sixteen budget-bounded agents, a rendezvous
+//  price per candidate, no central evaluator, in a game that rewards depth.
+//  That reading ignores what the context-labelled modalities are for. The
+//  modalities are not an evaluation device standing beside search; they ARE
+//  the search, and modal depth is ply depth. <<K_m>>phi requires the ply to
+//  FIRE, so evaluating a modal formula means exhibiting the rewrite -- which
+//  the checker does on a SHADOW BOARD @[*chk,H,d,i], manufactured by quoting
+//  its own channel together with a handle on the deposit. It may drive that
+//  without restriction because it is its own term, and by freshness-by-quotation
+//  quotation it cannot collide with the live board. Imagining a position is
+//  quoting the world and driving the copy.
+//
+//  With the shared search memory of Sec. 9.5 the society is recognisably a
+//  loosely-coupled parallel search over a common record (Obs. 9.17), so the
+//  advocacy protocol is a CONSTANT FACTOR per turn and not an exponent
+//  (Cor. 9.18). What makes this player weak is elsewhere: the leaf evaluation
+//  below, and the fact that a quorum aggregates by PLURALITY where an engine
+//  aggregates by MAXIMUM.
+//
 //  THE THREE FAMILIES (Sec. 5.1). Square s of board b carries:
 //      occ(s) = @[*b,"occ",s]        occupancy; the ONLY family a ply consumes
 //      atk(s,c,p) = @[*b,"atk",s,c,p]  deposited attack markers; read-only
@@ -41,14 +63,16 @@
 //  with distinct families the failure is UNREPRESENTABLE rather than merely
 //  avoided by discipline.
 //
-//  CONSERVATION. Nothing mints. Franchise issues one LINEAR advocacy token per
+//  CONSERVATION. Nothing mints. The Treasury holds an opening reserve Theta_W
+//  that is part of Theta and is never replenished; its schedule redistributes
+//  a fixed endowment over time. Franchise issues one LINEAR advocacy token per
 //  live piece per round and does not carry it over. Harvest MOVES a captured
 //  agent's stack into the capturer's. Every Live debit moves a token from
 //  sigma into kappa. So sigma + kappa = Theta throughout.
 // ==================================================================
 
 new stdout(`rho:io:stdout`), display, arena, wall, player, clock,
-    Live, Wall, Board, Cells, Ray, Settle, Pins, Legal, Ply, Harvest,
+    Live, Treasury, Disburse, Board, Cells, Ray, Settle, Pins, Legal, Ply, Harvest,
     Registry, Franchise, Piece, Candidates, Evaluate, Advocate, Gate,
     Ladder, Revise, Check, Turn, Round, Adjudicate, Boot
 in {
@@ -71,12 +95,97 @@ in {
       }
     }
 
-  // A source, not a prey: rate-limited, non-exclusive, non-adaptive, finite.
-  | contract Wall(w, @quantum, @reserve) = {
-      for (ret <- w) {
-        match reserve >= quantum {
-          true  => { ret!(quantum) | Wall!(*w, quantum, reserve - quantum) }
-          false => { ret!(0) | Wall!(*w, quantum, 0) }
+  // ==================================================================
+  //  THE TREASURY  --  a source, not a prey.  Sec. 10.1, Def. 10.5.
+  //
+  //  Rate-limited, non-exclusive, and NON-ADAPTIVE -- it does not read the
+  //  position. That access profile is what makes it a SOURCE rather than a
+  //  JUDGE, and it is the whole of Prin. 10.9: a disbursement rule that read
+  //  position quality would be an evaluation function held by the treasury,
+  //  agents would be paid for agreeing with it, and the yield measurement
+  //  would degenerate into measuring how well the ladder tracks the
+  //  exchequer. That is the Rem. 5.5 leak arriving through the ACCOUNTS
+  //  rather than through the floor, where it is much harder to see.
+  //
+  //  CONSERVATION. Theta_W is fixed at the outset and never replenished, so
+  //  the schedule REDISTRIBUTES a fixed endowment over time and does not
+  //  mint: a large initial supply, meagrely distributed at first and
+  //  increasingly as play goes on. sigma + kappa = Theta throughout.
+  //
+  //  THE SCHEDULE IS KEYED TO CAPTURED MATERIAL, not to ply number. An
+  //  exponential in ply diverges against a finite reserve, and one then
+  //  harvests draws by exhaustion that are artefacts of the treasury rather
+  //  than facts about the players. Captured material is bounded, monotone and
+  //  self-normalising, and it says something better: the treasury pays out in
+  //  proportion to how much of the position has been RESOLVED, so a simpler
+  //  position funds a deeper search (Rem. 10.6).
+  //
+  //  WHY THIS EXISTS. Harvest-only funding is PROCYCLICAL: the side that is
+  //  behind has fewer agents and smaller stacks, so by Prin. 9.3 it calculates
+  //  less far and falls further behind. That spiral is a CHOSEN property of a
+  //  funding rule, not a structural feature of the architecture, and this
+  //  contract is the correction. Note the convergence with Prop. 7.10: S falls
+  //  as q rises, so per-agent budget rises SUPER-LINEARLY, and the endgame is
+  //  where the society is simultaneously split-free by arithmetic and deepest
+  //  by budget. Cor. 10.8: this player should be at its BEST in the endgame,
+  //  the opposite of how weak engines usually fail, and therefore cheap to
+  //  falsify (M11).
+  // ==================================================================
+
+  | contract Treasury(t, @captured, @reserve) = {
+      for (@ids, ret <- t) {
+        new q in {
+            q!(Schedule(captured))          // non-decreasing in captured
+          | for (@rate <- q) {
+              new draw in {
+                  draw!(rate * Size(ids))
+                | for (@total <- draw) {
+                    match reserve >= total {
+                      true  => {   Disburse!(ids, rate, *ret)
+                                 | Treasury!(*t, captured, reserve - total) }
+                      // Exhausted. The reserve is finite, and this is what the
+                      // end of a finite endowment looks like; it is not a
+                      // failure mode to be patched away.
+                      false => { ret!(0) | Treasury!(*t, captured, 0) }
+                    }
+                  }
+              }
+            }
+        }
+      }
+    }
+
+  // ASSAY-CONFIRMED DISBURSEMENT  --  Def. 10.10, Prin. 10.11.
+  //
+  //  The schedule above sets the FLOOR and removes the spiral; it pays per
+  //  surviving agent regardless of how that agent is playing. This rule
+  //  supplies the DIFFERENTIAL, and it is where selection lives. It reads only
+  //  the confirm / refute / bottom trichotomy the assay ALREADY emits -- the
+  //  same observable Revise uses to set its temperature -- so the judge is
+  //  endogenous and no exogenous score is consulted.
+  //
+  //  Under this rule a hypothesis that pays for itself BUYS ITS OWN DEPTH, and
+  //  one that does not starves its holder. "Is the yield of a hypothesis worth
+  //  its price" stops being a statistic computed after the games and becomes
+  //  the mechanism by which the population changes. Build and measure it
+  //  SEPARATELY from the schedule (Rem. 10.12): the first is a correction to a
+  //  defect, the second is an experiment.
+  //
+  //  NB the peek. Reading an agent's assay verdict must not consume it, for
+  //  the same reason the settling peeks at occupancy: paying for an outcome
+  //  must not destroy the record of it.
+  | contract Disburse(@ids, @rate, ret) = {
+      match ids {
+        [] => { ret!("done") }
+        [id ...rest] => {
+            for (@verdict <<- @[*player,"assay",id]) {      // PEEK
+              match verdict {
+                "confirm" => { for (@sg <- @[*board,"m",id]) {
+                                 @[*board,"m",id]!(sg + rate) } }
+                _         => { Nil }        // refuted or bottom: no draw
+              }
+            }
+          | Disburse!(rest, rate, *ret)
         }
       }
     }
@@ -262,7 +371,7 @@ in {
     }
 
   // ==================================================================
-  //  A PIECE  --  Sec. 11.3, steps 4-6 of the turn protocol.
+  //  A PIECE  --  Sec. 12.3, steps 4-6 of the turn protocol.
   //
   //  A piece enumerates ITS OWN moves from ITS OWN square. Nobody computes the
   //  union of candidates; the union is what the advocacy namespace IS.
@@ -270,7 +379,8 @@ in {
   //  testing and confirmation is the rendezvous. By Prop. 17 of the scientist
   //  note the number of candidates a piece can afford to evaluate is its stack
   //  divided by the price of one check, so a poor piece does not survey its
-  //  own branching.
+  //  own branching -- and since DEPTH is bought from the same stack, a poor
+  //  piece does not look far either.
   // ==================================================================
 
   | contract Piece(b, @id, @rung, @r, m) = {
@@ -305,6 +415,20 @@ in {
   //  k >= 9 a SPLIT IS STRUCTURALLY IMPOSSIBLE, for any policies whatever, and
   //  no cross-inhibition machinery is needed to secure it. Safety is free;
   //  liveness is not, and that is what Round is for.
+  //
+  //  THE PRICE OF THE GOVERNANCE LAYER. An engine takes the MAXIMUM over its
+  //  candidates; a quorum takes a PLURALITY above a threshold. So the society
+  //  can beat its average member and will struggle to beat its best one, and
+  //  a piece holding the right move loses to eight pieces holding a worse one.
+  //  That is the architecture, not a defect of it -- a maximum over sixteen
+  //  agents needs an evaluator none of them can afford to be. But do NOT read
+  //  it as an established structural weakness. Against the commit gap runs a
+  //  COVERAGE GAIN the same architecture supplies: sixteen agents at
+  //  heterogeneous depths over different candidate sets examine a wider tree
+  //  than any one of them could (Obs. 9.17 read as a benefit rather than an
+  //  overhead). Which dominates is not known and is not obvious in either
+  //  direction; M10 nets the two, and Q12 asks what can be bought back
+  //  without reintroducing a chairman.
   // ==================================================================
 
   | contract Gate(@c, @k, ret) = {
@@ -347,18 +471,51 @@ in {
     }
 
   // ==================================================================
-  //  THE LADDER  --  Sec. 11.4. Cumulative, highest priority first. The rung
+  //  THE LADDER  --  Sec. 12.4. Cumulative, highest priority first. The rung
   //  index is the modal depth of the conjunct it adds, hence the ultrametric
-  //  stage: d(Phi_r, Phi_{r+1}) = 2^-r. Prices are kappa(d) = 2^d per
-  //  candidate examined, charged by the depth of the formula the rung installs.
+  //  stage: d(Phi_r, Phi_{r+1}) = 2^-r. Prices are kappa(d) = beta^d per
+  //  candidate examined -- and for the modal rungs that is DERIVED, not
+  //  stipulated: it is the cost of instantiating a shadow board and driving
+  //  it d plies (Prop. 9.8). The one free parameter is beta.
   //
   //  Note where the alternation is. Rungs 1, 2 and 5 have no modality at all:
   //  capturing, not hanging, and centralising are PERCEPTION, reading the
   //  markers the last settling deposited. The one genuinely alternating rung
   //  is 4, a box under a diamond, which by Prop. 6 of the scientist note has
   //  no finite confirming witness. In noughts that rung was also, measurably,
-  //  the worst purchase on the ladder. Whether that repeats in chess is M2,
-  //  and it is the whole reason for the project.
+  //  the worst purchase on the ladder. Whether that repeats in chess is M2 --
+  //  but rung 4 in noughts is a two-ply search on a 5478-position game and
+  //  rung 4 here is a two-ply search on CHESS, so the ratio must be taken at
+  //  MATCHED DEPTH or it compares different instruments.
+  //
+  //  The rung fixes the SHAPE of what an agent asks; its STACK fixes how far.
+  //  Depth is therefore endogenous and per-agent (Prin. 9.3): an agent that
+  //  has eaten calculates further than one that has not. NB this is a CHOSEN
+  //  dial, not a structural property -- depth could be funded from a per-turn
+  //  allowance instead, and Sec. 14 says so.
+  //
+  //  WHAT THIS LADDER IS. It is an evaluation function, and a thin one. That
+  //  is a SHORT LADDER, not a weak logic: the generated logic has nu, graded
+  //  separation over described namespaces, the name predicate and
+  //  redex-indexed modalities, and under reflection reaches further again. An
+  //  earlier draft called the coarseness forced on the grounds that a rung
+  //  must be a formula of the logic; that confused expressibility with length.
+  //
+  //  WHAT ACTUALLY GOVERNS IS PRICE, and price turns on what the world has
+  //  DEPOSITED. Rungs 5a and 5b below are the demonstration: king safety and
+  //  pawn structure are classically computed per evaluated position, and
+  //  deposited by the settling walk they are depth-ONE reads. This is
+  //  read-versus-drive (Sec. 5.2) applied to EVALUATION rather than to
+  //  legality, which is why M7 is a larger experiment than it first looks --
+  //  the question is not merely who pays for the attack map, but how much of
+  //  an evaluation function the world can be made to compute once for all.
+  //
+  //  WHAT IS STILL OPEN IS FINDABILITY (Q11): not whether the logic can say a
+  //  good evaluation, nor whether an agent can afford one, but whether the
+  //  revision process can FIND one. Confinement says an incremental walk never
+  //  leaves its initial ball, and choosing the SHAPE of an evaluation is a
+  //  distance-2^-1 move, so no individual gets there -- which leaves the
+  //  population and its crossover operator as the only route.
   // ==================================================================
 
   //! ideal
@@ -366,6 +523,9 @@ in {
   //  Bears(p,s)    := exists c. out(atk(s,c,p)) TOP
   //  Fork(p)       := Threat(p) |_0^{N_atk} Threat(p)
   //  Bearing(s)    := <E>_{N_pl}^V  lambda p. Bears(p,s) (x) Available(p)
+  //  KingSafe(c)   := <E>_{N_atk}^V lambda p. exists s. kz(c,s) and
+  //                                 Bears(p,s) and Colour(p, not c)
+  //  Worsens(m,Pawns) := <<K m>> PawnDebt > PawnDebt
   //  <<K_m>>phi    := the ply join at m fires, the board settles, phi holds
   | contract Ladder(@r, ret) = {
       match r {
@@ -385,10 +545,35 @@ in {
                                   or <<K m>> Fork(me)
                                   or forall m2. <<K m>>[K m2] not Fork(them)
                                   or Central(to(m)) or Develops(m) } ) }
-        // The coalition rung. Over a quorum algebra (x) = min this is attained,
-        // so Check returns the WITNESS coalition and not merely its value: the
-        // society commits to a move TOGETHER WITH the pieces that justify it.
-        6 => { ret!( @{ exists m. exists s. <<K m>> (Bearing(s) >= v) } ) }
+        // 5a, 5b: depth-ONE reads over deposited structure, Def. 12.3 and
+        // 12.4. kz(c,s) is one extra walk in the settling, over a
+        // neighbourhood of bounded size, in the pass that already walks every
+        // ray; pwn(c,f,kind) is a multiplicity condition on one file and
+        // negations over the adjacent ones. Neither needs a search and
+        // neither needs more logic than the ladder already used.
+        51 => { ret!( @{ exists m. Capture(m) and not Defended(to(m))
+                                  or not Hangs(m)
+                                  or <<K m>> Fork(me)
+                                  or forall m2. <<K m>>[K m2] not Fork(them)
+                                  or Central(to(m)) or Develops(m)
+                                  or <<K m>> KingSafe(me) } ) }
+        52 => { ret!( @{ exists m. Capture(m) and not Defended(to(m))
+                                  or not Hangs(m)
+                                  or <<K m>> Fork(me)
+                                  or forall m2. <<K m>>[K m2] not Fork(them)
+                                  or Central(to(m)) or Develops(m)
+                                  or <<K m>> KingSafe(me)
+                                  or not Worsens(m, Pawns) } ) }
+        // The FORCING rung, Def. 9.10. <E> does not mean "this coalition has
+        // the resources"; it means the coalition can FORCE the goal whatever
+        // the complement does -- and the complement is the OPPONENT'S pieces.
+        // So the opponent enters as the complement of a coalition rather than
+        // as a second search agent to be simulated, and rung 4 is this rung at
+        // fixed-point depth one with a weaker target (Prop. 9.11).
+        // Attained under (x) = min, so Check returns the WITNESS: at depth 0
+        // the coalition, at depth d the LINE.
+        6 => { ret!( @{ exists m. exists s. <<K m>>
+                        <E>_{N_pl}^V nu X. (Mate(s) (+) <K> X) } ) }
         // chi is listed for completeness. Unlike noughts it is NOT exact at any
         // finite unfolding, and by Rem. 3.1 that is exactly the condition under
         // which the ecology does not die of its own perfection.
@@ -404,7 +589,7 @@ in {
   // stage-1 approximant, a move of distance 2^-1, and an individual can
   // neither reach it by deepening nor afford it if it could. It changes across
   // generations, by crossover, and that is where a model-backed mutation
-  // operator earns its place (Sec. 10.2).
+  // operator earns its place (Sec. 11.2).
   | contract Revise(@rung, @refutes, @confirms, ret) = {
       match refutes * 4 > confirms {
         true  => { ret!(rung + 1) }
@@ -413,7 +598,7 @@ in {
     }
 
   // ==================================================================
-  //  THE CHECKER  --  Sec. 11.6. An instrument the player HOLDS, sited in the
+  //  THE CHECKER  --  Sec. 12.6. An instrument the player HOLDS, sited in the
   //  world so that sixteen agents share one cache. It receives only on the
   //  deposited families and NEVER on occ: otherwise the pride would move the
   //  zebra by looking at it. Verdicts are Kleene {f < b < t} with b carrying
@@ -421,15 +606,76 @@ in {
   //  afford to decide -- and the caller must not be able to tell which.
   // ==================================================================
 
-  | contract Check(@formula, @posHandle, @algebra, payer, ret) = {
+  | contract Check(@formula, @posHandle, @algebra, @depth, payer, ret) = {
       new r in {
-          Live!(*payer, Price(formula), *r)
+          // Price is kappa(d) = beta^d SHADOW PLIES, not a stipulated
+          // constant: Prop. 9.8. beta is measured, not set, and it is exactly
+          // what a pruning discipline reduces.
+          Live!(*payer, Price(formula, depth), *r)
         | for (_ <- r) {
-            Evaluate!(formula, posHandle, algebra, *ret)
-            // ret!((verdict, value, witness, cost))
+            match Modal(formula) {
+              // Depth 0: read the deposited families. PERCEPTION.
+              false => { Evaluate!(formula, posHandle, algebra, *ret) }
+              // Depth d: quote the deposit, manufacture a private board, and
+              // drive it. REFLECTION. The witness at depth d is a PRINCIPAL
+              // VARIATION (Prop. 9.13); at depth 0 it is a coalition.
+              true  => { Shadow!(posHandle, depth, 0, formula, algebra, *ret) }
+            }
           }
         // If Live cannot fund the query the piece receives nothing, which the
-        // protocol reads as verdict "b". Two bottoms, one value, by design.
+        // protocol reads as verdict "b" -- here in its search-shaped form, "I
+        // ran out of depth", which is indistinguishable from "the position is
+        // genuinely unresolved". Two bottoms, one value, by design.
+      }
+    }
+
+  // ==================================================================
+  //  THE SHADOW BOARD  --  Sec. 9.2, Def. 9.5 and Req. 9.6.
+  //
+  //  REQ 9.6. The checker may not move THE board: on the live board it PEEKS
+  //  (`<<-`) and never consumes, on any family. It may receive freely on the
+  //  families of a board it has MANUFACTURED. A shadow name is the quote of a
+  //  term properly containing the checker, so by the no-self-code theorem it
+  //  is fresh in the live board and the two families CANNOT collide. The
+  //  separation is structural, not disciplinary -- the same argument that put
+  //  attack markers on their own family in Sec. 5.1, one level up.
+  //
+  //  Each ply driven here is one metered step, so the recursion IS the search
+  //  tree and Prop. 9.8 reads off its price. The alternation is fixed by the
+  //  formula; the ORDER in which candidates are examined is not, which is why
+  //  pruning is a scheduler discipline and not a different formula (Obs 9.12).
+  // ==================================================================
+
+  | contract Shadow(@H, @d, @i, @formula, @algebra, ret) = {
+      new sb in {
+          sb!(@[*Check, H, d, i])          // manufactured, hence fresh
+        | for (@b2 <- sb) {
+            match d {
+              0 => { Evaluate!(formula, b2, algebra, *ret) }
+              _ => {
+                new cand, acc in {
+                    Board!(b2, Placement(H))   // instantiate the copy
+                  | ShadowMoves!(b2, *cand)
+                  | for (@m <= cand) {
+                      new r2 in {
+                          Ply!(b2, m, *r2)     // the COPY may be moved
+                        | for (@o <- r2) {
+                            Shadow!(Deposit(b2), d - 1, i + 1,
+                                    Peel(formula), algebra, *acc)
+                          }
+                      }
+                    }
+                    // Over an attained algebra (tropical, Viterbi) the (+) is
+                    // realised by a definable selection, so Combine returns
+                    // the WITNESS LINE and not merely its value. A pruning
+                    // discipline is sound exactly when it leaves that witness
+                    // alone (Cor. 9.14) -- so a changed principal variation
+                    // under pruning is a soundness bug, not noise.
+                  | Combine!(*acc, algebra, *ret)
+                }
+              }
+            }
+          }
       }
     }
 
@@ -471,7 +717,12 @@ in {
   //! ideal -- mate, stalemate and the draw conditions are modal formulae over
   //  the deposited families, not scans of a list. The fifty-move and repetition
   //  rules are the only genuinely HISTORICAL facts in chess and nothing here
-  //  uses the history monad; that is open problem Q4.
+  //  uses the history monad. That is open problem Q4, and it is now the
+  //  largest item in the design: a SEARCHED fact -- this deposit was driven
+  //  to depth d and returned v -- is a configuration paired with the word of
+  //  events that produced it, which is the history monad's own object. The
+  //  transposition table is its ecological reading, and the duplication it
+  //  removes grows with beta^d rather than with S (Sec. 9.5).
   | contract Adjudicate(b, over, @who) = {
       new r in {
           @[*b,"state"]!(*r)
