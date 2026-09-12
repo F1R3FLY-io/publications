@@ -1,0 +1,1717 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage[T1]{fontenc}
+\usepackage{palatino}
+\usepackage{microtype}
+\microtypesetup{expansion=false}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,fit,backgrounds,patterns}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{listings}
+\usepackage{stmaryrd}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+
+\setlength{\emergencystretch}{2.5em}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{principle}[theorem]{Principle}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{observation}[theorem]{Observation}
+\newtheorem{requirement}[theorem]{Requirement}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\flang}{\textsf{f1r3lang}}
+\newcommand{\Nil}{\mathbf{0}}
+\newcommand{\sepc}{\mathbin{\big|}}
+\newcommand{\out}{\mathsf{out}}
+\newcommand{\inn}{\mathsf{in}}
+\newcommand{\Rnn}{\mathbb{R}_{\geq 0}}
+\newcommand{\Trop}{\mathbb{T}}
+\newcommand{\Nms}{\mathcal{N}}
+\newcommand{\Opn}{\mathcal{O}}
+\newcommand{\dbr}[1]{\llbracket #1 \rrbracket}
+\newcommand{\qt}[1]{\ensuremath{@#1}}
+\newcommand{\Kmod}[1]{\langle K_{#1}\rangle}
+\newcommand{\KKmod}[1]{\langle\!\langle K_{#1}\rangle\!\rangle}
+\newcommand{\Bmod}[1]{[K_{#1}]}
+\newcommand{\Emod}[2]{\langle E\rangle^{#2}_{#1}}
+\newcommand{\gsep}[2]{\mathbin{|_{#1}^{#2}}}
+
+\lstdefinestyle{rho}{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape,
+  morekeywords={new,in,for,contract,match,if,else,true,false,Nil,where,and,or,not,
+                exists,forall,nu,rules,rewrites,equations,types,language,name},
+  morecomment=[l]{//},
+  columns=fullflexible,
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  frame=none,
+  xleftmargin=1em
+}
+\lstset{style=rho}
+
+\title{\textbf{Sixteen Scientists on One Board}\\[0.4em]
+\large A society of piece-agents as a chess player, in which coordination is\\
+quorum sensing, strategy is a coalition formula, and a ply is a join}
+\author{A F1R3FLY.io working note}
+\date{September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note specifies a chess player whose \emph{player} is not an evaluator but a
+society: each piece of the moving colour is an agent in its own right, and the
+sixteen agents coordinate to emit one move per turn. The board is likewise an
+agent. The setting is cost-accounted \rhoc\ as implemented on the
+\texttt{cost-accounted-rho} branch of \texttt{f1r3node-rust}, with the
+generated spatial--behavioural logic of the mortal-scientist programme, and we
+assume at development time an implementation of coalition logic augmented with
+context-labelled modalities. We argue five structural points and then give a
+spec. First, the board needs three name families per square, not one: an
+occupancy cell, a move interface, and an attack-marker family, because
+perception must not be able to act and because the attack map is the one
+expensive object all sixteen agents share. Second, a chess ply is not a single
+rewrite but an \emph{$N$-ary join}, and the join arity is exactly the move
+taxonomy: two for a quiet move, two with occupant termination for a capture,
+three for en passant, four for castling. This is what preserves the generated
+modality $\Kmod{j}$ and the bijection between redex positions and legal moves.
+Third, the coordination problem is the honeybee problem, and its solution is
+forced by the same altitude argument: consensus over sixteen pieces is a global
+universal with no presented witness, quorum at a candidate move is a local
+$\oplus\otimes$ over one open, so the society must quorum-sense. Fourth --- and
+this is the load-bearing observation --- in \rhoc\ a quorum \emph{is} a join
+arity and one linear advocacy token per piece per round is the polity's
+franchise, so the two-quorum theorem becomes an arithmetic fact about sends
+rather than a simulation result: with sixteen pieces and threshold $k \geq 9$ a
+split is structurally impossible. Fifth, legality is a genuine universal and
+therefore belongs to the world, not to the society; pins and checks are
+deposited structure and pin-awareness is perception. We then observe that
+capture is predation in the existing sense, so material advantage is
+metabolic advantage and the classical piece values become something the ecology
+might derive rather than receive. The implementation spec that follows fixes
+the namespace discipline, the turn protocol, the formula ladder, the cost
+schedule, the requirements placed on the assumed coalition-logic checker, a six
+phase delivery plan, and eight measurements, of which the sharpest asks whether
+the noughts-and-crosses finding that non-modal rungs deliver ninety-two percent
+of yield for thirty-four percent of cost is a fact about games or a fact about
+noughts.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+A conventional chess program is a single agent. It holds a position, generates
+moves, evaluates leaves, and returns an argmax. Everything about its
+architecture follows from that: the evaluation function is global, the search is
+centralised, and the pieces are data.
+
+The proposal this note specifies inverts that. Each piece of the moving colour
+is an agent with its own budget, its own hypothesis about the position, and its
+own capacity to act. The board is an agent too. Sixteen agents want to move and
+exactly one move commits, so the architecture is obliged to contain something
+the conventional design never needs: a mechanism that turns sixteen concurrent
+desires into one commitment, without a chairman.
+
+That obligation is the reason to build the thing. It is not a distributed
+implementation of a familiar algorithm. It is the smallest classical domain in
+which the constructions of the mortal-scientist programme --- cost-accounted
+computation, the generated spatial--behavioural logic, the assay in guard
+position, predation as the sole route to budget, and coalition logic read as a
+hypothesis language about populations --- all have non-trivial content at the
+same time, and in which a century of external calibration is available to say
+whether they are worth anything.
+
+\subsection{What is being claimed, and what is not}
+
+We are not claiming that a society of piece-agents will play strong chess. On
+the contrary: \S\ref{sec:risks} argues it will play weak chess for a long time,
+for reasons that are structural rather than incidental, and the note is written
+so that this is not a surprise. What is claimed is that the society is a better
+instrument than a conventional engine for a specific question the programme has
+already asked and answered only in miniature, which is whether the yield of a
+hypothesis is worth its price; and that chess is the smallest board on which the
+answer could plausibly differ from the answer noughts-and-crosses gave.
+
+\subsection{The spectrum, and where the interesting structure is}
+
+The design space is usually presented as a spectrum. At one extreme \flang\
+coordinates sixteen sessions with different language models, so a piece-agent is
+a thin wrapper around a model session. At the other extreme each agent is
+\flang\ logic throughout. Section~\ref{sec:policy} argues that the extremes are
+not really two points on one dial. They are two answers to a single question ---
+where a piece's policy lives, and whether it is priced --- and that the
+programme already has a construction that lets one have both without incoherence,
+namely the aperture. The recommendation is not a compromise between the extremes
+but a relocation: the model goes outside the ply loop, where it is good at the
+jobs it is good at, and inside only as a declared aperture in a stratified shard.
+
+\subsection{Organisation}
+
+Section~\ref{sec:imported} states what is imported from the existing programme
+and what is assumed to exist at development time. Section~\ref{sec:why} argues
+for chess as the next worked example. Sections \ref{sec:two}--\ref{sec:material}
+are the analysis: two societies, the board, the ply as a join, the coordination
+problem, coalition logic, and material as metabolism. Section~\ref{sec:policy}
+handles the model axis. Section~\ref{sec:spec} is the implementation spec and is
+the longest section. Section~\ref{sec:measure} lists the measurements.
+Section~\ref{sec:risks} is the honest accounting of what will go wrong.
+Section~\ref{sec:open} lists open problems. Appendix~\ref{app:rho} is the
+\rhoc\ listing and Appendix~\ref{app:formulae} the formula catalogue.
+
+\section{What is imported, and what is assumed}
+\label{sec:imported}
+
+\subsection{From the mortal-scientist programme}
+
+The note stands on five constructions that already exist and are not re-derived
+here.
+
+\paragraph{The cut and the three grades of access.} A computation is
+ontologically isolated; the environment of a computation is other computations;
+and a learner reaches its environment by perception (reading deposited
+structure, priced by formula depth), interaction (rendezvous, priced by the
+communication) or reflection (quotation). The grades are separated in practice
+by a choice of namespace, not by a modality: the reason a threat marker in the
+noughts listing lives on its own name family is that were a line to signal a
+threat on a square's move channel, the signal would rendezvous with the
+square's receipt and the line would have \emph{played the move}. Perception must
+not be able to act.
+
+\paragraph{The generated logic.} One primitive modality $\Kmod{j}$ per rewrite
+rule and choice of redex position, with $j$ ranging over redex positions;
+structural connectives including separating conjunction; the name predicate
+$\qt\varphi$; graded separation over a \emph{described namespace},
+$\varphi \gsep{k}{N} \psi$; greatest fixed point $\nu$. There is no hidden-name
+quantifier and no need of one, because \texttt{new} is syntactic sugar: a name
+is a quoted process, no process contains the name that codes it, so a name
+fresh in $P$ is manufactured by quoting any term properly containing $P$.
+Consequently every family of names used below is \emph{described} by a
+predicate rather than enumerated, which is what makes graded separation over it
+available.
+
+\paragraph{The assay.} A hypothesis is not consulted and then acted on. It sits
+in guard position in a \texttt{where} clause, so acting \emph{is} testing and
+confirmation \emph{is} the rendezvous. The complementary guard pair yields three
+outcomes --- confirm, refute, and a third that is empty, in which the budget was
+spent and nothing was learned. The third is ignorance, not refutation, and it is
+indistinguishable from the environment being faulty. That identification of the
+two bottoms is imported wholesale.
+
+\paragraph{Conservation and predation.} Nothing mints. The arena routes. On a
+win the arena hands the winner the loser's metabolic name, so $\sigma + \kappa =
+\Theta$ throughout. An exogenous reward would need a referee with a mint and a
+referee with a mint destroys conservation.
+
+\paragraph{Read versus drive.} There are two routes to any predicate. Read it,
+at perception prices, if the environment has already computed it into legible
+structure; or drive it, priced by rendezvous. This is a claim about
+environments, not about learners, and it is statable only because the framework
+prices the grades separately and both parties have stacks. The
+noughts-and-crosses measurement found that the three non-modal rungs of its
+ladder delivered $+0.444$ of a total $+0.481$ gain --- $92.3\%$ of the yield ---
+for $87.9$ of $255.9$ metered units, that is $34.3\%$ of the cost.
+
+\subsection{From the consensus and quorum line}
+
+Coalition logic in Gabbay's presentation, augmented with the behavioural
+connective of context-labelled modalities, with the graded reading developed in
+the quorum note: the coalition modality over a namespace $N$ valued in a
+resolution semiring $V$,
+\[
+  \Emod{N}{V}\,\psi \;=\; \bigoplus_{O \subseteq N \text{ open}}
+                          \bigotimes_{q \in O} \psi(q),
+\]
+where opens are described sub-namespaces via the name predicate. Three results
+are imported. First, opens are not enumerated but described, so
+$\varphi \gsep{k}{N} \psi$ applies to coalitions. Second, over $\Rnn$ with
+$\otimes = \times$ a large coalition decays toward zero, so the correct quorum
+semantics is $\otimes = \min$, a coalition being as strong as its weakest
+member. Third, over the tropical and Viterbi algebras the attainment proposition
+holds on the nose, so the coalition modality is \emph{attained} and the reader
+gets a witness coalition rather than a scalar.
+
+The two-quorum theorem of the swarm note is imported in statement and
+re-proved in \S\ref{sec:coord} in a form specific to this setting, where it is
+much stronger.
+
+\subsection{From the platform}
+
+Cost-accounted \rhoc\ as it stands on \texttt{feature/cost-accounted-rho}. Two
+facts about the native integration bear on the spec. Metering is per-COMM at the
+reducer, keyed by the deploy envelope's signature, and a signed term is
+\emph{recognised} rather than lowered to a parking gate, so the normalised
+\texttt{Par} has the same COMM count as the unsigned program and there is no
+double-metering. In-program parking does not occur natively; an unfunded deploy
+is rejected at the acceptance gate rather than parked mid-program. The surface
+forms are unchanged: \texttt{s :: ()} mints, \texttt{\{\% P \%\}[s]} gates,
+\texttt{(*)} is joint authority, \texttt{::} stacks a budget, \texttt{-o}
+delegates, \texttt{\# P} signs a section.
+
+The live guard fragment is arithmetic and pattern only. Structural and modal
+guards are marked \texttt{//! ideal} in every listing in the repository, meaning
+they specify a check rather than perform one. Appendix~\ref{app:rho} follows
+that convention exactly.
+
+\subsection{What is assumed to exist at development time}
+\label{sec:assumed}
+
+The instruction under which this note is written is that an implementation of
+coalition logic together with context-labelled modalities will be available. We
+therefore do not design around its absence, but we do state precisely what is
+being relied on, because a spec that assumes a component should say what the
+component must do. These are the requirements; they are collected again as an
+interface in \S\ref{sec:checker}.
+
+\begin{requirement}[Satisfaction, not synthesis]
+\label{req:direction}
+The checker must answer $P \models \varphi$. The consensus note's term
+assignment runs the other way, $\vdash \varphi \rhd P$, proofs as processes; the
+society needs the model-checking direction, because satisfaction is the guard
+side and a guard side is what a \texttt{where} clause is. Coalition logic here
+gives a piece a way to \emph{ask} whether a coalition has formed, not a way to
+build one. This is the reason the whole synthesis-side gap of the consensus note
+--- its missing proof system --- is not on this project's critical path.
+\end{requirement}
+
+\begin{requirement}[Three-valued verdicts with a budget bottom]
+Verdicts are Kleene $\{f < b < t\}$ with $b$ carrying both readings: the
+participant is faulty or stuck, and the observer could not afford to decide.
+The caller must not be able to distinguish them, and the spec below depends on
+that indistinguishability being visible in the measurements.
+\end{requirement}
+
+\begin{requirement}[Semiring-parametric grading with attainment]
+The value algebra is a parameter. At minimum $\mathbb{B}$, $\Rnn$, tropical
+$(\min,+)$ and Viterbi $(\max,\times)$ must be available. For the tropical and
+Viterbi instances the checker must return a \emph{witness}: the coalition
+attaining the $\oplus$, not merely its value.
+\end{requirement}
+
+\begin{requirement}[Indexed context-labelled modalities]
+$\Kmod{j}$ must be indexed by redex position, and the quantifiers $\exists j$
+and $\forall j$ must range over redex positions of the presented term. An
+action-labelled logic will not do: every claim in the noughts world was the same
+action, and in chess every quiet move is the same rewrite rule. The distinctions
+that matter are positional.
+\end{requirement}
+
+\begin{requirement}[Settled modality]
+A derived modality $\KKmod{j}$ meaning ``the rewrite at $j$ fires, the board's
+deposit computation settles, and then $\varphi$ holds'' must be available, with
+the settling shown terminating and confluent. In the noughts world this was
+Lemma~8; \S\ref{sec:board} restates the obligation for chess, where it is
+harder because ray scans are recursive.
+\end{requirement}
+
+\begin{requirement}[Costed queries]
+Every query returns a metered cost alongside its verdict, charged to the
+caller's stack, so that the ladder of \S\ref{sec:ladder} can be priced and the
+measurements of \S\ref{sec:measure} can be taken. A checker that answers for
+free would make the entire experiment vacuous.
+\end{requirement}
+
+\begin{requirement}[Namespace-indexed opens]
+The coalition modality must accept its namespace as a name predicate, so that
+``my two rooks'' and ``the pieces bearing on \texttt{f7}'' are expressible
+without enumeration, and so that graded separation over the coalition namespace
+is available.
+\end{requirement}
+
+\begin{requirement}[Caching by verdict]
+Repeated queries of the same formula against an unchanged deposit must be
+served from cache at the price of a lookup. Sixteen agents will ask overlapping
+questions; without caching the read-versus-drive measurement of
+\S\ref{sec:measure} measures the checker's implementation rather than the
+architecture.
+\end{requirement}
+
+\section{Why chess, and why now}
+\label{sec:why}
+
+The programme's existing worked example is noughts-and-crosses. Every number in
+it is exact over the $255{,}168$ plays, which is its strength, and it is solved
+and tiny, which is its weakness. Four things are true of chess and false of
+noughts, and each of them turns a stipulation of the earlier note into a
+question with an answer.
+
+\paragraph{Material exists, so eating is non-trivial.} In noughts nothing is
+captured; predation happens only at the arena, between games, when a loser's
+metabolic name is handed over. In chess predation happens \emph{during} the
+game, at the granularity of a single ply, and the prey is a peer agent with its
+own stack. Conservation has to hold across that, and the accounting becomes
+interesting rather than ceremonial.
+
+\paragraph{Coalitions are real, so coalition logic has content.} Chess strategy
+is already coalition talk: the rook and bishop together force mate, these three
+pieces hold the kingside, that knight is doing two jobs. In noughts a coalition
+is a pair of threats and the vocabulary is overkill. In chess the coalition
+modality has something to quantify over.
+
+\paragraph{The position is legible, so read-versus-drive is a real choice.} The
+attack map of a chess position is expensive, shared, and recomputable. Whether
+the world deposits it or each agent drives it is a genuine design fork with a
+measurable cost difference. In noughts the analogous object is eight lines and
+the question does not bite.
+
+\paragraph{The science cannot be closed, so the ecology does not die.} The
+noughts note found that $\chi$, the exact characteristic formula, is reached at
+nine unfoldings, and then found that this is fatal: a $\chi$-monoculture draws
+every game, the harvest rate goes to zero, and the population starves on a
+finite wall. A solved science is a dead ecology and imperfection is load-bearing.
+In chess $\chi$ is not reachable at any budget the framework admits, so the
+ecology cannot die that way. We record this as the reason the ecological half of
+the programme becomes \emph{observable} here for the first time.
+
+\begin{remark}[Chess keeps the ecology alive]
+\label{rem:alive}
+The noughts result that a solved science is a dead ecology was obtained by
+exhibiting the solved case. It is a theorem about a closed science and its
+practical content --- that real populations must be imperfect to eat --- could
+not be observed in a world where perfection was affordable. Chess supplies a
+world where it is not. This does not make the earlier result stronger; it makes
+it testable in a regime where the alternative hypothesis, that the population
+converges on a single good policy and stops, is actually available.
+\end{remark}
+
+Against those four, one thing is true of noughts and false of chess: exactness.
+Nothing in the chess project will be exact over the game tree. Every measurement
+in \S\ref{sec:measure} is a sampled estimate against a fixed reference opponent,
+and the note should say so in its own results section rather than discovering it
+in review.
+
+\section{Two societies, one board}
+\label{sec:two}
+
+The proposal names two things as agents: the sixteen pieces and the board. It is
+worth being explicit that these are two \emph{societies}, with different jobs,
+different budgets, and different logical characters.
+
+\begin{definition}[The world and the player]
+\label{def:two}
+The \emph{world} is the society of sixty-four square-agents together with the
+ray, attack, pin and legality machinery they support, plus the arena and the
+clock. The \emph{player} is the society of at most sixteen piece-agents of one
+colour. The world holds no strategic stack and mints nothing; it deposits
+structure and refuses illegal joins. The player holds the budget and makes the
+decision.
+\end{definition}
+
+This is the same split the noughts listing already makes, between
+\texttt{Board}, \texttt{Cells}, \texttt{Line} and \texttt{Scan} on one side
+and \texttt{Choose}, \texttt{Move} and \texttt{Revise} on the other, and it is the split
+that makes the question \emph{who is billed} askable. The noughts note observed
+that putting threats in the term relocates the cost of the scan from the
+scientist's budget to the world's, and that the interesting question is who pays.
+In chess that question has a large answer, because the object in dispute is the
+attack map.
+
+\begin{remark}[The decomposition is a choice, and there are others]
+\label{rem:decomp}
+Agent-per-piece is not the only decomposition. Agent-per-square is the world.
+One could also try agent-per-ray (the sliding lines as agents, which is close to
+how the noughts \texttt{Line} contract behaves), or agent-per-plan, where an
+agent is a coalition and pieces are its resources. Agent-per-piece is chosen
+because it is the decomposition in which predation is definable: a piece can be
+captured and a ray cannot. The alternatives are worth naming because
+agent-per-plan is what a strong human player's introspection reports, and it is
+the natural second experiment.
+\end{remark}
+
+\section{The board}
+\label{sec:board}
+
+\subsection{Why one name family per square is not enough}
+
+The proposal's encoding is
+\[
+  \prod_{1 \leq i,j \leq 8} \qt{(i,j)}\,!\,(\,\cdot\,)
+\]
+with the payload $\Nil$ for unoccupied and $*x$ for the fresh channel minted to
+interact with a particular piece. The occupancy half of this is right and the
+manufactured-name half is right --- we return to both --- but the encoding
+conflates two roles that the existing listings deliberately separate, and the
+reason they separate them is stated in the noughts source: perception must not be
+able to act, and that separation of access grades is enforced by choice of
+namespace.
+
+In noughts the separation is cheap because perception is short-range: eight
+lines read three cells each. Chess has genuine long-range perception. A rook on
+\texttt{a1} must know what stands on \texttt{a8} without any intention of going
+there, and a bishop's diagonal passes over squares it will never occupy. If
+reading occupancy means consuming and re-emitting $\qt{(i,j)}!(v)$, then every
+perception is billed as an interaction, sixteen agents scanning concurrently
+serialise on every square, and the read-versus-drive distinction --- which is one
+of the two things this project exists to measure --- has been designed out of the
+system before the first line of code.
+
+\begin{definition}[Three name families per square]
+\label{def:families}
+Let $b$ be the board's channel and $s$ a square index. The board maintains:
+\begin{description}[leftmargin=2.2em,style=nextline]
+\item[the occupancy cell] $\mathit{occ}(s) = \qt{[*b,\texttt{"occ"},s]}$, a
+resting send carrying either $\Nil$ or $*p$ where $p$ is the piece-agent's
+channel. This is the only family a ply consumes.
+\item[the attack family] $\mathit{atk}(s,c,p) =
+\qt{[*b,\texttt{"atk"},s,c,p]}$, standing offers deposited by the settling
+computation, one per attacker $p$ of colour $c$ bearing on $s$. Read-only in
+practice: no move protocol receives on it.
+\item[the constraint family] $\mathit{pin}(s)$, $\mathit{chk}(c)$,
+$\mathit{ep}(s)$, $\mathit{cast}(c,\mathit{side})$, likewise deposited, carrying
+the derived facts a legality guard consults.
+\end{description}
+All three are manufactured names in the sense of the freshness-by-quotation
+proposition, not \texttt{new}-bound, so each family is describable by a name
+predicate and graded separation over it is available.
+\end{definition}
+
+\begin{proposition}[Perception must not act]
+\label{prop:percept}
+If attack markers are deposited on the occupancy family, then a scan that
+signals ``$p$ bears on $s$'' can rendezvous with a move protocol receiving on
+$\mathit{occ}(s)$, and the scan performs a ply. Separating the families makes
+that failure unrepresentable rather than merely unlikely.
+\end{proposition}
+
+\begin{proof}
+Immediate, and it is the chess instance of the argument written into the noughts
+source for threat offers. The content is that the separation is structural: with
+distinct families there is no term in which a scan and a move protocol can
+rendezvous, so the property does not depend on any discipline the scan follows.
+\end{proof}
+
+\subsection{Who is billed for the attack map}
+\label{sec:billed}
+
+The attack map is the expensive object in chess and it is shared by every agent
+in the player. There are two architectures.
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+\item[World-billed.] After each ply the board runs a settling computation that
+walks every ray and deposits $\mathit{atk}$ markers. The player's agents then
+read markers at perception prices. One computation, sixteen readers.
+\item[Player-billed.] The board deposits only occupancy; each agent that needs
+to know whether a square is attacked drives the query itself, paying a
+rendezvous per square walked. Sixteen computations of one fact.
+\end{description}
+
+The framework's own thesis says the first should win, and by a factor near the
+population size, because a predicate the environment has computed into legible
+structure is read at formula-depth prices rather than driven at rendezvous
+prices. But the framework does not say this is free: the world's settling
+computation is metered too, and the noughts note's remark on the point is
+precisely that the cost is \emph{relocated}, not removed, and that the
+interesting question the framework can pose --- because both parties have stacks
+--- is who is billed. We therefore specify both and measure the difference
+(measurement M7, \S\ref{sec:measure}). This is the cheapest genuinely
+informative experiment in the whole project.
+
+\begin{remark}[Settling in chess is harder than in noughts]
+\label{rem:settle}
+The noughts settling lemma had an easy proof: each of eight lines fires once, no
+line's output enables another because offers go to names no line reads, so the
+computation terminates and is confluent. The chess settling walks rays, and a
+ray's walk is recursive in the board's occupancy: a slider's ray terminates at
+the first occupied square. Termination is still clear --- each ray step consumes
+one square of a strictly decreasing remaining ray --- and confluence still holds
+for the same reason, that markers are deposited on a family nothing in the
+settling reads. But the obligation must be discharged explicitly, because
+$\KKmod{j}$ depends on it and so does every modal rung of the ladder.
+\end{remark}
+
+\subsection{Legality is a universal, and it belongs to the world}
+\label{sec:legality}
+
+Check, pin, and discovered check are constraints on the legality of \emph{every}
+piece's move, and they are global: whether the bishop on \texttt{c4} may move
+depends on whether doing so exposes the king. No individual piece can establish
+this locally and no quorum of pieces can establish it either, because an illegal
+move is not a move and a vote does not make it one.
+
+\begin{principle}[The legality universal is the world's obligation]
+\label{prin:legality}
+The one unavoidable $\forall$ in chess is placed on the world's budget, not the
+player's. The world refuses illegal joins, the way the arena in the noughts
+world holds no stack and only routes. The consequence is that the player's own
+hypothesis language stays existential and finitely confirmable, which is the
+regime in which the asymmetry proposition says witnesses are cheap.
+\end{principle}
+
+There is a second consequence, and it is the one that makes this satisfying
+rather than merely convenient. If the world deposits $\mathit{pin}(s)$ markers
+--- computed by walking outward from each king through the first own piece to
+the first enemy slider --- then pin-awareness becomes perception. A piece does
+not reason about whether it is pinned; it reads whether a marker stands on its
+square. Likewise check is a marker, not a search. The single most classically
+``knowledge-heavy'' part of chess legality becomes deposited structure, and the
+read-versus-drive thesis gets its best instance.
+
+\begin{remark}[What the world does not deposit]
+\label{rem:notdeposit}
+The world deposits facts about the \emph{current} position: occupancy, attacks,
+pins, checks, en-passant and castling rights. It does not deposit facts about
+\emph{consequences} of moves, because those are the player's hypotheses and
+pricing them to the world would smuggle the evaluation function back into the
+architecture through the floor. The line between the two is exactly the line
+between the non-modal and the modal rungs of the ladder, and it should be
+guarded in review: any proposal to have the board deposit ``this move loses a
+piece'' is a proposal to write a conventional engine and call it an ecology.
+\end{remark}
+
+\section{A ply is a join}
+\label{sec:join}
+
+\subsection{What the noughts construction got, and why chess does not inherit it}
+
+The second draft of the game note was a correction: the context $K$ had never
+been instantiated, and instantiating it as a \emph{redex} context was what made
+$\Kmod{s}$ a generated primitive rather than a derived abbreviation. The payoff
+was a bijection. An empty square is a receipt offering to be claimed; a claim is
+one join consuming the mover's send and the stale mark; after it fires no
+receipt remains. So redex positions correspond to empty squares correspond to
+legal moves, and the branching factor of $\exists s$ \emph{is} the legal move
+count.
+
+None of that transfers to chess for free. A chess move touches two squares at
+minimum, vacating one and occupying another. A capture additionally ends a
+sibling agent's computational life. Castling touches four squares and two
+pieces. En passant has a destination distinct from the square of the captured
+pawn. Promotion replaces a piece's identity. If a ply is several rewrites then
+$\Kmod{j}$ indexes something finer than a move, the bijection fails, the modal
+rungs of the ladder index the wrong thing, and --- worse operationally --- two
+plies can interleave in the middle of each other.
+
+\subsection{The repair}
+
+The repair is available and it is already demonstrated in the platform. The
+cost-accounting demonstration uses an $N$-ary atomic join for a four-cell swap
+that conserves money and goods all-or-nothing in every interleaving, with the
+guard deciding before any leg fires. A chess ply is that shape exactly.
+
+\begin{definition}[A ply]
+\label{def:ply}
+A ply is a single $N$-ary join over the occupancy cells it touches, guarded by a
+\texttt{where} clause consulting the constraint family, which re-emits every
+consumed cell with its updated payload. Formally, for a move $m$ touching
+squares $s_1,\dots,s_n$,
+\[
+  \texttt{for}\;(\,\qt{v_1} \leftarrow \mathit{occ}(s_1)\;\&\;\cdots\;\&\;
+  \qt{v_n} \leftarrow \mathit{occ}(s_n)\;\texttt{where}\;
+  \mathsf{Legal}(m,\vec v)\,)\;\{\,\cdots\,\}
+\]
+where the body re-emits $\mathit{occ}(s_1),\dots,\mathit{occ}(s_n)$ with the
+post-move payloads, terminates any captured piece-agent, and triggers the
+settling.
+\end{definition}
+
+\begin{proposition}[Move taxonomy is join arity]
+\label{prop:arity}
+Under Definition~\ref{def:ply} the classification of chess moves by arity and
+payload transformation is exactly the classical move taxonomy:
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Move kind & Arity & Payload transformation \\
+\midrule
+Quiet move          & 2 & $(*p,\Nil) \mapsto (\Nil,*p)$ \\
+Capture             & 2 & $(*p,*q) \mapsto (\Nil,*p)$, $q$ terminated \\
+En passant          & 3 & $(*p,\Nil,*q) \mapsto (\Nil,*p,\Nil)$, $q$ terminated \\
+Castling            & 4 & $(*k,\Nil,\Nil,*r) \mapsto (\Nil,*k,*r,\Nil)$ \\
+Promotion           & 2 & $(*p,\cdot) \mapsto (\Nil,*p')$, $p$ retired, $p'$ born \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{proposition}
+
+We state this as a proposition rather than a table because it has a consequence.
+
+\begin{corollary}[$\Kmod{j}$ survives]
+\label{cor:Ksurvives}
+With plies as joins, redex positions of the ply rule correspond bijectively to
+legal moves, so $\Kmod{j}$ remains a generated modality with $j$ ranging over
+moves, $\exists j$ has the legal move count as branching factor, and every modal
+rung of the ladder indexes what it is supposed to index. The whole ladder
+apparatus of the game note transfers.
+\end{corollary}
+
+\begin{remark}[The alternative, and why not]
+\label{rem:alt}
+One could let a ply be several rewrites and recover a composite via the settled
+modality, as the noughts world does for the board's own settling. The cost is
+that a ply is then no longer atomic in the term, so two agents' plies can
+interleave, and the guard that makes a move legal would have to be re-checked
+against a position that may have changed under it. Chess has a turn structure
+and it should be represented by atomicity rather than by convention. The join
+route also costs nothing: the platform has $N$-ary joins and the demonstration
+of a conserving four-cell swap already exists.
+\end{remark}
+
+\begin{remark}[Promotion is birth and it is not free]
+\label{rem:promo}
+Promotion is the only move that creates an agent. Under conservation it cannot
+create a \emph{budget}: the promoted agent's stack must come from somewhere, and
+the natural source is the pawn's own stack, transferred whole. That makes
+promotion a change of policy and capability at constant budget, which is the
+right reading, and it means the classical observation that a promoted queen is
+worth a queen is not automatic here --- it is a prediction, since the promoted
+agent inherits a pawn's accumulated stack rather than a queen's.
+\end{remark}
+
+\section{The coordination problem}
+\label{sec:coord}
+
+\subsection{The shape of the problem}
+
+Sixteen agents each want to move; exactly one move commits. This is not a
+technical inconvenience, it is the whole architectural content of the proposal,
+and the programme already contains the analysis of it.
+
+\begin{observation}[The K/J split]
+\label{obs:kj}
+A graded clause is a map from candidates to values: a \emph{weighting} of the
+fibre, not a \emph{section} of it. In the selection-monad reading, a clause is a
+quantifier $(X \to R) \to R$ and a resolver is a selection function
+$(X \to R) \to X$. The swarm exhibits the split as different behaviours
+performed by different bees: dance evaluation is the clause, piping and takeoff
+are the section, and no bee does both.
+
+The piece society must exhibit the same split. A piece \emph{evaluates}
+candidate moves; something else \emph{commits}. A design in which each piece
+both scores and plays is a design with sixteen resolvers and no game.
+\end{observation}
+
+\subsection{Quorum, not consensus, and the argument is not a preference}
+
+The obvious architecture is a council: all sixteen pieces report scores, the
+scores are combined, the argmax commits. That architecture has a chairman, and a
+chairman is a global evaluator wearing a hat. The programme's altitude argument
+rules it out, and it does so by derivation rather than by taste.
+
+\begin{proposition}[The mechanism is forced]
+\label{prop:forced}
+Consensus at the council is a global $\forall$ over all sixteen advocates with
+no presented witness: finitely refutable, not finitely confirmable. Quorum at a
+candidate move is a local $\oplus\otimes$ over one open. No participant can
+evaluate the global universal within a bounded budget, so a society of
+budget-bounded participants must use the local formula.
+\end{proposition}
+
+This is the quorum note's derivation of Seeley's empirical finding, restated for
+a designed rather than an evolved population. In the swarm it explains why
+quorum is sensed at the site rather than at the cluster. Here it says: pieces
+advocate for candidate \emph{moves}, and a candidate that accumulates enough
+advocacy commits. Nobody counts the whole distribution.
+
+\subsection{The advocacy namespace, and why a candidate move is a name}
+
+\begin{definition}[Advocacy]
+\label{def:advocacy}
+A candidate move $m$ is a term; by reflection $\qt{m}$ is a name. The advocacy
+channel for $m$ is $\mathit{adv}(m) = \qt{[*\mathit{pl},\texttt{"adv"},\qt{m}]}$
+where $\mathit{pl}$ is the player's channel. A piece advocates for $m$ by
+sending its advocacy token on $\mathit{adv}(m)$. An \emph{open} in the coalition
+sense is the set of pieces that have advocated for a given $m$ during the
+current round; it is described by a name predicate, not enumerated.
+\end{definition}
+
+This is the herd note's corollary landing exactly: opens are described
+namespaces via $\qt\varphi$. It is also, we think, the most pleasing single
+consequence of working in a reflective calculus. In the swarm an open is a set
+of bees and the modeller has to say so. Here the site a piece advocates for
+\emph{is} a name, manufactured by quoting the move, and the advocacy set is a
+sub-namespace of the player's namespace. Nothing has to be introduced to make
+coalition logic apply; the calculus already provides the points.
+
+\subsection{One token per piece per round: the society is a polity}
+
+\begin{definition}[The franchise]
+\label{def:franchise}
+At the start of each advocacy round the player issues to each surviving piece
+exactly one \emph{linear} advocacy token, of signature $\mathsf{V}$, into a
+located stack whose channel is manufactured from the piece's identity. A piece
+spends its token by advocating, or by inhibiting, or not at all. Tokens do not
+carry over between rounds.
+\end{definition}
+
+This is the polity listing's pre-election phase transposed without change: a
+persistent claim on the roll metered to one linear token per epoch, a source
+keyed to identity and not a mint. The reason to adopt it is not tidiness. It is
+that it makes the following theorem an arithmetic fact about sends rather than a
+statistical regularity.
+
+\subsection{Quorum is a join arity}
+
+\begin{definition}[The commit gate]
+\label{def:gate}
+The commit gate for candidate $m$ at threshold $k$ is the $k$-ary join
+\[
+  \texttt{for}\;(\,\qt{a_1} \leftarrow \mathit{adv}(m)\;\&\;\cdots\;\&\;
+  \qt{a_k} \leftarrow \mathit{adv}(m)\,)\;\{\;\mathsf{Commit}(m)\;\}
+\]
+which fires exactly when $k$ distinct advocacy sends stand on $\mathit{adv}(m)$,
+consuming all of them.
+\end{definition}
+
+\begin{theorem}[Two quorums need $2k$ tokens]
+\label{thm:2k}
+Let $S$ be the number of surviving pieces, each holding exactly one linear
+advocacy token per round, and let $k$ be the commit threshold. Then two distinct
+candidate moves cannot both fire their commit gates in the same round unless
+$S \geq 2k$. In particular with $S = 16$ and $k \geq 9$ a split is impossible.
+\end{theorem}
+
+\begin{proof}
+Each commit gate consumes $k$ sends on its own channel. Tokens are linear, so a
+token spent on $\mathit{adv}(m)$ is not available on $\mathit{adv}(m')$ for
+$m' \neq m$, and each piece holds one. Two firings therefore consume $2k$
+distinct tokens drawn from a pool of $S$.
+\end{proof}
+
+\begin{remark}[What this theorem is worth]
+\label{rem:2kworth}
+In the swarm the corresponding statement is a structural impossibility result
+that a statistical model cannot state, and it was confirmed by simulation:
+splits identically zero at $S = 12,16,20,24,28,29$ and first appearing at
+$S = 30 = 2k$ with $k = 15$. Here it needs no simulation, because linearity of
+the token and arity of the join do the counting. That is the difference between
+importing a result and re-deriving it in a calculus that already had the right
+primitives. It also means the designer has a free safety property: choose
+$k \geq \lceil S/2 \rceil$ and the society \emph{cannot} commit two moves, for
+any policies whatsoever, with no cross-inhibition machinery at all.
+\end{remark}
+
+\subsection{The other failure mode, and what cross-inhibition is for}
+
+Safety comes free; liveness does not. With $k \geq 9$ and advocacy split eight
+against eight, no gate fires and the round deadlocks. The swarm literature's
+division of labour applies exactly: below $2k$ cross-inhibition prevents
+\emph{deadlock}; above $2k$ it prevents \emph{split}. Since the design fixes
+$k \geq S/2$ and buys no-split structurally, cross-inhibition in this setting
+has only the deadlock job, and it competes with a cheaper mechanism.
+
+\begin{definition}[Rounds, and the deposited distribution]
+\label{def:rounds}
+A turn consists of up to $R$ advocacy rounds. At the end of a round in which no
+gate fired, unconsumed advocacy sends remain standing on their
+$\mathit{adv}(m)$ channels and are \emph{readable}. Fresh tokens are issued. A
+piece may therefore re-advocate having perceived, at perception prices, where
+the rest of the society stood.
+\end{definition}
+
+This is the bees reading dance strength at the cluster: cheap perceptual price
+for the reversible decision (which candidate to back), expensive interaction
+price for the irreversible one (the commit). We take that as the default and
+treat cross-inhibition as a labelled variant, for two reasons. It is one more
+mechanism, and the swarm measurement recorded an unexpected cost --- with cross
+inhibition on, the swarm chose the better site slightly \emph{less} often,
+because inhibition suppresses correct advocacy too.
+
+\begin{definition}[The resolver of last resort]
+\label{def:lastresort}
+If $R$ rounds elapse with no commit, the clock commits the candidate carrying
+the most standing advocacy, ties broken by a deterministic order on $\qt{m}$.
+\end{definition}
+
+This is the one centralised element in the design and the note should not hide
+it. It is held by the clock, which is world and not player; it has no evaluation
+function and no preferences; and its firing rate is a measurement
+(M4, \S\ref{sec:measure}), because a society that reaches last resort often is a
+society whose quorum parameters are wrong.
+
+\subsection{The population shrinks, and it crosses the boundary during play}
+
+\begin{proposition}[The endgame crossing]
+\label{prop:crossing}
+$S$ is monotonically non-increasing over a game, from $16$ toward as few as one
+piece besides the king. If $k$ is held fixed as an absolute number, then
+$S < k$ eventually holds and no gate can ever fire; if $k$ is held fixed as a
+fraction $\alpha S$ with $\alpha > 1/2$, splits remain impossible throughout but
+the absolute number of advocates required falls. Either way the society crosses
+a regime boundary at a computable ply.
+\end{proposition}
+
+\begin{remark}[A prediction the bees could not supply]
+\label{rem:predict}
+The swarm's $S$ is fixed within an episode, so the two-quorum theorem there
+partitions \emph{episodes}. Chess partitions the \emph{inside} of a single
+episode: the same society passes through the split-possible regime and into the
+split-impossible one as material comes off. The framework therefore predicts
+that the character of the decision procedure must change at a computable point,
+with competing plans available in the middlegame and structurally unavailable in
+the endgame. That this matches ordinary chess intuition --- middlegames are
+about competing plans, endgames about executing one --- is not evidence, but it
+is the kind of coincidence that makes a measurement worth taking rather than a
+post-hoc story worth telling. M5 in \S\ref{sec:measure} is that measurement, and
+it is the one we would report first.
+\end{remark}
+
+\section{Coalition logic as the society's strategic vocabulary}
+\label{sec:coalition}
+
+\subsection{The vocabulary is already chess's own}
+
+Chess commentary is coalition talk. The rook and bishop together force mate.
+These three pieces hold the kingside. That knight is overloaded, doing two jobs
+at once. That bishop is bad, belonging to no coalition. Coalition logic's
+$\langle E \rangle\varphi$, ``coalition $E$ can force $\varphi$'', is not a
+formalism imported and then applied; it is the native register of the domain.
+
+This matters for the project because it means the society's hypotheses can be
+\emph{about} coalitions without anyone having designed a coalition-formation
+mechanism. Pieces advocate; advocacy sets are opens; opens are coalitions; and
+the logic evaluates formulae over them.
+
+\subsection{Which algebra, and why the answer is not $\Rnn$}
+
+\begin{proposition}[Large coalitions must not decay]
+\label{prop:decay}
+Over $\Rnn$ with $\otimes = \times$ and values in $[0,1]$, a coalition's value
+$\bigotimes_{q \in O}\psi(q)$ is non-increasing in $|O|$ and strictly decreasing
+whenever any member's value is below one. Hence larger quorums score weaker,
+which inverts the intended semantics.
+\end{proposition}
+
+\begin{definition}[Quorum algebras]
+\label{def:quorum}
+A quorum algebra takes $\otimes = \min$: a coalition is as strong as its weakest
+member. Over the tropical $(\min,+)$ and Viterbi $(\max,\times)$ algebras the
+attainment proposition holds on the nose, so $\bigoplus$ is realised by a
+definable selection function.
+\end{definition}
+
+We note, because it is a pleasant piece of evidence rather than an argument, that
+$\otimes = \min$ is independently the correct chess semantics. A combination
+fails at its weakest participant. If three pieces bear on a mating square and one
+of them is pinned, the combination is worth what the pinned piece is worth, which
+is nothing; the other two do not compensate. Overloading is the same shape from
+the other side: a piece that belongs to two coalitions caps both at its own
+availability. The algebra the framework forces on general grounds is the algebra
+the domain would have chosen.
+
+\begin{corollary}[The player gets a witness]
+\label{cor:witness}
+Over the attained algebras the coalition modality returns not a scalar but the
+coalition realising it. The society therefore commits to a move \emph{together
+with the coalition that justifies it}.
+\end{corollary}
+
+\begin{remark}[Explanation is structural, not decorative]
+\label{rem:explain}
+Corollary~\ref{cor:witness} is the closest thing this project has to a
+by-product worth having on its own. An explanation of the form ``this move,
+because these pieces, at this strength'' is not generated after the fact by a
+separate narration module reading the engine's numbers. It is the witness the
+selection function returned. Whatever else is true of the resulting player, its
+explanations cannot be confabulated, because there is no separate faculty
+available to confabulate with.
+\end{remark}
+
+\subsection{The alternating rung, and the question this project exists to answer}
+\label{sec:altrung}
+
+Coalition logic's ``can force'' quantifies over the opponent's replies. It is
+therefore an alternating formula, a box under a diamond, and the game note's
+measurement of the corresponding rung was unkind: rung~4, the one genuinely
+alternating rung of the noughts ladder, bought $+0.005$ for $111$ metered units
+and was the worst purchase on the ladder, while the three non-modal rungs
+delivered $92.3\%$ of the yield for $34.3\%$ of the cost.
+
+We do not think this settles anything, and the reason is the reason for the
+whole project.
+
+\begin{observation}[The yield result is a measurement on one game]
+\label{obs:onegame}
+Noughts-and-crosses has $5478$ reachable positions, no material, no long-range
+interaction, and a branching factor that starts at nine and falls. Its non-modal
+predicates --- a completing threat, a fork, centrality --- are close to
+sufficient because the game is close to trivial. Whether the finding generalises
+is not a question the noughts data can answer, because the finding could be a
+fact about games or a fact about the smallness of that game.
+\end{observation}
+
+\begin{principle}[Chess is the discriminating instance]
+\label{prin:discriminate}
+The measurement that would most change the programme's view of itself is the
+ladder measurement (M1, M2) repeated on chess. If the non-modal rungs again
+deliver most of the yield for a third of the cost, the read-versus-drive thesis
+acquires its second and much harder instance and becomes a claim worth defending
+in general. If the modal and coalition rungs dominate in chess, then the noughts
+result is a result about noughts, and the programme has learned something it
+could not have learned from a game it could solve.
+\end{principle}
+
+This is the strongest strategic argument for building the thing, and it should
+appear in the note's own abstract, which it does.
+
+\subsection{Graded separation and what a fork is in chess}
+
+The noughts fork was $\mathsf{Threat}(p) \gsep{0}{N} \mathsf{Threat}(p)$: two
+threats sharing no square, graded at separation zero over the square-indexed
+namespace. Requiring it is what forced the board encoding, since two threats
+with a common gap must be excluded and therefore squares rather than lines must
+be the parands.
+
+The chess transposition is direct and the namespace is the attack family.
+
+\begin{definition}[Fork, chess instance]
+\label{def:fork}
+Let $N_{\mathit{atk}}$ be the namespace described by the name predicate
+\[
+  \qt{[*b,\texttt{"atk"},\cdot,c,\cdot]},
+\]
+and write $\mathsf{Bears}(p,s)$ for the structural predicate asserting a marker
+deposited by $p$ on $s$. Then
+\[
+  \mathsf{Fork}(p) \;:=\;
+  \big(\exists s.\,\mathsf{Bears}(p,s) \wedge \mathsf{Valuable}(s)\big)
+  \gsep{0}{N_{\mathit{atk}}}
+  \big(\exists s'.\,\mathsf{Bears}(p,s') \wedge \mathsf{Valuable}(s')\big).
+\]
+\end{definition}
+
+The same argument that forced squares as parands in noughts forces
+\emph{squares} here too, not pieces: a knight bearing twice on one square is not
+a fork, and separation over a piece-indexed namespace would not exclude it.
+
+\subsection{The coalition rung}
+
+\begin{definition}[The coalition rung]
+\label{def:coalrung}
+For a target square $s$ and the player's piece namespace $N_{\mathit{pl}}$,
+\[
+  \mathsf{Bearing}(s) \;:=\;
+  \Emod{N_{\mathit{pl}}}{V}\; \lambda p.\;\mathsf{Bears}(p,s)
+  \otimes \mathsf{Available}(p),
+\]
+where $\mathsf{Available}(p)$ is zero if $p$ is pinned or already committed
+elsewhere. Over a quorum algebra this evaluates to the strength of the strongest
+available coalition bearing on $s$, attained at a witness.
+\end{definition}
+
+$\mathsf{Available}$ is where pins enter, and it is worth observing that it
+enters as a \emph{factor} in the $\otimes$ rather than as a side condition. A
+pinned piece contributes $\bot$ to any coalition containing it, and under
+$\otimes = \min$ that zeroes the coalition. This is the correct behaviour and it
+was not designed in; it follows from the choice of algebra forced in
+\S\ref{sec:coalition}.
+
+\begin{remark}[Brittleness, and the two dials]
+\label{rem:brittle}
+The herd note recorded a negative result that applies here without change: $\min$
+over a large coalition is zeroed by one dissenter, so a crisp rung and a graded
+rung can return identical rows, and grading pays only if coalition \emph{size}
+is relaxed as well. The chess instance is that $\mathsf{Bearing}$ over a fixed
+large coalition is brittle, and the design must therefore relax over subsets ---
+which it does, since $\bigoplus$ ranges over opens, and the witness returned is
+the best available subset rather than the whole. We flag it because it was a
+surprise in the earlier work and would be a surprise again.
+\end{remark}
+
+\section{Material as metabolism}
+\label{sec:material}
+
+The noughts arena routes and never mints: on a win the arena hands the winner the
+loser's metabolic name. In chess, capture is predation at ply granularity, and
+nothing needs reinterpretation for it to be so.
+
+\begin{definition}[Capture is harvest]
+\label{def:harvest}
+When a ply's join terminates a piece-agent $q$, the capturing agent $p$ receives
+$q$'s metabolic name; $q$'s remaining stack is thereby routed to $p$. No tokens
+are minted and none destroyed, so $\sigma + \kappa = \Theta$ holds across the
+ply.
+\end{definition}
+
+\begin{proposition}[Material advantage is budget advantage]
+\label{prop:matbudget}
+Under Definition~\ref{def:harvest}, a side with more surviving material has, all
+else equal, both more advocates and more aggregate stack, hence can afford more
+perception per turn and more rounds of advocacy. The conventional evaluation
+term ``material'' becomes a statement about the society's computational capacity
+rather than a number added to a score.
+\end{proposition}
+
+This is the most interesting thing in the design and also the least certain.
+
+\begin{conjecture}[Emergent piece values]
+\label{conj:values}
+Let $\pi(t)$ be the average lifetime harvest --- tokens acquired by capture,
+plus tokens the agent's survival makes available to the society --- of an agent
+of piece type $t$ over a population of games. Then the ratios
+$\pi(\text{pawn}) : \pi(\text{knight}) : \pi(\text{bishop}) :
+\pi(\text{rook}) : \pi(\text{queen})$ approximate the classical
+$1 : 3 : 3 : 5 : 9$.
+\end{conjecture}
+
+We state it as a conjecture and not as a design goal, and the difference matters.
+Nothing in the architecture hands a piece its value. A queen is an agent whose
+move-generation contract reaches further, which means it can advocate for more
+candidates, bear on more squares, and belong to more coalitions; and under
+$\otimes = \min$ belonging to more coalitions is worth something only if the
+agent is available. If the classical ratios fall out, the framework has derived
+one of the few quantitative facts about chess that has no derivation. If they do
+not, the discrepancy is data about which of the framework's pricing choices is
+wrong, and it is much more informative than agreement would be.
+
+\begin{remark}[Two more in the same currency]
+\label{rem:currency}
+Offered as shapes rather than claims, because they are the sort of thing the
+design makes sayable and it would be a waste not to say them. A \emph{pinned}
+piece is one whose budget is committed but unspendable, which is why
+$\mathsf{Available}$ zeroes it. \emph{Zugzwang} is being obliged to spend a token
+when every available expenditure is loss-making, which in this setting is not a
+metaphor: the franchise is issued per round and a piece that must advocate for
+something is a piece that cannot decline the market.
+\end{remark}
+
+\section{Where the policy lives}
+\label{sec:policy}
+
+\subsection{The extremes are not a dial}
+
+A piece's policy is the thing that maps the position to an advocacy. The
+question is where that map lives and whether it is priced. The
+sixteen-model-sessions extreme and the all-\flang\ extreme are two answers,
+and they are not near-neighbours on a continuum.
+
+A model session is opaque. Its choice function is not a clause, so it cannot sit
+in guard position and the assay construction does not apply. It is not priced,
+so cost accounting measures API calls rather than computation, and every
+measurement in \S\ref{sec:measure} loses its denominator. It is not observable,
+so the coalition formulae become commentary on a decision they did not make, and
+Remark~\ref{rem:explain} is false --- a separate narrating faculty is exactly
+what a model wrapper reintroduces. At that extreme every structural result in
+this note evaporates and what remains is a multi-agent chess demonstration, of
+which there are many. Sixteen sessions per advocacy round is also slow enough
+that the round structure of \S\ref{def:rounds} becomes unusable.
+
+\subsection{The aperture, which is the programme's own construction}
+
+None of that makes model-backed pieces incoherent, and the reason is that the
+choice-formulae note already worked out how strength enters a shard from
+outside. Its Route~E is the \emph{aperture}: a channel fed by the environment
+rather than by the term. Two things are said about apertures there. They are
+where choice of full strength can enter, and they are syntactically conspicuous,
+so a static analysis of aperture channels bounds a whole shard. Under the
+stratified \texttt{where} discipline, subject reduction holds and full-strength
+choice occurs exactly at declared apertures while the interior's choice type
+stays invariant.
+
+A model session is an aperture, precisely and not by analogy. So a society with
+model-backed pieces is coherent in a stratified shard, and building it would
+\emph{demonstrate} the stratification result on an artefact people care about
+rather than on a counterexample two lines long.
+
+\begin{principle}[Relocate, do not compromise]
+\label{prin:relocate}
+The recommendation is not a midpoint between the extremes. It is that the model
+goes outside the ply loop by default, and inside only as a declared aperture in
+a labelled variant.
+\end{principle}
+
+Outside the ply loop there are two jobs a model is actually good at, and both
+are already roles in the existing design. The first is authoring and mutating
+piece policies between games, which is the \texttt{Revise} and \texttt{Crossover}
+and \texttt{Beget} role of the noughts listing, and which lands squarely on the
+reproduction note's crossover over quoted code --- a model is a mutation operator
+on programs, which is a thing models do well. The second is reading the witness
+coalition out loud, which is post-hoc narration of a decision that was genuinely
+made elsewhere and is therefore honest.
+
+\begin{remark}[What the aperture variant would measure]
+\label{rem:apvar}
+Worth building second, not first, and worth building for a specific reason: it
+is the only configuration in which one can measure what a model's judgement is
+worth \emph{in the framework's own currency}. Run the same society with $j$ of
+sixteen pieces aperture-backed and $16-j$ \flang-backed, and the yield-per-unit
+metric prices the model's contribution against the ladder rungs. Nothing else in
+the current AI-evaluation landscape prices a model's judgement against a
+formally specified alternative on the same budget.
+\end{remark}
+
+\section{The implementation spec}
+\label{sec:spec}
+
+This section is written to be handed to a developer. It fixes names, protocols,
+prices, interfaces, delivery phases and acceptance criteria. Where a decision is
+genuinely open it is marked \textsc{open} rather than resolved silently.
+
+\subsection{Module inventory}
+\label{sec:modules}
+
+\begin{center}
+\begin{tabular}{@{}llp{6.6cm}@{}}
+\toprule
+Module & Society & Responsibility \\
+\midrule
+\texttt{Board}    & world  & occupancy cells; the ply join; refusal of illegal joins \\
+\texttt{Settle}   & world  & ray walks; deposit of \texttt{atk}, \texttt{pin}, \texttt{chk}, \texttt{ep}, \texttt{cast} \\
+\texttt{Arena}    & world  & game lifecycle; harvest routing; adjudication \\
+\texttt{Clock}    & world  & turn and round structure; resolver of last resort \\
+\texttt{Registry} & world  & the roll: which piece channels are live this turn \\
+\texttt{Franchise}& player & issue of one linear advocacy token per live piece per round \\
+\texttt{Piece}    & player & per-agent policy: generate candidates, evaluate, advocate \\
+\texttt{Gate}     & player & the $k$-ary commit join, one instance per live candidate \\
+\texttt{Ladder}   & player & the formula catalogue; rung held per agent \\
+\texttt{Revise}   & player & per-agent rung revision from assay outcomes \\
+\texttt{Metab}    & both   & \texttt{Live}: reclaim, debit, reissue; death on insufficiency \\
+\texttt{Check}    & world  & the coalition-logic and modal checker service (\S\ref{sec:checker}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{Check} is placed in the world deliberately. It is an instrument the
+player \emph{holds}, and its queries are charged to the caller, but it is not
+part of any agent's term; otherwise sixteen agents would carry sixteen copies of
+the checker and the caching requirement could not be met.
+
+\subsection{Namespace discipline}
+\label{sec:names}
+
+Every name below is manufactured by quotation, not \texttt{new}-bound, so every
+family is described by a predicate. $b$ is the board channel, $\mathit{pl}$ the
+player channel, $g$ the game index.
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Family & Name & Payload \\
+\midrule
+board          & $\qt{[*\mathit{arena},g]}$                       & --- \\
+occupancy      & $\qt{[*b,\texttt{"occ"},s]}$                     & $\Nil$ or $*p$ \\
+attack         & $\qt{[*b,\texttt{"atk"},s,c,p]}$                 & attacker descriptor \\
+pin            & $\qt{[*b,\texttt{"pin"},s]}$                     & pinning ray descriptor \\
+check          & $\qt{[*b,\texttt{"chk"},c]}$                     & checking piece set \\
+en passant     & $\qt{[*b,\texttt{"ep"},s]}$                      & capturable pawn channel \\
+castling       & $\qt{[*b,\texttt{"cast"},c,\mathit{side}]}$      & right present or absent \\
+piece          & $\qt{[*b,\texttt{"p"},\mathit{id}]}$             & --- \\
+piece stack    & $\qt{[*b,\texttt{"m"},\mathit{id}]}$             & $\sigma$, the metabolic stack \\
+advocacy       & $\qt{[*\mathit{pl},\texttt{"adv"},\qt{m}]}$      & advocating piece id \\
+inhibition     & $\qt{[*\mathit{pl},\texttt{"inh"},\qt{m}]}$      & inhibiting piece id \\
+franchise      & $\qt{[*\mathit{pl},\texttt{"V"},\mathit{id},r]}$ & the round's linear token \\
+commit         & $\qt{[*\mathit{pl},\texttt{"commit"}]}$          & the chosen $\qt{m}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{requirement}[No family is receivable by the wrong society]
+\label{req:sep}
+No contract of the player receives on \texttt{occ} except through the ply join
+of \texttt{Board}; no contract of the world receives on \texttt{adv},
+\texttt{inh} or \texttt{V}. This is Proposition~\ref{prop:percept} discharged as
+a code review checklist item, and it is the single most important invariant in
+the system.
+\end{requirement}
+
+\subsection{The turn protocol}
+\label{sec:protocol}
+
+A turn proceeds as follows. Steps marked $\star$ are metered to the player;
+steps unmarked are metered to the world.
+
+\begin{enumerate}[leftmargin=2.2em]
+\item \textbf{Settle.} \texttt{Settle} walks every ray from every occupied
+square and deposits the \texttt{atk} family; then walks outward from each king
+and deposits \texttt{pin} and \texttt{chk}. Terminating and confluent by
+Remark~\ref{rem:settle}. On completion it signals the clock.
+\item \textbf{Roll.} \texttt{Registry} publishes the set of live piece channels
+for the moving colour.
+\item \textbf{Franchise.} \texttt{Franchise} issues one linear $\mathsf{V}$
+token per live piece into that piece's located stack. Round counter $r := 1$.
+\item[$\star$] \textbf{Generate.} Each \texttt{Piece} enumerates its own
+pseudo-legal moves from its own square by its own move contract. No piece
+enumerates another's. The union over pieces is the candidate set; nobody
+computes the union.
+\item[$\star$] \textbf{Evaluate.} Each \texttt{Piece} evaluates its candidates
+against the rung it currently holds, by querying \texttt{Check}. The query is an
+assay: the formula sits in guard position, so evaluating is testing.
+\item[$\star$] \textbf{Advocate.} Each \texttt{Piece} spends its $\mathsf{V}$
+token on $\mathit{adv}(m)$ for its best candidate $m$, or declines.
+\textsc{open}: whether a piece may advocate for a move it does not itself make
+--- see \S\ref{sec:openspec}.
+\item \textbf{Gate.} A \texttt{Gate} instance stands on each live candidate. The
+first to accumulate $k$ advocacy sends fires and writes $\qt{m}$ to
+\texttt{commit}. By Theorem~\ref{thm:2k} at most one fires when $k \geq
+\lceil S/2 \rceil$.
+\item \textbf{Round or resolve.} If no gate fired and $r < R$, then $r := r+1$
+and control returns to step 3, with unconsumed advocacy left standing and
+readable. If $r = R$, the clock applies
+Definition~\ref{def:lastresort}.
+\item \textbf{Ply.} \texttt{Board} performs the $N$-ary join of
+Definition~\ref{def:ply}, guarded on the constraint family. A refused guard
+leaves the message in the tuple space, which is the platform's own semantics for
+a failed \texttt{where}, and the clock retries with the next-best candidate.
+\item \textbf{Harvest.} If the join terminated an agent, its metabolic name is
+routed per Definition~\ref{def:harvest}.
+\item[$\star$] \textbf{Revise.} Each piece updates its rung from its own assay
+outcomes by \texttt{Revise}. Refutation rate is the temperature, as in the
+noughts world; it is an observable the assays already emit rather than a
+schedule imposed from outside.
+\item \textbf{Adjudicate.} \texttt{Arena} tests for mate, stalemate, and the
+draw conditions, and either ends the game or passes the turn.
+\end{enumerate}
+
+\begin{remark}[Where the cost actually goes]
+\label{rem:costgoes}
+Steps 5 and 11 are the player's whole expenditure and step 1 is the world's.
+That is the entire content of measurement M7. Note that step 4 is charged to the
+player but is cheap and irreducible --- a piece must know its own moves --- and
+step 7 is charged to the world because a join firing is a COMM, which under the
+native integration is metered at the reducer on the deploy envelope.
+\end{remark}
+
+\subsection{The ladder}
+\label{sec:ladder}
+
+Each piece holds a rung. Rungs are cumulative and evaluated highest-priority
+first, as in the noughts listing. $\mathsf{Emp}$, $\mathsf{Bears}$,
+$\mathsf{Valuable}$, $\mathsf{Available}$, $\mathsf{Central}$ and
+$\mathsf{Develops}$ are structural predicates over the deposited families;
+$\KKmod{m}$ is the settled modality at the ply $m$.
+
+\begin{center}
+\begin{tabular}{@{}cl>{\raggedright\arraybackslash}p{6.1cm}c@{}}
+\toprule
+Rung & Character & Formula added & $\kappa$ \\
+\midrule
+0 & --- & $\top$ (any legal move) & $0$ \\
+1 & non-modal & $\exists m.\ \mathsf{Capture}(m) \wedge \neg\,\mathsf{Defended}(\mathit{to}(m))$ & $2$ \\
+2 & non-modal & $\vee\ \neg\,\mathsf{Hangs}(m)$: the destination is not attacked by a cheaper piece & $2$ \\
+3 & spatial & $\vee\ \KKmod{m}\,\mathsf{Fork}(\mathit{me})$, Definition~\ref{def:fork} & $4$ \\
+4 & alternating & $\vee\ \forall m'.\,\KKmod{m}\Bmod{m'}\,\neg\,\mathsf{Fork}(\mathit{them})$ & $8$ \\
+5 & spatial, depth 0 & $\vee\ \mathsf{Central}(\mathit{to}(m)) \vee \mathsf{Develops}(m)$ & $1$ \\
+6 & coalition & $\vee\ \KKmod{m}\,\mathsf{Bearing}(s) \geq v$, Definition~\ref{def:coalrung} & $16$ \\
+$\chi$ & fixed point & $\nu X.\forall m.\Bmod{m}(\neg\,\mathsf{Lost} \wedge \exists m'.\KKmod{m'} X)$ & $32$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The prices are the noughts schedule $\kappa(d) = 2^d$ per candidate examined,
+charged by the depth of the formula the rung installs, with rung~6 priced one
+step above rung~4 because the coalition modality quantifies over opens and is a
+width engine. Rung~5 is priced at~1 because it is name-level depth zero, and
+that pricing is what made it the best marginal purchase in the noughts
+measurement; whether it repeats here is M2.
+
+\begin{remark}[$\chi$ is unreachable, and that is the point]
+\label{rem:chi}
+In noughts $\chi$ was exact at nine unfoldings because the board loses a square
+every step. Chess has no such bound. $\chi$ is therefore listed for completeness
+and as a limit object; no agent will hold it, and by Remark~\ref{rem:alive} that
+is exactly the condition under which the ecology stays alive.
+\end{remark}
+
+\subsection{The cost schedule}
+\label{sec:cost}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Operation & Grade & Price \\
+\midrule
+read one deposited marker              & perception  & $1$ \\
+evaluate a rung-$d$ formula, one candidate & perception & $\kappa(d) = 2^d$ \\
+cached query, unchanged deposit        & perception  & $1$ \\
+enumerate own pseudo-legal moves       & perception  & $1$ per square walked \\
+spend an advocacy token                & interaction & $2$ \\
+fire a commit gate                     & interaction & $2k$ \\
+perform a ply join of arity $n$        & interaction & $4n$ \\
+one ray step in \texttt{Settle}        & world        & $1$ \\
+harvest                                & interaction & $0$ (routing, not work) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Every price here is a \textsc{choice}, not a derivation, and the note should say
+so in the same breath as reporting any number computed with it. The noughts work
+varied its price scale over three settings and found the shape of its results
+robust and the boundaries not; the same sensitivity analysis is required here and
+is part of the acceptance criteria in \S\ref{sec:phases}.
+
+\subsection{The checker interface}
+\label{sec:checker}
+
+The service assumed in \S\ref{sec:assumed} is used through one contract.
+
+\begin{lstlisting}
+// verdict in {"t","b","f"}; witness is Nil, a redex position, or a
+// coalition (a list of piece ids); cost is charged to the caller's stack.
+contract Check(@formula, @posHandle, @algebra, payer, ret) = {
+  // ret!((verdict, value, witness, cost))
+}
+\end{lstlisting}
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+\item[\texttt{formula}] a quoted formula of the generated logic extended with
+$\Emod{N}{V}$, with namespaces given as name predicates.
+\item[\texttt{posHandle}] a handle on the current deposit, not a copy of the
+position. The checker reads the deposited families; it never drives the board.
+This is Requirement~\ref{req:direction} enforced by the interface shape.
+\item[\texttt{algebra}] one of \texttt{"B"}, \texttt{"Rnn"}, \texttt{"trop"},
+\texttt{"vit"}. Witnesses are returned for the last two.
+\item[\texttt{payer}] the caller's metabolic channel. A caller that cannot fund
+the query receives verdict \texttt{"b"}, which is the budget bottom and is
+deliberately indistinguishable from a stuck environment.
+\end{description}
+
+\begin{requirement}[The checker may not move]
+\label{req:nomove}
+The checker's implementation must receive only on the \texttt{atk},
+\texttt{pin}, \texttt{chk}, \texttt{ep} and \texttt{cast} families and must
+never receive on \texttt{occ}. Violating this makes the pride move the zebra by
+looking at it, in the phrase the herd note used for the same hazard, and it is
+the reason the noughts listing insisted on \texttt{peek} rather than a
+consuming receipt in its own scan.
+\end{requirement}
+
+\subsection{Reproduction and the offline loop}
+\label{sec:repro}
+
+Between games the population evolves. This is the noughts world's
+\texttt{Pick} / \texttt{Crossover} / \texttt{Beget} apparatus and it transfers
+with one change of emphasis. There are two loci, the rung and the policy, and
+the noughts measurement showed that an individual can reach the first by
+deepening and cannot reach the second at all --- the opening changed only across
+generations, by crossover, because it is a move of distance $2^{-1}$ in the
+ultrametric and an individual's incremental revisions are confined to their
+initial ball.
+
+The chess analogue of ``the opening'' is the piece's \emph{advocacy style}: how
+readily it advocates, what it treats as valuable, whether it defers to standing
+advocacy. That is the locus crossover must reach, and it is where a model-backed
+mutation operator earns its place (\S\ref{sec:policy}).
+
+\subsection{Delivery phases}
+\label{sec:phases}
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+\item[P0 --- the world alone.] \texttt{Board}, \texttt{Settle},
+\texttt{Registry}, \texttt{Clock}, \texttt{Arena}. Acceptance: legal move
+generation validated against a standard perft suite to depth 5 from the initial
+position and from a set of tactical positions; the settling shown terminating
+and confluent by test; every ply a single join.
+\item[P1 --- one agent, no society.] A single \texttt{Piece} contract driving
+all pieces in turn, rung 0--2, no advocacy. Acceptance: plays legal complete
+games against a fixed reference opponent; metering totals reconcile against
+$\sigma + \kappa = \Theta$.
+\item[P2 --- the society, arithmetic guards.] Sixteen agents, franchise, commit
+gates, rounds, last resort. Rungs 0--2 and 5 only, since those are the non-modal
+rungs and are expressible in the live guard fragment. Acceptance:
+Theorem~\ref{thm:2k} confirmed empirically at $k$ below and above $S/2$;
+last-resort firing rate reported.
+\item[P3 --- the checker.] \texttt{Check} integrated; rungs 3, 4, 6 enabled.
+Acceptance: M1 and M2 produced.
+\item[P4 --- the economy.] Piece stacks, harvest, metabolic death, the offline
+reproduction loop. Acceptance: M6 produced; conservation audited per ply.
+\item[P5 --- the aperture variant.] $j$ of sixteen pieces backed by a model
+session through a declared aperture, in a stratified shard. Acceptance: M8
+produced; the static analysis of aperture channels demonstrated.
+\end{description}
+
+P0 through P2 are buildable today on
+\texttt{feature/cost-accounted-rho}. P3 depends on the assumed checker. A
+syntactically manipulable \texttt{Theory} of positions is \emph{not} on the
+critical path and should not be put on it: the DDL and module syntax are absent
+from the branch, which is the same dependency F1R3Skein is waiting on, and
+nothing in P0--P5 requires them.
+
+\subsection{Open specification items}
+\label{sec:openspec}
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+\item[S1] May a piece advocate for a move it does not itself make? Yes gives
+genuine coalitions in the advocacy structure and lets a defender back an
+attacker's plan; no keeps the franchise interpretation clean and makes advocacy
+self-interested. Our inclination is yes, because it is what makes the advocacy
+set a coalition rather than a poll, but it changes Theorem~\ref{thm:2k} not at
+all and can be decided late.
+\item[S2] Is $k$ absolute or a fraction of $S$? Proposition~\ref{prop:crossing}
+says this determines whether the endgame is split-free or gate-dead.
+\item[S3] Cross-inhibition in or out of the first build? Recommended out, per
+\S\ref{sec:coord}.
+\item[S4] Is the opponent a society too, or a conventional engine? Recommended
+conventional for P1--P4: a fixed yardstick is needed, and the asymmetry is
+itself the experiment. Society-versus-society belongs after M1.
+\item[S5] Do pieces hold individual stacks from P2, or only from P4? Holding
+them early makes the metering real but couples two sources of variance.
+\item[S6] What is the reference opponent? It must be weak enough that the
+society is not simply crushed and fixed enough that measurements are
+comparable across phases.
+\end{description}
+
+\section{The measurements}
+\label{sec:measure}
+
+Eight measurements. Each states what would be reported and, where it matters,
+what result would embarrass the framework.
+
+\begin{description}[leftmargin=2.4em,style=nextline]
+\item[M1 --- the yield ladder.] For each rung, win/draw/loss against a fixed
+reference opponent at fixed strength, and cumulative metered cost, over a fixed
+number of games. Reported as the noughts table was: win rate, cost, and marginal
+return per metered unit. Unlike noughts these are sampled estimates with
+confidence intervals, not exact counts, and the note reporting them must say so
+in its own results section.
+\item[M2 --- non-modal share.] The fraction of total yield delivered by rungs
+1, 2 and 5 and the fraction of total cost they consume, against the noughts
+figures of $92.3\%$ and $34.3\%$. This is the discriminating measurement of
+Principle~\ref{prin:discriminate}. Either outcome is publishable and they say
+opposite things.
+\item[M3 --- the coalition rung.] Rung 6's marginal return, and separately
+whether its witness is \emph{informative}: does the returned coalition coincide
+with what a strong player would name? Scored by blind comparison on a set of
+tactical positions. The herd note found that the modality bought irreversibility
+rather than accuracy --- precision $1.0000$ at every sampled time, at low
+coverage --- and if that repeats, the yield metric underprices instruments that
+decline to answer and the second-currency principle acquires its second
+instance.
+\item[M4 --- split and deadlock against $k$.] Firing rate of the commit gate,
+split rate, deadlock rate and last-resort rate, over $k$ from $2$ to $16$ at
+$S = 16$. Theorem~\ref{thm:2k} predicts split rate identically zero for
+$k \geq 9$, and the prediction is structural, so a single observed split above
+that threshold is a bug in the franchise's linearity and should be treated as
+such.
+\item[M5 --- the endgame crossing.] Decision character as $S$ falls through
+$2k$ within single games: rounds to commit, advocacy entropy, and last-resort
+rate, bucketed by material remaining. This is the measurement
+Remark~\ref{rem:predict} exists for and the one we would report first, because
+it is the only prediction here that the source domain could not have made.
+\item[M6 --- emergent values.] Lifetime harvest per piece type against the
+classical $1:3:3:5:9$, per Conjecture~\ref{conj:values}. Report the raw ratios
+and the regression, and report disagreement loudly if it occurs.
+\item[M7 --- who is billed.] Total metered cost per game under the world-billed
+and player-billed attack-map architectures of \S\ref{sec:billed}, split by
+society. The framework predicts the world-billed architecture wins on total and
+that the player's share falls by a factor near $S$. This is the cheapest
+experiment in the set and it directly tests the read-versus-drive thesis.
+\item[M8 --- the aperture's price.] With $j$ of sixteen pieces
+model-backed, yield per metered unit as a function of $j$, against the
+all-\flang\ baseline. Prices a model's judgement in the framework's currency.
+\end{description}
+
+\begin{remark}[The counter-move, if there is time]
+\label{rem:counter}
+The herd note's most striking result was the counter-move: an adversary that
+introduces seams into the population does not induce \emph{error} in the
+observer, it denies \emph{liveness} --- coverage collapsed from $0.7520$ to
+$0.0115$ while precision stayed above $0.9986$. The chess analogue is an
+opponent that plays to reduce the society's advocacy coherence rather than to
+win material, and the prediction is that such an opponent should drive the
+society to last resort rather than to blunders. If it holds, illegibility as
+denial of liveness acquires an adversarial instance, and the legibility trade
+--- that a population buys privacy with the same currency it buys agreement ---
+becomes something one can demonstrate rather than argue.
+\end{remark}
+
+\section{What will go wrong}
+\label{sec:risks}
+
+\paragraph{Branching, and the honest expectation.} Chess has a branching factor
+near thirty-five and rewards depth. A society that pays a rendezvous per
+candidate cannot search, and the framework's own answer --- read the structure
+the environment has deposited, do not drive it --- means this player will be a
+perception player rather than a search player. It will lose to anything with a
+search until its perception is very good. The evaluation criterion must
+therefore be yield per metered unit, with playing strength as a secondary
+sanity check, and this must be stated before the first game rather than
+discovered in the results. A project of this kind fails publicly in exactly one
+way, which is by having promised strength.
+
+\paragraph{The society is small.} The swarm results are asymptotic in scout
+population; at $S = 16$ the regimes are coarse and the advocacy distribution is
+lumpy. This cuts both ways, since it is also what makes
+Proposition~\ref{prop:crossing} reachable, but no fine-grained result about
+quorum dynamics should be expected from sixteen agents.
+
+\paragraph{The guard fragment.} Structural and modal guards are not executed by
+the live reducer; they are specifications. P2 is buildable because rungs 1, 2
+and 5 are expressible arithmetically over deposited markers, which is a
+deliberate design of the ladder rather than a happy accident, but P3 is gated on
+the assumed checker and the note should not pretend otherwise.
+
+\paragraph{Latency.} Sixteen agents, up to $R$ rounds, a checker query per
+candidate per agent. Even in the all-\flang\ configuration a turn is many
+thousands of COMMs. A demonstration has to be watchable, so the round budget $R$
+and the candidate cap per agent are the two dials that must be tuned early, and
+they are both dials that \emph{change the science}, since capping candidates is
+capping $\exists$. Report them with every number.
+
+\paragraph{Reflection, a fifth time.} The subject-reduction hazard the programme
+has now met four times is present here too: a received process can carry a
+formula of higher altitude than the receiving clause declares, and this society
+passes quoted moves and quoted formulae between agents constantly. The
+stratified \texttt{where} discipline is the known repair and it should be
+adopted from P2 rather than retrofitted, because retrofitting it means revisiting
+every advocacy message.
+
+\section{What is shown and what is not}
+\label{sec:shown}
+
+Shown, in the sense of proved here from imported premises:
+Proposition~\ref{prop:percept} (perception must not act),
+Proposition~\ref{prop:arity} with Corollary~\ref{cor:Ksurvives} (the join
+taxonomy and the survival of $\Kmod{j}$), Proposition~\ref{prop:decay} and the
+consequent choice of quorum algebra, and Theorem~\ref{thm:2k} with its
+corollary that $k \geq \lceil S/2 \rceil$ buys structural no-split.
+Theorem~\ref{thm:2k} is the only genuinely new theorem in the note and its proof
+is three lines, which is the correct length: the work was done by choosing a
+calculus in which linear tokens and $N$-ary joins are primitive.
+
+Argued but not proved: that the world-billed architecture wins
+(\S\ref{sec:billed}, awaiting M7); that legality belongs to the world
+(Principle~\ref{prin:legality}, which is a design principle with a cost argument
+behind it, not a theorem); that the model belongs outside the ply loop
+(\S\ref{sec:policy}).
+
+Conjectured: emergent piece values (Conjecture~\ref{conj:values}).
+
+Not addressed at all: opening theory and endgame tablebases, both of which are
+external knowledge and both of which the society has no principled way to
+consume; the fifty-move and repetition rules, which are history-dependent and
+therefore want the history monad rather than the deposit; and time control,
+which would make the budget a clock and is probably the most interesting thing
+omitted.
+
+\section{Open problems}
+\label{sec:open}
+
+\begin{description}[leftmargin=2.4em,style=nextline]
+\item[Q1] Does the noughts yield result survive? This is M2 and it is the
+project's reason for existing.
+\item[Q2] Is there a principled $k$? The design fixes $k \geq \lceil S/2
+\rceil$ for safety, but nothing says which value in that range is best, and the
+swarm's answer --- that $k$ is not a number but a rate threshold, scaling with
+encounter geometry --- suggests the chess analogue is a rate as well.
+\item[Q3] Does agent-per-plan beat agent-per-piece? Remark~\ref{rem:decomp}.
+The obstacle is that a plan cannot be captured, so predation would have to be
+redefined.
+\item[Q4] What is the right treatment of the fifty-move and repetition rules?
+They are the only genuinely historical facts in chess and the programme has a
+history monad that nothing in this design uses.
+\item[Q5] Does the coalition modality's irreversibility-not-accuracy signature
+repeat? M3.
+\item[Q6] Can the society learn its own \texttt{Open}? The herd note left this
+open in general; in chess the analogue is whether the pieces can discover which
+subsets of themselves are worth treating as coalitions, rather than having the
+namespace predicate handed to them.
+\item[Q7] Does subject reduction hold for the stratified discipline in the
+presence of quoted moves passed as advocacy payloads? The fifth appearance of
+the same suspect.
+\item[Q8] Is there a composition law for societies? Two coalitions that each
+bear on a square are not obviously composable, and the composing-learners note's
+disjointness-versus-overlap dial is the obvious place to look.
+\item[Q9] What does time control do? Making the budget a clock rather than a
+stack changes the metabolism from conservation to flow, and it is not obvious
+the conservation results survive.
+\item[Q10] Does the society's play have a signature a human can recognise? Not
+a formal question, but the one a reader will ask, and the witness coalitions of
+Corollary~\ref{cor:witness} are the only handle on it.
+\end{description}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+The proposal was to make each piece an agent. The analysis above says that this
+is a well-formed thing to do in cost-accounted \rhoc, that three of its
+apparently difficult parts are already solved by constructions in hand, and that
+one of them is easier here than in the setting it came from.
+
+The board encoding wants three name families rather than one, because perception
+must not be able to act and because the attack map is the shared expensive
+object whose billing is the project's cheapest experiment. A ply is an $N$-ary
+join and the join arity is the move taxonomy, which is what keeps the generated
+modality generated. Coordination is quorum sensing rather than consensus, and the
+argument for that is a derivation from budget rather than a design preference.
+Legality is the one unavoidable universal and it belongs to the world, which has
+the pleasant consequence that pin-awareness becomes perception.
+
+The part that is easier here than in the swarm is the two-quorum theorem. In the
+bees it is a structural impossibility result confirmed by simulation. In
+\rhoc\ it is arithmetic: a quorum is a join arity, one linear franchise token
+per piece per round is the polity's dereliction, and two $k$-ary joins over a
+pool of $S$ linear tokens need $2k \leq S$. A designer who sets $k \geq
+\lceil S/2\rceil$ has bought a safety property outright, for any policies
+whatsoever, and has thereby confined cross-inhibition to the single job of
+breaking deadlock, where a cheaper mechanism --- reading the standing advocacy
+between rounds --- is available.
+
+What the project is for is narrower than what it will look like. It will look
+like a chess engine and it will not be a good one. It is an instrument for one
+question: whether the finding that non-modal rungs deliver most of the yield for
+a third of the cost is a fact about games or a fact about a game small enough to
+solve. Noughts-and-crosses cannot answer that, because everything about it is
+exact and nothing about it is hard. Chess can, and the same board that answers
+it also happens to be a world where the ecology cannot die of its own
+perfection.
+
+\appendix
+
+\section{The listing}
+\label{app:rho}
+
+Conventions follow the game note. A parameter written \texttt{c} is a NAME; a
+parameter written \texttt{@d} is DATA; a channel is passed as \texttt{*c}, since
+\texttt{@(*c) = c}. Guards marked \texttt{//! ideal} use structural or modal
+connectives that the current reducer does not evaluate; they are specifications
+of a check rather than checks. Everything else runs. The listing is the spine
+only: move generation per piece type, the full settling walk and adjudication are
+elided, since they are long and unsurprising, and the file
+\texttt{chess.rho} accompanying this note carries them.
+
+\lstinputlisting{chess.rho}
+
+\section{The formula catalogue}
+\label{app:formulae}
+
+Structural predicates, all over deposited families, all at perception prices:
+
+\begin{align*}
+  \mathsf{Occ}(s,p) &:= \out(\mathit{occ}(s))\,\qt{(*p)} \\
+  \mathsf{Emp}(s) &:= \out(\mathit{occ}(s))\,\qt{\Nil} \\
+  \mathsf{Bears}(p,s) &:= \exists c.\ \out(\mathit{atk}(s,c,p))\,\top \\
+  \mathsf{Attacked}(s,c) &:= \exists p.\ \mathsf{Bears}(p,s) \wedge \mathsf{Colour}(p,c) \\
+  \mathsf{Defended}(s) &:= \mathsf{Attacked}(s,\mathit{me}) \\
+  \mathsf{Pinned}(p) &:= \exists s.\ \mathsf{Occ}(s,p) \wedge \out(\mathit{pin}(s))\,\top \\
+  \mathsf{Available}(p) &:= \neg\,\mathsf{Pinned}(p) \wedge \neg\,\mathsf{Committed}(p) \\
+  \mathsf{InCheck}(c) &:= \out(\mathit{chk}(c))\,\top
+\end{align*}
+
+Derived formulae:
+
+\begin{align*}
+  \mathsf{Threat}(p) &:= \exists s.\ \mathsf{Bears}(p,s) \wedge \mathsf{Valuable}(s) \\
+  \mathsf{Fork}(p) &:= \mathsf{Threat}(p) \gsep{0}{N_{\mathit{atk}}} \mathsf{Threat}(p) \\
+  \mathsf{Hangs}(m) &:= \mathsf{Attacked}(\mathit{to}(m),\mathit{them}) \wedge
+                        \neg\,\mathsf{Defended}(\mathit{to}(m)) \\
+  \mathsf{Bearing}(s) &:= \Emod{N_{\mathit{pl}}}{V}\ \lambda p.\
+                        \mathsf{Bears}(p,s) \otimes \mathsf{Available}(p) \\
+  \mathsf{Coherent} &:= \nu X.\ \Emod{N_{\mathit{pl}}}{V}\big(\lceil \beta \rceil
+                        \otimes \langle K \rangle X\big)
+\end{align*}
+
+$\mathsf{Coherent}$ is the society's analogue of herd coherence: the coalition
+keeps agreeing as the population steps. It is not on the ladder because it is a
+$\nu$ over the run tree and therefore a depth engine, priced accordingly; it is
+listed because it is the formula an \emph{observer} of the society would use,
+and the society is going to be observed.
+
+\end{document}
