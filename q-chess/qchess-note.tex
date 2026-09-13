@@ -1,0 +1,1094 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[expansion=false]{microtype}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  framesep=6pt,
+  xleftmargin=12pt,
+  xrightmargin=12pt,
+  breaklines=true,
+  captionpos=b
+}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{principle}[definition]{Principle}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{question}{Open Question}
+
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+
+\newcommand{\Meas}{\textsf{measure}}
+\newcommand{\supp}{\operatorname{supp}}
+
+\title{Measurement as a Move\\[4pt]
+\large A quantum chess variant with bounded branching, adversarial collapse,\\
+and a minimal observation language}
+
+\author{L.~G. Meredith\\ \small F1R3FLY.io}
+
+\date{September 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We report the design of a quantum variant of chess in which a player may play a
+superposition of at most $m$ classical moves, and may additionally elect, as a
+whole turn, to force a measurement of the board. The literature contains two
+mature lineages --- superposition of \emph{moves} in the possibilistic style of
+Dorbec and Mhalla, and superposition of \emph{positions} under unitary dynamics
+in the style of Cantwell --- but in every design we have found, measurement is
+\emph{triggered} by a rule rather than \emph{elected} by a player. The elective
+measurement move is the novel element, and it forces a series of further
+choices which this note records: who resolves the measurement, what may be
+asked, and what the branching bound counts. The design we arrive at resolves
+the measurement adversarially (the opponent supplies the answer), which keeps
+the game free of chance and answers the recent result of Scholten, Westerbaan
+and Samardjiska that quantum moves confer no advantage against perfect
+classical play. It equips the measurement move with a deliberately small
+observation language whose atoms are patterns against the board and whose two
+connectives are restricted so that one merges and one correlates, neither able
+to impersonate the other. We give the grammar, the semantics, an optional phase
+layer under which interference has the unusually legible reading of
+\emph{menu deletion}, a sketch of the player as an f1r3lang process, and a list
+of open questions, chief among them whether the branching bound is a
+capability at all --- that is, whether the optimal $m$ for a perfect player
+exceeds one.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+The proposal under study is easy to state. A player may, on their turn, play a
+\emph{superposition} of classical chess moves rather than a single one, subject
+to a bound $m$ on how many moves may be superposed. A player may alternatively
+spend their turn forcing a \emph{measurement}, collapsing some of the resulting
+indeterminacy.
+
+The first half of that proposal is well covered by existing work, twice over
+and from two different directions. The second half appears to be unclaimed, and
+it is where the design interest lies. In every quantum board game we have
+located, measurement happens because a rule says it must: because a cycle of
+entanglement has closed, because a capture has been attempted, because a stone
+has been placed adjacent to a superposed stone. Nowhere is measurement a move a
+player may choose to make, at a tempo cost, naming what is to be asked.
+
+Making measurement elective turns out not to be a local addition. It interacts
+with almost every other design choice, and pursuing those interactions is what
+produced the design reported here. Section~\ref{sec:prior} reviews the prior
+art and locates the gap precisely. Section~\ref{sec:axes} lays out the design
+space as a set of independent axes. Section~\ref{sec:design} records the
+choices we made and why. Sections~\ref{sec:obs} and~\ref{sec:moves} give the
+observation and move languages, which are the two artefacts of the design most
+likely to go wrong by accident and are therefore treated in detail.
+Section~\ref{sec:sem} gives the semantics. Section~\ref{sec:phase} describes an
+optional phase layer. Section~\ref{sec:f1r3lang} sketches the player as a
+process in f1r3lang, connecting this variant to the multi-agent chess player
+already under development. Section~\ref{sec:ladder} describes the branching
+bound as a tournament structure. Section~\ref{sec:open} collects the open
+questions.
+
+A word on what kind of document this is. The design is not finished. Several
+choices below are recorded as decided because they were decided in the course
+of the dialogue that produced this note, and several others are recorded as
+open because they turn on facts about the resulting game that only play or
+search will supply. We have tried to be explicit about which is which.
+
+\section{Prior art}
+\label{sec:prior}
+
+\subsection{Superposition of moves: the possibilistic lineage}
+
+Dorbec and Mhalla's \emph{Toward Quantum Combinatorial Games}
+\cite{dorbec2017} is the general form of the first half of our proposal. They
+generalise Goff's quantum tic-tac-toe \cite{goff2006} to arbitrary
+combinatorial games by allowing players to play superpositions of moves. In
+their terminology a \emph{Q-move} is a set of classical moves; a \emph{run} is
+a choice of one classical move from each Q-move played so far; and if a run
+forms a legal sequence in the underlying classical game, the position it
+reaches is a \emph{realisation}. They propose several rulesets, differing in
+when superposed and unsuperposed moves may be played, and prove that the
+rulesets separate: the same classical game can have different outcomes under
+different rulesets. Their worked case is Nim.
+
+Crucially, this lineage is \emph{possibilistic}. A superposition is a set of
+realisations, carrying no amplitudes. There is no Born rule and no
+interference. What quantum mechanics contributes is the branching structure and
+the collapse discipline, not the linear algebra.
+
+Burke, Ferland and Teng \cite{burke2020,burke2022} take up the framework,
+concentrating on what they call flavour~D, in which classical moves are always
+available as one-wide superpositions, so that the quantum game contains the
+classical one. Their results are about complexity: starting from
+superpositions, Nim becomes $\Sigma_2^p$-hard and Undirected Geography becomes
+PSPACE-complete, and they exhibit abstract PSPACE-complete games whose quantum
+extensions fall to each level of the polynomial hierarchy. They also make a
+methodological observation that matters for us: in quantum combinatorial games
+the \emph{description} of a move is part of the game definition, because move
+description affects collapse. Two moves with the same effect on a classical
+position may filter a superposition differently.
+
+The same group's \emph{Transverse Wave} \cite{burke2021} and the recent
+\emph{Cheqqers} \cite{cheqqers2025}, a quantum checkers built in flavour~D,
+extend the lineage to further games.
+
+\subsection{Superposition of positions: the unitary lineage}
+
+Cantwell's Quantum Chess \cite{cantwell2019} is the serious engineering of the
+other approach. The board is a quantum register, one qubit per square, and
+moves are unitaries: split moves send a piece to two targets, merge moves
+recombine, and the resulting dynamics exhibit superposition, entanglement and
+interference. Measurement is present but is \emph{forced by move type} --- the
+excluded and capture variants of each move require a measurement so that the
+engine can unambiguously assign a piece to the target square. A measurement
+rule additionally serves to keep the superposition small enough for the game to
+remain tractable classically and comprehensible to a player.
+
+Cantwell's treatment of the win condition is the one piece of his design we
+adopt wholesale. There is no check; a player wins by capturing the opponent's
+king with certainty, and while both kings have nonzero probability of being on
+the board the game continues. Any design that admits a possibilistic notion of
+check --- mate only if mated in every realisation --- makes superposition a
+free escape from every mating net, and the game collapses.
+
+\subsection{Other variants}
+
+Akl's Quantum Chess \cite{akl2010} superposes piece \emph{identity} rather than
+position: a piece is a superposition of types, and collapses to one of them
+when touched. Goff's quantum tic-tac-toe \cite{goff2006} forces collapse when a
+cycle of entanglement closes, and --- a detail we return to --- the player who
+did \emph{not} create the cycle chooses where the collapse begins. Quantum Go
+exists in several forms \cite{quantumgo2020}, with collapse triggered by
+adjacency.
+
+\subsection{The quantum Zermelo result}
+
+Scholten, Westerbaan and Samardjiska \cite{scholten2026} give the result any
+new design in this space must answer. Instantiating Zermelo's theorem in the
+quantum setting, they show that quantum effects convey no advantage against a
+classical player who plays a perfect classical strategy; the quantum player's
+edge arises only from amplifying the classical player's mistakes.
+
+The lesson we take is not that quantum variants are pointless, but that a
+design which adds \emph{randomness} adds nothing a perfect opponent must
+respect. If the quantum machinery is to matter, it must change the option
+structure of the game rather than the distribution over outcomes.
+
+\subsection{The gap}
+
+Collecting the above: superposition of moves is done, superposition of
+positions is done, collapse disciplines of at least four kinds are done, and
+the complexity landscape is partly mapped. What is not done, as far as we can
+determine, is any of the following.
+
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Elective measurement.} No design lets a player spend a turn to
+      measure. Measurement is always a consequence of some other action.
+\item \textbf{A chosen observable.} Where measurement occurs, what is measured
+      is fixed by the rule that triggered it. No design gives the player a
+      language in which to say what should be asked.
+\item \textbf{The branching bound as a first-class parameter.} Cantwell bounds
+      superposition indirectly, via the measurement rule. Nobody treats the
+      width of a superposition as a declared resource, still less as a
+      difficulty setting.
+\end{itemize}
+
+These three are the content of the present design, and they are not
+independent: giving the player a measurement move forces the question of what
+may be asked, and the answer to that question is what makes the bound
+tractable.
+
+\section{The design axes}
+\label{sec:axes}
+
+Before recording choices we lay out the space. The axes below are close to
+independent, and a design is a point in their product.
+
+\paragraph{Axis 1: amplitudes or sets.}
+The fork that conditions everything else. Sets give a combinatorial game: no
+chance, Zermelo applies, outcome classes are well defined, and a measurement
+means selecting among realisations. Amplitudes buy interference, at the price
+of having to make each branching move unitary --- which is exactly where
+branch-dependent legality causes trouble, since a move legal in one realisation
+and illegal in another is not obviously a unitary at all.
+
+\paragraph{Axis 2: who resolves a measurement.}
+Three candidates: nature, by the Born rule; the measuring player; or the
+opponent. The third is the one that preserves the character of chess, since it
+introduces no chance and no hidden information, and it prices the measurement
+move automatically --- forcing a measurement means handing the opponent a
+menu.
+
+\paragraph{Axis 3: what may be measured.}
+The whole board; a single square's occupancy; a single piece's position; or a
+\emph{predicate} over the board. The last is the general case and contains the
+others. Its importance is not expressive: it is that the \emph{coarseness} of
+the observable is what limits the size of the choice handed over under Axis~2.
+
+\paragraph{Axis 4: what the branching bound counts.}
+Per-move width; total support size, with a forced collapse on overflow; a
+per-game budget of quantum moves; or a decaying coherence budget. These give
+materially different games. Per-move width is the one a player can reason
+about at the board.
+
+\paragraph{Axis 5: whether superposed moves share a source.}
+Cantwell's split move sends one piece to two targets. Dorbec and Mhalla allow
+arbitrary sets of moves, so branches may differ in which piece moved, and hence
+in material and tempo. The latter is more expressive and considerably harder to
+visualise; most of the bookkeeping pain in the design --- castling rights,
+promotion, captures that occurred in only some branches --- originates here.
+
+\paragraph{Axis 6: check and mate.}
+Possibilistic check is fatal, as noted above. Cantwell's abolition of check in
+favour of certain king capture is, as far as we can see, the only option that
+survives contact with superposition.
+
+\section{The design}
+\label{sec:design}
+
+We record the choices, with the reasoning that produced them.
+
+\subsection{Sets, with amplitudes as an optional layer}
+
+We take the possibilistic semantics as the base design: a position is a set of
+realisations. This is flavour~D in the Burke--Ferland--Teng sense, so classical
+chess embeds as the $m=1$ fragment and a player may always decline to branch.
+
+The reason is not conservatism but a consequence of Axis~2, developed in
+\S\ref{sec:design:adversarial}: under adversarial resolution, amplitudes carry
+no strategic information. Only the support matters. So the set semantics is not
+an approximation to the amplitude semantics; it is the whole of what matters,
+unless phase is added deliberately so that cancellation can empty a cell of the
+opponent's menu. That is the optional layer of \S\ref{sec:phase}.
+
+\subsection{The opponent resolves}
+\label{sec:design:adversarial}
+
+A measurement's outcome is chosen by the player who did not call for it. Only
+an answer with nonzero support is legal.
+
+Three consequences.
+
+First, the game contains no chance. It remains a combinatorial game with
+perfect information, Zermelo applies, and outcome classes are well defined.
+
+Second, the Scholten--Westerbaan--Samardjiska result is answered rather than
+dodged. There is no statistical edge to be had, because there are no
+statistics; whatever advantage the quantum machinery confers must show up in
+the structure of available options.
+
+Third, the criterion for calling a measurement is a minimum over the outcomes:
+one measures only when \emph{every} legal answer is acceptable. This is
+computable at the board, teaches itself, and makes the measurement move rare
+and decisive rather than routine.
+
+\begin{remark}[The entanglement objection, and its resolution]
+\label{rem:entanglement}
+The natural objection to adversarial resolution is that the board state is
+globally entangled, so that handing the opponent a collapse hands them the
+game. In the set semantics the objection has real force: a set of realisations
+is a subset of a product, and a subset is generically not a product, so
+correlation is the default rather than something the branches must work up to.
+
+The resolution is that the size of the menu handed over is set by the
+observable's spectrum, not by the entanglement. A measurement that projects
+onto a rank-one subspace --- a whole realisation --- does hand over the game.
+A measurement that projects onto a large eigenspace hands over one bit,
+restricting the state to the realisations consistent with the answer while
+leaving it superposed and entangled. The \emph{effect} of the measurement is
+global, because correlations carry it everywhere. The \emph{choice} handed over
+is one bit.
+
+Hence the observation language must be coarse by construction, and
+\S\ref{sec:obs} is written to make it so. Full-board collapse is not in the
+language.
+\end{remark}
+
+\subsection{Measurement is a whole turn}
+
+The turn structure is:
+
+\begin{enumerate}[leftmargin=1.6em]
+\item The player to move declares $\Meas\ \varphi$ for a formula $\varphi$ of
+      the observation language.
+\item The opponent answers \emph{yes} or \emph{no}. Only answers with nonzero
+      support are legal.
+\item The realisation set is filtered to those realisations consistent with the
+      answer. Correlations propagate the effect across the board.
+\item The turn ends. The opponent now plays an ordinary turn.
+\end{enumerate}
+
+The asymmetry between steps 1 and 2 is the design's load-bearing detail. The
+measuring player chooses \emph{what is asked}; the opponent chooses \emph{the
+answer}. Choosing the observable is where skill enters; choosing the answer is
+the price. If the opponent chose the question too, one would never measure; if
+the measuring player chose the answer, one would do nothing else.
+
+The opponent's answer is a response \emph{inside} the measuring player's turn,
+not a turn of their own, so the tempo cost of measuring is exactly one ply.
+
+\subsection{Bounded branching}
+
+A Q-move superposes at most $m$ distinct classical moves. We take $m$ as a
+declared parameter of the match rather than a constant of the game; see
+\S\ref{sec:ladder}.
+
+\subsection{No check}
+
+Following Cantwell: no check, no checkmate, no movement restrictions that
+depend on them. A player wins by capturing the opponent's king with certainty
+--- in the set semantics, in every surviving realisation.
+
+\section{The observation language}
+\label{sec:obs}
+
+By Remark~\ref{rem:entanglement} the observation language is where the design
+is kept safe, so we develop it carefully. The design goal is unusual: we want
+the \emph{smallest} language that maximises the interference available, subject
+to never naming a rank-one projector on a typical board.
+
+\subsection{A correction worth stating plainly}
+
+Every predicate built from occupancy atoms is diagonal in the configuration
+basis. A diagonal measurement cannot \emph{create} interference; it can only
+destroy it. So the language's job is not to generate interference but to govern
+how much coherence survives a measurement.
+
+A projector preserves every coherence \emph{within} an eigenspace and destroys
+every coherence \emph{across} eigenspaces. That reduces the design question to
+a single one: how large, and how well placed, are the eigenspaces the language
+can name?
+
+\begin{principle}[Precision cuts, coarseness preserves]
+\label{prin:dial}
+A sharper question separates more branches and destroys more coherence; a
+coarser question merges more branches and preserves more. Every feature of the
+observation language should be understood as a position on this dial.
+\end{principle}
+
+\subsection{Atoms}
+
+An atom asks for the \emph{value at a square}:
+\[
+  \textit{atom} ::= (i,j)!(\textit{pieceOrEmpty}).
+\]
+The notation is deliberate: this is a pattern against the board agent of the
+multi-agent chess design, where the board is
+$\prod_{1\le i,j\le 8} @(i,j)!(\cdots)$ with the payload either $0$ for an
+unoccupied square or $*x$ for the channel minted for the piece at that square.
+The observation language is therefore a fragment of a spatial logic over the
+board process, and a measurement is the extension of a spatial formula used as
+a projector. Consequences for implementation are discussed in
+\S\ref{sec:f1r3lang}.
+
+Two features of this choice matter.
+
+\paragraph{\textit{empty} is a value, not a negation.}
+Were emptiness expressed as the negation of occupancy, ``this square is empty''
+would require a disjunction over all thirty-two pieces, which no small language
+can express. As a value it is an atom.
+
+\paragraph{The value is a colour-and-type, not a piece identity.}
+This is where coherence comes from for free. If one branch has one black rook
+on a square and another branch has the other black rook there, both satisfy the
+same atom, and the projector keeps them in one eigenspace with their relation
+intact. The state must still track identity, for castling rights and for
+promotion; the \emph{question} cannot see it. That gap between what the state
+distinguishes and what the language can ask is precisely where coherence
+survives, and it is indistinguishability doing the work rather than any
+syntactic device.
+
+\subsection{Indices and wildcards: a lattice of observables}
+
+Identity is not simply hidden: it is \emph{graded}. Each piece type carries an
+index, and the index may be a wildcard.
+
+\begin{lstlisting}
+color        ::= B | W
+type         ::= Pawn( _ | 1..8 )
+               | Bishop( _ | L | R )
+               | Knight( _ | L | R )
+               | Rook( _ | L | R )
+               | Queen
+               | King
+pieceOrEmpty ::= empty | ( color, type ) | ( color, _ )
+\end{lstlisting}
+
+The indices name pieces present at setup and are positional, not
+identity-tracking: \texttt{Pawn(3)} means the pawn that began on the third
+file, \texttt{Rook(L)} the queenside rook, and so on. \texttt{Bishop(L|R)} is
+the happiest case, since light-square and dark-square is a genuine invariant
+rather than a label. King and Queen are unindexed, there being one of each at
+setup.
+
+This yields a lattice of observables over any square, ordered by coarseness:
+\texttt{Pawn(3)} is sharpest; \texttt{Pawn(\_)} merges the eight pawns;
+\texttt{(B,\_)} merges every black piece; and the coarsest occupancy question
+is \texttt{(B,\_) v (W,\_)}. Choosing a question is choosing a point on this
+lattice, which is to say: the wildcard \emph{is} the dial of
+Principle~\ref{prin:dial}. This is better than a menu of connectives, because
+it is a single mechanism a player can learn once.
+
+\begin{remark}[Promotion blurs identity, by construction]
+Since Queen is unindexed, a promoted queen is indistinguishable from the
+original. The rule generalises to under-promotion: indices name pieces present
+at setup, and promoted pieces carry \texttt{\_} as their standing index. A
+promoted knight is \texttt{Knight(\_)} and nothing sharper.
+
+The wildcard therefore does two jobs --- wildcard in a query, and standing
+index of a promoted piece --- and the two agree, since \texttt{Knight(\_)}
+matches the promoted knight along with the originals and no query singles it
+out. That coincidence is load-bearing rather than decorative: it is what keeps
+promotion from requiring its own clause.
+
+It also has a pleasant reading in the game. Promotion converts a sharply
+nameable piece into a permanently coarse one, so every promotion enlarges the
+eigenspaces available to later measurements. A pawn that queens buys material
+and buys coherence.
+\end{remark}
+
+\subsection{Two connectives, restricted so neither can impersonate the other}
+
+Negation is unnecessary: the opponent answers yes or no, so asking $\varphi$
+and hearing \emph{no} already projects onto $\neg\varphi$. The complement
+eigenspace is always reachable, and a negation connective would add nothing.
+
+Of the remaining candidates, the jobs separate cleanly.
+
+\begin{itemize}[leftmargin=1.4em]
+\item An \textbf{atom} is a cut. It is the sharpest instrument available and
+      destroys coherence between the branches it separates.
+\item \textbf{Disjunction} is a merge. Its yes-eigenspace is the span of both
+      disjuncts, so branches differing only in which disjunct holds survive
+      together. This is which-path erasure, and it is the smallest formula that
+      has any. In the slogan of the graded where-clause work: interference is a
+      false disjunction with true disjuncts.
+\item \textbf{Conjunction} is strictly more expressive and its added power is
+      all cutting, since intersecting eigenspaces makes them smaller. It buys
+      reach at the direct expense of what we are trying to maximise, and is
+      excluded.
+\item The \textbf{biconditional} is a correlation probe. Its yes-space contains
+      both the both-true and the both-false configurations, so the answer
+      reveals a \emph{relation} while leaving each atom maximally
+      undetermined. This is the only cheap connective that addresses
+      entanglement without collapsing either party to it.
+\end{itemize}
+
+Left unrestricted, however, each of the two chosen connectives can do the
+other's job badly. A biconditional between two atoms on the \emph{same} square
+is true exactly when both are false, since the atoms are mutually exclusive:
+that is a conjunction of negations in disguise, and it cuts. A disjunction
+between atoms on \emph{distinct} squares has a yes-space containing
+configurations where both hold, and is therefore a coarse cut rather than a
+clean merge.
+
+Hence the restrictions:
+
+\begin{lstlisting}
+formula ::= atom
+          | atom v atom        -- same square
+          | atom <=> atom      -- distinct squares
+\end{lstlisting}
+
+One connective for erasure, one for correlation, neither able to impersonate
+the other.
+
+\begin{proposition}[Same-square disjunction is exclusive by construction]
+Over a single square the disjuncts are mutually exclusive, so no configuration
+satisfies both. The yes-space is a clean span of two alternatives, and the
+merge is as coherence-preserving as a two-outcome measurement can be.
+\end{proposition}
+
+Thus the restriction imposed to stop disjunction from cutting also made it the
+sharpest available erasure operator.
+
+\begin{remark}[Disjunction is not subsumed by wildcards]
+Wildcards subsume disjunction \emph{within} a type:
+\texttt{(d5)!(B,Rook(L)) v (d5)!(B,Rook(R))} is exactly
+\texttt{(d5)!(B,Rook(\_))}. They do not reach across types:
+\texttt{(d5)!(B,Knight(\_)) v (d5)!(B,Bishop(\_))} has no wildcard spelling,
+since \texttt{(B,\_)} is strictly coarser. So the connective's remaining job is
+cross-type merging on one square, which is narrow enough to describe in a
+sentence and is the reason it survives.
+\end{remark}
+
+\subsection{The grammar}
+
+\begin{lstlisting}
+color        ::= B | W
+type         ::= Pawn( _ | 1..8 )
+               | Bishop( _ | L | R )
+               | Knight( _ | L | R )
+               | Rook( _ | L | R )
+               | Queen
+               | King
+pieceOrEmpty ::= empty | ( color, type ) | ( color, _ )
+square       ::= ( i, j )                    -- 1 <= i,j <= 8
+atom         ::= square !( pieceOrEmpty )
+formula      ::= atom
+               | atom v atom                 -- same square
+               | atom <=> atom               -- distinct squares
+\end{lstlisting}
+
+\subsection{Safety is semantic, not syntactic}
+\label{sec:obs:safety}
+
+It is tempting to read the restrictions above as the guarantee that no
+measurement gives the game away. They are not, and it is worth being explicit
+about why.
+
+Whether a projector isolates a single realisation is a property of the
+\emph{current support}, not of the formula. A single atom can be rank-one on
+today's board; a much larger formula can be rank-eight. Syntax is the wrong
+instrument for this obligation.
+
+Since the support is capped anyway --- that is what the branching bound is for
+--- evaluating a formula against every realisation is cheap. So the safety
+condition belongs where it can be stated exactly:
+
+\begin{definition}[Legality of a measurement]
+\label{def:meas-legal}
+$\Meas\ \varphi$ is legal in a position $S$ iff
+\begin{enumerate}[label=(\roman*),leftmargin=2em]
+\item both answers are live: $|\{s\in S: s\models\varphi\}|\ge 2$ and
+      $|\{s\in S: s\not\models\varphi\}|\ge 2$; and
+\item the yes-space contains a coherent pair: at least two realisations
+      satisfying $\varphi$ that differ only in a way the formula cannot see.
+\end{enumerate}
+\end{definition}
+
+Condition~(i) subsumes the prohibition on \emph{vacuous} measurement --- a
+question every realisation already answers the same way, which would burn a ply
+for nothing --- and it also prevents the binary-search degeneracy.
+Condition~(ii) is what makes a measurement an instrument rather than merely a
+cut, and it may be relaxed if play shows it too restrictive.
+
+We note that tempo already bounds the abuse. With the support capped at, say,
+eight or sixteen, unrestricted binary search would need three or four plies to
+collapse the board, which in chess is a catastrophic price. The language
+restriction is therefore buying legibility and coherence preservation rather
+than safety; Definition~\ref{def:meas-legal} buys safety.
+
+\section{The move language}
+\label{sec:moves}
+
+\subsection{Why a move needs a source annotation}
+
+Under superposition, a move described only by source and target square is not
+well defined, for two reasons.
+
+First, legality is type-dependent: \texttt{d1->d5} is legal for a queen or rook
+and illegal for a knight, and the source square may hold different types in
+different realisations. The Dorbec--Mhalla machinery requires feasibility to be
+decidable per realisation in order to know which realisations survive.
+
+Second --- and this is the Burke--Ferland--Teng observation --- move
+\emph{description} affects collapse. Two moves with identical source and target
+but different descriptions filter the realisation set differently, so the
+description is part of the game and not an artefact of notation.
+
+Hence a classical move carries a pattern at its source:
+
+\begin{lstlisting}
+cmove ::= square !( color, type ) -> square [ !( color, type ) ]
+\end{lstlisting}
+
+The move is feasible exactly in those realisations where the source pattern
+matches. The optional target annotation is required only for under-promotion; a
+bare target means the piece arrives unchanged.
+
+\begin{remark}[Wildcards belong here too]
+The source pattern admits wildcards, on the same grounds as the observation
+language. \texttt{d1!(B,Rook(\_)) -> d5} is a move any black rook on d1 may
+make, feasible across branches that disagree about which rook it is, and
+therefore preserving coherence between them. Barring wildcards would force
+every move to be maximally sharp and would decohere the board on every turn.
+\end{remark}
+
+\begin{remark}[The source pattern is an atom]
+Comparing with \S\ref{sec:obs}, the source pattern of a \texttt{cmove} and the
+atom of a formula have the same shape. The engine therefore needs one matcher
+against the board process, used in two roles --- as a projector in a
+measurement and as a pattern in a move.
+\end{remark}
+
+\subsection{Signs on branches}
+
+The optional phase layer of \S\ref{sec:phase} requires only that a branch may
+carry a sign.
+
+\begin{lstlisting}
+sign   ::= + | -                       -- + may be elided
+branch ::= sign cmove
+qmove  ::= { branch , ... , branch }   -- width <= m, branches distinct
+turn   ::= qmove
+         | measure formula
+\end{lstlisting}
+
+Only relative signs matter, so a width-two Q-move carries one meaningful bit;
+normalising the first branch to \texttt{+} removes the redundant spelling at
+some cost in symmetry.
+
+Whether the branches of a Q-move must share a source square is Axis~5 and is
+left open. As written they need not, which is the Dorbec--Mhalla reading. The
+tighter form
+\begin{lstlisting}
+qmove ::= square !( color, type ) -> { sign square , ... }
+\end{lstlisting}
+is Cantwell's split move, is far easier to visualise, and eliminates most of
+the bookkeeping around branches that differ in material.
+
+\subsection{Legality does not live in the grammar}
+
+The grammar fixes the \emph{shape} of a move: what it claims about its source,
+where it goes, what arrives. It does not and cannot fix legality, because
+piece-movement legality is a property of the board --- path occupancy,
+castling rights, en passant windows --- and a grammar that expressed only legal
+moves would have to be indexed by the position, which is not a grammar. Under
+superposition the point is sharper still: feasibility is not boolean but
+per-realisation, and that filtering is precisely the mechanism that makes the
+game quantum.
+
+So \texttt{d1!(B,Pawn(3)) -> h8} parses and is refused at the board, which is
+the correct place to refuse it. The source annotation is not there to make the
+move legal; it is there to make the move \emph{determinate across branches}.
+
+\section{Semantics}
+\label{sec:sem}
+
+We give the set semantics. The amplitude layer is \S\ref{sec:phase}.
+
+\begin{definition}[Position]
+A \emph{classical position} is a board configuration together with the usual
+auxiliary state: side to move, castling rights, en passant window, and the
+counters governing repetition and the fifty-move rule. A \emph{position} is a
+nonempty finite set $S$ of classical positions, all with the same side to move.
+\end{definition}
+
+That the side to move is common to all realisations is worth noting: turns are
+never superposed, so ply parity is classical throughout and the game remains
+strictly alternating.
+
+\begin{definition}[Feasibility]
+A classical move $c$ is \emph{feasible} at $s\in S$ if the source pattern of
+$c$ matches at $s$ and the resulting move is legal in $s$ by the ordinary rules
+of chess, as amended by \S\ref{sec:design} (no check, king capture permitted).
+Write $\Gamma(s,c)$ for the classical position resulting.
+\end{definition}
+
+\begin{definition}[Q-move]
+Let $Q = \{c_1,\dots,c_k\}$ with $k\le m$. $Q$ is legal at $S$ if every $c_j$
+is feasible at some $s\in S$. The resulting position is
+\[
+  S' \;=\; \{\, \Gamma(s,c_j) \;:\; s\in S,\ 1\le j\le k,\
+                c_j \text{ feasible at } s \,\}.
+\]
+\end{definition}
+
+Infeasible pairings simply do not contribute, which is the collapse-on-
+infeasibility of the Dorbec--Mhalla framework. Note that $|S'|$ may exceed
+$m\cdot|S|$ in no case, and is often much smaller, since distinct pairings
+frequently reconverge on the same classical position.
+
+\begin{definition}[Measurement]
+Let $\varphi$ be a formula legal at $S$ per Definition~\ref{def:meas-legal}.
+The opponent selects $b\in\{\top,\bot\}$, and the resulting position is
+\[
+  S' \;=\; \{\, s \in S \;:\; s \models \varphi \text{ iff } b = \top \,\}.
+\]
+\end{definition}
+
+Measurement is filtering, not collapse to a point. The conditional state
+remains a superposition, generally still entangled, and the engine must
+maintain it rather than reduce to a single board. This is the representational
+cost of coarse observables, and it means a measurement does not necessarily
+shrink the support very much --- which is exactly why the branching bound must
+do its own work rather than relying on measurements to keep the state small.
+
+\begin{definition}[Win condition]
+A player wins when the opponent's king is absent from every $s\in S$. There is
+no check and no checkmate.
+\end{definition}
+
+\begin{remark}[Overflow]
+If $|S'|$ exceeds the support cap, some forced reduction is required. The
+options are a forced measurement chosen by the player to move, a forced
+measurement chosen by the opponent, or a rule declaring the Q-move illegal.
+The third is cleanest and keeps the bound a property the player must plan
+around rather than a trap. We have not settled this; see
+Question~\ref{q:overflow}.
+\end{remark}
+
+\section{Phase: an optional layer}
+\label{sec:phase}
+
+Adding amplitudes to a game whose measurements are resolved adversarially has
+an unusual and, we think, attractive consequence.
+
+Under Born resolution, phase shifts probability around, and a player must
+reason about distributions. This is where every quantum variant loses its human
+audience.
+
+Under adversarial resolution, amplitudes are invisible to strategy except in
+one way: when two branches cancel to zero, that configuration leaves the
+support, and the opponent can no longer choose it.
+
+\begin{principle}[Interference is menu deletion]
+\label{prin:menu}
+With the opponent resolving, the sole strategic effect of relative phase is the
+removal of options from the player about to choose. A player never computes a
+probability; they ask whether a cell of the opponent's menu can be emptied.
+\end{principle}
+
+This is a chess-shaped question, which is the point.
+
+\paragraph{The mechanism.}
+A Q-move declares a sign on a branch. Nothing else changes syntactically. For
+the sign to matter, two distinct move sequences must reach the same
+configuration, so that their amplitudes land in the same cell and may sum to
+zero. Chess supplies such reconvergence naturally, through transpositions and
+through split moves that later remerge on a square.
+
+\paragraph{The obstruction, which is familiar.}
+The surviving rest of the board is a which-path record: two branches recombine
+only if \emph{everything else} about them agrees. On a chess position that is a
+stringent condition, and it is what keeps the mechanic rare rather than
+dominant. This is the same phenomenon identified in the graded where-clause
+setting, where the residual message left by a race is precisely the record that
+prevents recombination, and where recombination is recovered only when the
+racing alternatives are indistinguishable.
+
+\paragraph{An unusual simplification.}
+Because nothing is ever sampled, norms do not matter. Amplitudes need only be
+tracked up to whether they vanish, so a ring with additive inverses suffices;
+signs alone give $\pm 1$ and cancellation with integer bookkeeping. There is no
+unitarity discipline to enforce, no normalisation, and no post-selection
+hazard. The entire apparatus that makes a quantum interpretation of a process
+calculus difficult is unnecessary here, precisely because no distribution is
+ever read out.
+
+\paragraph{A risk.}
+A bare sign may be too weak. With $\pm 1$ on integer path counts, cancellation
+requires two branches to arrive with opposite signs and equal magnitude, which
+may be a coincidence a player cannot reliably engineer. If so, the escalation
+is to let the sign be chosen at \emph{merge} time rather than at split time, or
+to let a measurement's yes-answer carry a sign. Both are larger changes, and we
+would start with the sign-at-split version and escalate only if the mechanic
+proves inert. See Question~\ref{q:phase}.
+
+\section{Players as processes}
+\label{sec:f1r3lang}
+
+This variant is intended to be playable within the multi-agent chess design, in
+which each piece of a colour is an agent and the board is itself an agent
+holding a deposit per square.
+
+A player picking up a piece is naturally written as a sum of receives:
+\[
+  \textsf{Player}(\textit{color}) \;=\;
+  \sum_{\textit{type}} \sum_{\textit{pos}}
+  \textsf{for}\big((\textit{color},\textit{type}) \leftarrow \textit{pos}\big)
+  \{\, \textsf{movePieceAccordingToStrategy}(\ldots) \,\}
+\]
+with the receives linear, as elsewhere in this programme.
+
+Three observations.
+
+\paragraph{The receive is the atom in a third role.}
+\textsf{for}$((\textit{color},\textit{type}) \leftarrow \textit{pos})$ is a
+pattern match against the board deposit $@(i,j)!(\cdots)$ --- the same shape as
+the observation atom and the move's source pattern. So one construct appears
+three times: as a projector in a measurement, as a pattern in a move, and as a
+binder in a pickup. Wildcards carry over in all three roles, and a pickup with
+a wildcard grasps a piece without resolving which one, preserving coherence
+between those branches.
+
+\paragraph{The sum is a race, and the Q-move is that race with a bound.}
+A player offering many receives against a contended board is the general race
+--- bags of consumes against deposits, with admissible pairings. A Q-move is
+that race with a width bound and, optionally, signs on the branches. The sign
+therefore belongs on the binder rather than on a separate move term, which is
+the same conclusion the graded where-clause work reached by a different route:
+the control a programmer needs in order to arrange interference belongs where
+the branching happens.
+
+\paragraph{Measuring and non-measuring interaction must remain distinct.}
+A measuring receive and a non-measuring one differ in what they do to the
+\emph{rest} of the board, not merely to the square they touch: the former
+filters the realisation set, the latter leaves it intact across the branches
+the pattern covers. Same pattern, different effect on state the pattern never
+mentions. In this game the separation is forced anyway, since measurement
+consumes a whole turn and invites an answer from the opponent, so the turn
+structures differ. A general account of measuring versus non-measuring
+interaction --- plausibly a polymorphic interaction with a measure primitive
+--- is a broader question for interactive GSLTs and is out of scope here.
+
+\subsection{Typing, and the player whose source we do not have}
+
+One may ask for a typing discipline under which a player process is well-typed
+iff it never makes an illegal move. This is attractive: a well-typed bot needs
+no rules oracle, which matters when sixteen piece-agents are proposing moves
+concurrently and one would rather not round-trip each proposal through a
+referee.
+
+Two caveats.
+
+First, the discipline stratifies. Piece-movement geometry is local to the bound
+pattern and the target, so a static type can plausibly carry it. Path
+occupancy, castling rights and their kin are properties of the whole board, so
+a type ruling them out must be indexed by board state. Under superposition the
+position is a set of realisations, and the discipline must then choose: legal
+in \emph{every} realisation is too strong and makes most Q-moves untypable;
+legal in \emph{some} is the feasibility condition we want, but is not a static
+property. The resulting stratification --- one fragment decidable by
+inspection, one not --- mirrors the stratification found in the graded
+where-clause work between the modality-free fragment and the rest.
+
+Second, and decisively: a human player is not a term. Well-typedness is a
+property of a process, and there is no source to inspect when the player is a
+person. So typing cannot be the game's legality story.
+
+The resolution is to make the referee's check the \emph{definition} and the
+type system a static approximation of it: a player process is well-typed iff
+every move it can emit would pass the referee. Then legality is defined
+uniformly over humans and bots, the typing becomes a soundness theorem about
+bots rather than a rule of the game, and there is no risk of a typed bot being
+legal by a standard the referee does not share.
+
+For a human, the corresponding obligation is discharged by having read the
+rules and consented to play, and the check happens at the referee when a move
+arrives. The referee's rejections are thus the human-facing half of the type
+error and should read that way. Definition~\ref{def:meas-legal} in particular
+has no counterpart in chess, and a player will encounter it without knowing
+why; the message should say so.
+
+\section{The branching bound as a ranking}
+\label{sec:ladder}
+
+The bound $m$ is a parameter of the match, not a constant of the game, and this
+suggests a tournament structure: a player who succeeds repeatedly at bound $m$
+advances to play at bound $m+1$.
+
+The idea is that the rating is a bound on the state space rather than a number
+attached to a history. Elo measures how well one plays; $m$ measures how much
+superposition one can hold. These are different quantities and the second is
+the more legible.
+
+\paragraph{The ladder teaches.}
+At $m=1$ the game is chess. At $m=2$ it is chess plus the smallest possible
+quantum move, and the measurement move is immediately comprehensible because
+the menu has at most two cells. Each rung adds one branch to hold. The
+difficulty gradient is therefore a genuine cognitive quantity rather than an
+opponent-strength proxy, which is rare in game design.
+
+\paragraph{Bots and humans become comparable in a meaningful way.}
+A bot's rung says something real about its search: holding $m$ branches under
+adversarial resolution means evaluating a minimum over a menu at each
+measurement, which is a different computation from deepening a classical
+search. A bot that wins only by raising $m$ is not better at chess; it is
+better at bookkeeping. Worth separating explicitly.
+
+\paragraph{The human bound is tighter than the engine bound.}
+A bot tracking the full realisation set knows exactly which menu cells are live
+and which its opponent's phase choices have emptied. A human sees the same
+information in principle --- the game has perfect information --- but not in
+practice past a handful of branches. So the bound is not only an engine
+tractability parameter; it is the number of realisations a person can hold.
+Three is probably right for humans and unnecessarily small for bots, which
+argues for $m$ being a table stake rather than a rule.
+
+\paragraph{Asymmetric bounds.}
+Capping the stronger player at $m$ while the weaker plays at $m+1$ is a
+handicap with no equivalent in chess, since it changes which moves exist rather
+than what material is on the board. Whether it balances is empirical, and cheap
+to test.
+
+\section{Open questions}
+\label{sec:open}
+
+\begin{question}[Is higher $m$ actually stronger?]
+\label{q:m}
+Under adversarial resolution a wider Q-move hands the opponent a larger menu,
+so width may be self-limiting: past some point it could be a liability. If the
+optimal $m$ for a perfect player is $1$, the ladder of \S\ref{sec:ladder}
+remains a teaching structure but stops being a ranking, and the variant's
+quantum content becomes decorative. This is the question on which the design
+most depends. A small search at $m=2$ and $m=3$ on a reduced board should
+settle it.
+\end{question}
+
+\begin{question}[Are Q-moves worth playing at all?]
+\label{q:qmoves}
+Since the opponent chooses every measurement outcome, a superposition may
+simply never resolve favourably. The presumed answer is that a good Q-move
+creates a position in which \emph{both} branches are acceptable --- a real and
+recognisable skill --- and that the opponent's choice is constrained by the
+rest of the board. But this is an empirical claim about the resulting game and
+should be checked before anything else is built on it. Note that
+Question~\ref{q:m} is the quantitative form of this one.
+\end{question}
+
+\begin{question}[Does phase ever bite?]
+\label{q:phase}
+Reconvergence requires that everything other than the interfering branch agree
+across two histories. Find a position in which a split and a transposition
+genuinely remerge and the residual board agrees on both paths. If no such
+position arises in ordinary play, phase is decorative and the set semantics is
+the whole game. If such positions arise but cancellation cannot be engineered
+with bare signs, escalate as described in \S\ref{sec:phase}.
+\end{question}
+
+\begin{question}[Shared source or not?]
+\label{q:source}
+Axis~5. Requiring the branches of a Q-move to share a source square gives
+Cantwell's split move, which is easier to visualise and removes most
+bookkeeping. Permitting arbitrary sets gives the Dorbec--Mhalla reading, which
+is more expressive and allows branches to differ in material and tempo. We
+suspect the shared-source restriction is right for a playable game and wrong
+for the study of the underlying combinatorics.
+\end{question}
+
+\begin{question}[What happens on overflow?]
+\label{q:overflow}
+If a Q-move would take the support past its cap: declare the move illegal,
+force a measurement by the mover, or force one by the opponent. The first is
+cleanest; the third has an appealing symmetry with the measurement move but
+risks making wide Q-moves unplayable.
+\end{question}
+
+\begin{question}[Is the coherent-pair condition too strong?]
+\label{q:coherent}
+Condition~(ii) of Definition~\ref{def:meas-legal} requires the yes-space to
+contain a coherent pair. It may rule out measurements a player legitimately
+wants, particularly late in a game when the support is small. It may be that
+condition~(i) alone suffices.
+\end{question}
+
+\begin{question}[Draws, repetition and the fifty-move rule.]
+\label{q:draws}
+Repetition detection over sets of realisations is not obviously the right
+notion --- repetition in every realisation, in some, or of the set itself? A
+coherence budget, decaying with each Q-move, would sidestep the question by
+bounding game length directly, at the cost of another parameter.
+\end{question}
+
+\begin{question}[Does the referee's rules engine factor?]
+\label{q:referee}
+The referee must carry the full classical rules, per-realisation feasibility,
+the win condition, the branching bound and
+Definition~\ref{def:meas-legal}. How much of this can be expressed as spatial
+formulae over the board process, so that one matcher serves the whole engine?
+The atom already serves three roles (\S\ref{sec:f1r3lang}); the question is how
+far that extends.
+\end{question}
+
+\begin{question}[Measuring versus non-measuring interaction, in general.]
+\label{q:polymorphic}
+Out of scope here but raised by the design: is there a polymorphic interaction
+primitive for interactive GSLTs, of which measuring and non-measuring receives
+are instances? The present game suggests the two flavours differ in their
+effect on state the pattern does not mention, which is a semantic rather than
+syntactic distinction and may be the right handle.
+\end{question}
+
+\section{Conclusion}
+
+The design reported here is small. A player may superpose at most $m$ moves;
+may instead spend a turn asking a yes-or-no question about the board, drawn
+from a language of one atom form and two restricted connectives; and the
+opponent answers. There is no chance, no hidden information, and no check.
+
+What recommends it is that each restriction was forced rather than chosen for
+taste. Adversarial resolution follows from wanting the variant to answer the
+quantum Zermelo result rather than dodge it. Coarse observables follow from
+adversarial resolution, given that the board is globally entangled. The
+graded-identity wildcards follow from wanting coarseness to be a dial rather
+than a special case. The restrictions on the two connectives follow from
+wanting each to do one job. And the semantic legality condition follows from
+noticing that the property one actually cares about --- that no measurement
+isolates a realisation --- is a property of the current support and cannot be
+enforced by a grammar at all.
+
+What remains genuinely unsettled is whether the game is any good, and that
+reduces to Question~\ref{q:m}. If the optimal branching bound for a perfect
+player is one, the design is an elegant apparatus around an empty centre. If it
+is greater than one, then the branching bound is a capability, the ladder is a
+ranking, and there is a new game here.
+
+\begin{thebibliography}{9}
+
+\bibitem{akl2010}
+S.~G. Akl.
+\newblock Quantum Chess.
+\newblock School of Computing, Queen's University.
+\newblock \url{https://research.cs.queensu.ca/Parallel/QuantumChess/QuantumChess.html}
+
+\bibitem{burke2020}
+K.~Burke, M.~Ferland, S.-H. Teng.
+\newblock Quantum Combinatorial Games: Structures and Computational Complexity.
+\newblock arXiv:2011.03704, 2020.
+
+\bibitem{burke2021}
+K.~Burke, M.~Ferland, S.-H. Teng.
+\newblock Transverse Wave: An Impartial Color-Propagation Game Inspired by
+Social Influence and Quantum Nim.
+\newblock \emph{Integers} 21B (A3), 2021. arXiv:2101.07237.
+
+\bibitem{burke2022}
+K.~W. Burke, M.~Ferland, S.-H. Teng.
+\newblock Quantum-Inspired Combinatorial Games: Algorithms and Complexity.
+\newblock \emph{FUN 2022}, LIPIcs vol.~226, 11:1--11:20.
+
+\bibitem{cantwell2019}
+C.~Cantwell.
+\newblock Quantum Chess: Developing a Mathematical Framework and Design
+Methodology for Creating Quantum Games.
+\newblock arXiv:1906.05836, 2019.
+
+\bibitem{cheqqers2025}
+Quantum Checkers: The Development and Analysis of a Quantum Combinatorial Game.
+\newblock arXiv:2506.05962, 2025.
+
+\bibitem{dorbec2017}
+P.~Dorbec, M.~Mhalla.
+\newblock Toward Quantum Combinatorial Games.
+\newblock \emph{Quantum Physics and Logic (QPL)}, EPTCS 266, 2017, p.~237.
+arXiv:1701.02193.
+
+\bibitem{goff2006}
+A.~Goff.
+\newblock Quantum tic-tac-toe: A teaching metaphor for superposition in quantum
+mechanics.
+\newblock \emph{American Journal of Physics} 74(11):962--973, 2006.
+
+\bibitem{quantumgo2020}
+Quantum Go Machine.
+\newblock arXiv:2007.12186, 2020.
+
+\bibitem{scholten2026}
+D.~Scholten, B.~Westerbaan, S.~Samardjiska.
+\newblock Quantum combinatorial games.
+\newblock arXiv:2607.06550, 2026.
+
+\end{thebibliography}
+
+\end{document}
