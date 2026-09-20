@@ -1,0 +1,1156 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathrsfs}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% ---- source calculus, following the companion note ----
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{*}#1}
+\newcommand{\inp}[3]{\mathsf{for}(\,#1 \leftarrow #2\,)#3}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\enc}[1]{[\![#1]\!]}
+\newcommand{\nequiv}{\equiv_{\mathcal{N}}}
+\newcommand{\Ctx}{\mathscr{C}}
+\newcommand{\Obs}{\mathcal{D}}
+\newcommand{\bisim}{\approx}
+\newcommand{\fn}{\mathrm{fn}}
+\newcommand{\nms}[1]{\mathcal{N}^{*}(#1)}
+\providecommand{\xLongrightarrow}[1]{\mathrel{\overset{#1}{\Longrightarrow}}}
+
+% ---- combinators ----
+\newcommand{\mm}{\mathsf{m}}
+\newcommand{\dd}{\mathsf{d}}
+\newcommand{\kk}{\mathsf{k}}
+\newcommand{\fw}{\mathsf{fw}}
+\newcommand{\bl}{\mathsf{b}_{\mathsf{l}}}
+\newcommand{\br}{\mathsf{b}_{\mathsf{r}}}
+\newcommand{\sy}{\mathsf{s}}
+\newcommand{\ev}{\mathsf{e}}
+\newcommand{\qq}{\mathsf{q}}
+\newcommand{\cons}{\mathsf{cons}}
+\newcommand{\red}{\longrightarrow}
+\newcommand{\wred}{\longrightarrow^{*}}
+\newcommand{\scong}{\equiv}
+
+\title{\textbf{Name-Free Combinators for the Rho Calculus}\\[4pt]
+\large A repair, a linear encoding, and the one operation that was missing}
+\author{F1R3FLY.io research note}
+\date{September 2026 --- draft 3 (rewritten)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+The name-free concurrent combinators of \emph{Name-free combinators for
+concurrency} were proposed as a target into which the rho calculus embeds
+with no binders at all. This note asks whether the embedding is correct,
+and finds three things. The combinator calculus as published is unsound,
+and the defect is one equation: the structural identification
+$\drp{\quo{P}} \scong P$, which makes every running process a redex. It is
+removed, and the identification recovered where it is wanted through the
+semantic substitution of the original Meredith--Radestock presentation ---
+whose drop clause turns out to be the combinator rewrite for $\ev$, promoted
+from the metatheory to a reduction rule. Second, with the defect repaired the
+combinators still fall short of the rho calculus, and by exactly one
+capability: they have a name destructor and no name constructor, so they can
+open a name that arrives at runtime but never build one. A no-name-creation
+lemma turns this into a separation theorem. A small family of constructors closes
+the gap --- four suffice, each building the quotation of one node from names,
+chief among them $\cons_{\mid}(a,b,c)$ for parallel composition --- and the
+translation then covers the whole calculus with no fragment restriction. Third, reflection buys an unexpected efficiency: a continuation
+can be quoted and released by a gate rather than rewritten atom by atom, so
+prefix elimination is linear where Yoshida's is $\Theta(3^{d})$ in the nesting
+depth of inputs. Correctness is established as full abstraction relative to
+encoded contexts, in the sense of the companion note, and the restriction to
+encoded observers is shown to be forced. A final section gives an alternative
+presentation in which $\mm$ and $\qq$ are not primitive but the nullary
+members of the constructor family, leaving a calculus of routers, one
+destructor, and constructors.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+The rho calculus\footnote{The name is an acronym and a pun. It abbreviates the
+\textbf{r}eflective \textbf{h}igher \textbf{o}rder calculus; dropping the
+periods from r.h.o.\ gives the English transliteration of the Greek letter
+following $\pi$, marking the calculus as successor to the $\pi$-calculus. It
+is written ``rho calculus'', never with the Greek letter.} has no
+name-restriction operator: names are quoted processes, and freshness is
+obtained by quotation rather than by a binder. It nonetheless has a binder,
+the input prefix. Yoshida showed how to eliminate the input binder of the
+asynchronous $\pi$-calculus in favour of combinators, at the cost of keeping
+$\mathsf{new}$. The combination is suggestive: a calculus with no
+$\mathsf{new}$, compiled by a discipline that removes the remaining binder,
+should give a concurrency calculus with no bound names whatsoever. That is
+what \cite{rhocomb} proposed. This note asks whether the proposal works.
+
+\paragraph{Findings.}
+
+\begin{enumerate}[leftmargin=1.6em]
+
+\item \textbf{One equation breaks the calculus.} The published combinators
+inherit $\drp{\quo{P}} \scong P$ from a presentation in which quote and drop
+are mutually inverse up to structural congruence. In the combinator setting
+the drop is not a process former but a guard, and since every name is
+$\quo{Q}$ for some $Q$, the identification makes an arbitrary running process
+match the guard. Proposition~\ref{prop:defect}: for all $P,Q$,
+$Q \mid \mm(\quo{Q},\quo{P}) \red P$. The repair is to drop the equation,
+retain $\quo{\drp{x}} \nequiv x$, and let semantic substitution do the rest
+(\S\ref{sec:why}).
+
+\item \textbf{Reflection was half-implemented.} The rule
+$\ev(a) \mid \mm(a,\quo{P}) \red P$ opens a name that arrives at runtime.
+Nothing builds one. Lemma~\ref{lem:nonames}: combinator reduction never
+produces a name that was not already present in the redex, hereditarily.
+Rho reduction does, at every step, because substituting under a quotation
+turns $\quo{(\drp{y} \mid R)}$ into $\quo{(Q \mid R)}$ --- a name in neither
+participant. Theorem~\ref{thm:separation} converts this into a separation:
+no combinator term of the published calculus is equivalent to
+$\inp{y}{a}{\out{\quo{(\drp{y} \mid \drp{y})}}{\nil}}$.
+
+\item \textbf{Four constructors close the gap.} The missing operation is
+the construction of a name from names. It is supplied by constructors of the
+shape $\cons_{\mid}(a,b,c) \mid \mm(a,\quo{P}) \mid \mm(b,\quo{Q}) \red
+\mm(c,\quo{(P \mid Q)})$, one for each node a rebuilt name can have.
+Proposition~\ref{prop:four} shows four are enough for the whole rho calculus:
+parallel composition, message, and the two atoms that can head a translated
+input. There is no name-opaque fragment to restrict to.
+
+\item \textbf{The storage combinator is about opacity, not power.}
+$\qq(a,P)$, released by a forwarder rather than by a message, satisfies the
+no-name-creation lemma and so adds nothing to expressiveness. What it adds is
+silence: it is a message that only a redirection can read, which is what
+stored code and intermediate results of name construction need if the
+encoding is to be opaque to observers (\S\ref{sec:q},
+Remark~\ref{rem:loudquiet}).
+
+\item \textbf{Prefix elimination is linear.} Reflection allows a continuation
+to be quoted once and released by a three-atom gate. Yoshida must instead
+push the prefix through the body, splitting at every parallel composition and
+delaying every atom, which costs a constant factor per level of nesting:
+Proposition~\ref{prop:blowup} computes $(3^{d-1}+1)/2$ atoms on an explicit
+family where the reflective encoding gives $3d+1$.
+
+\item \textbf{Correctness is full abstraction relative to encoded contexts.}
+Following \cite{nowns}, observation is by context-labelled bisimilarity with
+the observer class taken to be the image of the translation on source
+contexts. Theorem~\ref{thm:fullabs}; and Proposition~\ref{prop:forced}, that
+the restriction is forced rather than convenient, by the same argument that
+forces it there.
+
+\end{enumerate}
+
+\S\ref{sec:altpres} gives the alternative presentation in which $\mm$ and
+$\qq$ are the nullary constructors. \S\ref{sec:corrigenda} lists the
+corrigenda to \cite{rhocomb}.
+
+\paragraph{Notation.} \cite{rhocomb} writes $\mathsf{*}$ for three distinct
+things: Yoshida's replication, the rho calculus drop, and the combinator that
+consumes a message and runs its payload. We write $\ev$ for the last and
+reserve $\drp{x}$ for the drop. The distinction between the second and the
+third is one of the points of \S\ref{sec:why}.
+
+\section{The rho calculus}
+\label{sec:rho}
+
+We follow \cite{MeredithRadestock05}.
+
+\begin{definition}[Syntax]
+\begin{align*}
+  P,Q &\;::=\; \nil \;\mid\; \inp{y}{x}{P} \;\mid\; \out{x}{P}
+        \;\mid\; \drp{x} \;\mid\; P \mid Q\\
+  x,y &\;::=\; \quo{P}
+\end{align*}
+\end{definition}
+
+$\fn(P)$ is as usual, with $\fn(\inp{y}{x}{P}) = \{x\} \cup (\fn(P)\setminus
+\{y\})$. $\nms{P}$ is the set of names occurring anywhere in $P$, including
+hereditarily inside quotations.
+
+\begin{definition}[Structural congruence, name equivalence]
+$\scong$ is the least congruence containing $\alpha$-equivalence and making
+$(\mathsf{Proc},\mid,\nil)$ an abelian monoid. $\nequiv$ is the least
+congruence on names with $\quo{\drp{x}} \nequiv x$, and $\quo{P} \nequiv
+\quo{Q}$ whenever $P \scong Q$.
+\end{definition}
+
+The converse identification $\drp{\quo{P}} \scong P$ is deliberately absent.
+Its work is done by substitution.
+
+\begin{definition}[Semantic substitution]
+\label{def:subst}
+On names, $y\{\quo{Q}/y\} = \quo{Q}$ and $\quo{P}\{\quo{Q}/y\} =
+\quo{(P\{\quo{Q}/y\})}$. On processes, the structural clauses together with
+\[
+  (\drp{y})\{\quo{Q}/y\} \;=\; Q,
+  \qquad
+  (\drp{z})\{\quo{Q}/y\} \;=\; \drp{z}\quad (z \neq y).
+\]
+\end{definition}
+
+The drop clause is the whole of the difference between semantic and syntactic
+substitution. Syntactic substitution returns $\drp{\quo{Q}}$, and one then
+needs $\drp{\quo{Q}} \scong Q$ to recover the meaning. Semantic substitution
+decodes at the moment of substitution and returns a process bisimilar to any
+other faithful decoding rather than congruent to a canonical one; the decoder
+is free to return an optimised representative.
+
+\begin{definition}[Reduction]
+\[
+  \frac{x_{t} \nequiv x_{s}}
+       {\inp{y}{x_{t}}{P} \mid \out{x_{s}}{Q} \red P\{\quo{Q}/y\}}
+  \qquad
+  \frac{P \red P'}{P \mid Q \red P' \mid Q}
+  \qquad
+  \frac{P \scong P' \ \ P' \red Q' \ \ Q' \scong Q}{P \red Q}
+\]
+\end{definition}
+
+\begin{definition}
+$P$ is \emph{guarded-drop} if every $\drp{x}$ in $P$ has $x$ a variable bound
+by an enclosing input.
+\end{definition}
+
+\begin{lemma}
+\label{lem:guarded}
+Guarded-drop is preserved by reduction, and no subterm $\drp{\quo{Q}}$ ever
+arises from a guarded-drop term.
+\end{lemma}
+
+\begin{proof}
+A drop can acquire a ground name only by substitution, and
+Definition~\ref{def:subst} eliminates the drop rather than instantiating it.
+Every other clause is structural.
+\end{proof}
+
+A term $\drp{\quo{Q}}$ may still be written by hand, and is then inert. For
+such terms $\drp{\quo{Q}}$ and $Q$ are related by the decoding bisimulation
+rather than by $\scong$, which is the latitude the original presentation was
+designed to leave. Source terms are assumed guarded-drop throughout.
+
+\section{The rho combinators}
+\label{sec:comb}
+
+\subsection{Atoms and rules}
+
+\begin{definition}[Syntax]
+\begin{align*}
+ A &\;::=\; \mm(a,b) \;\mid\; \dd(a,b,c) \;\mid\; \kk(a) \;\mid\; \fw(a,b)
+       \;\mid\; \bl(a,b) \;\mid\; \br(a,b) \;\mid\; \sy(a,b,c)\\
+   &\qquad \mid\; \ev(a) \;\mid\; \qq(a,P)\\
+   &\qquad \mid\; \cons_{\mid}(a,b,c) \;\mid\; \cons_{\mm}(a,b,c)
+       \;\mid\; \cons_{\dd}(a,b,c,e) \;\mid\; \cons_{\sy}(a,b,c,e)\\
+ P,Q &\;::=\; \nil \;\mid\; A \;\mid\; P \mid Q
+ \qquad\qquad
+ a,b,c \;::=\; \quo{P}
+\end{align*}
+\end{definition}
+
+The first seven are Yoshida's, with her readings: $\dd$ duplicates a message
+to two locations, $\kk$ discards it, $\fw$ forwards it, $\br$ and $\bl$ bind
+the received name for output and for input respectively, and $\sy$
+synchronises without passing a value. Note that $\mm(a,b)$ takes two
+\emph{names}; since every name is a quoted process, $\mm(a,\quo{P})$ is the
+same atom written with its payload displayed. The last three are new and are
+discussed below.
+
+\begin{definition}[Structural congruence, name equivalence]
+\label{def:combcong}
+$\scong$ is the least congruence making $(\mathsf{Proc},\mid,\nil)$ an
+abelian monoid. There is no clause for $\alpha$-equivalence, there being no
+binders, and \emph{no clause identifying $\drp{\quo{P}}$ with $P$}. Name
+equivalence $\nequiv$ is as in \S\ref{sec:rho}.
+\end{definition}
+
+\begin{definition}[Reduction]
+\label{def:combred}
+\[
+\begin{array}{rcl@{\qquad}rcl}
+  \dd(a,b,c) \mid \mm(a,v) &\red& \mm(b,v) \mid \mm(c,v)
+    & \br(a,b) \mid \mm(a,v) &\red& \fw(b,v)\\
+  \kk(a) \mid \mm(a,v) &\red& \nil
+    & \bl(a,b) \mid \mm(a,v) &\red& \fw(v,b)\\
+  \fw(a,b) \mid \mm(a,v) &\red& \mm(b,v)
+    & \sy(a,b,c) \mid \mm(a,v) &\red& \fw(b,c)\\
+  \ev(a) \mid \mm(a,\quo{P}) &\red& P
+    & \fw(a,b) \mid \qq(a,P) &\red& \mm(b,\quo{P})\\
+  \multicolumn{6}{l}{\cons_{\mid}(a,b,c) \mid \mm(a,\quo{P}) \mid \mm(b,\quo{Q})
+     \ \red\ \mm(c,\quo{(P \mid Q)})}\\
+  \multicolumn{6}{l}{\cons_{\mm}(a,b,c) \mid \mm(a,u) \mid \mm(b,v)
+     \ \red\ \mm(c,\quo{\mm(u,v)})}\\
+  \multicolumn{6}{l}{\cons_{\dd}(a,b,c,e) \mid \mm(a,u) \mid \mm(b,v)
+     \mid \mm(c,w) \ \red\ \mm(e,\quo{\dd(u,v,w)})}\\
+  \multicolumn{6}{l}{\cons_{\sy}(a,b,c,e) \mid \mm(a,u) \mid \mm(b,v)
+     \mid \mm(c,w) \ \red\ \mm(e,\quo{\sy(u,v,w)})}
+\end{array}
+\]
+closed under parallel composition and under $\scong$, with subjects matched
+up to $\nequiv$.
+\end{definition}
+
+Reduction is nondeterministic and is meant to be. Two consumers may compete
+for one message, as in $\dd(a,b,c) \mid \kk(a) \mid \mm(a,v)$; and two
+producers may compete for one consumer, as in
+$\fw(a,b) \mid \mm(a,v) \mid \qq(a,P)$, where $\fw$ is the consumer at $a$ and
+$\mm$ and $\qq$ both offer a value there. Neither is pathological and neither
+is new: they are the two sides of the race the communication rule has always
+had.
+
+\subsection{The defect}
+
+\begin{proposition}
+\label{prop:defect}
+Suppose Definition~\ref{def:combcong} is extended with $\drp{\quo{P}} \scong
+P$, with $\ev$ written $\mathsf{*}$ so that the drop and the drop combinator
+are one syntactic form. Then for all $P,Q$,
+\[
+  Q \mid \mm(\quo{Q},\quo{P}) \;\red\; P.
+\]
+\end{proposition}
+
+\begin{proof}
+Every name is $\quo{Q}$ for some $Q$, so $\mathsf{*}(\quo{Q}) \scong Q$ by
+the added equation. Reduction is closed under $\scong$, so the redex
+$\mathsf{*}(a) \mid \mm(a,\quo{P})$ with $a = \quo{Q}$ matches
+$Q \mid \mm(\quo{Q},\quo{P})$, and the rule fires.
+\end{proof}
+
+An arbitrary running process can therefore be annihilated and replaced by an
+arbitrary payload, by anyone who knows its quotation. No faithfulness theorem
+survives this.
+
+\begin{remark}
+\label{rem:atom}
+The repair is to omit the equation and to recognise $\ev(a)$ as an
+\emph{atom} rather than a process former: it is the combinator corresponding
+to $\inp{y}{a}{\drp{y}}$, a guard that listens on $a$ and runs what arrives.
+\cite{rhocomb} lists it under the process production, alongside parallel
+composition, which is what invites the identification with the drop. Nothing
+else in \cite{rhocomb} depends on the discarded equation: it occurs exactly
+once, in the definition of the structural congruence, while every other
+appearance of a drop there stands in payload position inside a quotation and
+requires $\quo{\drp{x}} \nequiv x$, the half that is kept.
+\end{remark}
+
+\subsection{The storage combinator}
+\label{sec:q}
+
+\begin{remark}[$\qq$ is a message only a forwarder can read]
+\label{rem:q}
+The rule for $\qq$ has the same right-hand side as the rule for $\fw$. So
+$\qq(a,P)$ and $\mm(a,\quo{P})$ are indistinguishable to a forwarder, and
+differ everywhere else: a message at $a$ may be consumed by any of $\dd$,
+$\kk$, $\br$, $\bl$, $\sy$, $\ev$, a constructor or $\fw$, whereas $\qq(a,P)$ may
+be consumed only by $\fw$. Since $\fw(a,a) \mid \qq(a,P) \red \mm(a,\quo{P})$,
+$\qq$ is not a message awaiting a trigger but the introduction form for a
+name constant, of which $\mm$ is the already-manifest case. Writing the
+payload as a name, $\qq(a,v)$ with $\fw(a,b) \mid \qq(a,v) \red \mm(b,v)$,
+makes the parallel with $\mm(a,v)$ exact.
+\end{remark}
+
+$\qq$ adds no expressive power --- it satisfies Lemma~\ref{lem:nonames} --- and
+is not needed for the translation to be definable. What it provides is
+opacity, and the need for it is best stated after the constructors are in
+hand; see Remark~\ref{rem:loudquiet}.
+
+\subsection{The name constructors}
+\label{sec:cons}
+
+Every rule but the last four moves names around or opens one. The last four
+build one.
+
+\begin{remark}
+Each constructor takes names and returns a name: it assembles the quotation
+of a single node from the quotations of its children, and the assembled name
+is delivered as an ordinary message, so it may then be used as a subject, a
+payload, or the input to a further constructor. Chaining them builds a name
+of any shape from the outside in. The operation so performed is substitution
+of a received name into a static term under a quotation, which is precisely
+what the rho communication rule does and what \cite{rhocomb} has no
+counterpart for.
+\end{remark}
+
+\begin{proposition}
+\label{prop:four}
+The four constructors of Definition~\ref{def:combred} suffice for the
+translation of Definition~\ref{def:translation}: every name that must be
+rebuilt at runtime is assembled by a chain of them.
+\end{proposition}
+
+\begin{proof}
+A name to be rebuilt is $\quo{\enc{S}}$ for a source term $S$ with the bound
+name free in it, and $\enc{-}$ is a homomorphism, so the nodes of
+$\enc{S}$ are those of $S$. Take the path from an occurrence to the root;
+every node off the path is static and is supplied as a constant message,
+joined on by $\cons_{\mid}$. On the path, by
+Definition~\ref{def:translation}: an occurrence under $\drp{-}$ is the
+received name itself, needing no constructor; a parallel composition needs
+$\cons_{\mid}$; an output $\out{v}{T}$ has image $\mm(\enc{v},
+\quo{\enc{T}})$ and needs $\cons_{\mm}$, which covers both a dynamic
+subject and a dynamic payload; and an input $\inp{z}{v}{T}$ has image
+$D(\enc{v};\vec p) \mid G \mid \vec L$ in which $\enc{v}$ occurs only in
+the head atom, which is $\dd(\enc{v},p_{0},q_{1})$ when $z$ occurs in $T$
+and $\sy(\enc{v},b,c)$ when it does not; the remainder is static. Hence
+$\cons_{\dd}$ and $\cons_{\sy}$. Duplication of the received name, when an
+occurrence appears at several places, is supplied by $\dd$.
+\end{proof}
+
+\begin{remark}[The optimisations are not free]
+\label{rem:optnotfree}
+Proposition~\ref{prop:four} is stated for the general clauses. The
+shortcuts of Remark~\ref{rem:opt} put a bound name into the argument of an
+$\ev$ or a $\fw$, so a translation that takes them needs $\cons_{\ev}$ and
+$\cons_{\fw}$ as well. Four is the count for the uniform translation, not a
+lower bound over all translations.
+\end{remark}
+
+\begin{remark}[A more exotic alternative]
+\label{rem:ctxindexed}
+The family can be collapsed into one atom indexed by a static context:
+$\cons[C](a,c) \mid \mm(a,v) \red \mm(c,\quo{C[v]})$ for a combinator
+context $C$ with holes in name positions. This is derivable from the family
+by the chain of Proposition~\ref{prop:four}, and conversely each member of
+the family is the instance $C = A(-,\dots,-)$. It shortens the translation
+and its proofs, at the price of an atom parameterised by a context rather
+than by names --- a considerable conceptual cost, and one we do not think
+worth paying in the presentation, though it is worth recording that the two
+formulations have the same reach.
+\end{remark}
+
+\section{Why the original presentation is the right one here}
+\label{sec:why}
+
+Proposition~\ref{prop:defect} shows the Meredith--Radestock presentation is
+\emph{necessary} for the combinators. Three further observations show it is
+fitted to them.
+
+\paragraph{The $\ev$ rule is the substitution clause.} Compare
+\[
+  (\drp{y})\{\quo{Q}/y\} \;=\; Q
+  \qquad\text{with}\qquad
+  \ev(a) \mid \mm(a,\quo{Q}) \;\red\; Q .
+\]
+These are the same equation. In the rho calculus the decoding happens at
+substitution time, in the metatheory; in the combinators, which have no
+substitution, it happens at communication time, as a reduction. A
+presentation that instead identifies $\drp{\quo{Q}}$ with $Q$ by congruence
+leaves the combinator rule with nothing to correspond to, and must put the
+decoding into $\scong$ --- where, by Proposition~\ref{prop:defect}, it is
+fatal. The reason is structural rather than notational: the combinators pass
+names and do not inspect them, so the only way they can reach the process a
+name encodes is by an explicit step, and an explicit step is a reduction.
+
+\paragraph{The surviving half is load-bearing.} $\quo{\drp{x}} \nequiv x$ is
+what makes it possible to send a name at all. A message carries a process, so
+``send the name $x$ on $v$'' is $\out{v}{\drp{x}}$, with payload
+$\quo{\drp{x}}$; the encoding $\mm(v,x)$ is legitimate only because
+$\quo{\drp{x}} \nequiv x$.
+
+\paragraph{Correctness lives at $\bisim$ in any case.} Prefix elimination
+introduces administrative forwarders (\S\ref{sec:correct}), so the image of a
+source term is never structurally identical to what one would write by hand,
+only bisimilar to it. A presentation whose decoder may return a bisimilar
+rather than a congruent process is already calibrated to the theory in which
+the translation can be stated, and the congruence one wants is recovered
+downstream, by the equivalence of \S\ref{sec:clb}, rather than asserted
+upfront in $\scong$.
+
+\section{Context-labelled bisimilarity}
+\label{sec:clb}
+
+We use the equivalence of the companion note \cite{nowns} rather than barbs,
+for consistency with it. The two are close here --- both calculi are
+name-passing, so barbs are an adequate observation --- but the context-labelled
+form states the restriction on observers as part of the relation rather than
+as a side condition on a set of names, and that restriction is the substance
+of Theorem~\ref{thm:fullabs}.
+
+\begin{definition}
+\label{def:clb}
+For a calculus with reduction $\red$ and contexts $\Ctx$, write
+$P \xrightarrow{\,C\,} P'$ when $C[P] \red P'$ and
+$P \xLongrightarrow{\,C\,} P'$ when $C[P] \wred P'$. For
+$\Obs \subseteq \Ctx$, a symmetric $\mathcal{R}$ is an
+\emph{$\Obs$-bisimulation} if $P \mathrel{\mathcal{R}} Q$ and
+$P \xrightarrow{\,C\,} P'$ with $C \in \Obs$ imply
+$Q \xLongrightarrow{\,C\,} Q'$ with $P' \mathrel{\mathcal{R}} Q'$. Write
+$\bisim_{\Obs}$ for the largest such.
+\end{definition}
+
+On the source, $\Obs = \Ctx_{\mathrm{rho}}$, written $\bisim_{\mathrm{rho}}$.
+On the target, $\Obs = \enc{\Ctx_{\mathrm{rho}}}$, the encodings of source
+contexts. As in \cite{nowns} the labels are enabling contexts, not minimal
+ones; minimality is the right long-run discipline and is developed in
+\cite{BIHOL}, and nothing below needs it. Without it the label set is larger
+and $\bisim_{\Obs}$ correspondingly finer, which makes completeness harder
+rather than easier.
+
+\section{The translation}
+\label{sec:translation}
+
+\subsection{Seeds}
+
+The translation is indexed by a name, as the encoding of \cite{nowns} is
+indexed by an address, so that it is compositional on the nose.
+
+\begin{definition}
+A \emph{seed} for $P$ is a name $s \notin \nms{P}$ modulo $\nequiv$. Set
+$s^{\varepsilon} = s$, $s^{w0} = \quo{\mm(s^{w},\quo{\nil})}$ and
+$s^{w1} = \quo{\kk(s^{w})}$ for a binary string $w$.
+\end{definition}
+
+\begin{lemma}
+\label{lem:fresh}
+$s := \quo{P}$ is a seed for $P$; and if $s$ is a seed for $P$ then the
+$s^{w}$ are pairwise distinct modulo $\nequiv$ and none lies in $\nms{P}$.
+\end{lemma}
+
+\begin{proof}
+Work with $\nequiv$-normal names, using that $\quo{\drp{x}} \to x$ is
+terminating and confluent. Every name occurring in $P$ is the quotation of a
+proper subterm, hence smaller than $\quo{P}$, so $\quo{P} \notin \nms{P}$.
+The two constructors are injective on normal forms with disjoint images, so
+$w \mapsto s^{w}$ is injective; and each $s^{w}$ mentions $s$ hereditarily.
+\end{proof}
+
+Names written $p_{i}$, $b$, $c_{i}$ below are $s^{w}$ for distinct $w$
+allocated by position in the source term. Nothing depends on the particular
+constructors.
+
+\begin{remark}
+\label{rem:namesize}
+\cite{rhocomb} instead builds each constructed name by quoting the subterm it
+must be fresh for, so every constructed name carries a copy of the body and
+the output is quadratic in $|P|$ before any other cost is counted. Seeds give
+names of size $|s| + O(|w|)$ with the same guarantee.
+\end{remark}
+
+\subsection{Gate and distributor}
+
+\begin{definition}
+For $b,c$ fresh, $G(p,S) := \sy(p,b,c) \mid \qq(b,S) \mid \ev(c)$; and
+$D(x;p_{0}) := \nil$ with $p_{0} := x$, while for $k \geq 1$
+\[
+  D(x;p_{0},\dots,p_{k}) := \dd(x,p_{0},q_{1}) \mid \dd(q_{1},p_{1},q_{2})
+  \mid \cdots \mid \dd(q_{k-1},p_{k-1},p_{k}).
+\]
+\end{definition}
+
+\begin{lemma}
+\label{lem:gate}
+$G(p,S)$ has no reduction and is not a message. For any $v$,
+\[
+  G(p,S) \mid \mm(p,v) \red \fw(b,c) \mid \qq(b,S) \mid \ev(c)
+  \red \mm(c,\quo{S}) \mid \ev(c) \red S,
+\]
+and these are the only reductions available. $D(x;p_{0},\dots,p_{k}) \mid
+\mm(x,v) \wred \mm(p_{0},v) \mid \cdots \mid \mm(p_{k},v)$ in $k$ steps.
+\end{lemma}
+
+\begin{proof}
+The three names $p,b,c$ are distinct, so no other pairing is possible, and
+$\sy$ discards the payload. Before the forwarder is released there is no
+$\fw$ at $b$, so $\qq(b,S)$ is inert by Remark~\ref{rem:q}. The claim for $D$
+is immediate.
+\end{proof}
+
+The gate is the whole of the difference from Yoshida. It delays a
+continuation of any size for three atoms and one quotation, because the
+continuation travels as data.
+
+\subsection{Clauses}
+
+Occurrences of a bound name $y$ in a body $P$ fall into five kinds. Four are
+occurrences at which $y$ is used as a name; the fifth is an occurrence inside
+a quotation, at which a new name must be built.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{llll}
+\toprule
+ & occurrence of $y$ & in the quoted body & link\\
+\midrule
+(o1) & input subject $\inp{z}{y}{S}$ & subject $\to c_{i}$ & $\bl(p_{i},c_{i})$\\
+(o2) & output subject $\out{y}{S}$ & subject $\to c_{i}$ & $\br(p_{i},c_{i})$\\
+(o3) & forwarded name $\out{v}{\drp{y}}$ & atom deleted & $\fw(p_{i},\enc{v})$\\
+(o4) & drop $\drp{y}$ in process position & $\to \ev(c_{i})$ & $\fw(p_{i},c_{i})$\\
+(o5) & inside a quotation $\quo{S}$, $y \in \fn(S)$ & subject $\to c_{i}$
+     & constructor chain for $S$\\
+\bottomrule
+\end{tabular}
+\caption{Occurrence kinds. In (o5) the link is the chain of constructors of
+Proposition~\ref{prop:four} that rebuilds $\quo{\enc{S}}$ from the received
+name, delivering it at $c_{i}$, where the body uses it as it would any other
+name. When several kinds coincide in one atom, the atom is deleted from the
+body and the links are emitted together.}
+\label{tab:links}
+\end{table}
+
+\begin{definition}[The translation]
+\label{def:translation}
+On names, $\enc{\quo{P}} := \quo{\enc{P}_{s^{w}}}$ where $w$ is the position
+of that quotation in the enclosing term. On processes,
+\[
+\begin{array}{rcl}
+  \enc{\nil}_{s} &=& \nil\\
+  \enc{P \mid Q}_{s} &=& \enc{P}_{s^{0}} \mid \enc{Q}_{s^{1}}\\
+  \enc{\out{x}{P}}_{s} &=& \mm(\enc{x}, \quo{\enc{P}_{s^{0}}})\\
+  \enc{\inp{y}{x}{P}}_{s} &=& D(\enc{x};p_{0},\dots,p_{k}) \mid G(p_{0},B)
+    \mid L_{1} \mid \cdots \mid L_{k}
+\end{array}
+\]
+where $o_{1},\dots,o_{k}$ enumerate the free occurrences of $y$ in $P$, each
+$o_{i}$ has a distinct proxy $c_{i}$, $L_{i}$ and the residue in $B$ are
+given by Table~\ref{tab:links}, and $B$ is $\enc{P}_{s^{0}}$ with every
+occurrence treated accordingly. $\enc{-}$ extends to contexts with the hole
+expecting a seed; plugging is instantiation of the seed.
+\end{definition}
+
+The incoming message is duplicated $k+1$ times. One copy trips the gate,
+which releases the continuation with each occurrence of the bound name
+standing at a proxy. The other $k$ arrive at the links, each converting the
+received name into the wiring its occurrence needs: $\br$ installs a
+forwarder from the proxy to the received name, which is what an output
+subject requires; $\bl$ installs one in the opposite direction, for an input
+subject; $\fw$ delivers the name, for a forwarded name and for a drop, the
+latter discharged by the $\ev$ in the body; and $\cons$ builds the name the
+source would have built by substituting under the quotation.
+
+\begin{remark}
+\label{rem:opt}
+Three special cases are cheaper and may be used directly:
+$\enc{\inp{y}{x}{\nil}} = \kk(\enc{x})$,
+$\enc{\inp{y}{x}{\drp{y}}} = \ev(\enc{x})$, and
+$\enc{\inp{y}{x}{\out{v}{\drp{y}}}} = \fw(\enc{x},\enc{v})$ for $v \neq y$.
+\end{remark}
+
+\begin{example}
+$P = \inp{y}{a}{\out{y}{\nil}}$ has one occurrence, of kind (o2), so
+$\enc{P}_{s} = \dd(a,p_{0},p_{1}) \mid G(p_{0},\mm(c,\quo{\nil})) \mid
+\br(p_{1},c)$. Supplying $\mm(a,\quo{\enc{R}})$ gives, in order,
+$\mm(p_{0},\quo{\enc{R}}) \mid \mm(p_{1},\quo{\enc{R}})$; then
+$\mm(c,\quo{\nil}) \mid \fw(c,\quo{\enc{R}})$; then
+$\mm(\quo{\enc{R}},\quo{\nil}) = \enc{\out{\quo{R}}{\nil}}$.
+\end{example}
+
+\begin{example}[The witness]
+\label{ex:witness}
+$W = \inp{y}{a}{\out{\quo{(\drp{y} \mid \drp{y})}}{\nil}}$ has one
+occurrence, of kind (o5): both drops resolve to the received name, and the
+node above them is a parallel composition. So
+\[
+  \enc{W}_{s} = \dd(a,p_{0},p_{1}) \mid G(p_{0},\mm(c,\quo{\nil}))
+  \mid \dd(p_{1},r_{1},r_{2}) \mid \cons_{\mid}(r_{1},r_{2},c),
+\]
+the inner duplicator supplying the received name to both arguments.
+Receiving $\mm(a,\quo{\enc{R}})$ builds $\mm(c,\quo{(\enc{R}\mid\enc{R})})$,
+and the released body sends $\nil$ on that name, which is
+$\enc{\out{\quo{(R\mid R)}}{\nil}}$. Theorem~\ref{thm:separation} shows no
+term of the constructor-free calculus does this.
+\end{example}
+
+\section{Correctness}
+\label{sec:correct}
+
+\begin{lemma}[Compositionality]
+\label{lem:compositional}
+$\enc{C[P]} = \enc{C}[\enc{P}]$, on the nose.
+\end{lemma}
+
+\begin{proof}
+Induction on $C$. Each clause of Definition~\ref{def:translation} mentions
+its sub-translations only under a seed abstraction, and the hole occurs in
+exactly one.
+\end{proof}
+
+\begin{lemma}[Linearity]
+\label{lem:linearity}
+In $\enc{P}_{s}$ every constructed name is the subject of at most one atom
+and carries at most one message, and every atom participates in at most one
+reduction.
+\end{lemma}
+
+\begin{proof}
+Names are allocated by position, so distinct positions get distinct names by
+Lemma~\ref{lem:fresh}; each clause emits each constructed name in one subject
+position and at most one value position; every rule consumes both
+participants. Copies arise only as payloads, and a payload carries its own
+allocation.
+\end{proof}
+
+\begin{definition}[Link expansion]
+$T' \succeq T$ if $T'$ is obtained from $T$ by replacing the subject $a$ of
+finitely many atoms by distinct fresh proxies $c$ and adjoining $\fw(c,a)$
+for a value-producing subject, $\fw(a,c)$ for a value-consuming one.
+\end{definition}
+
+\begin{lemma}
+\label{lem:linkexp}
+If $T' \succeq T$ and $T$ satisfies Lemma~\ref{lem:linearity} then
+$T' \bisim_{\enc{\Ctx_{\mathrm{rho}}}} T$.
+\end{lemma}
+
+\begin{proof}
+Relate $T'$ to $T$ when $T'$ is such an expansion with some adjoined
+forwarders already discharged. A labelled step of $T$ through an expanded
+atom is matched in $T'$ by the relay step followed by the same rule, giving
+an expansion of the residue; a step of $T'$ is either a relay, matched by the
+empty path, or an ordinary step matched directly. Linearity guarantees one
+one-shot forwarder per occurrence suffices, the atom firing at most once. No
+adjoined forwarder is a message, so no label distinguishes them.
+\end{proof}
+
+\begin{lemma}[Inertness]
+\label{lem:inert}
+$\enc{\inp{y}{x}{P}}_{s}$ has no reduction and contains no message.
+\end{lemma}
+
+\begin{proof}
+The atoms present are the duplicators of $D$, the gate, and the links. None
+is a message, and the atoms of $B$ are stored inside $\qq$, hence are not
+subterms of any redex. No forwarder is present, so $\qq(b,B)$ is inert.
+\end{proof}
+
+\begin{lemma}[Name usage]
+\label{lem:usage}
+Let $y$ be bound in $\enc{P}_{s}$ by the translation of a rho input. Every
+occurrence of the corresponding proxy is the subject of an atom of
+$\enc{P}_{s}$ or an argument of a link. In particular an encoded context
+neither names the constructed apparatus $s^{w}$ of a term it is composed
+with, nor installs a forwarder at such a name.
+\end{lemma}
+
+\begin{proof}
+Induction on $P$ using Definition~\ref{def:translation}: proxies are
+introduced only by Table~\ref{tab:links} and used only there. For the second
+claim, $\enc{C}$ allocates its constructed names from its own seed, and by
+Lemma~\ref{lem:fresh} those are distinct from the seed powers of the term
+plugged into the hole.
+\end{proof}
+
+\begin{lemma}[Release]
+\label{lem:release}
+$\enc{\inp{y}{x}{P}}_{s} \mid \mm(\enc{x},\quo{\enc{R}}) \wred T$ with
+$T \bisim_{\enc{\Ctx_{\mathrm{rho}}}} \enc{P\{\quo{R}/y\}}_{s}$, in $k+3$
+steps followed by at most $k$ administrative steps, and no other sequence is
+available up to the order of independent steps.
+\end{lemma}
+
+\begin{proof}
+By Lemma~\ref{lem:gate} the distributor delivers a copy to each $p_{i}$ and
+the gate releases $B$. Each remaining copy meets its link. For (o1) and (o2)
+the link yields a one-shot forwarder, which is the corresponding link
+expansion; for (o3) it yields the message the translated output would have
+been; for (o4) it yields $\mm(c_{i},\quo{\enc{R}})$, which with the $\ev(c_{i})$
+in $B$ gives $\enc{R}$, and $(\drp{y})\{\quo{R}/y\} = R$ by
+Definition~\ref{def:subst}, so the occurrence is discharged exactly; for (o5)
+the chain of Proposition~\ref{prop:four} yields
+$\mm(c_{i},\quo{\enc{S\{\quo{R}/y\}}})$, node by node, since $\enc{-}$ is a
+homomorphism and each constructor reproduces one node of $\enc{S}$ with the
+received name in place of the occurrence.
+Hence $T \succeq \enc{P\{\quo{R}/y\}}_{s}$ and
+Lemma~\ref{lem:linkexp} applies. Uniqueness follows from
+Lemmas~\ref{lem:inert} and~\ref{lem:linearity}.
+\end{proof}
+
+The (o4) case is where semantic substitution and the $\ev$ rule coincide;
+with syntactic substitution the two sides would differ by
+$\drp{\quo{\enc{R}}}$ against $\enc{R}$ and the lemma would need the discarded
+congruence. The (o5) case is where the constructor earns its place.
+
+\begin{lemma}[Seed independence]
+\label{lem:seedind}
+$\enc{P}_{s} \bisim_{\enc{\Ctx_{\mathrm{rho}}}} \enc{P}_{t}$ for seeds
+$s,t$ of $P$.
+\end{lemma}
+
+\begin{proof}
+Let $\beta_{s \to t}$ send $s^{w} \mapsto t^{w}$ and fix all other names; it
+is a bijection by Lemma~\ref{lem:fresh} and extends to terms by metalevel
+replacement, descending into quotations. It is not a rho substitution and no
+combinator context performs it. Take $\mathcal{R} = \{(T,\beta_{s\to t}(T))\}$
+for $T$ reachable from $\enc{P}_{s}$. A bijection on names preserves and
+reflects $\nequiv$, hence the applicability of every rule of
+Definition~\ref{def:combred}, including $\ev$ and $\cons$, whose right-hand
+sides are computed from the redex and so commute with $\beta$. For the
+labels, Lemma~\ref{lem:usage} shows an encoded context never names a seed
+power of the term it observes, so no label distinguishes $T$ from its image.
+\end{proof}
+
+\begin{theorem}[Full abstraction relative to encoded contexts]
+\label{thm:fullabs}
+For all rho processes $P,Q$,
+\[
+  P \bisim_{\Ctx_{\mathrm{rho}}} Q
+  \quad\Longleftrightarrow\quad
+  \enc{P} \bisim_{\enc{\Ctx_{\mathrm{rho}}}} \enc{Q}.
+\]
+\end{theorem}
+
+\begin{proof}
+\emph{Forward.} Let $\mathcal{S}$ relate $T$ to $U$ whenever $T$ and $U$ are
+reachable from $\enc{P'}$ and $\enc{Q'}$ respectively, for some
+$P' \bisim Q'$, by the sequences of Lemma~\ref{lem:release}, modulo link
+expansion and $\beta$. It is symmetric and contains
+$(\enc{P},\enc{Q})$. Given a label $\enc{C}$, Lemma~\ref{lem:compositional}
+gives $\enc{C}[\enc{P'}] = \enc{C[P']}$, so a target step from the plugged
+term is, by Lemma~\ref{lem:inert}, either administrative --- matched by the
+empty path, staying in $\mathcal{S}$ by
+Lemmas~\ref{lem:linkexp} and~\ref{lem:seedind} --- or the first step of the
+sequence of Lemma~\ref{lem:release}, in which case $C[P'] \red P''$ in the
+source and the matching source step for $Q'$ transfers back along the same
+lemma.
+
+\emph{Backward.} A source step $C[P] \red P''$ is, by
+Lemma~\ref{lem:release} read left to right, matched by
+$\enc{C}[\enc{P}] \wred T \bisim \enc{P''}$; so a distinguishing source
+context yields a distinguishing encoded context, and the contrapositive is
+the claim.
+\end{proof}
+
+\begin{proposition}[The restriction is forced]
+\label{prop:forced}
+There are rho processes $P \bisim_{\Ctx_{\mathrm{rho}}} Q$ and a combinator
+context $C \notin \enc{\Ctx_{\mathrm{rho}}}$ with
+$C[\enc{P}] \not\bisim C[\enc{Q}]$.
+\end{proposition}
+
+\begin{proof}
+The seed is computed by the translation from the source, so an arbitrary
+combinator context can name $s^{w}$; take $C = [\,\cdot\,] \mid \fw(b,u)$ for
+the gate name $b$ of a translated input and an observable $u$. By
+Lemma~\ref{lem:gate} this extracts the stored continuation at $u$,
+distinguishing two source terms that differ only in a continuation not
+otherwise reachable. By Lemma~\ref{lem:usage} no encoded context installs
+such a forwarder.
+\end{proof}
+
+\begin{remark}
+This is the same shape as the corresponding result in \cite{nowns}, and for
+the same underlying reason: the target manufactures names the source does not
+have, and an unrestricted observer of the target may use them. There the
+names are addresses; here they are seed powers. In neither case is the
+restriction a weakening of the theorem --- it is the theorem's shape. Note
+also that $\qq$ is doing real work in Proposition~\ref{prop:forced}: with the
+continuation stored as $\mm(b,\quo{B})$ the context would not even need to
+act, since the store would be a message and hence directly observable.
+\end{remark}
+
+\begin{remark}[Loud and quiet]
+\label{rem:loudquiet}
+With the constructors in the calculus the point generalises. A construction chain
+parks each intermediate result as a message on a constructed name, so the
+whole dataflow of name-building is observable to an unrestricted context, and
+Table~\ref{tab:links} (o5) makes such chains common. The question $\qq$
+answers for the nullary case --- should a stored value be loud or quiet? ---
+therefore applies at every arity, and a uniform treatment would give each
+constructor a quiet variant emitting $\qq(c,\cdot)$ rather than
+$\mm(c,\cdot)$. We have not done this, and it is the main design question
+left open by \S\ref{sec:altpres}.
+\end{remark}
+
+\section{Complexity of the target term}
+\label{sec:complexity}
+
+Let $|P|$ count atoms and $d(P)$ the nesting depth of input prefixes.
+
+\begin{proposition}
+\label{prop:linear}
+$|\enc{P}_{s}| = O(|P|)$, and the textual size is
+$O(|P|\cdot(|s| + \log|P|))$.
+\end{proposition}
+
+\begin{proof}
+The clauses for $\nil$, parallel composition and output add at most one atom
+each. An input adds $k$ duplicators, three gate atoms and $k$ links, where
+$k$ counts occurrences of the bound name; the body is translated once and
+appears once, inside a quotation. Summing $k$ over binders counts each
+occurrence once. A link of kind (o5) is a chain of $O(|S|)$
+constructors by Proposition~\ref{prop:four}, which is within the same bound
+since $S$ is a subterm. Textual size follows from $|s^{w}| = |s| + O(|w|)$ with $O(|P|)$
+names allocated.
+\end{proof}
+
+Yoshida must distribute the prefix through the body: her rule (I) splits at
+every parallel composition, inserting a duplicator, and her rules (V) and
+(VI) delay every atom behind its own synchroniser. Each prefix therefore
+multiplies the body.
+
+\begin{proposition}
+\label{prop:blowup}
+Let $P_{d} = \inp{x_{1}}{a}{\inp{x_{2}}{a}{\cdots \inp{x_{d}}{a}{\nil}}}$, so
+$|P_{d}| = d+1$ and $d(P_{d}) = d$. Yoshida's elimination yields
+$T(d) = (3^{d-1}+1)/2$ atoms, where $T(1) = 1$ and $T(j+1) = 3T(j)-1$, while
+$|\enc{P_{d}}| = 3d+1$.
+\end{proposition}
+
+\begin{proof}
+The innermost prefix gives one atom by her rule (III). If the body of the
+next prefix has $n$ atoms, none mentioning the bound name, rule (I) inserts
+$n-1$ duplicators along a binary tree and rule (VI) replaces each atom by a
+synchroniser and a relabelled copy, giving $2n + (n-1)$. No other rule
+applies, so the count is exact. For the reflective encoding each prefix has
+no occurrences, contributing an empty distributor and one gate.
+\end{proof}
+
+\begin{corollary}
+Prefix elimination with reflection is exponentially more succinct than
+without it, in the nesting depth of inputs.
+\end{corollary}
+
+\begin{remark}
+The mechanism is that Yoshida cannot store a continuation, so ``wait, then
+behave like $T$'' must be implemented by rewriting $T$ itself, and a
+constant-factor expansion composes multiplicatively down a nesting chain.
+Reflection stores $T$ as the name $\quo{T}$ and pays only for the gate. We do
+not claim $3^{d}$ is optimal for her calculus, only that it is what her rules
+give; an unconditional lower bound would be a statement about all encodings.
+\end{remark}
+
+\section{What reflection needs}
+\label{sec:separation}
+
+\subsection{The combinators cannot compute names}
+
+Write $\mathrm{rhocomb}^{-}$ for the calculus of
+Definition~\ref{def:combred} without the constructors --- that is, the published
+calculus with the defect of Proposition~\ref{prop:defect} repaired.
+
+\begin{lemma}[No name creation]
+\label{lem:nonames}
+If $T \red T'$ in $\mathrm{rhocomb}^{-}$ then $\nms{T'} \subseteq \nms{T}$
+modulo $\nequiv$.
+\end{lemma}
+
+\begin{proof}
+Every rule of the constructor-free calculus but $\ev$ and $\qq$ has, on its
+right, only names occurring on its left. For $\ev(a) \mid \mm(a,\quo{P}) \red P$ the names of $P$ are
+hereditarily among those of $\quo{P}$; for
+$\fw(a,b) \mid \qq(a,P) \red \mm(b,\quo{P})$ both $b$ and $\quo{P}$ occur in
+the redex. Structural congruence introduces no names.
+\end{proof}
+
+The rho calculus has no such property, and that is the expressive content of
+substitution under a quotation.
+
+\begin{theorem}[Separation]
+\label{thm:separation}
+Let $W = \inp{y}{a}{\out{\quo{(\drp{y}\mid\drp{y})}}{\nil}}$. No term of
+$\mathrm{rhocomb}^{-}$ is $\Obs$-bisimilar to $\enc{W}$ for any $\Obs$
+containing the contexts $[\,\cdot\,] \mid \mm(a,\quo{\enc{R}})
+\mid \dd(\quo{(\enc{R}\mid\enc{R})},u,u')$.
+\end{theorem}
+
+\begin{proof}
+In the source, $W \mid \out{a}{R} \red \out{\quo{(R\mid R)}}{\nil}$ by
+Definition~\ref{def:subst}, so the corresponding context yields a step at
+$u$. Let $T$ be any term of $\mathrm{rhocomb}^{-}$. $\nms{T}$ is finite, so
+choose $R$ with $\quo{(\enc{R}\mid\enc{R})} \notin \nms{T} \cup
+\nms{\quo{\enc{R}}}$. By Lemma~\ref{lem:nonames} no reduct of
+$T \mid \mm(a,\quo{\enc{R}})$ has that name, so no message is ever sent on
+it, the context's duplicator never fires, and the label is not matched.
+\end{proof}
+
+\begin{remark}
+The theorem is not about quoting a parallel composition in particular: any
+source term whose subject is a quotation mentioning a bound name has the same
+character. The slogan is that $\mathrm{rhocomb}^{-}$ can quote code but
+cannot compute names. Example~\ref{ex:witness} shows $\cons_{\mid}$ supplies exactly
+the missing step, so the pair of results is a characterisation rather than an
+obstruction: the combinators fall short of the rho calculus by one operation,
+and here it is.
+\end{remark}
+
+\begin{remark}
+There is an instructive mirror image in \cite{Lybech22}, used in
+\cite{nowns}: the rho calculus manufactures new free --- hence observable and
+substitutable --- names at runtime, which is why no encoding of the
+$\pi$-calculus into rho is fully abstract against unrestricted rho observers.
+The same capability read from the other side is why the constructor-free
+combinators cannot encode rho at all. One calculus has too much name
+construction for $\pi$ to be safe in it; the other has too little for rho to
+fit.
+\end{remark}
+
+\subsection{Minimality}
+
+\begin{proposition}
+\label{prop:sn}
+Let the calculus be taken without $\ev$. Then every reduction sequence from
+$T$ has length at most the number of non-message atoms of $T$; so it is
+strongly normalising, hence not Turing complete, and $\ev$ is not definable
+in it.
+\end{proposition}
+
+\begin{proof}
+Each rule consumes one non-message atom and produces none, except that $\br$,
+$\bl$ and $\sy$ produce $\fw$ while consuming themselves. The rule for $\qq$
+consumes two non-message atoms and produces a message; each constructor rule
+consumes one non-message atom and its input messages, and produces one
+message. So the count strictly decreases at every
+step. The rule for $\ev$ is the only one whose right-hand side is an
+arbitrary process.
+\end{proof}
+
+So the drop combinator carries the computational power that reflection adds,
+and the recursion construction of \S\ref{sec:translation} depends on it. This
+is the analogue of Yoshida's minimality arguments, with a shorter proof
+because the invariant is an atom count. Note that the constructors do not restore
+Turing completeness on their own: they build names, and without $\ev$ no name
+is ever opened.
+
+\section{An alternative presentation: constructors only}
+\label{sec:altpres}
+
+The calculus of \S\ref{sec:comb} has three kinds of atom doing three jobs:
+routers ($\dd,\kk,\fw,\bl,\br,\sy$), which move names; a destructor ($\ev$),
+which opens one; and value-bearing atoms ($\mm$, $\qq$, $\cons$). The third
+group is not three things but one.
+
+\begin{remark}
+Read a constructor as a dataflow node: $\cons_{A}(a_{1},\dots,a_{n},c)$ says
+that when names are available at $a_{1},\dots,a_{n}$, the name $A$ of them is
+available at $c$. Then $\mm(c,v)$ is the nullary case --- the name $v$ is
+available at $c$, unconditionally --- and $\qq(c,v)$ is the nullary case in a
+quiet variant. On this reading neither $\mm$ nor $\qq$ is primitive: the
+calculus consists of routers, one destructor, and a constructor family whose
+arity-zero members are the messages.
+\end{remark}
+
+Two things recommend this presentation. It is uniform: every atom takes names
+and every rule is either routing, opening, or building, with no atom indexed
+by a process. And it makes Remark~\ref{rem:loudquiet} a question about the
+family rather than about two special atoms --- whether a constructor's output
+is loud or quiet is a single design parameter, and $\mm$ versus $\qq$ is its
+nullary instance.
+
+Two things count against it, and we record them rather than settle them.
+Barbs, or their context-labelled counterpart, need a notion of message; if
+messages are nullary constructors then observation must be defined on the
+constructor family, which is a mild complication but changes what
+Lemma~\ref{lem:usage} has to say. And a calculus closed under its own
+constructions would need one member per atom shape, including members for the
+constructors themselves, since a constructed name may quote a term containing
+one; the four of Proposition~\ref{prop:four} suffice for the image of the
+translation but not for that closure. The context-indexed atom of
+Remark~\ref{rem:ctxindexed} sidesteps the regress at a conceptual price we
+judge too high. Which to prefer is a genuine choice, and the results of this
+note hold either way.
+
+\section{Corrigenda to \cite{rhocomb}}
+\label{sec:corrigenda}
+
+Restricted to what bears on the rho calculus; the material specific to the
+$\pi$-calculus route is out of scope here.
+
+\begin{enumerate}[leftmargin=1.6em]
+\item \textbf{Structural congruence.} Delete $\mathsf{*}(\quo{P}) \scong P$
+(Proposition~\ref{prop:defect}), and move the drop combinator from the
+process production to the atom production (Remark~\ref{rem:atom}).
+
+\item \textbf{No rho-to-combinator translation is given.} The outline
+promises that the encoding of a source calculus into the combinators
+composes with an encoding into the rho calculus, but the translation defined
+in the body has Yoshida terms as its domain. \S\ref{sec:translation} supplies
+the missing map, and \S\ref{sec:separation} shows that no such map exists
+without a name constructor.
+
+\item \textbf{No prefix-elimination lemma.} The draft states two theorems and
+proves no lemmas. The prefixed form $\mathsf{for}(x \leftarrow p)C$ is never
+given a semantics in the combinator calculus, so the correctness of
+elimination is neither stated nor proved. Lemmas~\ref{lem:gate}
+to~\ref{lem:release} are the analogue here.
+
+\item \textbf{$\nequiv$ is undefined for the combinators} yet is used in the
+side condition on observation.
+
+\item \textbf{Name sizes.} Constructed names quote the subterm they must be
+fresh for, making the output quadratic before other costs
+(Remark~\ref{rem:namesize}).
+
+\item \textbf{Typing slips.} $x^{l} := \quo{\bl(x,\mm(x,\drp{x}))}$ puts a
+process in the second argument of $\bl$, which takes names. The derivation
+following the definition of the replication server carries a spurious extra
+copy of $\mm(x,\quo{(D \mid P)})$ on its third line; the calculation is
+otherwise correct. Polarity annotations appear inside quoted terms, and
+several where-clauses construct names mentioning a bound variable, which is a
+metavariable rather than a name of the calculus.
+\end{enumerate}
+
+\section{Open questions}
+
+\begin{enumerate}[leftmargin=1.6em]
+\item \textbf{Minimal labels.} Theorem~\ref{thm:fullabs} uses enabling
+contexts. The minimal-label form, via relative pushouts taken in the image of
+the translation, is the discipline of \cite{BIHOL}; the forward half descends
+for free and the backward half is what is owed.
+
+\item \textbf{Loud and quiet constructors} (Remark~\ref{rem:loudquiet}).
+Should every constructor have a quiet variant, and does the quiet calculus
+admit a sharper form of Proposition~\ref{prop:forced}?
+
+\item \textbf{Name growth.} With the constructors, names are no longer subterms of the
+program: they grow at runtime. The consequences for the decidability of
+$\nequiv$ in practice, and for cost accounting, want examining.
+
+\item \textbf{Is four minimal?} Proposition~\ref{prop:four} gives an upper
+bound for the uniform translation, and Remark~\ref{rem:optnotfree} shows the
+count is translation-relative. Is there a translation needing fewer, is
+$\cons_{\mid}$ alone enough for some reformulation, and does reflection make
+any of Yoshida's six routers redundant?
+\end{enumerate}
+
+\begin{thebibliography}{99}
+
+\bibitem{BIHOL} C.\,B. Wells, M. Stay and L.\,G. Meredith.
+\emph{Behavior in higher-order languages: admissible observers, relative
+pushouts, and the encoding of extended theories.}
+In preparation, F1R3FLY.io, 2026.
+
+\bibitem{Lybech22} S. Lybech.
+\emph{Encodability and separation for a reflective higher-order calculus.}
+EXPRESS/SOS 2022, EPTCS 368, 95--112.
+
+\bibitem{MeredithRadestock05} L.\,G. Meredith and M. Radestock.
+\emph{A reflective higher-order calculus.}
+Electronic Notes in Theoretical Computer Science 141(5):49--67, 2005.
+
+\bibitem{nowns} L.\,G. Meredith.
+\emph{Namespaces without a name server: freshness by communication, and a
+fully abstract encoding of the $\pi$-calculus in the rho calculus.}
+F1R3FLY.io, 2026.
+
+\bibitem{rhocomb} L.\,G. Meredith and M. Stay.
+\emph{Name-free combinators for concurrency.}
+Working draft, \texttt{rho4u}.
+
+\bibitem{Yoshida02} N. Yoshida.
+\emph{Minimality and separation results on asynchronous mobile processes:
+representability theorems by concurrent combinators.}
+Theoretical Computer Science 274(1--2):231--276, 2002.
+
+\end{thebibliography}
+
+\end{document}
