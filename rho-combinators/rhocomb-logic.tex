@@ -1,0 +1,1148 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathrsfs}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage[hidelinks]{hyperref}
+\usepackage[activate={true,nocompatibility},expansion=false]{microtype}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{decision}[theorem]{Decision}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% ---- source calculus, following the companion note ----
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{*}#1}
+\newcommand{\inp}[3]{\mathsf{for}(\,#1 \leftarrow #2\,)#3}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\enc}[1]{[\![#1]\!]}
+\newcommand{\nequiv}{\equiv_{\mathcal{N}}}
+\newcommand{\Ctx}{\mathscr{C}}
+\newcommand{\Obs}{\mathcal{D}}
+\newcommand{\bisim}{\approx}
+\newcommand{\nms}[1]{\mathcal{N}^{*}(#1)}
+
+% ---- combinators ----
+\newcommand{\mm}{\mathsf{m}}
+\newcommand{\dd}{\mathsf{d}}
+\newcommand{\kk}{\mathsf{k}}
+\newcommand{\fw}{\mathsf{fw}}
+\newcommand{\bl}{\mathsf{b}_{\mathsf{l}}}
+\newcommand{\br}{\mathsf{b}_{\mathsf{r}}}
+\newcommand{\sy}{\mathsf{s}}
+\newcommand{\ev}{\mathsf{e}}
+\newcommand{\qq}{\mathsf{q}}
+\newcommand{\cons}{\mathsf{cons}}
+\newcommand{\consp}{\cons_{\mid}}
+\newcommand{\consm}{\cons_{\mm}}
+\newcommand{\consd}{\cons_{\dd}}
+\newcommand{\conss}{\cons_{\sy}}
+\newcommand{\red}{\longrightarrow}
+\newcommand{\wred}{\longrightarrow^{*}}
+\newcommand{\scong}{\equiv}
+
+% ---- logic ----
+\newcommand{\env}{\mathcal{E}}
+\newcommand{\Frm}{\mathcal{F}}
+\newcommand{\Nmf}{\mathcal{V}}
+\newcommand{\may}[1]{\langle #1 \rangle}
+\newcommand{\mst}[1]{[ #1 ]}
+\newcommand{\rcp}[1]{(\!|\, #1 \,|\!)}
+\newcommand{\sat}{\models}
+\newcommand{\chf}[1]{\chi(#1)}
+\newcommand{\Occ}{\mathsf{Occ}}
+\newcommand{\Conf}{\mathsf{Conf}}
+\newcommand{\Cl}{\mathsf{Cl}}
+\newcommand{\Atm}{\mathcal{A}}
+\newcommand{\atoms}[1]{\mathrm{at}^{*}(#1)}
+\newcommand{\comps}[1]{\mathrm{comps}(#1)}
+\newcommand{\Sub}[1]{\mathrm{Sub}^{*}(#1)}
+\newcommand{\shp}{\mathsf{NM}}
+\newcommand{\fix}{\mu}
+\newcommand{\sem}[1]{[\![#1]\!]}
+
+\title{\textbf{A Spatial-Behavioural Logic for the Rho Combinators}\\[4pt]
+\large Structural formulae, one context modality, and decidable occupancy
+of the expressiveness lattice}
+\author{F1R3FLY.io research note}
+\date{September 2026 --- draft 1}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+The companion note \cite{rhocomb3} repairs the name-free concurrent combinators
+for the rho calculus and replaces the separation theorem with an expressiveness
+lattice over subsets of the atom set. Each edge of that lattice is witnessed by
+an invariant --- name closure, atom count, message count --- established in the
+metatheory and stated in prose. This note supplies a logic in which those
+invariants are formulae. The logic is the usual propositional connectives,
+the spatial pair $\nil$ and $\mid$, one structural production per combinator
+shape with name positions written $\quo{\phi}$, a single context modality
+$\may{\phi}\psi$, and a parameterised least fixpoint over namespaces. It has no
+restriction connectives, no guarantee, and no name sort beyond $\quo{\phi}$,
+because the calculus has no binders and every name is a quotation.
+
+Three things follow. Characteristic formulae exist and are exact, so the logic
+separates terms precisely up to structural congruence, and nominals, counting
+and the temporal operators are all derived rather than primitive
+(\S\ref{sec:derived}). Occupancy of a lattice point --- the assertion that a
+term is a term of the sub-calculus over an atom set $\Atm$ --- is the nullary
+fixpoint $\Occ(\Atm)$, is checkable in one pass over the term
+(Theorem~\ref{thm:occlinear}), and is invariant under reduction exactly when
+$\Atm$ is rule-closed (Proposition~\ref{prop:subjred}). The constructor axis
+has a second and sharper formula, the namespace closure $\Cl_{\Atm}(T)$, which
+is the fixpoint whose disjuncts are in bijection with the constructors present;
+it is the logical form of the name-closure lemma. Third, rule-closure has a
+consequence for the lattice as drawn: at the eight points carrying $\consd$
+without $\dd$, occupancy is not invariant, so the two axes of
+\cite[Fig.~2]{rhocomb3} are not independent for this predicate
+(Proposition~\ref{prop:notindep}). The modality-free fragment is decidable
+outright; the full logic is decidable on the $\ev$-free sublattice modulo one
+finite-witness obligation, and undecidable above it.
+\end{abstract}
+
+\tableofcontents
+
+%==============================================================================
+\section{What this note is}
+\label{sec:what}
+
+The expressiveness lattice of \cite[\S10]{rhocomb3} is a family of sub-calculi
+of the rho combinators, ordered by inclusion of atom sets, with each strict edge
+witnessed by a behaviour available above it and not below. The witnesses are
+produced by three invariants: names reachable from a term lie in the closure of
+its names under the node shapes of the constructors present; every rule but
+$\ev$'s strictly decreases the count of non-message atoms; and $\dd$ is the only
+free source of copies.
+
+Those invariants are stated about the calculus. This note states them
+\emph{in} a logic over the calculus --- so that ``$T$ sits at or below lattice
+point $S$'' is a formula, and so that checking it is a decision procedure rather
+than a proof. That is the whole of the brief. In particular:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt,topsep=3pt]
+\item This is a logic, not a type system. Nothing here is a typing judgement,
+      nothing is syntax-directed on a derivation, and there is no subject-reduction
+      theorem for terms-in-context. The intended route to a type system is
+      generation from the logic, which is out of scope here.
+\item The logic is deliberately intensional. Theorem~\ref{thm:char} says it
+      separates terms exactly up to $\scong$, which is far finer than the
+      equivalence $\bisim_{\enc{\Ctx_{\mathrm{rho}}}}$ of
+      \cite[Thm.~7.5]{rhocomb3}. That is wanted for occupancy and is wrong for
+      anything else; \S\ref{sec:notdo} says so plainly.
+\item Occupancy formulae must be decidable. They are, and better than decidable:
+      linear (Theorem~\ref{thm:occlinear}).
+\end{itemize}
+
+The logic is a near relative of the hybrid logic of the F1R3Space semantics note
+\cite{f1r3space}, and diverges from it in four places, each traceable to a
+feature of the target calculus rather than to taste: there is no restriction, so
+revelation, hiding, freshness and $\mathsf{free}(a)$ all go; there is no
+unforgeable name, so the name sort collapses into $\quo{(-)}$ and needs no
+Boolean structure of its own (Proposition~\ref{prop:namecollapse}); the
+guarantee $\phi \rhd_{\eta} \psi$ is absent, which is what keeps the structural
+fragment decidable; and the three action modalities are replaced by one context
+modality rather than by the four of \cite{softwhere}. The last is a restriction
+and is discussed in \S\ref{sec:notdo}.
+
+%==============================================================================
+\section{The calculus recalled}
+\label{sec:calc}
+
+We follow \cite[\S3]{rhocomb3} exactly, and repeat only what the logic needs.
+
+\begin{definition}[Syntax]
+\label{def:syntax}
+\begin{align*}
+ A &\;::=\; \mm(a,b) \;\mid\; \dd(a,b,c) \;\mid\; \kk(a) \;\mid\; \fw(a,b)
+       \;\mid\; \bl(a,b) \;\mid\; \br(a,b) \;\mid\; \sy(a,b,c)\\
+   &\qquad \mid\; \ev(a) \;\mid\; \qq(a,P)\\
+   &\qquad \mid\; \consp(a,b,c) \;\mid\; \consm(a,b,c)
+       \;\mid\; \consd(a,b,c,e) \;\mid\; \conss(a,b,c,e)\\
+ P,Q &\;::=\; \nil \;\mid\; A \;\mid\; P \mid Q
+ \qquad\qquad
+ a,b,c \;::=\; \quo{P}
+\end{align*}
+\end{definition}
+
+Write $\Atm_{\mathrm{full}}$ for the set of thirteen atom shapes, and
+$\mathrm{ar}(\alpha)$ for the arity of $\alpha$ as a term former. Every argument
+of every shape is a name except the second argument of $\qq$, which is a process.
+
+\begin{definition}[Structural congruence]
+$\scong$ is the least congruence making $(\mathsf{Proc},\mid,\nil)$ an abelian
+monoid. There are no binders, hence no $\alpha$-equivalence, and no clause
+identifying a dropped quotation with its content.
+\end{definition}
+
+\begin{definition}[Components]
+$\comps{P}$ is the multiset of atoms at the top level of $P$ after erasure of
+$\nil$; it is a complete invariant of $\scong$, so $P \scong Q$ iff
+$\comps{P} = \comps{Q}$ as multisets, with equality of atoms taken
+componentwise up to $\nequiv$ on names and $\scong$ on the payload of $\qq$.
+\end{definition}
+
+\begin{proposition}[Name equivalence on the target is structural]
+\label{prop:nequiv}
+On combinator names, $\quo{P} \nequiv \quo{Q}$ iff $P \scong Q$.
+\end{proposition}
+
+\begin{proof}
+The source clause $\quo{\drp{x}} \nequiv x$ has no instance here: $\drp{(-)}$ is
+not a process former of Definition~\ref{def:syntax}, the drop having been
+demoted to the atom $\ev$ \cite[Rem.~3.2]{rhocomb3}. What remains of the
+definition of $\nequiv$ is the congruence generated by $\scong$ under
+quotation.
+\end{proof}
+
+Proposition~\ref{prop:nequiv} discharges corrigendum~4 of
+\cite[\S12]{rhocomb3}, which observes that $\nequiv$ is used in the side
+condition on observation and never defined for the combinators. It also says
+that quotation is injective and onto the name universe, which is what
+\S\ref{sec:logic} trades on and what the source calculus does not enjoy.
+
+\begin{definition}[Reduction]
+\label{def:red}
+\[
+\begin{array}{rcl@{\qquad}rcl}
+  \dd(a,b,c) \mid \mm(a,v) &\red& \mm(b,v) \mid \mm(c,v)
+    & \br(a,b) \mid \mm(a,v) &\red& \fw(b,v)\\
+  \kk(a) \mid \mm(a,v) &\red& \nil
+    & \bl(a,b) \mid \mm(a,v) &\red& \fw(v,b)\\
+  \fw(a,b) \mid \mm(a,v) &\red& \mm(b,v)
+    & \sy(a,b,c) \mid \mm(a,v) &\red& \fw(b,c)\\
+  \ev(a) \mid \mm(a,\quo{P}) &\red& P
+    & \fw(a,b) \mid \qq(a,P) &\red& \mm(b,\quo{P})\\
+  \multicolumn{6}{l}{\consp(a,b,c) \mid \mm(a,\quo{P}) \mid \mm(b,\quo{Q})
+     \ \red\ \mm(c,\quo{(P \mid Q)})}\\
+  \multicolumn{6}{l}{\consm(a,b,c) \mid \mm(a,u) \mid \mm(b,v)
+     \ \red\ \mm(c,\quo{\mm(u,v)})}\\
+  \multicolumn{6}{l}{\consd(a,b,c,e) \mid \mm(a,u) \mid \mm(b,v)
+     \mid \mm(c,w) \ \red\ \mm(e,\quo{\dd(u,v,w)})}\\
+  \multicolumn{6}{l}{\conss(a,b,c,e) \mid \mm(a,u) \mid \mm(b,v)
+     \mid \mm(c,w) \ \red\ \mm(e,\quo{\sy(u,v,w)})}
+\end{array}
+\]
+closed under $\mid$ and under $\scong$, with subjects matched up to $\nequiv$.
+\end{definition}
+
+Every rule has between two and four premises, each premise an atom, and the
+premises of a rule share names. That is the only structural fact the modality of
+\S\ref{sec:logic} uses.
+
+%==============================================================================
+\section{The logic}
+\label{sec:logic}
+
+\subsection{Grammar}
+
+\begin{definition}[Formulae]
+\label{def:grammar}
+Two sorts. Name formulae (namespaces) $\nu$, and process formulae $\phi$:
+\[
+\begin{array}{rcll}
+  \nu &::=& \quo{\phi} \;\mid\; U & \text{namespace, namespace parameter}\\[4pt]
+  \phi,\psi &::=& \mathsf{true} \;\mid\; \neg\phi \;\mid\; \phi \wedge \psi
+        \;\mid\; \phi \vee \psi \;\mid\; \phi \Rightarrow \psi
+        & \text{propositional}\\
+     &\mid& \nil \;\mid\; \phi \mid \psi & \text{spatial}\\
+     &\mid& \mm(\nu_1,\nu_2) \;\mid\; \dd(\nu_1,\nu_2,\nu_3)
+            \;\mid\; \kk(\nu_1) & \text{structural}\\
+     &\mid& \fw(\nu_1,\nu_2) \;\mid\; \bl(\nu_1,\nu_2)
+            \;\mid\; \br(\nu_1,\nu_2)&\\
+     &\mid& \sy(\nu_1,\nu_2,\nu_3) \;\mid\; \ev(\nu_1)
+            \;\mid\; \qq(\nu_1,\phi)&\\
+     &\mid& \consp(\nu_1,\nu_2,\nu_3) \;\mid\; \consm(\nu_1,\nu_2,\nu_3)&\\
+     &\mid& \consd(\nu_1,\nu_2,\nu_3,\nu_4)
+            \;\mid\; \conss(\nu_1,\nu_2,\nu_3,\nu_4)&\\
+     &\mid& \may{\phi}\psi & \text{context modality}\\
+     &\mid& \fix X(\vec U).\,\phi \;\mid\; X(\vec\nu)
+            & \text{fixpoint, application}
+\end{array}
+\]
+In $\fix X(\vec U).\,\phi$ the parameters $\vec U$ are bound in $\phi$, and $X$
+must occur positively in $\phi$; the application $X(\vec\nu)$ must supply as
+many namespaces as $X$ was declared with.
+\end{definition}
+
+The structural productions are in bijection with the atom shapes of
+Definition~\ref{def:syntax}, and each has the arity of its shape. The one
+asymmetry is $\qq(\nu_1,\phi)$, whose second argument is a process formula. It
+is not a defect of the grammar but a faithful record of the calculus: $\qq$ is
+the introduction form for a quotation, and its payload has not yet been quoted.
+
+\begin{remark}[The gate migrates a formula across the sorts]
+\label{rem:migrate}
+Under the release rule $\fw(a,b) \mid \qq(a,P) \red \mm(b,\quo{P})$ the payload
+is described by $\psi$ before the step and by $\quo{\psi}$ after. Formally,
+$\qq(\nu,\psi)$ is carried to $\mm(\nu',\quo{\psi})$ where $\nu'$ is the
+forwarder's target. The logic is thereby able to watch the sort change that
+quotation performs, and it is the only place in the grammar where that change is
+visible. A grammar that wrote $\qq(\nu_1,\nu_2)$ would be uniform and would be
+uninhabited: no well-formed $\qq$ term has a name in its second argument.
+\end{remark}
+
+\begin{decision}[No guarantee, no restriction, one modality]
+\label{dec:omit}
+$\phi \rhd_{\eta} \psi$ is omitted, and with it the quantification over an
+infinite class of environments that makes spatial model checking hard; the
+single-step consequence of it that this setting wants is recovered by
+$\may{\phi}\psi$. The restriction connectives of \cite{f1r3space} are omitted
+because the calculus has no $\mathsf{new}$. The modality set of
+\cite{softwhere} is cut from four to one; \S\ref{sec:notdo} records the cost.
+\end{decision}
+
+\subsection{Satisfaction}
+
+Satisfaction is defined on closed terms and closed formulae, relative to an
+environment $\env$ interpreting free fixpoint variables. We suppress $\env$
+except in the fixpoint clauses.
+
+\begin{definition}[Name sort]
+\label{def:satname}
+\[
+  a \sat \quo{\phi} \quad\text{iff}\quad
+  a \nequiv \quo{P} \ \text{for some } P \text{ with } P \sat \phi .
+\]
+\end{definition}
+
+\begin{proposition}[The name sort is definable]
+\label{prop:namecollapse}
+Quotation is a bijection from $\scong$-classes of processes to $\nequiv$-classes
+of names, and $\sem{\quo{(-)}}$ preserves and reflects Boolean structure:
+\[
+  \quo{(\phi \wedge \psi)} \equiv \quo{\phi} \wedge \quo{\psi},
+  \qquad
+  \quo{(\phi \vee \psi)} \equiv \quo{\phi} \vee \quo{\psi},
+  \qquad
+  \quo{(\neg\phi)} \equiv \neg\quo{\phi},
+\]
+and $\quo{\mathsf{true}}$ is the namespace of all names.
+\end{proposition}
+
+\begin{proof}
+Bijectivity is Proposition~\ref{prop:nequiv} together with the fact that every
+name of Definition~\ref{def:syntax} is a quotation. The four equivalences follow
+by unfolding Definition~\ref{def:satname} against that bijection.
+\end{proof}
+
+So the name sort carries no productions of its own beyond $\quo{(-)}$ and the
+parameter $U$, and the Boolean namespace algebra that \cite{f1r3space} must add
+to the name sort is here a theorem. The reason is exactly that the combinators
+have no unforgeable names: in \cite{f1r3space} $a \sat \quo{\phi}$ is false at
+every atom, which forces $\top_{\mathcal{N}}$ to be primitive and a separate
+Boolean algebra with it.
+
+\begin{definition}[Process sort]
+\label{def:satproc}
+Propositional clauses are standard. Otherwise:
+\[
+\begin{array}{lcl}
+  P \sat \nil &\text{iff}& P \scong \nil\\[2pt]
+  P \sat \phi \mid \psi &\text{iff}&
+     \exists P_1,P_2.\ P \scong P_1 \mid P_2,\
+     P_1 \sat \phi,\ P_2 \sat \psi\\[4pt]
+  P \sat \alpha(\nu_1,\dots,\nu_n) &\text{iff}&
+     \exists a_1,\dots,a_n.\ P \scong \alpha(a_1,\dots,a_n)
+     \text{ and } a_i \sat \nu_i \text{ for all } i\\
+  &&\text{for each shape } \alpha \neq \qq \text{ of arity } n\\[2pt]
+  P \sat \qq(\nu,\psi) &\text{iff}&
+     \exists a, S.\ P \scong \qq(a,S),\ a \sat \nu,\ S \sat \psi\\[4pt]
+  P \sat \may{\phi}\psi &\text{iff}&
+     \exists R \sat \phi.\ \exists P'.\
+     P \mid R \red_{R} P' \text{ and } P' \sat \psi\\[4pt]
+  P \sat_{\env} \fix X(\vec U).\,\phi
+     &\text{iff}& P \in \bigcap \{\, F : \Phi_{\env}(F) \subseteq F \,\}\\
+  P \sat_{\env} X(\vec\nu) &\text{iff}& P \in \env(X)(\sem{\vec\nu})
+\end{array}
+\]
+where $\Phi_{\env}$ is the monotone operator on
+$(\mathcal{P}(\mathsf{Name})^{n} \to \mathcal{P}(\mathsf{Proc}))$ induced by
+$\phi$, and the least fixpoint exists by Knaster--Tarski since $X$ occurs
+positively.
+\end{definition}
+
+\begin{definition}[Marked reaction]
+\label{def:marked}
+$P \mid R \red_{R} P'$ holds when there is a derivation of
+$P \mid R \red P'$ by a single rule of Definition~\ref{def:red} in which
+\emph{every} atom of $\comps{R}$ is a premise of that rule.
+\end{definition}
+
+\begin{remark}[Why the marking]
+\label{rem:whymark}
+Without it, $P \mid R \red P'$ is discharged by any internal step of $P$
+whatsoever, and the formula $\phi$ describing the context does no work: every
+term with a reduction would satisfy every $\may{\phi}\psi$. With it,
+$\may{\nil}\psi$ is the internal-step modality --- $\comps{\nil}$ is empty, so
+the condition is vacuous and the whole redex comes from $P$ --- and
+$\may{\mm(\nu_1,\nu_2)}\psi$ says that $P$ offers a consumer at a name in
+$\nu_1$ willing to accept a payload in $\nu_2$. The condition is on the
+derivation and not on $P'$, which is where it has to be, since a residual
+carries no record of which premises produced it. This follows
+\cite[Def.~5.4]{softwhere}.
+\end{remark}
+
+\begin{remark}[One step, and only one]
+$\red_{R}$ is a single rule application, not its reflexive transitive closure.
+Over many steps a context could supply an atom, take a name from $P$, and act on
+it, and the modality would be observing a protocol rather than a reaction. The
+multi-step reading is available as a derived operator
+(\S\ref{sec:derived}) and is the right thing to write when it is wanted.
+\end{remark}
+
+\begin{remark}[Bounded contexts, for free]
+\label{rem:bdd}
+Definition~\ref{def:marked} bounds $\comps{R}$ by the largest premise count of
+any rule, which is four; and if $\comps{R}$ is nonempty, at least one premise
+must come from $P$ unless $R$ alone forms a redex. This is what makes the modal
+fragment tractable at all, and it is a gift of the combinator presentation: in a
+calculus with prefixing, a reacting context can be arbitrarily large.
+\end{remark}
+
+\subsection{Positivity}
+
+\begin{proposition}[Polarity]
+\label{prop:polarity}
+$\phi \mid \psi$, $\alpha(\dots)$, $\quo{(-)}$ and $\may{\phi}\psi$ are monotone
+in every argument. The negative positions are exactly the scope of $\neg$ and
+the antecedent of $\Rightarrow$.
+\end{proposition}
+
+\begin{proof}
+Each clause of Definitions~\ref{def:satname} and~\ref{def:satproc} other than
+$\neg$ and $\Rightarrow$ is a positive existential over the interpretations of
+its arguments.
+\end{proof}
+
+Note that $\may{\phi}\psi$ is monotone in $\phi$ as well as in $\psi$: the
+context is existentially quantified, so enlarging the class of admissible
+contexts can only enlarge the satisfying set. Hence a fixpoint variable may
+occur inside a modality's label, which \S\ref{sec:derived} uses.
+
+%==============================================================================
+\section{Derived forms}
+\label{sec:derived}
+
+\subsection{The spatial monoid}
+
+\begin{proposition}[$\nil$ is the unit of $\mid$]
+\label{prop:unit}
+Up to logical equivalence, $(\Frm,\mid,\nil)$ is a commutative monoid:
+$\phi \mid \nil \equiv \phi$, $\phi \mid \psi \equiv \psi \mid \phi$, and
+$(\phi \mid \psi) \mid \chi \equiv \phi \mid (\psi \mid \chi)$. Moreover $\mid$
+distributes over $\vee$ but not over $\wedge$, and
+$\nil \equiv \neg(\neg\nil \mid \mathsf{true})$.
+\end{proposition}
+
+\begin{proof}
+For the unit, $P \sat \phi \mid \nil$ iff $P \scong P_1 \mid P_2$ with
+$P_1 \sat \phi$ and $P_2 \scong \nil$, iff $P \sat \phi$. Commutativity and
+associativity descend from the abelian monoid structure of $\scong$.
+Distribution over $\vee$ is immediate from the existential; failure over
+$\wedge$ is the usual one, witnessed by
+$\mm(a,v) \mid \mm(b,w)$ against
+$(\mm(\quo{\mathsf{true}},\quo{\mathsf{true}}) \mid \mathsf{true}) \wedge
+(\kk(\quo{\mathsf{true}}) \mid \mathsf{true})$.
+The last identity says that $P$ is $\nil$ iff it has no nonempty component.
+\end{proof}
+
+\subsection{Counting}
+
+\begin{definition}
+\label{def:count}
+For $k \geq 0$ and a formula $\theta$, write
+\begin{align*}
+  \#_{\theta} \geq k \ &\triangleq\ \underbrace{\theta \mid \cdots \mid
+  \theta}_{k} \mid \mathsf{true},
+  \qquad
+  \#_{\theta} \leq k \ \triangleq\ \neg(\#_{\theta} \geq k{+}1),\\
+  \#_{\theta} = k \ &\triangleq\ (\#_{\theta} \geq k) \wedge
+  \neg(\#_{\theta} \geq k{+}1).
+\end{align*}
+Write $\shp$ for the disjunction of the structural productions of all shapes
+other than $\mm$, each with every name argument $\quo{\mathsf{true}}$ and,
+for $\qq$, payload $\mathsf{true}$; so $P \sat \shp$ iff $P$ is a single
+non-message atom.
+\end{definition}
+
+So $\#_{\shp} \leq k$ is the atom-count measure of
+\cite[Lem.~10.2]{rhocomb3}, written as a formula. The counting of
+\cite{f1r3space}, which is primitive there, is here derived.
+
+\subsection{Nominals, and the characteristic formula}
+
+\begin{definition}[Characteristic formula]
+\label{def:char}
+For a closed term $T$ define $\chf{T}$ by structural recursion:
+\[
+\begin{array}{rcl}
+  \chf{\nil} &=& \nil\\
+  \chf{T_1 \mid T_2} &=& \chf{T_1} \mid \chf{T_2}\\
+  \chf{\alpha(\quo{P_1},\dots,\quo{P_n})} &=&
+     \alpha(\quo{\chf{P_1}},\dots,\quo{\chf{P_n}})
+     \qquad (\alpha \neq \qq)\\
+  \chf{\qq(\quo{P},S)} &=& \qq(\quo{\chf{P}},\chf{S}).
+\end{array}
+\]
+\end{definition}
+
+\begin{theorem}[Characteristic formulae are exact]
+\label{thm:char}
+For all closed $P$ and $T$: $P \sat \chf{T}$ iff $P \scong T$.
+\end{theorem}
+
+\begin{proof}
+Induction on $|T|$. The base case is Definition~\ref{def:satproc}'s clause for
+$\nil$. For an atom, $P \sat \alpha(\quo{\chf{P_1}},\dots)$ iff
+$P \scong \alpha(a_1,\dots,a_n)$ with $a_i \sat \quo{\chf{P_i}}$, iff by
+Definition~\ref{def:satname} $a_i \nequiv \quo{Q_i}$ with $Q_i \sat \chf{P_i}$,
+iff by induction $Q_i \scong P_i$, iff $a_i \nequiv \quo{P_i}$ by
+Proposition~\ref{prop:nequiv}. The case of $\qq$ is the same with the payload
+compared at the process sort. For $T_1 \mid T_2$, satisfaction of
+$\chf{T_1} \mid \chf{T_2}$ gives a split $P \scong P_1 \mid P_2$ with
+$P_i \scong T_i$ by induction, and conversely the split witnessing
+$P \scong T_1 \mid T_2$ satisfies the clause. Each recursive call is on a proper
+subterm, so the induction is well founded.
+\end{proof}
+
+\begin{corollary}[Nominals]
+\label{cor:nominal}
+The process nominal of \cite[\S6]{softwhere} and the singleton namespace of
+\cite{f1r3space} are both derived: $T$ as a formula is $\chf{T}$, and the
+singleton $\{a\}$ for $a = \quo{P}$ is the namespace $\quo{\chf{P}}$.
+\end{corollary}
+
+\begin{corollary}[Maximal intensionality]
+\label{cor:intensional}
+$P \scong Q$ iff $P$ and $Q$ satisfy the same formulae. The logic is therefore
+not adequate for any coarser equivalence, and in particular not for
+$\bisim_{\enc{\Ctx_{\mathrm{rho}}}}$.
+\end{corollary}
+
+\subsection{Temporal operators}
+
+\begin{definition}
+\label{def:temporal}
+\[
+  \mst{\phi}\psi \ \triangleq\ \neg\may{\phi}\neg\psi,
+  \qquad
+  \Diamond\psi \ \triangleq\ \fix X().\ \psi \vee \may{\nil}X,
+  \qquad
+  \Box\psi \ \triangleq\ \neg\Diamond\neg\psi .
+\]
+\end{definition}
+
+$\Diamond$ and $\Box$ range over internal reduction, since $\may{\nil}$ is the
+internal step by Remark~\ref{rem:whymark}; $X$ occurs positively under
+$\may{\nil}$ by Proposition~\ref{prop:polarity}, so the fixpoint is well formed.
+The environment-facing analogue $\Diamond_{\phi}\psi \triangleq \fix X().\,\psi
+\vee \may{\phi}X$ is available and is a genuinely different operator, since it
+permits the context to be re-supplied at every step.
+
+\begin{definition}[Bounded termination]
+\label{def:term}
+$\may{\nil}^{0}\phi \triangleq \phi$ and
+$\may{\nil}^{j+1}\phi \triangleq \may{\nil}\may{\nil}^{j}\phi$; and
+\[
+  \mathsf{Halts}_{k} \ \triangleq\ \neg\may{\nil}^{k+1}\mathsf{true},
+\]
+which says no internal run from here has length exceeding $k$.
+\end{definition}
+
+%==============================================================================
+\section{Model checking}
+\label{sec:mc}
+
+\subsection{The inhabitance relation}
+
+The relation to be decided is $T \sat \phi$ for closed $T$ and closed $\phi$.
+We call it \emph{inhabitance} when $\phi$ is read as a specification of a
+position in the lattice and \emph{model checking} otherwise; they are the same
+relation.
+
+\begin{definition}[Hereditary material]
+\label{def:sub}
+$\Sub{T}$ is the least set of $\scong$-classes containing $T$ and closed under:
+if $P \in \Sub{T}$ then every $Q$ with $\comps{Q} \subseteq \comps{P}$ is in
+$\Sub{T}$; and if $\alpha(a_1,\dots,a_n) \in \comps{P}$ for some
+$P \in \Sub{T}$, with $a_i = \quo{P_i}$, then each $P_i \in \Sub{T}$, and for
+$\qq(a,S)$ also $S \in \Sub{T}$.
+\end{definition}
+
+\begin{lemma}
+\label{lem:subfinite}
+$\Sub{T}$ is finite, of size at most $2^{c} \cdot n$ where $n = |T|$ and $c$ is
+the maximum number of top-level components of any hereditary subterm of $T$.
+\end{lemma}
+
+\begin{proof}
+There are at most $n$ hereditary subterms, and the sub-multiset closure of a
+term with $c$ components contributes at most $2^{c}$ classes. Descent is by the
+subterm order, which is well founded on finite terms.
+\end{proof}
+
+\begin{theorem}[The modality-free fragment is decidable]
+\label{thm:decstruct}
+For closed $T$ and closed modality-free $\phi$, $T \sat \phi$ is decidable.
+\end{theorem}
+
+\begin{proof}
+Every clause of Definition~\ref{def:satproc} other than the modality refers only
+to members of $\Sub{T}$: the split clause to sub-multisets, the structural
+clauses to quoted subterms and, for $\qq$, to the payload, and the name clause
+to the quoted process. By Lemma~\ref{lem:subfinite} the carrier is finite, so
+the operator $\Phi_{\env}$ of Definition~\ref{def:satproc} acts on the finite
+lattice $\mathcal{P}(\Sub{T})^{\,\Sub{T}^{\,n}}$ and its least fixpoint is
+reached by iteration in at most $|\Sub{T}|^{n+1}$ steps. Namespace arguments
+range over $\{\quo{P} : P \in \Sub{T}\}$, again finite. Evaluate bottom up.
+\end{proof}
+
+\begin{remark}[Cost]
+\label{rem:cost}
+The bound of Lemma~\ref{lem:subfinite} is exponential in the number of parallel
+components, and the split clause is where that is spent: deciding
+$P \sat \phi \mid \psi$ naively enumerates the $2^{|\comps{P}|}$ splits. This is
+the familiar cost of a spatial composition connective and is not an artefact of
+this presentation. \S\ref{sec:occ} shows that the formulae the lattice actually
+needs avoid it entirely.
+\end{remark}
+
+\subsection{The modal fragment}
+
+\begin{proposition}[Decidability on the $\ev$-free sublattice, modulo witnesses]
+\label{prop:decmodal}
+Let $T \sat \Occ(\Atm)$ for some rule-closed $\Atm$ with $\ev \notin \Atm$.
+Then the reachable set of $T$ is finite, and $T \sat \phi$ is decidable for
+every closed $\phi$ whose modalities carry only labels $\phi_{\ell}$ with
+$\sem{\phi_{\ell}}$ finite up to $\scong$.
+\end{proposition}
+
+\begin{proof}
+By \cite[Prop.~10.7]{rhocomb3} every reduction sequence from $T$ has length at
+most $|\comps{T}|_{\shp}$, and by Definition~\ref{def:red} the branching at each
+step is bounded by the number of pairs and triples of components, so
+$\mathrm{Reach}(T)$ is finite. Extend $\Sub{-}$ over it; the argument of
+Theorem~\ref{thm:decstruct} then applies, with the modality clause evaluated by
+enumerating the finitely many $R \sat \phi_{\ell}$ and, for each, the finitely
+many marked derivations, which are bounded by Remark~\ref{rem:bdd}.
+\end{proof}
+
+The hypothesis on labels is the gap. A label such as
+$\mm(\quo{\chf{P}},\quo{\mathsf{true}})$ constrains the subject to one name and
+leaves the payload free, so $\sem{\phi_{\ell}}$ is infinite. The route to
+removing the hypothesis is a depth-bounded distinguishability lemma:
+
+\begin{conjecture}[Finite witnesses]
+\label{conj:witness}
+Define the quote depth $\mathrm{qd}(\phi)$ of a $\fix$-free formula as the
+maximum nesting of $\quo{(-)}$ in it. Then for $\fix$-free $\phi_{\ell}$ and
+$\psi$, satisfaction of $\may{\phi_{\ell}}\psi$ at $P$ is unchanged if $R$ is
+restricted to range over a set of representatives of $\sem{\phi_{\ell}}$ of
+quote depth at most $\mathrm{qd}(\phi_{\ell}) + \mathrm{qd}(\psi) + |P|$, which
+is finite up to $\scong$ once the names available are those of $\Sub{P}$.
+\end{conjecture}
+
+The restriction to $\fix$-free formulae is not cosmetic: unfolding a fixpoint
+raises quote depth without bound, so the bound must be re-derived per unfolding
+or the conjecture restated as a bisimulation-up-to-depth argument. This is
+listed as open item~\ref{open:witness}.
+
+\begin{proposition}[Undecidability above]
+\label{prop:undec}
+With $\ev$ and $\dd$ present the calculus is Turing complete
+\cite[\S7]{rhocomb3}, and $\Diamond \chf{T'}$ expresses reachability of $T'$.
+So $T \sat \phi$ is undecidable for the full logic on the top vertex of the
+computation axis.
+\end{proposition}
+
+\begin{remark}[The decidability frontier is the destructor edge]
+\label{rem:frontier}
+Propositions~\ref{prop:decmodal} and~\ref{prop:undec} say that the logic is
+decidable exactly on the $\ev$-free half of the computation axis, which is the
+edge \cite[Prop.~10.7]{rhocomb3} proves strict by strong normalisation. The
+occupancy formula for that edge is therefore also the certificate that model
+checking terminates. Should Conjecture~10.9 of \cite{rhocomb3} hold --- that
+$\dd$-freedom gives strong normalisation even with $\ev$ --- the decidable
+region extends to that vertex too, so settling it settles where model checking
+stops working as well as where divergence starts.
+\end{remark}
+
+%==============================================================================
+\section{Lattice inhabitance}
+\label{sec:occ}
+
+\subsection{Occupancy}
+
+\begin{definition}[Hereditary atom set]
+$\atoms{P}$ is the set of shapes $\alpha$ such that some atom of shape $\alpha$
+occurs in $P$ at some quote depth: the least set with
+$\alpha \in \atoms{P}$ whenever $\alpha(\vec a\,) \in \comps{P}$, and
+$\atoms{Q} \subseteq \atoms{P}$ whenever $\quo{Q}$ is an argument of such an
+atom or $Q$ is the payload of a $\qq$ in it.
+\end{definition}
+
+\begin{definition}[Occupancy formula]
+\label{def:occ}
+For $\Atm \subseteq \Atm_{\mathrm{full}}$,
+\[
+  \Occ(\Atm) \ \triangleq\ \fix X().\ \ \nil \ \vee\ (X \mid X)
+  \ \vee \bigvee_{\alpha \in \Atm \setminus \{\qq\}}
+     \alpha(\underbrace{\quo{X},\dots,\quo{X}}_{\mathrm{ar}(\alpha)})
+  \ \vee\ [\,\qq(\quo{X},X) \ \text{if } \qq \in \Atm\,].
+\]
+\end{definition}
+
+The formula is the atom list of Definition~\ref{def:syntax} with the disjuncts
+for shapes outside $\Atm$ deleted, plus the two spatial disjuncts. The $\qq$
+disjunct is the only one whose recursive occurrence appears at both sorts,
+which is Remark~\ref{rem:migrate} again.
+
+\begin{proposition}[Occupancy is hereditary containment]
+\label{prop:occ}
+$P \sat \Occ(\Atm)$ iff $\atoms{P} \subseteq \Atm$; equivalently, iff $P$ is a
+term of the sub-calculus whose atom set is $\Atm$.
+\end{proposition}
+
+\begin{proof}
+Right to left, the set of terms with $\atoms{P} \subseteq \Atm$ is closed under
+the operator of Definition~\ref{def:occ}, hence contains its least fixpoint by
+Knaster--Tarski, and conversely each disjunct preserves the property. Left to
+right, observe that each recursive occurrence of $X$ is under a structural
+production or under $\mid$, and that the argument of a structural production is
+a proper subterm; so the unfolding descends the subterm order on the finite term
+$P$ and terminates, at which point every atom encountered has been matched
+against a disjunct of $\Atm$.
+\end{proof}
+
+\begin{corollary}
+\label{cor:munu}
+For $\Occ(\Atm)$ the least and greatest fixpoints coincide.
+\end{corollary}
+
+\begin{proof}
+The unfolding descends the subterm order, which is well founded on finite
+terms, so no infinite unfolding is consistent and $\nu$ adds nothing to $\mu$.
+\end{proof}
+
+\begin{theorem}[Occupancy is linear]
+\label{thm:occlinear}
+$T \sat \Occ(\Atm)$ is decidable in time linear in $|T|$.
+\end{theorem}
+
+\begin{proof}
+By Proposition~\ref{prop:occ} the test is $\atoms{T} \subseteq \Atm$, which is
+one traversal of $T$ descending into quotations. The split clause of
+Remark~\ref{rem:cost} costs nothing here because the disjunct $X \mid X$ makes
+$\Occ(\Atm)$ a homomorphic predicate: $P \mid Q \sat \Occ(\Atm)$ iff both
+conjuncts do, so no enumeration of splits is required.
+\end{proof}
+
+Theorem~\ref{thm:occlinear} is the requirement of \S\ref{sec:what} discharged.
+The occupancy formulae live in the modality-free fragment, so
+Theorem~\ref{thm:decstruct} already gives decidability; what
+Theorem~\ref{thm:occlinear} adds is that they land in the part of that fragment
+which avoids the exponential entirely.
+
+\subsection{Invariance, and a constraint on the lattice as drawn}
+
+\begin{definition}[Rule-closed]
+\label{def:ruleclosed}
+$\Atm$ is \emph{rule-closed} if
+\begin{enumerate}[label=(R\arabic*),leftmargin=2.6em,itemsep=2pt,topsep=3pt]
+\item $\mm \in \Atm$;
+\item $\fw \in \Atm$ whenever $\Atm$ meets $\{\bl,\br,\sy\}$;
+\item $\consm \in \Atm \Rightarrow \mm \in \Atm$,
+      $\consd \in \Atm \Rightarrow \dd \in \Atm$, and
+      $\conss \in \Atm \Rightarrow \sy \in \Atm$.
+\end{enumerate}
+\end{definition}
+
+\begin{proposition}[Invariance of occupancy]
+\label{prop:subjred}
+Let $\Atm$ be rule-closed. If $P \sat \Occ(\Atm)$ and $P \red P'$ then
+$P' \sat \Occ(\Atm)$. Equivalently, $\Occ(\Atm) \Rightarrow \Box\,\Occ(\Atm)$
+is valid.
+\end{proposition}
+
+\begin{proof}
+By cases on Definition~\ref{def:red}, using Proposition~\ref{prop:occ}. The
+router rules produce $\mm$ atoms and, for $\bl$, $\br$, $\sy$, an $\fw$ atom;
+(R1) and (R2) cover these. The rule for $\ev$ produces the payload $P$ of a
+message, whose atoms were already hereditarily present. The rule for $\qq$
+produces $\mm(b,\quo{P})$, with $P$ the stored payload, again already present.
+A constructor rule for shape $A$ produces $\mm(c,\quo{A(\vec v\,)})$, whose
+atoms are those of $\vec v$ together with $A$ itself; (R1) and (R3) cover the
+four cases, with $\consp$ needing nothing since parallel composition is not an
+atom. Structural congruence introduces no atoms.
+\end{proof}
+
+\begin{proposition}[The two axes are not independent for occupancy]
+\label{prop:notindep}
+The lattice of \cite[Fig.~2]{rhocomb3} is drawn as a product of a computation
+axis over $\{\dd,\ev\}$ with a constructor axis over the four constructors. At
+the eight points carrying $\consd$ without $\dd$, the atom set is not
+rule-closed, and occupancy is not invariant.
+\end{proposition}
+
+\begin{proof}
+Take $\Atm$ with $\consd \in \Atm$, $\dd \notin \Atm$, and let
+\[
+  T \ =\ \consd(a,b,c,e) \mid \mm(a,u) \mid \mm(b,v) \mid \mm(c,w)
+  \ \red\ \mm(e,\quo{\dd(u,v,w)}) \ =\ T'.
+\]
+Then $\atoms{T} \subseteq \Atm$ but $\dd \in \atoms{T'}$, so
+$T \sat \Occ(\Atm)$ and $T' \not\sat \Occ(\Atm)$. The eight points are the two
+computation points omitting $\dd$ crossed with the four constructor points
+including $\consd$.
+\end{proof}
+
+\begin{remark}[Three ways out]
+\label{rem:waysout}
+Proposition~\ref{prop:notindep} is a statement about the sub-calculus, not about
+the logic, and it is the logic's first return on the investment. A sub-calculus
+that can build the name $\quo{\dd(u,v,w)}$ but has no $\dd$ atom is not closed
+under its own reduction, because the names of a sub-calculus are quotations of
+its own processes. Three repairs are available and the note does not choose
+between them: (i) keep $\dd$ in the base for those points, so the constructor
+axis is a product only over the remaining three; (ii) read occupancy
+non-hereditarily, at the cost of Proposition~\ref{prop:occ} no longer saying
+``is a term of''; or (iii) accept the eight points as expressively meaningful
+but not reduction-closed, and state the product claim for the expressive
+ordering only. Option (i) matches the intent of \cite[\S10.4]{rhocomb3}, where
+$\dd$ is discussed as a source of copies rather than as a shape a name may
+carry.
+\end{remark}
+
+\subsection{Name closure: the constructor axis}
+
+Occupancy says which atoms may appear. The constructor axis wants something
+sharper: which \emph{names} can ever appear, which is
+\cite[Lem.~10.1]{rhocomb3}. That lemma is a namespace fixpoint, and its
+disjuncts are in bijection with the constructors present.
+
+\begin{definition}[Closure namespace]
+\label{def:cl}
+Let $T$ be closed with $\nms{T} = \{\quo{Q_1},\dots,\quo{Q_r}\}$ and let
+$S \subseteq \{\consp,\consm,\consd,\conss\}$. Put
+\begin{align*}
+  \Cl_{S}(T) \ \triangleq\ \quo{\big(\fix X().\ \kappa_{S}\big)},
+  \qquad \text{where } \kappa_{S} \ =\ \
+  & \bigvee_{i=1}^{r} \chf{Q_i}\\
+  \vee\ & [\,X \mid X & &\text{if } \consp \in S\,]\\
+  \vee\ & [\,\mm(\quo{X},\quo{X}) & &\text{if } \consm \in S\,]\\
+  \vee\ & [\,\dd(\quo{X},\quo{X},\quo{X}) & &\text{if } \consd \in S\,]\\
+  \vee\ & [\,\sy(\quo{X},\quo{X},\quo{X}) & &\text{if } \conss \in S\,].
+\end{align*}
+\end{definition}
+
+\begin{definition}[Confinement]
+\label{def:conf}
+\[
+  \Conf(U) \ \triangleq\ \fix X(U).\ \ \nil \ \vee\ (X(U) \mid X(U))
+  \ \vee \bigvee_{\alpha \in \Atm_{\mathrm{full}} \setminus \{\qq\}}
+    \alpha(\underbrace{\theta_U,\dots,\theta_U}_{\mathrm{ar}(\alpha)})
+  \ \vee\ \qq(\theta_U, X(U)),
+\]
+where $\theta_U \triangleq U \wedge \quo{X(U)}$ --- a namespace, well formed by
+Proposition~\ref{prop:namecollapse}.
+\end{definition}
+
+$\Conf(U)$ says that every name occurring at any depth lies in $U$, and that the
+processes those names quote are themselves confined. This is the one place the
+parameterised fixpoint earns its keep: the parameter $U$ must be carried
+unchanged through the recursion, and a nullary fixpoint cannot do it, because
+the namespace being tested is not definable from the term at hand.
+
+\begin{proposition}[Name closure, in the logic]
+\label{prop:nameclosure}
+Let $T$ be closed, $S$ the set of constructors in $\Atm$, and $\Atm$ rule-closed.
+Then $T \sat \Conf(\Cl_{S}(T))$, and
+$\Conf(\Cl_{S}(T)) \Rightarrow \Box\,\Conf(\Cl_{S}(T))$ is valid at $T$.
+\end{proposition}
+
+\begin{proof}
+The first claim is immediate: every name of $T$ is some $\quo{Q_i}$, matched by
+the corresponding disjunct of Definition~\ref{def:cl} via
+Theorem~\ref{thm:char}. The second is \cite[Lem.~10.1]{rhocomb3} transcribed.
+Every rule other than a constructor rule has on its right only names occurring
+on its left; a constructor rule for shape $A$ emits
+$\mm(c,\quo{A(\vec v\,)})$ with $\vec v$ already present, and $\quo{A(\vec v\,)}$
+lies in $\Cl_{S}(T)$ precisely because the disjunct for $\cons_{A}$ is present
+in Definition~\ref{def:cl} exactly when $\cons_{A} \in S$.
+\end{proof}
+
+\begin{corollary}[Root exclusion]
+\label{cor:root}
+Write $\mathrm{Root}_{A}$ for the formula
+$\neg\nil \mid \neg\nil$ when $A$ is parallel composition, and
+$A(\quo{\mathsf{true}},\dots,\quo{\mathsf{true}})$ otherwise. If
+$\cons_{A} \notin S$ and no name of $\nms{T}$ satisfies
+$\quo{\mathrm{Root}_{A}}$, then
+\[
+  T \ \sat\ \Box\,\neg\big(\ \mm(\quo{\mathrm{Root}_{A}},\quo{\mathsf{true}})
+  \mid \mathsf{true}\ \big),
+\]
+that is, no message on a subject of root $A$ is ever emitted.
+\end{corollary}
+
+\begin{proof}
+By Proposition~\ref{prop:nameclosure} every name reachable from $T$ lies in
+$\Cl_{S}(T)$, whose defining disjunction has no clause with root $A$ and whose
+base disjuncts are excluded by hypothesis. A message with such a subject would
+require one.
+\end{proof}
+
+Corollary~\ref{cor:root} is the converse half of
+\cite[Prop.~10.5]{rhocomb3} in logical form. The forward half --- that the
+behaviour \emph{is} realised when $\cons_{A}$ is present --- is a modal formula:
+
+\begin{definition}[Separation witness]
+\label{def:witness}
+Let $A$ be a node shape of arity $n$, and let the names
+$a$, $v$ and $k_2,\dots,k_n$ be fixed. Put
+\[
+  W_{A} \ \triangleq\ \may{\ \mm(\quo{\chf{P_a}},\quo{\chf{P_v}})\ }\
+  \Diamond\Big(\ \mm\big(\quo{\chf{A(v,k_2,\dots,k_n)}},
+  \quo{\mathsf{true}}\big) \mid \mathsf{true}\ \Big),
+\]
+where $a = \quo{P_a}$ and $v = \quo{P_v}$.
+\end{definition}
+
+$W_{A}$ is $\mathrm{Spec}_{A}$ of \cite[Def.~10.4]{rhocomb3} written as a
+formula: on receiving $v$ at $a$, emit a message on the constructed subject. By
+Corollary~\ref{cor:root}, $W_{A}$ is unsatisfiable under
+$\Occ(\Atm) \wedge \Conf(\Cl_{S}(T))$ when $\cons_{A} \notin S$ and $v$ is
+chosen outside $\nms{T}$, and it is satisfiable when $\cons_{A}$, $\dd$, $\br$
+and $\mm$ are present. The choice of $v$ remains a side condition of the
+separation argument rather than part of the formula, since it quantifies over
+the term being separated.
+
+\subsection{The formulae, point by point}
+
+\begin{definition}[Base]
+$\Atm_{0} \triangleq \{\mm,\kk,\fw,\bl,\br,\sy,\qq\}$: the medium, the store,
+and the five routers that are not $\dd$.
+\end{definition}
+
+\begin{definition}[Lattice points]
+\label{def:points}
+For $c \subseteq \{\dd,\ev\}$ and $S \subseteq \{\consp,\consm,\consd,\conss\}$
+with $S \neq \emptyset \Rightarrow \consp \in S$, put
+$\Atm_{c,S} \triangleq \Atm_{0} \cup c \cup S$, and
+\[
+  \mathsf{At}_{c,S} \ \triangleq\ \Occ(\Atm_{c,S}),
+  \qquad
+  \mathsf{In}_{c,S}(T) \ \triangleq\
+  \Occ(\Atm_{c,S}) \wedge \Conf(\Cl_{S}(T)) .
+\]
+\end{definition}
+
+$\mathsf{At}_{c,S}$ is the occupancy formula: it holds of exactly the terms of
+the sub-calculus. $\mathsf{In}_{c,S}(T)$ adds the name-closure invariant, which
+is what the strictness arguments consume; it is term-relative because the
+closure namespace is generated from $\nms{T}$.
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+axis & point & formula & by\\
+\midrule
+computation & $\ev \notin c$ & $\Occ(\Atm_{c,S})$, $\ev$ disjunct deleted
+  & Prop.~\ref{prop:occ}\\
+ & with $\#_{\shp} \leq k$ & $\Rightarrow \mathsf{Halts}_{k}$
+  & \cite[Prop.~10.7]{rhocomb3}\\
+ & $\dd \notin c$ & $\Occ(\Atm_{c,S})$, $\dd$ disjunct deleted
+  & Prop.~\ref{prop:occ}\\
+\midrule
+constructors & $\cons_{A} \notin S$ & $\Occ(\Atm_{c,S})$, $\cons_{A}$ disjunct
+  deleted & Prop.~\ref{prop:occ}\\
+ & name closure & $\Conf(\Cl_{S}(T))$, $A$ disjunct deleted
+  & Prop.~\ref{prop:nameclosure}\\
+ & separation & $\neg W_{A}$ & Cor.~\ref{cor:root}\\
+\midrule
+both & invariance & $\Box$ of the above, $\Atm$ rule-closed
+  & Prop.~\ref{prop:subjred}\\
+ & the eight bad points & $\consd \in S,\ \dd \notin c$: not invariant
+  & Prop.~\ref{prop:notindep}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{proposition}[The computation axis, in the logic]
+\label{prop:compaxis}
+$\Occ(\Atm_{c,S}) \wedge (\#_{\shp} \leq k) \Rightarrow \mathsf{Halts}_{k}$ is
+valid whenever $\ev \notin c$.
+\end{proposition}
+
+\begin{proof}
+\cite[Lem.~10.2]{rhocomb3}: every rule but that for $\ev$ strictly decreases the
+number of non-message atoms, and $\#_{\shp}$ counts exactly those by
+Definition~\ref{def:count}. Hence no internal run exceeds $k$ steps, which is
+Definition~\ref{def:term}.
+\end{proof}
+
+\begin{remark}[What the formulae do not decide]
+\label{rem:notdecide}
+$\mathsf{At}_{c,S}$ decides whether $T$ \emph{is} a term of the sub-calculus.
+It does not decide whether $T$ is \emph{equivalent to} one, which is the
+lattice's own ordering. The gap between the two is exactly the content of the
+strictness results: Proposition~\ref{prop:compaxis} and
+Corollary~\ref{cor:root} are the bridges, and they run one way, ruling out
+behaviours below a point rather than characterising the terms at it. A
+characterisation of the semantic position --- ``$T$ is $\bisim$-equivalent to
+some term satisfying $\mathsf{At}_{c,S}$'' --- is not expressible in this logic
+and is very unlikely to be decidable; see open item~\ref{open:semantic}.
+\end{remark}
+
+%==============================================================================
+\section{What the logic does not do}
+\label{sec:notdo}
+
+\paragraph{The observational lattice.} \cite[Fig.~1]{rhocomb3} is a second
+lattice over the same subsets, on which $\qq$ and $\mm$ occupy different points
+and which collapses against encoded observers. Its edges are receptivity
+statements: $\mm(a,v)$ is consumable by every consumer at $a$, while $\qq(a,P)$
+is consumable only by $\fw$ \cite[Rem.~3.6]{rhocomb3}. Receptivity is the
+$\forall\exists$ modality $\rcp{K}\phi$ of \cite[\S7]{softwhere}, and it is not
+derivable from $\may{\phi}\psi$ and negation, which give only the
+$\exists\exists$ and $\forall\forall$ readings --- may and must quantify over
+the same player. The logic as specified therefore sees the $\qq$--$\mm$
+distinction \emph{structurally}, through the separate productions
+$\qq(\nu,\psi)$ and $\mm(\nu_1,\nu_2)$, and not \emph{behaviourally}. For
+occupancy that is enough. For anything about the observational ordering it is
+not, and the repair is to add $\rcp{\phi}\psi$ as a second primitive.
+
+\paragraph{Adequacy.} By Corollary~\ref{cor:intensional} the logic separates
+terms up to $\scong$, so it is not a characteristic logic for
+$\bisim_{\enc{\Ctx_{\mathrm{rho}}}}$, nor for any coarser relation. This is a
+design choice and not an oversight: an occupancy formula must see the shape of
+a term, and any logic that does will be at least as discriminating as its
+structural layer. Identifying the extensional sublogic --- the fragment
+invariant under $\bisim_{\Obs}$ --- is the natural companion question and is
+open item~\ref{open:extensional}. The same tension in its general form is the
+subject of \cite{extnote}.
+
+\paragraph{Minimal labels.} The labels of $\may{\phi}\psi$ are enabling
+contexts, following \cite[\S6]{rhocomb3}; the minimal-label discipline via
+relative pushouts is \cite{bihol}'s and is not used here. Nothing in this note
+needs it, and Remark~\ref{rem:bdd} means the enabling contexts are already
+small.
+
+\paragraph{Cost.} The logic has no grading. The name-growth question of
+\cite[\S13]{rhocomb3} --- that with constructors the names are no longer
+subterms of the program --- shows up here as the observation that $\Cl_{S}(T)$
+is an infinite namespace with a finite presentation, which is exactly the
+situation a graded clause is built for. That is the bridge to
+\cite{softwhere}'s stage two and is not pursued.
+
+%==============================================================================
+\section{Open items}
+\label{sec:open}
+
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+
+\item \label{open:witness} \textbf{Finite witnesses for the modality.}
+Conjecture~\ref{conj:witness}, and its extension past the $\fix$-free fragment.
+Without it Proposition~\ref{prop:decmodal} carries a hypothesis on labels that
+excludes the labels one actually writes.
+
+\item \label{open:eight} \textbf{The eight non-invariant points.}
+Proposition~\ref{prop:notindep} and Remark~\ref{rem:waysout}. This is a question
+for \cite{rhocomb3} rather than for the logic, and the answer changes
+\cite[Fig.~2]{rhocomb3}.
+
+\item \label{open:extensional} \textbf{The extensional sublogic.} Which formulae
+are invariant under $\bisim_{\enc{\Ctx_{\mathrm{rho}}}}$? The modality-only
+fragment is the obvious candidate and is not obviously closed under the
+fixpoint.
+
+\item \label{open:semantic} \textbf{Semantic position.} Is there any useful
+approximation to ``equivalent to a term of the sub-calculus'' that the logic can
+express? Remark~\ref{rem:notdecide}.
+
+\item \label{open:recept} \textbf{Receptivity.} Adding $\rcp{\phi}\psi$, and
+whether Theorem~\ref{thm:decstruct} survives it. The $\forall$ over contexts is
+the same infinity that Decision~\ref{dec:omit} removed with the guarantee, so
+the answer is probably that it survives only under
+Conjecture~\ref{conj:witness}.
+
+\item \label{open:impl} \textbf{Implementation.} The structural fragment is a
+bottom-up tree-automaton run and should fall out of the existing
+\texttt{f1r3space} crate \cite{f1r3space} with the restriction connectives
+deleted and the atom productions added. Theorem~\ref{thm:occlinear} says the
+occupancy checker is a separate and much simpler artefact, and it is the one the
+lattice needs.
+
+\item \label{open:conj} \textbf{Duplication.} \cite[Conj.~10.9]{rhocomb3}.
+Remark~\ref{rem:frontier} gives a second reason to want it settled.
+
+\end{enumerate}
+
+%==============================================================================
+\sloppy
+\begin{thebibliography}{99}
+
+\bibitem{bihol} C.\,B. Wells, M. Stay and L.\,G. Meredith.
+\emph{Behavior in higher-order languages: admissible observers, relative
+pushouts, and the encoding of extended theories.}
+In preparation, F1R3FLY.io, 2026.
+
+\bibitem{Caires04} L. Caires.
+\emph{Behavioral and spatial observations in a logic for the $\pi$-calculus.}
+FOSSACS 2004, LNCS 2987, 72--89.
+
+\bibitem{CairesCardelli03} L. Caires and L. Cardelli.
+\emph{A spatial logic for concurrency (part I).}
+Information and Computation 186(2):194--235, 2003.
+
+\bibitem{extnote} L.\,G. Meredith.
+\emph{Every constructor an interaction: observer extensions, and the
+discriminating power of spatial formulae in interactive graph-structured lambda
+theories.}
+F1R3FLY.io, 2026.
+
+\bibitem{f1r3space} F1R3FLY.io.
+\emph{F1R3Space --- semantics of the rho model checker.}
+Draft 0.1, \texttt{F1R3FLY-io/\allowbreak F1R3Space}, \texttt{MC-Rholang/}, 2026.
+
+\bibitem{MeredithRadestock05} L.\,G. Meredith and M. Radestock.
+\emph{A reflective higher-order calculus.}
+Electronic Notes in Theoretical Computer Science 141(5):49--67, 2005.
+
+\bibitem{rhocomb3} L.\,G. Meredith and M. Stay.
+\emph{Name-free combinators for the rho calculus: a repair, a linear encoding,
+and the one operation that was missing.}
+Draft 3, \texttt{F1R3FLY-io/\allowbreak publications}, \texttt{rho-combinators/}, 2026.
+
+\bibitem{softwhere} F1R3FLY.io.
+\emph{Context-labelled hybrid logic for a rho calculus with where-clauses.}
+Specification for the F1R3Ware checker,
+\texttt{F1R3FLY-io/\allowbreak F1R3Space}, \texttt{Softwhere/\allowbreak where-\allowbreak context-\allowbreak labels.tex},
+2026.
+
+\bibitem{Yoshida02} N. Yoshida.
+\emph{Minimality and separation results on asynchronous mobile processes:
+representability theorems by concurrent combinators.}
+Theoretical Computer Science 274(1--2):231--276, 2002.
+
+\end{thebibliography}
+
+\end{document}
