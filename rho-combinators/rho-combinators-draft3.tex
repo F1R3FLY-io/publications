@@ -64,30 +64,42 @@
 \noindent
 The name-free concurrent combinators of \emph{Name-free combinators for
 concurrency} were proposed as a target into which the rho calculus embeds
-with no binders at all. This note asks whether the embedding is correct,
-and finds three things. The combinator calculus as published is unsound,
-and the defect is one equation: the structural identification
-$\drp{\quo{P}} \scong P$, which makes every running process a redex. It is
-removed, and the identification recovered where it is wanted through the
-semantic substitution of the original Meredith--Radestock presentation ---
-whose drop clause turns out to be the combinator rewrite for $\ev$, promoted
-from the metatheory to a reduction rule. Second, with the defect repaired the
-combinators still fall short of the rho calculus, and by exactly one
+with no binders at all. This note asks whether the embedding is correct. It
+is not, and the repairs are instructive.
+
+The published calculus is unsound, and the defect is the conflation of the
+rho calculus drop with the guard that consumes a message and runs its
+payload: under $\drp{\quo{P}} = P$ that conflation makes every running
+process a redex. Separating the two constructors repairs it and leaves two
+sound presentations, both given here as operational theories --- one keeping
+the equation and decoding by it, one omitting it, sorting message payloads as
+processes, and decoding by the $\ev$ rule, which is then literally the drop
+clause of Meredith--Radestock substitution promoted from the metatheory.
+Neither can be assembled piecemeal from the other, and only the second lets a
+decoder return an optimised representative rather than an equal one, which is
+what an implementation that normalises on decode actually does.
+
+Repaired, the combinators still fall short of the rho calculus by exactly one
 capability: they have a name destructor and no name constructor, so they can
-open a name that arrives at runtime but never build one. A name-closure
-lemma turns this into the bottom edge of an expressiveness lattice over
-subsets of the atom set, developed in \S\ref{sec:lattice}. A small family of constructors closes
-the gap --- four suffice, each building the quotation of one node from names,
-chief among them $\cons_{\mid}(a,b,c)$ for parallel composition --- and the
-translation then covers the whole calculus with no fragment restriction. Third, reflection buys an unexpected efficiency: a continuation
-can be quoted and released by a gate rather than rewritten atom by atom, so
-prefix elimination is linear where Yoshida's is $\Theta(3^{d})$ in the nesting
-depth of inputs. Correctness is established as full abstraction relative to
-encoded contexts, in the sense of the companion note, and the restriction to
-encoded observers is shown to be forced. A final section gives an alternative
-presentation in which $\mm$ and $\qq$ are not primitive but the nullary
-members of the constructor family, leaving a calculus of routers, one
-destructor, and constructors.
+open a name that arrives at runtime but never build one. A name-closure lemma
+makes this the bottom edge of an expressiveness lattice over subsets of the
+atoms, developed here in place of a single separation theorem. The lattice
+carries two orderings, expressive and observational, which do not coincide,
+because the calculus has no name hiding; both are drawn. Four constructors
+close the gap, one for each node a rebuilt name can have, and the translation
+then covers the whole calculus with no fragment restriction.
+
+Reflection also buys an unexpected efficiency. A continuation can be quoted
+and released by a three-atom gate rather than rewritten atom by atom, so
+prefix elimination is linear where Yoshida's is $\Theta(3^{d})$ in the
+nesting depth of inputs. Correctness is established as full abstraction
+relative to encoded contexts, in the sense of the companion note, and the
+restriction to encoded observers is shown to be forced --- which is also
+where the storage combinator earns its place, since it holds a continuation
+invisibly rather than as an observable message. A final section gives an
+alternative presentation in which the message and the store are not primitive
+but the nullary members of the constructor family, leaving a calculus of
+routers, one destructor, and constructors.
 \end{abstract}
 
 \tableofcontents
@@ -119,9 +131,10 @@ are mutually inverse up to structural congruence. In the combinator setting
 the drop is not a process former but a guard, and since every name is
 $\quo{Q}$ for some $Q$, the identification makes an arbitrary running process
 match the guard. Proposition~\ref{prop:defect}: for all $P,Q$,
-$Q \mid \mm(\quo{Q},\quo{P}) \red P$. The repair is to drop the equation,
-retain $\quo{\drp{x}} \nequiv x$, and let semantic substitution do the rest
-(\S\ref{sec:why}).
+$Q \mid \mm(\quo{Q},\quo{P}) \red P$. The repair is to separate the drop from
+the guard, which leaves the equation optional;
+\S\ref{sec:two} gives both presentations and \S\ref{sec:why} compares
+them.
 
 \item \textbf{Reflection was half-implemented.} The rule
 $\ev(a) \mid \mm(a,\quo{P}) \red P$ opens a name that arrives at runtime.
@@ -258,87 +271,178 @@ designed to leave. Source terms are assumed guarded-drop throughout.
 \section{The rho combinators}
 \label{sec:comb}
 
-\subsection{Atoms and rules}
+\subsection{Notation}
 
-\begin{definition}[Syntax]
-\begin{align*}
- A &\;::=\; \mm(a,b) \;\mid\; \dd(a,b,c) \;\mid\; \kk(a) \;\mid\; \fw(a,b)
-       \;\mid\; \bl(a,b) \;\mid\; \br(a,b) \;\mid\; \sy(a,b,c)\\
-   &\qquad \mid\; \ev(a) \;\mid\; \qq(a,P)\\
-   &\qquad \mid\; \cons_{\mid}(a,b,c) \;\mid\; \cons_{\mm}(a,b,c)
-       \;\mid\; \cons_{\dd}(a,b,c,e) \;\mid\; \cons_{\sy}(a,b,c,e)\\
- P,Q &\;::=\; \nil \;\mid\; A \;\mid\; P \mid Q
- \qquad\qquad
- a,b,c \;::=\; \quo{P}
-\end{align*}
-\end{definition}
+We present the combinators as an operational theory: formation judgements,
+equations, and named rewrite rules, each under a context assigning sorts to
+its variables. There are two sorts, $\mathsf{N}$ for names and $\mathsf{P}$
+for processes. This is heavier than the grammar of \cite{rhocomb} and earns
+its weight in \S\ref{sec:two}, where two presentations differ precisely in
+which sort a message payload has, a distinction a single-sorted grammar hides.
 
-The first seven are Yoshida's, with her readings: $\dd$ duplicates a message
-to two locations, $\kk$ discards it, $\fw$ forwards it, $\br$ and $\bl$ bind
-the received name for output and for input respectively, and $\sy$
-synchronises without passing a value. Note that $\mm(a,b)$ takes two
-\emph{names}; since every name is a quoted process, $\mm(a,\quo{P})$ is the
-same atom written with its payload displayed. The last three are new and are
-discussed below.
+\subsection{Formation}
 
-\begin{definition}[Structural congruence, name equivalence]
-\label{def:combcong}
-$\scong$ is the least congruence making $(\mathsf{Proc},\mid,\nil)$ an
-abelian monoid. There is no clause for $\alpha$-equivalence, there being no
-binders, and \emph{no clause identifying $\drp{\quo{P}}$ with $P$}. Name
-equivalence $\nequiv$ is as in \S\ref{sec:rho}.
-\end{definition}
-
-\begin{definition}[Reduction]
-\label{def:combred}
 \[
-\begin{array}{rcl@{\qquad}rcl}
-  \dd(a,b,c) \mid \mm(a,v) &\red& \mm(b,v) \mid \mm(c,v)
-    & \br(a,b) \mid \mm(a,v) &\red& \fw(b,v)\\
-  \kk(a) \mid \mm(a,v) &\red& \nil
-    & \bl(a,b) \mid \mm(a,v) &\red& \fw(v,b)\\
-  \fw(a,b) \mid \mm(a,v) &\red& \mm(b,v)
-    & \sy(a,b,c) \mid \mm(a,v) &\red& \fw(b,c)\\
-  \ev(a) \mid \mm(a,\quo{P}) &\red& P
-    & \fw(a,b) \mid \qq(a,P) &\red& \mm(b,\quo{P})\\
-  \multicolumn{6}{l}{\cons_{\mid}(a,b,c) \mid \mm(a,\quo{P}) \mid \mm(b,\quo{Q})
-     \ \red\ \mm(c,\quo{(P \mid Q)})}\\
-  \multicolumn{6}{l}{\cons_{\mm}(a,b,c) \mid \mm(a,u) \mid \mm(b,v)
-     \ \red\ \mm(c,\quo{\mm(u,v)})}\\
-  \multicolumn{6}{l}{\cons_{\dd}(a,b,c,e) \mid \mm(a,u) \mid \mm(b,v)
-     \mid \mm(c,w) \ \red\ \mm(e,\quo{\dd(u,v,w)})}\\
-  \multicolumn{6}{l}{\cons_{\sy}(a,b,c,e) \mid \mm(a,u) \mid \mm(b,v)
-     \mid \mm(c,w) \ \red\ \mm(e,\quo{\sy(u,v,w)})}
+\begin{array}{l@{\qquad}l}
+ a,b : \mathsf{N} \vdash \mm(a,b) : \mathsf{P}
+   & a,b : \mathsf{N} \vdash \bl(a,b) : \mathsf{P}\\
+ a,b,c : \mathsf{N} \vdash \dd(a,b,c) : \mathsf{P}
+   & a,b : \mathsf{N} \vdash \br(a,b) : \mathsf{P}\\
+ a : \mathsf{N} \vdash \kk(a) : \mathsf{P}
+   & a,b,c : \mathsf{N} \vdash \sy(a,b,c) : \mathsf{P}\\
+ a,b : \mathsf{N} \vdash \fw(a,b) : \mathsf{P}
+   & a : \mathsf{N} \vdash \ev(a) : \mathsf{P}\\
+ a : \mathsf{N},\ p : \mathsf{P} \vdash \qq(a,p) : \mathsf{P}
+   & a,b,c : \mathsf{N} \vdash \cons(a,b,c) : \mathsf{P}\\
+ a,b,c : \mathsf{N} \vdash \cons_{\mm}(a,b,c) : \mathsf{P}
+   & a,b,c,f : \mathsf{N} \vdash \cons_{\dd}(a,b,c,f) : \mathsf{P}\\
+ a,b,c,f : \mathsf{N} \vdash \cons_{\sy}(a,b,c,f) : \mathsf{P}
+   & \vdash \nil : \mathsf{P}\\
+ p,q : \mathsf{P} \vdash p \mid q : \mathsf{P}
+   & p : \mathsf{P} \vdash \quo{p} : \mathsf{N}\\
+ a : \mathsf{N} \vdash \drp{a} : \mathsf{P}\\
 \end{array}
 \]
-closed under parallel composition and under $\scong$, with subjects matched
-up to $\nequiv$.
+
+We write $\cons$ for the parallel constructor, $\cons_{\mid}$ where the
+subscript aids reading. Note that $\drp{-}$ and $\ev$ are distinct
+constructors: the first is the drop of the rho calculus, the second the guard
+that consumes a message and runs its payload. Conflating them is the defect
+of \S\ref{sec:defect}.
+
+\subsection{Equations, and the two presentations}
+\label{sec:two}
+
+\begin{definition}[Equations]
+\label{def:combcong}
+Common to both presentations:
+\[
+\begin{array}{l}
+ p,q : \mathsf{P} \vdash p \mid q = q \mid p\\
+ p,q,r : \mathsf{P} \vdash (p \mid q) \mid r = p \mid (q \mid r)\\
+ p : \mathsf{P} \vdash p \mid \nil = p\\
+ a : \mathsf{N} \vdash \quo{\drp{a}} = a
+\end{array}
+\]
 \end{definition}
+
+The two presentations differ in one equation and, consequently, in the sort
+of a message payload and in the form of the $\mathsf{eval}$ rule.
+
+\paragraph{Presentation A (identified).} Add
+\[
+  p : \mathsf{P} \vdash \drp{\quo{p}} = p
+\]
+so that $\quo{-}$ and $\drp{-}$ are inverse bijections between the sorts.
+Message payloads are names, $\mm(a,b)$ with $b : \mathsf{N}$, and decoding is
+performed by the equation:
+\[
+  a,v : \mathsf{N} \vdash \mathsf{eval} : \ev(a) \mid \mm(a,v) \red \drp{v}
+\]
+which is the intended process because $\drp{\quo{p}} = p$.
+
+\paragraph{Presentation B (original).} Omit that equation. Message payloads
+are then processes, $\mm(a,p)$ with $p : \mathsf{P}$, matching the output
+constructor $\out{x}{P}$ of the source calculus, and decoding is performed by
+the rule:
+\[
+  a : \mathsf{N},\ p : \mathsf{P} \vdash \mathsf{eval} :
+  \ev(a) \mid \mm(a,p) \red p
+\]
+
+\begin{remark}[The presentations are not interchangeable piecemeal]
+\label{rem:notpiecemeal}
+One cannot omit $\drp{\quo{p}} = p$ and keep name-sorted payloads. With
+name-sorted payloads the only available rule is $\ev(a) \mid \mm(a,v) \red
+\drp{v}$, and without the equation the result is a stuck drop; while
+pattern-matching the payload as $\quo{p}$ is ambiguous, since
+$\quo{\drp{a}} = a$ lets any $v$ be read as $\quo{\drp{v}}$, so the rule
+could return either $\drp{v}$ or, when $v$ is literally $\quo{Q}$, the
+process $Q$ --- and without the equation these differ. Sorting the payload as
+a process removes the ambiguity, because the payload is then given rather
+than recovered. The two presentations are thus each internally forced, and
+the choice between them is the choice of where decoding happens.
+\end{remark}
+
+\begin{definition}[Rules]
+\label{def:combred}
+Common to both presentations, with the payload metavariable read as a name in
+A and as a process in B:
+\[
+\begin{array}{l}
+ a,b,c,v : \mathsf{N} \vdash \mathsf{dist} :
+   \dd(a,b,c) \mid \mm(a,v) \red \mm(b,v) \mid \mm(c,v)\\
+ a,v : \mathsf{N} \vdash \mathsf{kill} : \kk(a) \mid \mm(a,v) \red \nil\\
+ a,b,v : \mathsf{N} \vdash \mathsf{forward} :
+   \fw(a,b) \mid \mm(a,v) \red \mm(b,v)\\
+ a,b,v : \mathsf{N} \vdash \mathsf{bind}_{\mathsf{l}} :
+   \bl(a,b) \mid \mm(a,v) \red \fw(v,b)\\
+ a,b,v : \mathsf{N} \vdash \mathsf{bind}_{\mathsf{r}} :
+   \br(a,b) \mid \mm(a,v) \red \fw(b,v)\\
+ a,b,c,v : \mathsf{N} \vdash \mathsf{synch} :
+   \sy(a,b,c) \mid \mm(a,v) \red \fw(b,c)\\
+ a,b : \mathsf{N},\ p : \mathsf{P} \vdash \mathsf{quote} :
+   \fw(a,b) \mid \qq(a,p) \red \mm(b,\quo{p})\\
+ a,b,c : \mathsf{N},\ p,r : \mathsf{P} \vdash \mathsf{make}_{\mid} :
+   \cons(a,b,c) \mid \mm(a,\quo{p}) \mid \mm(b,\quo{r})
+   \red \mm(c,\quo{(p \mid r)})\\
+ a,b,c,u,v : \mathsf{N} \vdash \mathsf{make}_{\mm} :
+   \cons_{\mm}(a,b,c) \mid \mm(a,u) \mid \mm(b,v)
+   \red \mm(c,\quo{\mm(u,v)})\\
+ a,b,c,f,u,v,w : \mathsf{N} \vdash \mathsf{make}_{\dd} :
+   \cons_{\dd}(a,b,c,f) \mid \mm(a,u) \mid \mm(b,v) \mid \mm(c,w)
+   \red \mm(f,\quo{\dd(u,v,w)})\\
+ a,b,c,f,u,v,w : \mathsf{N} \vdash \mathsf{make}_{\sy} :
+   \cons_{\sy}(a,b,c,f) \mid \mm(a,u) \mid \mm(b,v) \mid \mm(c,w)
+   \red \mm(f,\quo{\sy(u,v,w)})
+\end{array}
+\]
+together with the presentation's own $\mathsf{eval}$, closed under parallel
+composition and under the equations, with subjects matched up to $\nequiv$.
+\end{definition}
+
+For the remainder we write payloads in presentation A's notation,
+$\mm(a,\quo{p})$; under B read $\mm(a,p)$. No rule, lemma or proof below
+distinguishes the two.
 
 Reduction is nondeterministic and is meant to be. Two consumers may compete
 for one message, as in $\dd(a,b,c) \mid \kk(a) \mid \mm(a,v)$; and two
 producers may compete for one consumer, as in
-$\fw(a,b) \mid \mm(a,v) \mid \qq(a,P)$, where $\fw$ is the consumer at $a$ and
-$\mm$ and $\qq$ both offer a value there. Neither is pathological and neither
-is new: they are the two sides of the race the communication rule has always
-had.
+$\fw(a,b) \mid \mm(a,v) \mid \qq(a,p)$, where $\fw$ is the consumer at $a$
+and $\mm$ and $\qq$ both offer a value there. Neither is pathological and
+neither is new: they are the two sides of the race the communication rule has
+always had.
+
+\begin{remark}[Departures from the published rules]
+\label{rem:departures}
+Three corrections are folded into Definition~\ref{def:combred} and are worth
+flagging, since they are easy to reintroduce. The binders must produce
+forwarders, $\br(a,b) \mid \mm(a,v) \red \fw(b,v)$ and
+$\bl(a,b) \mid \mm(a,v) \red \fw(v,b)$; a version producing a message merely
+duplicates $\mathsf{forward}$ and loses the only function these atoms have,
+which is to bind the received name into a redirection --- the links of kinds
+(o1) and (o2) in \S\ref{sec:translation} depend on it. $\fw$ is binary
+throughout. And in the constructors the delivery channel $f$ must appear in
+the atom's own argument list, distinct from the input channels.
+\end{remark}
 
 \subsection{The defect}
+\label{sec:defect}
 
 \begin{proposition}
 \label{prop:defect}
-Suppose Definition~\ref{def:combcong} is extended with $\drp{\quo{P}} \scong
-P$, with $\ev$ written $\mathsf{*}$ so that the drop and the drop combinator
-are one syntactic form. Then for all $P,Q$,
+Suppose $\drp{-}$ and $\ev$ are the same constructor, as in \cite{rhocomb},
+where the guard is written $\mathsf{*}$; and suppose
+$\drp{\quo{p}} = p$. Then for all $P,Q$,
 \[
   Q \mid \mm(\quo{Q},\quo{P}) \;\red\; P.
 \]
 \end{proposition}
 
 \begin{proof}
-Every name is $\quo{Q}$ for some $Q$, so $\mathsf{*}(\quo{Q}) \scong Q$ by
-the added equation. Reduction is closed under $\scong$, so the redex
-$\mathsf{*}(a) \mid \mm(a,\quo{P})$ with $a = \quo{Q}$ matches
+Every name is $\quo{Q}$ for some $Q$, so under the conflation
+$\mathsf{*}(\quo{Q}) = Q$. Reduction is closed under the equations, so the
+redex $\mathsf{*}(a) \mid \mm(a,\quo{P})$ with $a = \quo{Q}$ matches
 $Q \mid \mm(\quo{Q},\quo{P})$, and the rule fires.
 \end{proof}
 
@@ -348,15 +452,14 @@ survives this.
 
 \begin{remark}
 \label{rem:atom}
-The repair is to omit the equation and to recognise $\ev(a)$ as an
-\emph{atom} rather than a process former: it is the combinator corresponding
-to $\inp{y}{a}{\drp{y}}$, a guard that listens on $a$ and runs what arrives.
-\cite{rhocomb} lists it under the process production, alongside parallel
-composition, which is what invites the identification with the drop. Nothing
-else in \cite{rhocomb} depends on the discarded equation: it occurs exactly
-once, in the definition of the structural congruence, while every other
-appearance of a drop there stands in payload position inside a quotation and
-requires $\quo{\drp{x}} \nequiv x$, the half that is kept.
+The hypothesis that does the damage is the conflation, not the equation. The
+published grammar lists the guard under the process production alongside
+parallel composition, which invites reading it as the drop; separating the
+two constructors, as the formation rules above do, repairs the calculus and
+leaves both presentations of \S\ref{sec:two} available. It is worth being
+explicit that Proposition~\ref{prop:defect} is therefore not an argument
+against $\drp{\quo{p}} = p$; the argument about that equation is in
+\S\ref{sec:why}, and it is not an argument from soundness.
 \end{remark}
 
 \subsection{The storage combinator}
@@ -364,21 +467,19 @@ requires $\quo{\drp{x}} \nequiv x$, the half that is kept.
 
 \begin{remark}[$\qq$ is a message only a forwarder can read]
 \label{rem:q}
-The rule for $\qq$ has the same right-hand side as the rule for $\fw$. So
-$\qq(a,P)$ and $\mm(a,\quo{P})$ are indistinguishable to a forwarder, and
-differ everywhere else: a message at $a$ may be consumed by any of $\dd$,
-$\kk$, $\br$, $\bl$, $\sy$, $\ev$, a constructor or $\fw$, whereas $\qq(a,P)$ may
-be consumed only by $\fw$. Since $\fw(a,a) \mid \qq(a,P) \red \mm(a,\quo{P})$,
-$\qq$ is not a message awaiting a trigger but the introduction form for a
-name constant, of which $\mm$ is the already-manifest case. Writing the
-payload as a name, $\qq(a,v)$ with $\fw(a,b) \mid \qq(a,v) \red \mm(b,v)$,
-makes the parallel with $\mm(a,v)$ exact.
+The rule $\mathsf{quote}$ has the same right-hand side as
+$\mathsf{forward}$. So $\qq(a,p)$ and $\mm(a,\quo{p})$ are indistinguishable
+to a forwarder, and differ everywhere else: a message at $a$ may be consumed
+by any of $\dd$, $\kk$, $\br$, $\bl$, $\sy$, $\ev$, a constructor or $\fw$,
+whereas $\qq(a,p)$ may be consumed only by $\fw$. Since
+$\fw(a,a) \mid \qq(a,p) \red \mm(a,\quo{p})$, $\qq$ is not a message awaiting
+a trigger but the introduction form for a name constant, of which $\mm$ is
+the already-manifest case.
 \end{remark}
 
 $\qq$ adds no expressive power --- it satisfies Lemma~\ref{lem:nonames} --- and
 is not needed for the translation to be definable. What it provides is
-opacity, and the need for it is best stated after the constructors are in
-hand; see Remark~\ref{rem:loudquiet}.
+opacity; see Remark~\ref{rem:loudquiet}.
 
 \subsection{The name constructors}
 \label{sec:cons}
@@ -409,10 +510,10 @@ A name to be rebuilt is $\quo{\enc{S}}$ for a source term $S$ with the bound
 name free in it, and $\enc{-}$ is a homomorphism, so the nodes of
 $\enc{S}$ are those of $S$. Take the path from an occurrence to the root;
 every node off the path is static and is supplied as a constant message,
-joined on by $\cons_{\mid}$. On the path, by
+joined on by $\cons$. On the path, by
 Definition~\ref{def:translation}: an occurrence under $\drp{-}$ is the
 received name itself, needing no constructor; a parallel composition needs
-$\cons_{\mid}$; an output $\out{v}{T}$ has image $\mm(\enc{v},
+$\cons$; an output $\out{v}{T}$ has image $\mm(\enc{v},
 \quo{\enc{T}})$ and needs $\cons_{\mm}$, which covers both a dynamic
 subject and a dynamic payload; and an input $\inp{z}{v}{T}$ has image
 $D(\enc{v};\vec p) \mid G \mid \vec L$ in which $\enc{v}$ occurs only in
@@ -444,43 +545,64 @@ worth paying in the presentation, though it is worth recording that the two
 formulations have the same reach.
 \end{remark}
 
-\section{Why the original presentation is the right one here}
+\section{Where the decoding happens}
 \label{sec:why}
 
-Proposition~\ref{prop:defect} shows the Meredith--Radestock presentation is
-\emph{necessary} for the combinators. Three further observations show it is
-fitted to them.
+Both presentations of \S\ref{sec:two} are sound, and every result in this
+note holds under either. They differ in where the decoding of a name into
+the process it quotes is performed, and that difference has consequences
+worth stating rather than settling by fiat.
 
-\paragraph{The $\ev$ rule is the substitution clause.} Compare
+\paragraph{A puts the decoding in the equations.} $\drp{\quo{p}} = p$ makes
+$\quo{-}$ and $\drp{-}$ inverse bijections, so $\mathsf{N} \cong \mathsf{P}$
+and the two sorts carry the same information. Decoding is then not an event:
+$\drp{v}$ \emph{is} the process, and $\mathsf{eval}$ need only produce the
+term $\drp{v}$ and let the equation do the rest. The presentation is
+economical and the rule is uniform in the payload.
+
+\paragraph{B puts the decoding in the rule.} Without the equation, the
+quotation of a process is an opaque name until some rule opens it, and
+$\mathsf{eval}$ is that rule. This is the arrangement of
+\cite{MeredithRadestock05}, where the corresponding clause is the drop case
+of substitution, $(\drp{y})\{\quo{Q}/y\} = Q$. Compare it with the rule:
 \[
   (\drp{y})\{\quo{Q}/y\} \;=\; Q
-  \qquad\text{with}\qquad
-  \ev(a) \mid \mm(a,\quo{Q}) \;\red\; Q .
+  \qquad\text{against}\qquad
+  \ev(a) \mid \mm(a,p) \;\red\; p .
 \]
-These are the same equation. In the rho calculus the decoding happens at
-substitution time, in the metatheory; in the combinators, which have no
-substitution, it happens at communication time, as a reduction. A
-presentation that instead identifies $\drp{\quo{Q}}$ with $Q$ by congruence
-leaves the combinator rule with nothing to correspond to, and must put the
-decoding into $\scong$ --- where, by Proposition~\ref{prop:defect}, it is
-fatal. The reason is structural rather than notational: the combinators pass
-names and do not inspect them, so the only way they can reach the process a
-name encodes is by an explicit step, and an explicit step is a reduction.
+These are the same equation, the first in the metatheory of a calculus with
+substitution and the second in a calculus without one.
 
-\paragraph{The surviving half is load-bearing.} $\quo{\drp{x}} \nequiv x$ is
-what makes it possible to send a name at all. A message carries a process, so
-``send the name $x$ on $v$'' is $\out{v}{\drp{x}}$, with payload
-$\quo{\drp{x}}$; the encoding $\mm(v,x)$ is legitimate only because
-$\quo{\drp{x}} \nequiv x$.
+\paragraph{What B affords.} Because decoding is an event rather than an
+identity, the decoder is free to return any process bisimilar to the one
+quoted, rather than one equal to it. Under A that freedom is not available:
+$\drp{\quo{p}}$ and $p$ are equal, so any two decodings of the same name are
+equal, and a decoder that returns something else is not implementing the
+equation.
 
-\paragraph{Correctness lives at $\bisim$ in any case.} Prefix elimination
-introduces administrative forwarders (\S\ref{sec:correct}), so the image of a
-source term is never structurally identical to what one would write by hand,
-only bisimilar to it. A presentation whose decoder may return a bisimilar
-rather than a congruent process is already calibrated to the theory in which
-the translation can be stated, and the congruence one wants is recovered
-downstream, by the equivalence of \S\ref{sec:clb}, rather than asserted
-upfront in $\scong$.
+This is not a hypothetical distinction. The F1R3FLY implementation normalises
+on decode: what is handed back has been rearranged, and bound variables have
+been replaced by de Bruijn indices. Neither transformation is derivable from
+the equations of Definition~\ref{def:combcong}, which give only the monoid
+laws and $\quo{\drp{a}} = a$. Under A the implementation is therefore not
+sound for the stated theory; under B it is, because the theory only ever
+claims the decoded process up to the equivalence of \S\ref{sec:clb}. An
+implementation that normalises is evidence about which presentation is being
+implemented, and it is B.
+
+\paragraph{The surviving equation is load-bearing in both.}
+$\quo{\drp{a}} = a$ is what makes it possible to send a name at all. A
+message carries a process in B, so ``send the name $x$'' is
+$\mm(v,\drp{x})$, whose quotation is $\quo{\drp{x}} = x$; in A the payload is
+$x$ directly and the equation is what identifies the two readings. Every
+name-forwarding clause of the translation depends on it.
+
+\paragraph{A remark on sorts.} Under A the two sorts are isomorphic, so one
+may ask what work the sorting does. It does the work of
+Proposition~\ref{prop:defect}: an isomorphism is not an identification of
+constructors, and keeping $\ev$ distinct from $\drp{-}$ is what prevents an
+arbitrary process from matching a guard. The published single-sorted grammar
+had no way to say this.
 
 \section{Context-labelled bisimilarity}
 \label{sec:clb}
@@ -780,10 +902,9 @@ Lemma~\ref{lem:linkexp} applies. Uniqueness follows from
 Lemmas~\ref{lem:inert} and~\ref{lem:linearity}.
 \end{proof}
 
-The (o4) case is where semantic substitution and the $\ev$ rule coincide;
-with syntactic substitution the two sides would differ by
-$\drp{\quo{\enc{R}}}$ against $\enc{R}$ and the lemma would need the discarded
-congruence. The (o5) case is where the constructor earns its place.
+The (o4) case is where the source's substitution and the target's $\ev$ rule
+coincide: under presentation B both deliver $\enc{R}$ directly, and under A
+both deliver $\drp{\quo{\enc{R}}}$, which the equation makes equal to it. The (o5) case is where the constructor earns its place.
 
 \begin{lemma}[Seed independence]
 \label{lem:seedind}
@@ -1289,9 +1410,17 @@ Restricted to what bears on the rho calculus; the material specific to the
 $\pi$-calculus route is out of scope here.
 
 \begin{enumerate}[leftmargin=1.6em]
-\item \textbf{Structural congruence.} Delete $\mathsf{*}(\quo{P}) \scong P$
-(Proposition~\ref{prop:defect}), and move the drop combinator from the
-process production to the atom production (Remark~\ref{rem:atom}).
+\item \textbf{The drop and the guard are conflated.} The published grammar
+writes both as $\mathsf{*}$ and lists the guard under the process
+production, which makes every running process a redex
+(Proposition~\ref{prop:defect}). They must be separate constructors. The
+equation $\mathsf{*}(\quo{P}) = P$ may then be kept or omitted
+(\S\ref{sec:two}); it is not the source of the unsoundness.
+
+\item \textbf{The binders produce messages rather than forwarders} in some
+statements of the rules, which collapses them into $\mathsf{forward}$; see
+Remark~\ref{rem:departures}, which also records the arity slips in $\fw$ and
+in the constructors' delivery channel.
 
 \item \textbf{No rho-to-combinator translation is given.} The outline
 promises that the encoding of a source calculus into the combinators
