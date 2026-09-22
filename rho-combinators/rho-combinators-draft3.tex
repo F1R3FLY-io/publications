@@ -47,8 +47,9 @@
 \newcommand{\sy}{\mathsf{s}}
 \newcommand{\ev}{\mathsf{e}}
 \newcommand{\qq}{\mathsf{q}}
-\newcommand{\Wt}{\mathsf{W}}
 \newcommand{\cons}{\mathsf{cons}}
+\newcommand{\Lft}{\mathsf{L}}
+\newcommand{\Rgt}{\mathsf{R}}
 \newcommand{\red}{\longrightarrow}
 \newcommand{\wred}{\longrightarrow^{*}}
 \newcommand{\scong}{\equiv}
@@ -56,7 +57,7 @@
 \title{\textbf{Name-Free Combinators for the Rho Calculus}\\[4pt]
 \large A repair, a linear encoding, and the one operation that was missing}
 \author{F1R3FLY.io research note}
-\date{September 2026 --- draft 3 (rewritten), revision 1, 22 September 2026}
+\date{September 2026 --- draft 3 (rewritten)}
 
 \begin{document}
 \maketitle
@@ -101,15 +102,6 @@ invisibly rather than as an observable message. A final section gives an
 alternative presentation in which the message and the store are not primitive
 but the nullary members of the constructor family, leaving a calculus of
 routers, one destructor, and constructors.
-
-\paragraph{Revision 1.} Lemma~\ref{lem:atomcount} was stated for the plain
-count of non-message atoms, which $\bl$, $\br$ and $\sy$ do not decrease: each
-consumes itself and produces a $\fw$. The term
-$\bl(a,b) \mid \mm(a,v) \mid \mm(v,x)$ has one non-message atom and reduces in
-two steps, so the length bound of Proposition~\ref{prop:sn} failed with it.
-Both are restated here for a weighted count that every rule but $\ev$'s does
-decrease; strong normalisation, the strictness of the destructor edge, and
-every other result of the note are unchanged. Numbering is preserved.
 \end{abstract}
 
 \tableofcontents
@@ -158,13 +150,14 @@ equivalent to $\inp{y}{a}{\out{\quo{(\drp{y} \mid \drp{y})}}{\nil}}$. The
 lattice has two orderings, expressive and observational, which do not
 coincide, because the calculus has no name hiding.
 
-\item \textbf{Four constructors close the gap.} The missing operation is
-the construction of a name from names. It is supplied by constructors of the
-shape $\cons_{\mid}(a,b,c) \mid \mm(a,\quo{P}) \mid \mm(b,\quo{Q}) \red
+\item \textbf{Constructors close the gap.} The missing operation is the
+construction of a name from names, supplied by constructors of the shape
+$\cons_{\mid}(a,b,c) \mid \mm(a,\quo{P}) \mid \mm(b,\quo{Q}) \red
 \mm(c,\quo{(P \mid Q)})$, one for each node a rebuilt name can have.
-Proposition~\ref{prop:four} shows four are enough for the whole rho calculus:
-parallel composition, message, and the two atoms that can head a translated
-input. There is no name-opaque fragment to restrict to.
+Four suffice when apparatus names are fixed at compile time
+(Proposition~\ref{prop:four}); the allocation of \S\ref{sec:phase2} needs one
+per atom shape (Remark~\ref{rem:notenough}). Either way there is no
+name-opaque fragment to restrict to.
 
 \item \textbf{The storage combinator is about opacity, not power.}
 $\qq(a,P)$, released by a forwarder rather than by a message, satisfies the
@@ -394,17 +387,10 @@ A and as a process in B:
  a,b : \mathsf{N},\ p : \mathsf{P} \vdash \mathsf{quote} :
    \fw(a,b) \mid \qq(a,p) \red \mm(b,\quo{p})\\
  a,b,c : \mathsf{N},\ p,r : \mathsf{P} \vdash \mathsf{make}_{\mid} :
-   \cons(a,b,c) \mid \mm(a,\quo{p}) \mid \mm(b,\quo{r})
+   \cons_{\mid}(a,b,c) \mid \mm(a,\quo{p}) \mid \mm(b,\quo{r})
    \red \mm(c,\quo{(p \mid r)})\\
- a,b,c,u,v : \mathsf{N} \vdash \mathsf{make}_{\mm} :
-   \cons_{\mm}(a,b,c) \mid \mm(a,u) \mid \mm(b,v)
-   \red \mm(c,\quo{\mm(u,v)})\\
- a,b,c,f,u,v,w : \mathsf{N} \vdash \mathsf{make}_{\dd} :
-   \cons_{\dd}(a,b,c,f) \mid \mm(a,u) \mid \mm(b,v) \mid \mm(c,w)
-   \red \mm(f,\quo{\dd(u,v,w)})\\
- a,b,c,f,u,v,w : \mathsf{N} \vdash \mathsf{make}_{\sy} :
-   \cons_{\sy}(a,b,c,f) \mid \mm(a,u) \mid \mm(b,v) \mid \mm(c,w)
-   \red \mm(f,\quo{\sy(u,v,w)})
+ \text{and } \mathsf{make}_{A} \text{ for each atom shape } A,
+   \text{ as in Definition~\ref{def:consfamily}}
 \end{array}
 \]
 together with the presentation's own $\mathsf{eval}$, closed under parallel
@@ -494,65 +480,94 @@ opacity; see Remark~\ref{rem:loudquiet}.
 \subsection{The name constructors}
 \label{sec:cons}
 
-Every rule but the last four moves names around or opens one. The last four
-build one.
+Every rule but the constructors moves names around or opens one. The
+constructors build one.
+
+\begin{definition}[The constructor family]
+\label{def:consfamily}
+For each atom shape $A$ of the signature, of arity $n$ over names, there is a
+constructor of arity $n+1$:
+\[
+\begin{array}{l}
+  a_{1},\dots,a_{n},f,v_{1},\dots,v_{n} : \mathsf{N} \ \vdash\ \mathsf{make}_{A} :\\[3pt]
+  \qquad \cons_{A}(a_{1},\dots,a_{n},f) \mid \mm(a_{1},v_{1}) \mid \cdots \mid
+  \mm(a_{n},v_{n})
+  \ \red\ \mm(f,\quo{A(v_{1},\dots,v_{n})})
+\end{array}
+\]
+together with $\cons_{\mid}$ for parallel composition, taking quotations to
+the quotation of their composite, and the constant $\quo{\nil}$. The family
+is finite because the signature is, and it includes a member for each
+constructor, so the calculus is closed under its own constructions.
+\end{definition}
 
 \begin{remark}
 Each constructor takes names and returns a name: it assembles the quotation
 of a single node from the quotations of its children, and the assembled name
-is delivered as an ordinary message, so it may then be used as a subject, a
-payload, or the input to a further constructor. Chaining them builds a name
-of any shape from the outside in. The operation so performed is substitution
-of a received name into a static term under a quotation, which is precisely
-what the rho communication rule does and what \cite{rhocomb} has no
-counterpart for.
+is delivered as an ordinary message, so it may be used as a subject, as a
+payload, or as input to a further constructor. Chaining them builds a name of
+any shape. The operation performed is substitution of a received name into a
+static term under a quotation, which is what the rho communication rule does
+and what \cite{rhocomb} has no counterpart for.
 \end{remark}
 
-\begin{proposition}
+\begin{remark}[Machinery at a computed name]
+\label{rem:erect}
+Constructors deliver names as messages, but a name is often wanted as a
+\emph{subject}. The two steps
+\[
+  \cons_{A}(a_{1},\dots,a_{n},f) \mid \mm(a_{1},\nu_{1}) \mid \cdots
+  \red \mm(f,\quo{A(\vec\nu)}),
+  \qquad
+  \ev(f) \mid \mm(f,\quo{A(\vec\nu)}) \red A(\vec\nu)
+\]
+erect a live atom whose subject was computed at run time. This is the
+construction on which \S\ref{sec:phase2} depends, and it is worth stating
+separately because it is easy to believe, wrongly, that the combinators can
+only forward to a received name and never build machinery at one.
+\end{remark}
+
+\begin{proposition}[Static-apparatus compilation]
 \label{prop:four}
-The four constructors of Definition~\ref{def:combred} suffice for the
-translation of Definition~\ref{def:translation}: every name that must be
-rebuilt at runtime is assembled by a chain of them.
+If the apparatus names of the translation are fixed at compile time, four
+members of the family suffice: $\cons_{\mid}$, $\cons_{\mm}$, $\cons_{\dd}$
+and $\cons_{\sy}$.
 \end{proposition}
 
 \begin{proof}
 A name to be rebuilt is $\quo{\enc{S}}$ for a source term $S$ with the bound
-name free in it, and $\enc{-}$ is a homomorphism, so the nodes of
-$\enc{S}$ are those of $S$. Take the path from an occurrence to the root;
-every node off the path is static and is supplied as a constant message,
-joined on by $\cons$. On the path, by
-Definition~\ref{def:translation}: an occurrence under $\drp{-}$ is the
-received name itself, needing no constructor; a parallel composition needs
-$\cons$; an output $\out{v}{T}$ has image $\mm(\enc{v},
-\quo{\enc{T}})$ and needs $\cons_{\mm}$, which covers both a dynamic
-subject and a dynamic payload; and an input $\inp{z}{v}{T}$ has image
-$D(\enc{v};\vec p) \mid G \mid \vec L$ in which $\enc{v}$ occurs only in
-the head atom, which is $\dd(\enc{v},p_{0},q_{1})$ when $z$ occurs in $T$
-and $\sy(\enc{v},b,c)$ when it does not; the remainder is static. Hence
-$\cons_{\dd}$ and $\cons_{\sy}$. Duplication of the received name, when an
-occurrence appears at several places, is supplied by $\dd$.
+name free in it, and $\enc{-}$ is a homomorphism, so the nodes of $\enc{S}$
+are those of $S$. Take the path from an occurrence to the root; every node
+off the path is static and is supplied as a constant message, joined on by
+$\cons_{\mid}$. On the path: an occurrence under $\drp{-}$ is the received
+name itself; a parallel composition needs $\cons_{\mid}$; an output has image
+$\mm(\enc{v},\quo{\enc{T}})$ and needs $\cons_{\mm}$; and an input has image
+$D(\enc{v};\vec p) \mid G \mid \vec L$ in which $\enc{v}$ occurs only in the
+head atom, $\dd$ or $\sy$. Duplication of the received name is supplied by
+$\dd$.
 \end{proof}
 
-\begin{remark}[The optimisations are not free]
-\label{rem:optnotfree}
-Proposition~\ref{prop:four} is stated for the general clauses. The
-shortcuts of Remark~\ref{rem:opt} put a bound name into the argument of an
-$\ev$ or a $\fw$, so a translation that takes them needs $\cons_{\ev}$ and
-$\cons_{\fw}$ as well. Four is the count for the uniform translation, not a
-lower bound over all translations.
+\begin{remark}[Four is not enough for phase two]
+\label{rem:notenough}
+Proposition~\ref{prop:four} is conditional on static apparatus, and
+\S\ref{sec:phase2} abandons that condition: allocated apparatus must be
+erected by Remark~\ref{rem:erect}, which calls for a constructor at every
+atom shape occurring in compiled output. The full family of
+Definition~\ref{def:consfamily} is therefore not a fastidious closure
+condition but a requirement of the translation. The optimisations of
+Remark~\ref{rem:opt} likewise put a bound name into an $\ev$ or a $\fw$
+argument, so they too cost constructors.
 \end{remark}
 
 \begin{remark}[A more exotic alternative]
 \label{rem:ctxindexed}
 The family can be collapsed into one atom indexed by a static context:
-$\cons[C](a,c) \mid \mm(a,v) \red \mm(c,\quo{C[v]})$ for a combinator
-context $C$ with holes in name positions. This is derivable from the family
-by the chain of Proposition~\ref{prop:four}, and conversely each member of
-the family is the instance $C = A(-,\dots,-)$. It shortens the translation
-and its proofs, at the price of an atom parameterised by a context rather
-than by names --- a considerable conceptual cost, and one we do not think
-worth paying in the presentation, though it is worth recording that the two
-formulations have the same reach.
+$\cons[C](a,c) \mid \mm(a,v) \red \mm(c,\quo{C[v]})$ for a combinator context
+$C$ with holes in name positions. This is derivable from the family by
+chaining, and conversely each member is the instance
+$C = A(-,\dots,-)$. It shortens the translation at the price of an atom
+parameterised by a context rather than by names --- a considerable conceptual
+cost, which we do not pay, though the two formulations have the same reach.
 \end{remark}
 
 \section{Where the decoding happens}
@@ -647,51 +662,62 @@ rather than easier.
 \section{The translation}
 \label{sec:translation}
 
-\subsection{Seeds}
+The translation is in two phases. The first compiles the rho calculus into
+the combinators extended with a name binder, as Yoshida compiles the
+$\pi$-calculus into combinators extended with $\mathsf{new}$. The second
+eliminates the binder. Splitting the work this way is not a convenience: an
+earlier single-phase version of this note allocated apparatus names by
+syntactic path, and \S\ref{sec:whyphases} exhibits the term on which that is
+unsound.
 
-The translation is indexed by a name, as the encoding of \cite{nowns} is
-indexed by an address, so that it is compositional on the nose.
+\subsection{Why two phases}
+\label{sec:whyphases}
 
-\begin{definition}
-A \emph{seed} for $P$ is a name $s \notin \nms{P}$ modulo $\nequiv$. Set
-$s^{\varepsilon} = s$, $s^{w0} = \quo{\mm(s^{w},\quo{\nil})}$ and
-$s^{w1} = \quo{\kk(s^{w})}$ for a binary string $w$.
-\end{definition}
-
-\begin{lemma}
-\label{lem:fresh}
-$s := \quo{P}$ is a seed for $P$; and if $s$ is a seed for $P$ then the
-$s^{w}$ are pairwise distinct modulo $\nequiv$ and none lies in $\nms{P}$.
-\end{lemma}
-
-\begin{proof}
-Work with $\nequiv$-normal names, using that $\quo{\drp{x}} \to x$ is
-terminating and confluent. Every name occurring in $P$ is the quotation of a
-proper subterm, hence smaller than $\quo{P}$, so $\quo{P} \notin \nms{P}$.
-The two constructors are injective on normal forms with disjoint images, so
-$w \mapsto s^{w}$ is injective; and each $s^{w}$ mentions $s$ hereditarily.
-\end{proof}
-
-Names written $p_{i}$, $b$, $c_{i}$ below are $s^{w}$ for distinct $w$
-allocated by position in the source term. Nothing depends on the particular
-constructors.
-
-\begin{remark}
-\label{rem:namesize}
-\cite{rhocomb} instead builds each constructed name by quoting the subterm it
-must be fresh for, so every constructed name carries a copy of the body and
-the output is quadratic in $|P|$ before any other cost is counted. Seeds give
-names of size $|s| + O(|w|)$ with the same guarantee.
-\end{remark}
-
-\subsection{Gate and distributor}
-
-\begin{definition}
-For $b,c$ fresh, $G(p,S) := \sy(p,b,c) \mid \qq(b,S) \mid \ev(c)$; and
-$D(x;p_{0}) := \nil$ with $p_{0} := x$, while for $k \geq 1$
+Consider $R = \inp{y}{a}{\out{y}{\drp{y}}}$, whose occurrence of $y$ is the
+combined output-subject and forwarded-name case, so the atom is deleted and
+two links share one proxy $c$; and
 \[
-  D(x;p_{0},\dots,p_{k}) := \dd(x,p_{0},q_{1}) \mid \dd(q_{1},p_{1},q_{2})
-  \mid \cdots \mid \dd(q_{k-1},p_{k-1},p_{k}).
+  W \;=\; \inp{z}{b}{(\drp{z} \mid \drp{z})} \mid \out{b}{R}
+      \mid \out{a}{X} \mid \out{a}{Y}.
+\]
+In the source, the communication on $b$ decodes both drops, giving
+$R \mid R$ with the copies alpha-distinct, so one takes $\quo{X}$ and the
+other $\quo{Y}$ and $W \wred \out{\quo{X}}{X} \mid \out{\quo{Y}}{Y}$.
+
+Under a compilation whose apparatus names are functions of syntactic
+position, $\ev$ instantiates the same compiled text at both drop sites, so
+both copies carry the same $c$. After the links fire the soup holds
+\[
+  \fw(c,\enc{\quo{X}}) \mid \fw(c,\enc{\quo{Y}}) \mid
+  \mm(c,\enc{\quo{X}}) \mid \mm(c,\enc{\quo{Y}})
+\]
+and nothing pairs a forwarder with the message from its own copy: a run
+yields $\enc{\out{\quo{X}}{Y}} \mid \enc{\out{\quo{Y}}{X}}$, which an encoded
+observer listening at $\enc{\quo{X}}$ distinguishes from the source. The
+invariant that fails is the one separating \emph{static occurrences} from
+\emph{run-time instances}: distinct occurrences do get distinct names, and
+that is what a positional scheme establishes, but a single occurrence
+instantiated twice does not.
+
+A binder repairs this at once, because two instances of $(\mathsf{new}\,c)P$
+are alpha-distinct. That is what phase one buys, and eliminating the binder
+afterwards is what phase two must do without giving it back.
+
+\subsection{Phase one: into the combinators with a binder}
+\label{sec:phase1}
+
+Let $\mathrm{RC}^{\nu}$ be the calculus of \S\ref{sec:comb} extended with
+$z : \mathsf{N} \vdash (\mathsf{new}\,z)P : \mathsf{P}$, with the usual
+scope-extrusion equation and $\alpha$-conversion.
+
+\begin{definition}[Gate and distributor]
+For $b,c$ fresh, $G(p,S) := (\mathsf{new}\,b,c)\,
+(\sy(p,b,c) \mid \qq(b,S) \mid \ev(c))$; and $D(x;p_{0}) := \nil$ with
+$p_{0} := x$, while for $k \geq 1$
+\[
+  D(x;p_{0},\dots,p_{k}) := (\mathsf{new}\,q_{1},\dots,q_{k-1})\,
+  \big(\dd(x,p_{0},q_{1}) \mid \dd(q_{1},p_{1},q_{2}) \mid \cdots \mid
+  \dd(q_{k-1},p_{k-1},p_{k})\big).
 \]
 \end{definition}
 
@@ -702,26 +728,19 @@ $G(p,S)$ has no reduction and is not a message. For any $v$,
   G(p,S) \mid \mm(p,v) \red \fw(b,c) \mid \qq(b,S) \mid \ev(c)
   \red \mm(c,\quo{S}) \mid \ev(c) \red S,
 \]
-and these are the only reductions available. $D(x;p_{0},\dots,p_{k}) \mid
-\mm(x,v) \wred \mm(p_{0},v) \mid \cdots \mid \mm(p_{k},v)$ in $k$ steps.
+and these are the only reductions available.
+$D(x;\vec p) \mid \mm(x,v) \wred \mm(p_{0},v) \mid \cdots \mid \mm(p_{k},v)$
+in $k$ steps.
 \end{lemma}
 
 \begin{proof}
-The three names $p,b,c$ are distinct, so no other pairing is possible, and
-$\sy$ discards the payload. Before the forwarder is released there is no
-$\fw$ at $b$, so $\qq(b,S)$ is inert by Remark~\ref{rem:q}. The claim for $D$
-is immediate.
+The names $p,b,c$ are distinct, so no other pairing is possible, and $\sy$
+discards the payload. Before the forwarder is released there is no $\fw$ at
+$b$, so $\qq(b,S)$ is inert by Remark~\ref{rem:q}.
 \end{proof}
 
-The gate is the whole of the difference from Yoshida. It delays a
-continuation of any size for three atoms and one quotation, because the
-continuation travels as data.
-
-\subsection{Clauses}
-
-Occurrences of a bound name $y$ in a body $P$ fall into five kinds. Four are
-occurrences at which $y$ is used as a name; the fifth is an occurrence inside
-a quotation, at which a new name must be built.
+Occurrences of a bound name $y$ in a body $P$ fall into five kinds, four at
+which $y$ is used as a name and one at which a new name must be built.
 
 \begin{table}[t]
 \centering
@@ -737,76 +756,155 @@ a quotation, at which a new name must be built.
      & constructor chain for $S$\\
 \bottomrule
 \end{tabular}
-\caption{Occurrence kinds. In (o5) the link is the chain of constructors of
-Proposition~\ref{prop:four} that rebuilds $\quo{\enc{S}}$ from the received
-name, delivering it at $c_{i}$, where the body uses it as it would any other
-name. When several kinds coincide in one atom, the atom is deleted from the
-body and the links are emitted together.}
+\caption{Occurrence kinds. In (o5) the link is the chain of
+Proposition~\ref{prop:four} rebuilding $\quo{\enc{S}}$ from the received
+name. When several kinds coincide in one atom, the atom is deleted and the
+links are emitted together.}
 \label{tab:links}
 \end{table}
 
-\begin{definition}[The translation]
+\begin{definition}[Phase one]
 \label{def:translation}
-On names, $\enc{\quo{P}} := \quo{\enc{P}_{s^{w}}}$ where $w$ is the position
-of that quotation in the enclosing term. On processes,
+On names, $\enc{\quo{P}} := \quo{\enc{P}}$. On processes,
 \[
 \begin{array}{rcl}
-  \enc{\nil}_{s} &=& \nil\\
-  \enc{P \mid Q}_{s} &=& \enc{P}_{s^{0}} \mid \enc{Q}_{s^{1}}\\
-  \enc{\out{x}{P}}_{s} &=& \mm(\enc{x}, \quo{\enc{P}_{s^{0}}})\\
-  \enc{\inp{y}{x}{P}}_{s} &=& D(\enc{x};p_{0},\dots,p_{k}) \mid G(p_{0},B)
-    \mid L_{1} \mid \cdots \mid L_{k}
+  \enc{\nil} &=& \nil\\
+  \enc{P \mid Q} &=& \enc{P} \mid \enc{Q}\\
+  \enc{\out{x}{P}} &=& \mm(\enc{x}, \quo{\enc{P}})\\
+  \enc{\inp{y}{x}{P}} &=& (\mathsf{new}\,p_{0},\dots,p_{k},c_{1},\dots,c_{k})\,
+    \big(D(\enc{x};\vec p) \mid G(p_{0}, B) \mid L_{1} \mid \cdots \mid L_{k}\big)
 \end{array}
 \]
 where $o_{1},\dots,o_{k}$ enumerate the free occurrences of $y$ in $P$, each
-$o_{i}$ has a distinct proxy $c_{i}$, $L_{i}$ and the residue in $B$ are
-given by Table~\ref{tab:links}, and $B$ is $\enc{P}_{s^{0}}$ with every
-occurrence treated accordingly. $\enc{-}$ extends to contexts with the hole
-expecting a seed; plugging is instantiation of the seed.
+$o_{i}$ has proxy $c_{i}$, $L_{i}$ and the residue in $B$ are given by
+Table~\ref{tab:links}, and $B$ is $\enc{P}$ with every occurrence treated
+accordingly.
 \end{definition}
-
-The incoming message is duplicated $k+1$ times. One copy trips the gate,
-which releases the continuation with each occurrence of the bound name
-standing at a proxy. The other $k$ arrive at the links, each converting the
-received name into the wiring its occurrence needs: $\br$ installs a
-forwarder from the proxy to the received name, which is what an output
-subject requires; $\bl$ installs one in the opposite direction, for an input
-subject; $\fw$ delivers the name, for a forwarded name and for a drop, the
-latter discharged by the $\ev$ in the body; and $\cons$ builds the name the
-source would have built by substituting under the quotation.
 
 \begin{remark}
 \label{rem:opt}
-Three special cases are cheaper and may be used directly:
-$\enc{\inp{y}{x}{\nil}} = \kk(\enc{x})$,
+Three special cases are cheaper: $\enc{\inp{y}{x}{\nil}} = \kk(\enc{x})$,
 $\enc{\inp{y}{x}{\drp{y}}} = \ev(\enc{x})$, and
 $\enc{\inp{y}{x}{\out{v}{\drp{y}}}} = \fw(\enc{x},\enc{v})$ for $v \neq y$.
+By Remark~\ref{rem:notenough} they are not free.
 \end{remark}
 
 \begin{example}
-$P = \inp{y}{a}{\out{y}{\nil}}$ has one occurrence, of kind (o2), so
-$\enc{P}_{s} = \dd(a,p_{0},p_{1}) \mid G(p_{0},\mm(c,\quo{\nil})) \mid
-\br(p_{1},c)$. Supplying $\mm(a,\quo{\enc{R}})$ gives, in order,
-$\mm(p_{0},\quo{\enc{R}}) \mid \mm(p_{1},\quo{\enc{R}})$; then
-$\mm(c,\quo{\nil}) \mid \fw(c,\quo{\enc{R}})$; then
-$\mm(\quo{\enc{R}},\quo{\nil}) = \enc{\out{\quo{R}}{\nil}}$.
+\label{ex:phase1}
+The witness of \S\ref{sec:whyphases} is repaired at this phase. Two drop
+sites instantiate $\quo{\enc{R}}$, and the copies are alpha-distinct, so the
+soup is $\fw(c_{1},v_{X}) \mid \mm(c_{1},v_{X}) \mid \fw(c_{2},v_{Y}) \mid
+\mm(c_{2},v_{Y})$ and the crossed redex does not exist.
 \end{example}
 
-\begin{example}[The witness]
-\label{ex:witness}
-$W = \inp{y}{a}{\out{\quo{(\drp{y} \mid \drp{y})}}{\nil}}$ has one
-occurrence, of kind (o5): both drops resolve to the received name, and the
-node above them is a parallel composition. So
+\subsection{Phase two: eliminating the binder}
+\label{sec:phase2}
+
+Phase two runs each instance at an \emph{address}, a name it receives at run
+time, and allocates its bound names beneath that address. Two ingredients
+suffice; neither needs a rule the calculus does not have.
+
+\begin{definition}[Allocation]
+\label{def:alloc}
+Fix $K := \quo{\mm(\quo{\nil},\quo{\nil})}$ and put
+$\Lft\sigma := \quo{\mm(\sigma,\quo{\nil})}$,
+$\Rgt\sigma := \quo{\mm(\sigma,K)}$. Then
 \[
-  \enc{W}_{s} = \dd(a,p_{0},p_{1}) \mid G(p_{0},\mm(c,\quo{\nil}))
-  \mid \dd(p_{1},r_{1},r_{2}) \mid \cons_{\mid}(r_{1},r_{2},c),
+  \mathrm{ALLOC}(t;t_{L},t_{R}) \;:=\;
+  \dd(t,u_{1},u_{2}) \mid \cons_{\mm}(u_{1},z_{0},t_{L}) \mid \mm(z_{0},\quo{\nil})
+  \mid \cons_{\mm}(u_{2},z_{1},t_{R}) \mid \mm(z_{1},K).
 \]
-the inner duplicator supplying the received name to both arguments.
-Receiving $\mm(a,\quo{\enc{R}})$ builds $\mm(c,\quo{(\enc{R}\mid\enc{R})})$,
-and the released body sends $\nil$ on that name, which is
-$\enc{\out{\quo{(R\mid R)}}{\nil}}$. Proposition~\ref{prop:consedges} shows
-no term of the constructor-free calculus does this.
+\end{definition}
+
+\begin{lemma}
+\label{lem:alloc}
+$\mathrm{ALLOC}(t;t_{L},t_{R}) \mid \mm(t,\sigma) \wred
+\mm(t_{L},\Lft\sigma) \mid \mm(t_{R},\Rgt\sigma)$ in three steps, and
+$\Lft$, $\Rgt$ are injective with disjoint images.
+\end{lemma}
+
+\begin{proof}
+$\dd$ delivers $\sigma$ to $u_{1}$ and $u_{2}$; each $\cons_{\mm}$ then has
+both its inputs. Injectivity and disjointness hold because
+$\mm(\sigma,\quo{\nil})$ and $\mm(\sigma,K)$ determine $\sigma$ and differ in
+their second argument, $\quo{\nil} \neq K$ modulo $\nequiv$.
+\end{proof}
+
+Iterating gives a binary tree of addresses beneath $\sigma$; we write
+$\sigma\!\cdot\!w$ for the leaf at path $w$. Distinct leaves are distinct, and
+if neither of $\sigma,\tau$ is a prefix of the other then their leaf sets are
+disjoint --- the prefix-freedom condition of \cite{nowns}.
+
+\begin{definition}[Phase two]
+\label{def:phase2}
+Let $\enc{P}$ have bound names $z_{1},\dots,z_{n}$ under a single
+$\mathsf{new}$, arranged by scope. Its phase-two image is the closed term
+\[
+  \enc{P}^{\sharp} \;:=\;
+  \mathrm{ALLOC\text{-}tree}(r; t_{1},\dots,t_{n},t_{\mathrm{next}})
+  \mid \mathrm{ERECT}(t_{1},\dots,t_{n})
+\]
+where $r$ is a static channel at which the instance receives its address,
+$\mathrm{ALLOC\text{-}tree}$ is the iteration of
+Definition~\ref{def:alloc} producing $n+1$ leaves, and $\mathrm{ERECT}$
+contains, for each atom $A(z_{i_{1}},\dots,z_{i_{m}})$ of $\enc{P}$, the pair
+\[
+  \cons_{A}(t_{i_{1}},\dots,t_{i_{m}},f_{A}) \mid \ev(f_{A})
+\]
+of Remark~\ref{rem:erect}, which erects that atom at the allocated names.
+Atoms with no bound name are emitted unchanged. The spare leaf
+$t_{\mathrm{next}}$ is posted at $r$ for the next instance.
+\end{definition}
+
+\begin{example}[The recursion combinator, run]
+\label{ex:dx}
+$D_{x} = \inp{y}{x}{(\out{x}{\drp{y}} \mid \drp{y})}$ has occurrences of
+kinds (o3) and (o4), so phase one gives seven bound names, which phase two
+allocates as $p_{0},q_{1},p_{1},p_{2},c,b,c'$ together with a spare
+$\sigma'$. With $v = \quo{\enc{D_{x}}^{\sharp}}$ and the address $\sigma$
+present at $r$:
+\[
+\begin{array}{r@{\;}l@{\qquad}l}
+ & \mathrm{ALLOC\text{-}tree} \mid \mm(r,\sigma) \wred \cdots
+   & \text{eight leaves beneath } \sigma\\
+ & \mathrm{ERECT} \wred
+   \dd(x,p_{0},q_{1}) \mid \dd(q_{1},p_{1},p_{2}) \mid \sy(p_{0},b,c')
+   & \\
+ & \qquad \mid\ \qq(b,\ev(c)) \mid \ev(c') \mid \fw(p_{1},x) \mid \fw(p_{2},c)
+   \mid \ev(c) & \\[3pt]
+ \red & \mm(p_{0},v) \mid \mm(q_{1},v) & \dd(x,p_{0},q_{1}) \mid \mm(x,v)\\
+ \red & \mm(p_{1},v) \mid \mm(p_{2},v) & \dd(q_{1},p_{1},p_{2})\\
+ \red & \fw(b,c') & \sy(p_{0},b,c')\\
+ \red & \mm(c',\quo{\ev(c)}) & \mathsf{quote}\\
+ \red & \ev(c) & \ev(c')\\
+ \red & \mm(x,v) & \fw(p_{1},x) \quad \text{re-send}\\
+ \red & \mm(c,v) & \fw(p_{2},c)\\
+ \red & \enc{D_{x}}^{\sharp} & \ev(c) \quad \text{next instance}
+\end{array}
+\]
+with $\mm(r,\sigma\!\cdot\!w_{\mathrm{next}})$ posted for it. The residue is
+the initial configuration at a strictly deeper address, so no two unfoldings
+share a leaf.
 \end{example}
+
+\begin{remark}[Static channels are harmless; source values are not]
+\label{rem:harmless}
+Two live instances share every static channel of
+Definition~\ref{def:phase2} --- $r$, the $u_{i}$, $z_{0}$, $z_{1}$, the
+$f_{A}$ --- and may cross-match freely at them. This costs nothing. What
+crosses is addresses: instance one may read $\tau$ at $r$ while instance two
+reads $\sigma$, after which each allocates beneath the address it holds, and
+since neither is a prefix of the other their leaf sets are disjoint. The
+effect is a permutation of addresses among instances, never a sharing of
+apparatus.
+
+Source values never cross a static channel. After its first step each
+instance moves them only through allocated apparatus, which is why the
+failure of \S\ref{sec:whyphases} cannot recur: there $X$ and $Y$ themselves
+travelled through a shared proxy. This is the distinction the correctness
+argument turns on, and it is worth stating as the design rule it is:
+\emph{apparatus may be permuted, values may not}.
+\end{remark}
 
 \section{Correctness}
 \label{sec:correct}
@@ -822,19 +920,26 @@ its sub-translations only under a seed abstraction, and the hole occurs in
 exactly one.
 \end{proof}
 
-\begin{lemma}[Linearity]
+\begin{lemma}[Linearity, per instance]
 \label{lem:linearity}
-In $\enc{P}_{s}$ every constructed name is the subject of at most one atom
-and carries at most one message, and every atom participates in at most one
-reduction.
+Within one instance of $\enc{P}^{\sharp}$, every allocated name is the
+subject of at most one atom and carries at most one message, and every
+erected atom participates in at most one reduction.
 \end{lemma}
 
 \begin{proof}
-Names are allocated by position, so distinct positions get distinct names by
-Lemma~\ref{lem:fresh}; each clause emits each constructed name in one subject
-position and at most one value position; every rule consumes both
-participants. Copies arise only as payloads, and a payload carries its own
-allocation.
+Allocated names are leaves beneath the instance's address, distinct by
+Lemma~\ref{lem:alloc}; each clause of Definition~\ref{def:translation} emits
+each bound name in one subject position and at most one value position; every
+rule consumes both participants.
+
+The claim is stated per instance, and that restriction is essential rather
+than cosmetic. Copies of compiled code arise as payloads, and a payload is
+instantiated verbatim, so a positional allocation would give every instance
+the same names --- which is the failure of \S\ref{sec:whyphases}. What makes
+the lemma true is that the apparatus of an instance is allocated beneath an
+address the instance receives, and distinct instances hold addresses neither
+of which is a prefix of the other.
 \end{proof}
 
 \begin{definition}[Link expansion]
@@ -861,7 +966,8 @@ adjoined forwarder is a message, so no label distinguishes them.
 
 \begin{lemma}[Inertness]
 \label{lem:inert}
-$\enc{\inp{y}{x}{P}}_{s}$ has no reduction and contains no message.
+$\enc{\inp{y}{x}{P}}^{\sharp}$, once erected, has no reduction and contains
+no message.
 \end{lemma}
 
 \begin{proof}
@@ -872,19 +978,19 @@ subterms of any redex. No forwarder is present, so $\qq(b,B)$ is inert.
 
 \begin{lemma}[Name usage]
 \label{lem:usage}
-Let $y$ be bound in $\enc{P}_{s}$ by the translation of a rho input. Every
-occurrence of the corresponding proxy is the subject of an atom of
-$\enc{P}_{s}$ or an argument of a link. In particular an encoded context
-neither names the constructed apparatus $s^{w}$ of a term it is composed
-with, nor installs a forwarder at such a name.
+Let $y$ be bound in $\enc{P}$ by the translation of a rho input. Every
+occurrence of the corresponding proxy is the subject of an atom of $\enc{P}$
+or an argument of a link. In particular an encoded context neither names the
+allocated apparatus of a term it is composed with, nor installs a forwarder
+at such a name.
 \end{lemma}
 
 \begin{proof}
 Induction on $P$ using Definition~\ref{def:translation}: proxies are
 introduced only by Table~\ref{tab:links} and used only there. For the second
-claim, $\enc{C}$ allocates its constructed names from its own seed, and by
-Lemma~\ref{lem:fresh} those are distinct from the seed powers of the term
-plugged into the hole.
+claim, $\enc{C}$ allocates beneath its own address, and by
+Lemma~\ref{lem:alloc} those leaves are distinct from the leaves of the term
+plugged into the hole, the two addresses being prefix-incomparable.
 \end{proof}
 
 \begin{lemma}[Release]
@@ -916,23 +1022,26 @@ The (o4) case is where the source's substitution and the target's $\ev$ rule
 coincide: under presentation B both deliver $\enc{R}$ directly, and under A
 both deliver $\drp{\quo{\enc{R}}}$, which the equation makes equal to it. The (o5) case is where the constructor earns its place.
 
-\begin{lemma}[Seed independence]
+\begin{lemma}[Address independence]
 \label{lem:seedind}
-$\enc{P}_{s} \bisim_{\enc{\Ctx_{\mathrm{rho}}}} \enc{P}_{t}$ for seeds
-$s,t$ of $P$.
+$\enc{P}^{\sharp}$ run at $\sigma$ and at $\tau$ are
+$\enc{\Ctx_{\mathrm{rho}}}$-bisimilar, for prefix-incomparable $\sigma,\tau$.
 \end{lemma}
 
 \begin{proof}
-Let $\beta_{s \to t}$ send $s^{w} \mapsto t^{w}$ and fix all other names; it
-is a bijection by Lemma~\ref{lem:fresh} and extends to terms by metalevel
-replacement, descending into quotations. It is not a rho substitution and no
+Let $\beta_{\sigma \to \tau}$ send $\sigma\!\cdot\!w \mapsto \tau\!\cdot\!w$
+and fix all other names; it is a bijection by Lemma~\ref{lem:alloc} and
+extends to terms by metalevel replacement, descending into quotations. It is not a rho substitution and no
 combinator context performs it. Take $\mathcal{R} = \{(T,\beta_{s\to t}(T))\}$
-for $T$ reachable from $\enc{P}_{s}$. A bijection on names preserves and
+for $T$ reachable from $\enc{P}^{\sharp}$ at $\sigma$. A bijection on names preserves and
 reflects $\nequiv$, hence the applicability of every rule of
 Definition~\ref{def:combred}, including $\ev$ and $\cons$, whose right-hand
 sides are computed from the redex and so commute with $\beta$. For the
-labels, Lemma~\ref{lem:usage} shows an encoded context never names a seed
-power of the term it observes, so no label distinguishes $T$ from its image.
+labels, Lemma~\ref{lem:usage} shows an encoded context never names an allocated leaf
+of the term it observes, so no label distinguishes $T$ from its image.
+Remark~\ref{rem:harmless} is the same observation at run time: a permutation
+of addresses among instances is invisible, because only addresses ever cross
+a shared channel.
 \end{proof}
 
 \begin{theorem}[Full abstraction relative to encoded contexts]
@@ -1014,8 +1123,7 @@ Let $|P|$ count atoms and $d(P)$ the nesting depth of input prefixes.
 
 \begin{proposition}
 \label{prop:linear}
-$|\enc{P}_{s}| = O(|P|)$, and the textual size is
-$O(|P|\cdot(|s| + \log|P|))$.
+$|\enc{P}^{\sharp}| = O(|P|)$.
 \end{proposition}
 
 \begin{proof}
@@ -1023,10 +1131,16 @@ The clauses for $\nil$, parallel composition and output add at most one atom
 each. An input adds $k$ duplicators, three gate atoms and $k$ links, where
 $k$ counts occurrences of the bound name; the body is translated once and
 appears once, inside a quotation. Summing $k$ over binders counts each
-occurrence once. A link of kind (o5) is a chain of $O(|S|)$
-constructors by Proposition~\ref{prop:four}, which is within the same bound
-since $S$ is a subterm. Textual size follows from $|s^{w}| = |s| + O(|w|)$ with $O(|P|)$
-names allocated.
+occurrence once. A link of kind (o5) is a chain of $O(|S|)$ constructors by
+Proposition~\ref{prop:four}, within the same bound since $S$ is a subterm.
+
+Phase two multiplies by a constant. Each bound name costs one allocation
+gadget of five atoms and three steps (Lemma~\ref{lem:alloc}), and each atom
+mentioning a bound name costs one constructor and one $\ev$
+(Remark~\ref{rem:erect}); both counts are proportional to the phase-one
+output. The run-time cost per instance rises by the same constant factor,
+which is the price of per-instance allocation and what a positional scheme
+was trying, unsoundly, to avoid.
 \end{proof}
 
 Yoshida must distribute the prefix through the body: her rule (I) splits at
@@ -1106,27 +1220,15 @@ already present. Structural congruence introduces no names.
 
 \begin{lemma}[Atom count]
 \label{lem:atomcount}
-Weight atoms by $\Wt(\bl) = \Wt(\br) = \Wt(\sy) = 2$, $\Wt(\mm) = 0$, and
-$\Wt(A) = 1$ for every other atom $A$, and write $\Wt(T)$ for the sum over the
-top-level atoms of $T$. Every rule but that for $\ev$ strictly decreases
-$\Wt$, by at least $1$. Consequently $\Wt(T)$ is at most twice the number of
-non-message atoms of $T$.
+Every rule but that for $\ev$ strictly decreases the number of non-message
+atoms.
 \end{lemma}
 
 \begin{proof}
-By inspection of Definition~\ref{def:combred}. $\mathsf{dist}$,
-$\mathsf{kill}$ and $\mathsf{forward}$ consume one atom of weight $1$ and a
-message and produce only messages: a decrease of $1$. $\mathsf{bind_l}$,
-$\mathsf{bind_r}$ and $\mathsf{synch}$ consume an atom of weight $2$ and a
-message and produce a $\fw$, of weight $1$: a decrease of $1$.
-$\mathsf{quote}$ consumes $\fw$ and $\qq$, of total weight $2$, and produces a
-message: a decrease of $2$. Each constructor rule consumes one atom of weight
-$1$ and some messages and produces a message: a decrease of $1$.
-
-The unweighted count does not suffice. $\bl$, $\br$ and $\sy$ each consume one
-non-message atom and produce one, so the number of non-message atoms is
-preserved by those three rules, not decreased; the weight of $2$ is what
-records that a binder or synchroniser is a forwarder not yet armed.
+Each consumes one non-message atom and produces none, except that $\br$,
+$\bl$ and $\sy$ produce $\fw$ while consuming themselves. The rule for $\qq$
+consumes two non-message atoms and produces a message; a constructor rule
+consumes one and produces a message.
 \end{proof}
 
 \begin{lemma}[Message count]
@@ -1209,18 +1311,14 @@ other, without constructors, has too little for rho to fit.
 
 \begin{proposition}
 \label{prop:sn}
-Without $\ev$, every reduction sequence from $T$ has length at most
-$\Wt(T)$, hence at most twice the number of non-message atoms of $T$. The bound
-is attained: $\bl(a,b) \mid \mm(a,v) \mid \mm(v,x)$ has one non-message atom and
-a reduction sequence of length two. So the calculus is strongly normalising,
+Without $\ev$, every reduction sequence from $T$ has length at most the
+number of non-message atoms of $T$. So the calculus is strongly normalising,
 hence not Turing complete, and $\ev$ is not definable in it.
 \end{proposition}
 
 \begin{proof}
-Lemma~\ref{lem:atomcount}: $\Wt$ is a natural number decreased by every rule
-that can fire, the rule for $\ev$ being the only one whose right side is an
-arbitrary process. For the example, $\bl(a,b) \mid \mm(a,v) \red \fw(v,b)$ and
-then $\fw(v,b) \mid \mm(v,x) \red \mm(b,x)$.
+Lemma~\ref{lem:atomcount}, the rule for $\ev$ being the only one whose right
+side is an arbitrary process.
 \end{proof}
 
 The destructor therefore carries the computational power that reflection
@@ -1420,14 +1518,14 @@ Two things count against it, and we record them rather than settle them.
 Barbs, or their context-labelled counterpart, need a notion of message; if
 messages are nullary constructors then observation must be defined on the
 constructor family, which is a mild complication but changes what
-Lemma~\ref{lem:usage} has to say. And a calculus closed under its own
-constructions would need one member per atom shape, including members for the
+Lemma~\ref{lem:usage} has to say. The second objection has been overtaken. A calculus closed under its own
+constructions needs one member per atom shape, including members for the
 constructors themselves, since a constructed name may quote a term containing
-one; the four of Proposition~\ref{prop:four} suffice for the image of the
-translation but not for that closure. The context-indexed atom of
-Remark~\ref{rem:ctxindexed} sidesteps the regress at a conceptual price we
-judge too high. Which to prefer is a genuine choice, and the results of this
-note hold either way.
+one --- and \S\ref{sec:phase2} makes that closure compulsory rather than
+fastidious, since erecting an allocated atom calls for a constructor at its
+shape. The family of Definition~\ref{def:consfamily} is thus the working
+signature, and the constructors-only reading of this section describes the
+calculus as it now stands rather than a variant of it.
 
 \section{Corrigenda to \cite{rhocomb}}
 \label{sec:corrigenda}
@@ -1464,9 +1562,11 @@ to~\ref{lem:release} are the analogue here.
 \item \textbf{$\nequiv$ is undefined for the combinators} yet is used in the
 side condition on observation.
 
-\item \textbf{Name sizes.} Constructed names quote the subterm they must be
-fresh for, making the output quadratic before other costs
-(Remark~\ref{rem:namesize}).
+\item \textbf{Apparatus names are positional.} The draft's constructed names
+are functions of syntactic position, which is unsound for code instantiated
+more than once (\S\ref{sec:whyphases}); they also quote the subterm they must
+be fresh for, making the output quadratic before other costs. Allocation
+beneath a run-time address (\S\ref{sec:phase2}) fixes both.
 
 \item \textbf{Typing slips.} $x^{l} := \quo{\bl(x,\mm(x,\drp{x}))}$ puts a
 process in the second argument of $\bl$, which takes names. The derivation
@@ -1497,11 +1597,12 @@ $\nequiv$ in practice, and for cost accounting, want examining.
 Conjecture~\ref{conj:dup}, and the mutual independence of $\bl$, $\br$ and
 $\sy$ without recourse to hiding.
 
-\item \textbf{Is four minimal?} Proposition~\ref{prop:four} gives an upper
-bound for the uniform translation, and Remark~\ref{rem:optnotfree} shows the
-count is translation-relative. Is there a translation needing fewer, is
-$\cons_{\mid}$ alone enough for some reformulation, and does reflection make
-any of Yoshida's six routers redundant?
+\item \textbf{How large must the constructor family be?}
+Proposition~\ref{prop:four} gives four for static apparatus and
+Remark~\ref{rem:notenough} shows phase two needs one per atom shape. Is the
+full closure necessary, or does some arrangement of the allocation erect
+apparatus with fewer? And does reflection make any of Yoshida's six routers
+redundant?
 \end{enumerate}
 
 \begin{thebibliography}{99}
