@@ -58,6 +58,7 @@
 \newcommand{\sy}{\mathsf{s}}
 \newcommand{\ev}{\mathsf{e}}
 \newcommand{\qq}{\mathsf{q}}
+\newcommand{\Wt}{\mathsf{W}}
 \newcommand{\cons}{\mathsf{cons}}
 \newcommand{\consm}{\mathsf{cons}_{\mm}}
 \newcommand{\consd}{\mathsf{cons}_{\dd}}
@@ -81,7 +82,7 @@
 \large A classical route from reflective concurrency to data-parallel execution}
 \author{L.\,G.\ Meredith\\
 \small CEO, F1R3FLY.io, and Chief Science Officer, F1R3FLY Industries}
-\date{22 September 2026 --- version 1}
+\date{22 September 2026 --- version 1.1}
 
 \begin{document}
 \maketitle
@@ -109,9 +110,9 @@ name closure, atom count, message count --- turn out to be exactly the three
 finiteness conditions the matrix representation requires, and each is
 controlled by a different axis of the lattice. Name closure controls the index
 set, so the constructors decide whether the basis is finite or generated on
-demand. Atom count controls nilpotency, so the destructor decides whether the
-transfer operator is strictly block upper triangular. Message count controls
-occupation bounds. The lattice therefore already computes which matrix shape a
+demand. A weighted atom count controls nilpotency, so the destructor decides
+whether the transfer operator is strictly block upper triangular. The count of
+messages and stores together controls occupation bounds. The lattice therefore already computes which matrix shape a
 term admits, and the eager and lazy parts of the operator are separated by the
 same analysis: seven of the twelve rules are constant-coefficient and fully
 schematic, four require an encode, and exactly one, the destructor, requires a
@@ -132,6 +133,17 @@ measured ratio of sequential steps to parallel steps is exactly the width of
 the term.
 
 A phased development plan and seven numbered obligations close the note.
+
+\paragraph{Version 1.1.} Two clauses of Theorem~\ref{thm:three} were false as
+stated in version 1, and are corrected with no change of numbering. Clause (ii)
+graded by the plain count of non-message atoms, which the rules for $\bl$,
+$\br$ and $\sy$ preserve; it now grades by the weighted count of the revised
+\cite[Lem.~9.2]{rhocomb3}, and the nilpotency index and
+Corollary~\ref{cor:neumann} change accordingly. Clause (iii) claimed the
+message count non-increasing without $\dd$ and $\ev$, which the
+$\mathsf{quote}$ rule violates; it now bounds messages and stores together.
+The reference implementation is also corrected to count a symmetric match
+once, as Proposition~\ref{prop:counts} requires; no measured number changes.
 \end{abstract}
 
 \tableofcontents
@@ -517,32 +529,44 @@ Let $T$ be a combinator term over a constructor set $S$.
   reachable name set is the free $S$-algebra on $\nms{T}$, countable and
   graded by depth.
 \item \emph{(Nilpotency; destructor axis.)} By the atom-count lemma every rule
-  but $\mathsf{eval}$ strictly decreases the number of non-message atoms. Let
-  $N$ be that number in $T$. Without $\ev$, the function $\gamma \mapsto
-  N(\gamma)$ is a grading strictly decreased by every step, so the reachable
-  sub-operator is strictly block upper triangular with respect to it and
-  $T^{N+1} = 0$.
+  but $\mathsf{eval}$ strictly decreases the weight $\Wt$, which counts
+  non-message atoms with $\bl$, $\br$ and $\sy$ counted twice. Without $\ev$,
+  the function $\gamma \mapsto \Wt(\gamma)$ is a grading strictly decreased by
+  every step, so the reachable sub-operator is strictly block upper triangular
+  with respect to it and $T^{\Wt(T)+1} = 0$. Since $\Wt(T)$ is at most twice
+  the number $N$ of non-message atoms of $T$, also $T^{2N+1} = 0$; the index
+  $N+1$ does not suffice, as $\bl(a,b) \mid \mm(a,v) \mid \mm(v,x)$, with
+  $N = 1$ and a derivation of length two, shows.
 \item \emph{(Occupation bound; duplication axis.)} By the message-count lemma
   $\dd$ is the only rule that increases the number of messages without
-  consuming a $\qq$ or opening a payload, so without $\dd$ and without $\ev$
-  the message count is non-increasing and occupation numbers are bounded by
-  those of $T$.
+  consuming a $\qq$ or opening a payload. The $\mathsf{quote}$ rule does
+  increase the number of messages, by one, while consuming a $\qq$; so without
+  $\dd$ and without $\ev$ it is the number of messages \emph{and stores}
+  together that is non-increasing, and the combined occupation of $\mm$ and
+  $\qq$ species is bounded by that of $T$. The message count alone is not
+  monotone: $\fw(a,b) \mid \qq(a,p) \red \mm(b,\quo{p})$ raises it from $0$
+  to $1$.
 \end{enumerate}
 \end{theorem}
 
 \begin{proof}
 Each clause is the cited lemma read as a statement about the operator. For
 (ii), a strictly decreasing integer grading bounded below by $0$ and above by
-$N$ gives a block decomposition in which $T$ maps block $j$ into blocks
+$\Wt(T)$ gives a block decomposition in which $T$ maps block $j$ into blocks
 $< j$, which is the definition of strict block upper triangularity, and
-composition of $N+1$ such maps is zero.
+composition of $\Wt(T)+1$ such maps is zero. For (iii), inspection of the
+rules: without $\dd$ and $\ev$, $\mathsf{forward}$ preserves the number of
+messages and stores, $\mathsf{quote}$ exchanges a store for a message, and
+every other rule decreases it.
 \end{proof}
 
 \begin{corollary}[Closed-form reachability on the destructor-free fragment]
 \label{cor:neumann}
 Without $\ev$, the reachability closure is the terminating Neumann series
-$\sum_{k \le N} T^{k} = (\mathbf{1} - T)^{-1}$, computable in
-$\lceil \log_2 N\rceil$ repeated squarings, each a sparse matrix product.
+$\sum_{k \le \Wt(T)} T^{k} = (\mathbf{1} - T)^{-1}$, computable as the product
+$\prod_{i < \lceil \log_2 (\Wt(T)+1)\rceil} (\mathbf{1} + T^{2^{i}})$ of
+$\lceil \log_2 (\Wt(T)+1)\rceil$ factors obtained by repeated squaring, each
+a sparse matrix product.
 \textsf{SETTLED}
 \end{corollary}
 
@@ -1072,7 +1096,7 @@ repeated application to a vector --- survives with one correction and one
 redirection.
 
 The correction is that triangularity is available exactly on the
-destructor-free fragment, where the atom-count grading supplies it, and that
+destructor-free fragment, where the weighted atom-count grading supplies it, and that
 in general one either moves to the history unfolding or does without. The
 redirection is that the matrix worth building is not the one indexed by states.
 It is the incidence of atoms against names, which is the size of the term; on

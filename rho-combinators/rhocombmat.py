@@ -128,6 +128,17 @@ def _pairs(A, B):
 BINARY_M = ['d', 'k', 'fw', 'bl', 'br', 's', 'e']
 
 
+def _ordered(state, occs):
+    """Symmetry mask.  A redex is an unordered match (Prop. 5.3 divides by
+    m_alpha!): when two premise positions carry equal atoms, only the ordering
+    with ascending occurrence ids is kept, so each derivation is counted once."""
+    for x in range(len(occs)):
+        for y in range(x + 1, len(occs)):
+            if state.occ[occs[x]] == state.occ[occs[y]] and occs[x] > occs[y]:
+                return False
+    return True
+
+
 def redexes_matrix(state, nt):
     """All redexes, found by Boolean sparse matrix products.
     A redex is (rule, tuple of consumed occurrence ids)."""
@@ -159,7 +170,7 @@ def redexes_matrix(state, nt):
         for i in X:
             for j in X[i]:
                 for kk in Y.get(i, ()):
-                    if j != kk:
+                    if j != kk and _ordered(state, (ids['m'][j], ids['m'][kk])):
                         out.append((sh, (ids[sh][i], ids['m'][j], ids['m'][kk])))
 
     # four-premise constructors
@@ -179,6 +190,9 @@ def redexes_matrix(state, nt):
                         continue
                     for c in J[2].get(i, ()):
                         if c in (a, b):
+                            continue
+                        if not _ordered(state, (ids['m'][a], ids['m'][b],
+                                                ids['m'][c])):
                             continue
                         out.append((sh, (ids[sh][i], ids['m'][a],
                                          ids['m'][b], ids['m'][c])))
@@ -207,7 +221,7 @@ def redexes_naive(state, nt):
                 if b[1] != a[1]:
                     continue
                 for k2, c in msgs:
-                    if k2 != j and c[1] == a[2]:
+                    if k2 != j and c[1] == a[2] and _ordered(state, (j, k2)):
                         out.append((sh, (i, j, k2)))
         if sh in ('consd', 'conss'):
             for j, b in msgs:
@@ -218,6 +232,8 @@ def redexes_naive(state, nt):
                         continue
                     for l, e in msgs:
                         if l in (j, k2) or e[1] != a[3]:
+                            continue
+                        if not _ordered(state, (j, k2, l)):
                             continue
                         out.append((sh, (i, j, k2, l)))
     return out

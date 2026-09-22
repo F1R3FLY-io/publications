@@ -70,10 +70,10 @@ def dup_tree(nt, h):
 
 def construct_then_eval(nt, k):
     """k independent gadgets, each of which builds the name @m(u,v) with
-    cons_m, forwards it, and then opens it with e."""
+    cons_m, delivering it at c, where e opens it."""
     atoms = []
     for _ in range(k):
-        a, b, c, f, u, v = fresh_names(nt, 6)
+        a, b, c, u, v = fresh_names(nt, 5)
         atoms += [('consm', a, b, c), ('m', a, u), ('m', b, v),
                   ('e', c)]
     return State(atoms)
