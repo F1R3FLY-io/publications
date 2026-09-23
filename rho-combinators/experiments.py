@@ -74,7 +74,7 @@ def construct_then_eval(nt, k):
     atoms = []
     for _ in range(k):
         a, b, c, u, v = fresh_names(nt, 5)
-        atoms += [('consm', a, b, c), ('m', a, u), ('m', b, v),
+        atoms += [('cons_m', a, b, c), ('m', a, u), ('m', b, v),
                   ('e', c)]
     return State(atoms)
 

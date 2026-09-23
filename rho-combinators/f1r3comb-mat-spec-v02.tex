@@ -1,0 +1,1226 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{stmaryrd}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[expansion=false]{microtype}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc}
+\usepackage[htt]{hyphenat}
+\usepackage[hidelinks,pdftitle={F1R3Comb-Mat v0.2}]{hyperref}
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\Comb}{\textsc{F1R3Comb}}
+\newcommand{\Mat}{\textsc{F1R3Comb-Mat}}
+\newcommand{\Kind}{\textsc{K1ndl1ng}}
+\newcommand{\Camp}{\textsc{CampF1R3}}
+\newcommand{\Bell}{\textsc{B3ll0ws}}
+\newcommand{\Fx}{\textsc{F1R3x}}
+\newcommand{\Rhobots}{\textsc{Rhobots}}
+\newcommand{\MUST}{\textsc{must}}
+\newcommand{\MUSTNOT}{\textsc{must not}}
+\newcommand{\SHOULD}{\textsc{should}}
+\newcommand{\SHOULDNOT}{\textsc{should not}}
+\newcommand{\MAY}{\textsc{may}}
+
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{*}#1}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\nequiv}{\equiv_{\mathcal{N}}}
+\newcommand{\nms}[1]{\mathcal{N}^{*}(#1)}
+\newcommand{\Nsort}{\mathsf{N}}
+\newcommand{\Psort}{\mathsf{P}}
+\newcommand{\red}{\longrightarrow}
+\newcommand{\wred}{\longrightarrow^{*}}
+\newcommand{\scong}{\equiv}
+\newcommand{\comps}[1]{\lvert #1 \rvert}
+
+\newcommand{\mm}{\mathsf{m}}
+\newcommand{\dd}{\mathsf{d}}
+\newcommand{\kk}{\mathsf{k}}
+\newcommand{\fw}{\mathsf{fw}}
+\newcommand{\bl}{\mathsf{b}_{\mathsf{l}}}
+\newcommand{\br}{\mathsf{b}_{\mathsf{r}}}
+\newcommand{\sy}{\mathsf{s}}
+\newcommand{\ev}{\mathsf{e}}
+\newcommand{\qq}{\mathsf{q}}
+\newcommand{\cons}{\mathsf{cons}}
+\newcommand{\consm}{\mathsf{cons}_{\mm}}
+\newcommand{\consd}{\mathsf{cons}_{\dd}}
+\newcommand{\conss}{\mathsf{cons}_{\sy}}
+\newcommand{\conse}{\mathsf{cons}_{\ev}}
+\newcommand{\consf}{\mathsf{cons}_{\fw}}
+
+\newcommand{\Spec}{\mathcal{S}}
+\newcommand{\Nm}{\mathcal{N}}
+\newcommand{\cre}[1]{a^{\dagger}_{#1}}
+\newcommand{\ann}[1]{a_{#1}}
+\newcommand{\Wt}{\mathsf{W}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{requirement}[definition]{Requirement}
+\newtheorem{decision}[definition]{Decision}
+\newtheorem{obligation}[definition]{Obligation}
+\newtheorem{hazard}[definition]{Hazard}
+\newtheorem{erratum}[definition]{Erratum}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{example}[definition]{Example}
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+
+\newcommand{\Lft}{\mathsf{L}}
+\newcommand{\Rgt}{\mathsf{R}}
+\newcommand{\inst}{\mathsf{inst}}
+\newcommand{\ERECT}{\mathrm{ERECT}}
+\newcommand{\ALLOC}{\mathrm{ALLOC}}
+\newcommand{\enc}[1]{\llbracket #1 \rrbracket}
+\newcommand{\inp}[3]{\mathsf{for}(\,#1 \leftarrow #2\,)#3}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\Fam}{\mathcal{F}}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  frame=leftline,
+  framesep=6pt,
+  xleftmargin=8pt,
+  rulecolor=\color{black!30},
+  showstringspaces=false,
+}
+
+\title{\textbf{\Mat}\\[1mm]
+\large The rho combinators as sparse linear algebra:\\
+a Rust implementation of the matrix representation,\\
+the bulk-synchronous machine, and the transfer operator\\[2mm]
+\normalsize Specification v0.2 --- companion to \Comb{} v0.4}
+\author{F1R3FLY.io}
+\date{23 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This is the second version of the specification for \Mat, the arrow from a
+\Comb{} term to the matrix representation of \cite{matnote} and the
+bulk-synchronous machine that runs it: the route from the rho calculus,
+through the combinators, to a data-parallel device. Since v0.1, draft~3 has
+changed the translation it runs \cite[\S6]{draft3}. Apparatus names are no
+longer positional, because positional names are unsound for code instantiated
+twice; a first phase compiles into the combinators with a binder, and a second
+eliminates the binder by allocating each run-time instance's apparatus beneath
+an \emph{address} it receives, and erecting its atoms there by a constructor
+followed by $\ev$. The four constructors have become a family, one per atom
+shape. \Comb{} has followed, to v0.4 \cite{combspec}.
+
+For a machine whose whole purpose is to run many things at once, the
+decisive part of this is phase two, and v0.2 is organised around it. Three
+findings, each backed by the reference implementation, shape the
+specification. First, concurrent instances erected by the literal
+construction \cite[Def.~6.8]{draft3} mix their apparatus in most runs, and
+maximal progress --- the device's native schedule --- mixes more than
+sequential choice does (\cite[Find.~14.1]{matnote}: 58\% of two-instance runs
+against 32\%, every run from eight instances). Second, the discipline draft~3
+proves sufficient for correctness \cite[Def.~6.10, Lem.~6.11]{draft3} cannot
+be met with fixed-arity constructors for any atom mentioning two allocated
+names --- which includes the distributor and the gate --- so the conforming
+construction \Comb{} v0.4 mandates \cite[Req.~5.16]{combspec} does not exist
+\cite[Prop.~14.3]{matnote}. Third, a single-input, multi-hole constructor,
+which is draft~3's own context-indexed alternative \cite[Rem.~3.14]{draft3}
+promoted to a primitive, meets the discipline by construction, erects an
+instance in two steps, keeps rows four wide, and runs the recursion
+combinator at a constant 7 parallel steps and 16 new names per unfolding
+however deep its address (\cite[Find.~14.4]{matnote}).
+
+v0.2 therefore supports both erections: the literal one, because it is what
+\Comb{} emits today and the machine must be able to show what it does, and
+single-input instantiation, behind a feature, as the construction the device
+path is built for. It generates its rule table from \Comb's shape table, makes
+the row width a per-artefact parameter, adopts \Comb's address allocator and
+freshness checks, adds an instance-provenance column for tracing and for a
+cross-instance resolver, and records that the operator layer's closure applies
+to no compiled program with an input, since every one contains $\ev$. The
+three errata v0.1 raised against the notes are discharged by their revisions;
+the questions this version puts to the papers are about phase two.
+Key words \MUST, \MUSTNOT, \SHOULD, \MAY{} are used in the sense of RFC~2119.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{Purpose and scope}\label{sec:purpose}
+
+\subsection{The route, and where this document sits on it}
+
+The programme is a compiler from the rho calculus to a data-parallel device
+by way of the combinators and their matrix reading. It has four stages, and
+this document specifies the third.
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+\toprule
+Stage & What it does & Specified in\\
+\midrule
+1 & K0 text to a canonical normal form & \cite{k1ndl1ng}\\
+2 & Normal form to combinator term, in two phases & \Comb{} v0.4 \cite{combspec}\\
+3 & Combinator term to matrix representation; the bulk-synchronous machine;
+    the transfer operator & this document\\
+4 & The machine's kernels on a device & Section~\ref{sec:device}, as a
+    contract\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+Two properties are fixed from the start and govern everything below. The
+machine must compute exactly one step per state, seed and configuration, so
+that a host and a device can be compared trace for trace
+(\cite[P4]{matnote}); and it must run what stage two emits, including every
+instance of every unit, at the width the program has
+(\cite[Princ.~10.4]{matnote}).
+
+\subsection{What exists today}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Artefact & What it gives this project\\
+\midrule
+\code{rho-combinators-draft3} & The calculus and its two presentations
+(\S3.2--3.3); the constructor family (Def.~3.8, Rem.~3.9); erection at a
+computed name (Rem.~3.11); the context-indexed constructor (Rem.~3.14); the
+positional-naming bug (\S6.1); phase one (\S6.2) and phase two (\S6.3,
+Def.~6.6, Def.~6.8, Ex.~6.9); the discipline and the permutation lemma
+(Def.~6.10, Lem.~6.11, Rem.~6.12); freshness by size (Lem.~6.14); the weighted
+atom count (Lem.~9.2, Prop.~9.9)\\
+\code{f1r3comb-spec-v04} & The term type and shape table; tags; the
+intermediate representation; phase two as a compiler; the address allocator;
+the golden terms $W$ and $D_{x}$; the diagnostics this document shares\\
+\code{rhocomb-matrix} v1.2 & The state space and incidence (\S4, \S7), the
+step (\S8), the operator (\S5--6), the plan (\S11), and \S14: phase two seen
+from the machine, the mixing measurements, the multiplicity proposition,
+context instantiation\\
+\code{rhocombmat.py} v1.2, \code{experiments.py}, \code{phase2.py} & The
+reference machine with a generated rule table and the context constructor;
+E1--E4 (\code{results.txt}); the phase-two experiments
+(\code{phase2-results.txt})\\
+\code{rhocomb-logic} rev.~2 & Components as a complete invariant (Def.~2.9);
+drop elimination (Lem.~2.8); injective quotation (Prop.~2.10); the weighted
+count as a formula (Def.~4.2, Prop.~6.17)\\
+\code{campf1r3} (the repository) & The workspace; \code{Hash32} and
+\code{blake2b\_256}; no external dependencies\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Nomenclature}\label{sec:nomen}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Term & Meaning in this document\\
+\midrule
+\emph{term} & A \code{f1r3comb\_term::Term}: a closed drop-free normal form
+under presentation~A, a flat multiset of atoms \cite[Req.~4.3]{combspec}\\
+\emph{shape table} & \Comb's table of atom shapes with arities and argument
+sorts, from which constructors and rules are generated
+\cite[Req.~4.5]{combspec}\\
+\emph{family}, $\Fam(P)$ & The constructors a program uses
+\cite[Req.~4.7]{combspec}, recorded in the artefact header\\
+\emph{row width}, $w$ & The largest arity in the program's signature; the
+fixed width of every row in one run\\
+\emph{name id} & A \code{NameId(u32)}: the in-run index of a name modulo
+$\nequiv$\\
+\emph{row}, \emph{row ref} & One atom occurrence; its position
+\code{(Shape, u32)} in its shape table\\
+\emph{address}, \emph{leaf} & The name an instance receives and allocates
+beneath; a name $\sigma\!\cdot\!w$ so allocated \cite[Def.~6.6]{draft3}\\
+\emph{static channel} & A name in the phase-two image, shared by every
+instance \cite[\S1.3]{combspec}\\
+\emph{unit}, \emph{instance} & One quotation's phase-two image; one
+run-time copy of it at one address\\
+\emph{provenance} & The instance a row belongs to, as far as the machine can
+tell; machine metadata, never semantics (Section~\ref{sec:prov})\\
+\emph{erection} & Building an atom at computed names: a constructor, then
+$\ev$ \cite[Rem.~3.11]{draft3}; \emph{literal} per \cite[Def.~6.8]{draft3},
+or by \emph{instantiation} per Section~\ref{sec:inst}\\
+\emph{redex}, \emph{step}, \emph{width} & As in v0.1: a rule with the row refs
+it consumes; one maximal independent set; its size\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Goals}
+
+\begin{enumerate}[leftmargin=1.6em]
+\item A total, lossless, round-trippable map from \Comb{} terms to the matrix
+representation, and back, for every shape \Comb's shape table can generate.
+\item Redex finding as joins derived from the generated rule table, with three
+independent finders that agree.
+\item A bulk-synchronous step defined bit-exactly, so host and device traces
+are comparable.
+\item Phase-two images run correctly: \Comb's address allocator and freshness
+checks, per-instance provenance, and both erections --- literal, to test what
+\Comb{} emits, and single-input instantiation, to build on.
+\item The instruments that gate device work: width, with erection separated
+from computation; address growth; cross-instance mixing.
+\item On the destructor-free sublattice, the transfer operator, its closure
+and the pre-image primitive, scoped honestly (Section~\ref{sec:op}).
+\item \Comb's portability envelope: no external dependencies,
+\code{forbid(unsafe\_code)}, WebAssembly-clean, bit-identical across hosts
+and core counts.
+\end{enumerate}
+
+\subsection{Non-goals}\label{sec:nongoals}
+
+Device code (Section~\ref{sec:device} is a contract, and gated); presentation
+B (Decision~\ref{dec:aonly}); weights; the logic; the history unfolding;
+intern-table collection; phase one and phase two themselves, which are
+\Comb's. \Mat{} takes a \code{Term} and \MUSTNOT{} depend on
+\code{f1r3comb-lower} or \code{f1r3comb-ir}.
+
+%======================================================================
+\section{Position relative to \Comb}\label{sec:position}
+
+\subsection{Two machines, one term type}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\toprule
+& \Comb{} machine (\code{f1r3comb-run}) & \Mat{} (\code{f1r3comb-par})\\
+\midrule
+Input & \code{Term} and artefact header & \code{Term} and artefact header\\
+State & \Camp{} store keyed by \code{Hash32} & shape tables of \code{NameId}
+rows, width $w$\\
+Name identity & content hash of the encoding & structural intern in-run,
+content hash at the boundary\\
+Event & one comm & one step, a maximal independent set\\
+Resolver & store order key; an adversarial profile for testing
+\cite[Obl.~11.2]{combspec} & priority function; a cross-instance profile
+(Section~\ref{sec:resolvers})\\
+Rules & generated from the shape table & generated from the same table\\
+Addresses & allocator \cite[Req.~9.5]{combspec} & the same allocator\\
+Output & a scene & a scene\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Decisions}
+
+\begin{decision}[Presentation A only]\label{dec:aonly}
+\Mat{} implements presentation~A, and under \Comb's \code{presentation-b}
+feature its crates compile to stubs returning \code{comb-mat-presentation}.
+\Comb{} v0.4 withdrew one of its own reasons for A \cite[Rem.~2.2]{combspec};
+this decision never rested on it. It rests on row width: under B a message
+payload is a process, rows are ragged, and (G1) of \cite[\S2.1]{matnote}
+fails. The A/B comparison \Comb{} requires \cite[Obl.~11.8]{combspec} is run
+on \code{f1r3comb-run}.
+\end{decision}
+
+\begin{decision}[A store row holds the quotation of its payload]
+\label{dec:qrow}
+Unchanged from v0.1, and now with a second dividend. The term type keeps
+$\qq(a,p)$ with a process payload \cite[Dec.~2.1]{combspec}; the row is
+$(\qq,\mathrm{id}(a),\mathrm{id}(\quo{p}))$, lossless because $\quo{-}$ is
+injective on normal forms \cite[Prop.~2.10]{logic}, and the shape tag carries
+the $\mm$/$\qq$ distinction the logic needs. In the row representation the
+member $\cons_{\qq}$ \cite[Def.~3.8]{draft3} is uniform with every other: its
+conclusion is the row $(\qq,v_{1},v_{2})$, and A's coercion
+$\quo{\qq(v_{1},\drp{v_{2}})}$ \cite[Rem.~3.9]{draft3} never appears
+(\cite[Rem.~3.1]{matnote}). \cite[Req.~4.8]{combspec}'s requirement that the
+two readings agree holds by construction here and \MUST{} be tested on
+\code{f1r3comb-run}'s side only.
+\end{decision}
+
+\begin{decision}[Decode by arena read]\label{dec:decode}
+Unchanged from v0.1. \cite[Req.~9.3]{combspec} forbids the \Camp{} machine to
+project a payload out of a name, because the short-cut is unsound under B.
+\Mat{} is A-only and interns drop-free components, so its $\mathsf{eval}$ is
+an arena read, tested against the smart-constructed $\drp{v}$.
+\end{decision}
+
+\begin{decision}[The rule table is generated from \Comb's shape table]
+\label{dec:ruletable}
+v0.1 asked for one rule table shared by both machines. \Comb{} v0.4 goes
+further and generates it \cite[Req.~4.5]{combspec}. \Mat{} \MUST{} consume the
+same generator, living in \code{f1r3comb-term}, and \MUSTNOT{} list rules of
+its own. Join plans, rule classes, the grading and the row width are derived
+from the generated table (Section~\ref{sec:rules}).
+\end{decision}
+
+\begin{decision}[Two erections, one of them behind a feature]
+\label{dec:twoerect}
+\Mat{} \MUST{} run terms erected literally per \cite[Def.~6.8]{draft3}, since
+that is what \Comb{} emits, and \MUST{} support the context constructor
+$\inst$ of Section~\ref{sec:inst} behind the feature \code{inst}, off by
+default until the paper settles phase two's primitive
+(Obligation~\ref{obl:inst}). The feature adds one shape and one rule; the
+rest of the machine is indifferent to it. The device path is specified for
+the \code{inst} construction (Section~\ref{sec:device}), because it is the one
+that is both correct under concurrency and fixed-width.
+\end{decision}
+
+%======================================================================
+\section{Phase two, as the machine meets it}\label{sec:phase2}
+
+This section fixes what \Mat{} must do with a phase-two image, and why. The
+argument is in \cite[\S14]{matnote}; what follows is its consequences as
+requirements.
+
+\subsection{Concurrency is the normal case}
+
+Two deploys of one program share every static channel, and so do two
+unfoldings of one recursive unit. Draft~3's correctness rests on the
+permutation lemma \cite[Lem.~6.11]{draft3}, which holds for images meeting the
+single-address-input discipline. The literal erection does not meet it
+\cite[Req.~5.15]{combspec}, and \cite[Find.~14.1]{matnote} measures the
+consequence on the reference machine:
+
+\begin{center}\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+instances & 2 & 4 & 8 & 16\\
+\midrule
+maximal progress: runs with a mixed atom (of 50) & 29 & 48 & 50 & 50\\
+sequential uniform: runs with a mixed atom (of 50) & 16 & 38 & 49 & 50\\
+single-input instantiation, either scheduler & 0 & 0 & 0 & 0\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+A bulk-synchronous machine fires every enabled constructor at once, so it
+exhibits the cross whenever two instances' leaves are present together, which
+on a device is always. This is why \Mat{} treats mixing as something to
+measure, not something the schedule might avoid.
+
+\subsection{The conforming construction does not exist}
+
+\Comb{} v0.4 responds by mandating a two-stage erection: a single-input
+bootstrap that erects, at address-derived channels, erectors that may then
+join freely \cite[Req.~5.16]{combspec}. \cite[Prop.~14.3]{matnote} shows that
+under the discipline in the form the permutation lemma uses --- no redex fired
+at a static channel draws occurrences of one instance's address from two
+premises --- no reachable atom contains the address twice. An erector that
+joins two leaves contains the address twice, and so does every atom
+mentioning two allocated names, which includes the distributor
+$\dd(q_{1},p_{1},q_{2})$ and the gate $\sy(p_{0},b,c)$. Stage~(ii) of the
+two-stage scheme is therefore unreachable from stage~(i), and draft~3's
+\cite[Rem.~6.12]{draft3} describes no construction.
+
+The obstruction is arity, not routing. A fixed-arity constructor places each
+input once, so building a name that mentions the address twice from one copy
+of it requires duplicating and rejoining, and the rejoin is the forbidden
+join. A constructor that places one input at many holes does not.
+
+\begin{hazard}[Correctness of compiled programs is gated]\label{haz:gate}
+Until phase two has a primitive that meets the discipline, a compiled program
+that runs two instances of a unit concurrently has no correctness guarantee on
+any machine, and on this one fails in most runs. Every width measurement on
+compiled programs (Section~\ref{sec:instr}) \MUST{} be labelled with the
+erection used, and results obtained with literal erection \MUST{} be treated
+as measurements of the schedule, not of the program.
+\end{hazard}
+
+\subsection{Single-input context instantiation}\label{sec:inst}
+
+\begin{definition}[The context constructor]\label{def:inst}
+For a context $C$ --- a term with a hole in any number of name positions,
+including beneath quotation ---
+\[
+  \inst(a,f,C) \mid \mm(a,v) \;\red\; \mm(f,\quo{C[v]}).
+\]
+A unit's phase-two image under \code{inst} is $\inst(r,f,C_{\mathrm{unit}})
+\mid \ev(f)$, where $C_{\mathrm{unit}}$ is the unit's phase-one image with
+each bound name replaced by the leaf at a fixed-length path beneath the hole,
+and with the spare leaves posted for nested units and self-instantiation
+\cite[Req.~5.11]{combspec}.
+\end{definition}
+
+This is \cite[Rem.~3.14]{draft3}'s context-indexed constructor, with one
+premise. It meets the discipline by construction (one address input at the
+static $r$); permuting addresses among $\inst$ atoms is the harmless
+permutation of \cite[Lem.~6.11]{draft3}; and it removes the allocation tree,
+the per-node gadget channels \cite[Req.~5.9]{combspec}, the fan-out count
+\cite[Req.~5.12]{combspec} and the constructors of constructors. Freshness is
+unchanged: leaves exceed the address in size, and the address and statics
+exceed every name of the image \cite[Lem.~6.14]{draft3},
+\cite[Req.~5.22]{combspec}.
+
+\begin{requirement}[The context is a name with a reserved hole]\label{req:hole}
+$C$ \MUST{} be represented as an interned name in which a reserved
+\code{NameId::HOLE} stands for the hole. \code{HOLE} \MUST{} have no
+counterpart in the term type other than inside the third argument of an
+$\inst$ atom, \MUST{} be rejected by import anywhere else
+(\code{comb-mat-hole}), and \MUST{} be unconstructible: no rule's conclusion
+may contain it. In the term encoding it \MUST{} take a tag in the reserved
+block, allocated by \Comb{} (Section~\ref{sec:paper}, item~4).
+\end{requirement}
+
+\begin{requirement}[Instantiation is a memoised substitution]\label{req:subst}
+The encode of $\inst$ \MUST{} be $C\{v/\code{HOLE}\}$ computed over the
+interned form, hereditarily beneath quotation, with a per-firing memo keyed
+by name id, so that its cost is the number of distinct names in $C$, not the
+size of $C$'s tree. Its result names \MUST{} be interned in canonical order
+(Requirement~\ref{req:insertorder}).
+\end{requirement}
+
+\begin{requirement}[The measured cost is a regression]\label{req:dxlaw}
+\cite[Find.~14.4]{matnote} runs $D_{x}$ of \cite[Ex.~6.9]{draft3} under
+\code{inst}: exactly 7 parallel steps and 16 new names per unfolding for 200
+unfoldings, and between 9 and 11 sequential steps (mean 10, the draft's 2
+erection steps plus 8). \code{f1r3comb-check} \MUST{} reproduce these as laws
+over the number of unfoldings, to $10^{4}$ unfoldings
+(Requirement~\ref{req:targets}).
+\end{requirement}
+
+\subsection{Provenance}\label{sec:prov}
+
+A trace of a phase-two run is unreadable without knowing which instance each
+atom belongs to \cite[Req.~9.5]{combspec}, and a cross-instance resolver needs
+the same information. It is available to the machine without inspecting
+names.
+
+\begin{definition}[Provenance]\label{def:prov}
+Every row carries a provenance tag \code{Prov(u32)}: \code{STATIC} for rows
+imported from the artefact, and for the rest the tag of the root address
+beneath which the row's allocated names lie, computed when the row is
+produced as follows. A row produced by a redex takes the tag of the redex's
+premises if they agree on one non-\code{STATIC} tag, \code{STATIC} if all
+are \code{STATIC}, and \code{MIXED} otherwise; a row whose names include a
+leaf takes that leaf's root's tag, found in $O(1)$ from the intern table's
+root column (Requirement~\ref{req:roots}).
+\end{definition}
+
+\begin{requirement}[Provenance is metadata]\label{req:provmeta}
+Provenance \MUSTNOT{} influence which redexes exist, which are selected under
+\code{MaximalProgress}, or what they produce. It \MAY{} influence selection
+only under the resolver of Section~\ref{sec:resolvers} built for it. It
+\MUST{} appear in traces, rendered as the root address's content hash, and a
+row tagged \code{MIXED} \MUST{} raise a trace event at level \code{races} or
+above. Under \code{inst} no row \SHOULD{} ever be tagged \code{MIXED}, and
+the test suite \MUST{} assert it.
+\end{requirement}
+
+%======================================================================
+\section{The representation}\label{sec:rep}
+
+\subsection{Names, the intern table, and addresses}
+
+\begin{lstlisting}
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct NameId(pub u32);            // NameId::HOLE reserved (Requirement 3.3)
+
+pub struct Row<const W: usize> { pub shape: ShapeId, pub args: [NameId; W], pub prov: Prov }
+
+pub struct InternTable {
+    arena:  Vec<(ShapeId, SmallArgs)>,  // components of every name, contiguous
+    span:   Vec<(u32, u32)>,            // NameId -> (offset, len)
+    key:    HashMap<Box<[..]>, NameId, FixedHasher>,
+    size:   Vec<u64>,                   // encoding size, for freshness by size
+    root:   Vec<Option<NameId>>,        // the address a leaf lies beneath
+    depth:  Vec<u32>,                   // quotation depth, for canonical export
+    chash:  Vec<Option<Hash32>>,        // content hash, lazily
+    budget: NameBudget,
+}
+\end{lstlisting}
+
+\begin{requirement}[Structural interning; the hot path is hash-free]
+\label{req:hashfree}
+As v0.1: a name's key is its sorted component rows over child ids, \code{quote}
+and \code{drop} compute no BLAKE2b, and the content hash of
+\cite[Req.~4.10]{combspec} is computed only at the boundary. The arena stores
+rows of the name's own width, so names built from shapes of different arity
+share one table.
+\end{requirement}
+
+\begin{remark}[Structural interning is the prefix sharing \Comb{} asks for]
+\cite[Req.~9.7]{combspec} asks that descending one address level cost $O(1)$
+rather than $O(|\sigma|)$, and notes that without it a recursive program
+degrades quadratically \cite[Req.~13.1]{combspec}. Structural interning
+provides it by construction: $\Lft\sigma$ is one new entry whose single
+component refers to $\sigma$'s id, and \cite[Find.~14.4]{matnote} measures 16
+new names per unfolding of $D_{x}$ at every depth. The content hash, being
+of the full encoding, is $O(\text{depth})$ per new address; this is the
+reason, beyond v0.1's, that \Mat{} keeps it off the hot path, and the
+reason for item~7 of Section~\ref{sec:paper}.
+\end{remark}
+
+\begin{requirement}[Size, root and depth columns]\label{req:roots}
+\code{size} \MUST{} hold each name's encoding length, computed from its
+children in $O(\text{components})$ at interning time, so that the freshness
+test by size \cite[Lem.~6.14]{draft3} is an integer comparison. \code{root}
+\MUST{} hold, for a leaf, the root address beneath which it lies, computed at
+interning time from the child's entry when the name has the $\Lft$ or $\Rgt$
+shape of \cite[Def.~6.6]{draft3}. Both columns are machine metadata subject
+to Requirement~\ref{req:noidleak}.
+\end{requirement}
+
+\begin{requirement}[Ids never leave the process]\label{req:noidleak}
+As v0.1: no trace, report, diagnostic or export \MAY{} contain a \code{NameId}
+or row position, except the canonically relabelled \code{.cmat}. Externally a
+name is its \code{Hash32}.
+\end{requirement}
+
+\begin{requirement}[Budget]\label{req:budget}
+\cite[Req.~9.7]{combspec}'s budget: maximum distinct names, maximum
+components per name, maximum arena length, and maximum address depth.
+Exceeding any \MUST{} halt the step before it commits, with
+\code{comb-name-budget} naming the rule and, for an address, the unit.
+Because every loop descends \cite[Haz.~9.6]{combspec}, the budget is an
+operational parameter and \MUST{} be reported with its high-water marks in
+every run report.
+\end{requirement}
+
+\subsection{State}
+
+\begin{requirement}[Structure of arrays, width $w$]\label{req:soa}
+A state is one table per shape in the program's signature, each holding
+$\mathrm{ar}(A)$ columns of \code{NameId} plus a provenance column. Column
+arrays are contiguous; the incidence $M^{A}_{j}$ is the column array
+(\cite[Def.~7.1]{matnote}). The width $w$ \MUST{} be read from the artefact
+header, \MUST{} be a const-generic parameter of the machine instantiated for
+$w \in \{4,5,6\}$, and an artefact whose signature needs more \MUST{} be
+rejected with \code{comb-mat-width}. Under \code{inst} $w = 4$ for every
+program: the base shapes have arity at most three, $\cons_{\dd}$ and
+$\cons_{\sy}$ four, and $\inst$ three.
+\end{requirement}
+
+\begin{remark}[Why the width is not a constant any more]
+Under literal erection phase two erects every phase-one atom that mentions a
+bound name, and the (o5) chains of phase one are constructor atoms on bound
+names, so a program with an (o5) occurrence needs $\cons_{\cons_{\dd}}$, of
+arity five with four premises (\cite[\S14.1]{matnote}). \Comb{} v0.4's
+family computation includes these \cite[Req.~4.7]{combspec}, but its tag
+table does not (Section~\ref{sec:paper}, item~3). The two-stage erection, were
+it constructible, would add a third level.
+\end{remark}
+
+\subsection{Import, export, and the canonical format}
+
+\begin{requirement}[Import and export]\label{req:import}
+As v0.1, extended to the generated signature: import flattens components in
+encoding order and interns bottom-up with an explicit stack; export rebuilds
+through \code{f1r3comb-term}'s smart constructors; import--export is the
+identity on encodings and export--import on markings. Provenance is
+\code{STATIC} on import and is not exported.
+\end{requirement}
+
+\begin{requirement}[\code{.cmat}]\label{req:cmat}
+As v0.1, with the header extended by the fields \Comb's artefact header
+carries \cite[\S8.1]{combspec}: presentation, feature set (including
+\code{inst}), erection construction, $\Fam(P)$, $w$, the root-address size
+bound, and the static channels. Canonical relabelling orders names by
+quotation depth then content hash; \code{HOLE} is relabelled to the reserved
+index $0$. For terms $P \scong Q$ the encodings \MUST{} be byte-equal.
+\end{requirement}
+
+%======================================================================
+\section{The rule table}\label{sec:rules}
+
+\subsection{Generation}
+
+\begin{lstlisting}
+pub enum Premise { Loud { slot: u8 }, Quiet { slot: u8 } }
+pub enum Conclusion {
+    Atoms(Vec<(ShapeId, Vec<Var>)>),     // class (a)
+    Encode { deliver: Var, node: Node }, // class (b): m(deliver, @node)
+    Decode { payload: Var },             // class (c): *payload
+}
+pub enum Node { Union(Var, Var), Atom(ShapeId, Vec<Var>), Instantiate { ctx: Var, with: Var } }
+pub fn rules(shapes: &ShapeTable, features: Features) -> RuleTable;   // in f1r3comb-term
+\end{lstlisting}
+
+\begin{requirement}[What the generator emits]\label{req:gen}
+From the shape table the generator \MUST{} emit: the seven routing and
+destructor rules and $\mathsf{quote}$ of \cite[Def.~3.3]{draft3};
+$\mathsf{make}_{\mid}$; for each constructor $\cons_{A}$ in $\Fam(P)$, one
+rule with $\mathrm{ar}(A)$ loud premises at slots $0..\mathrm{ar}(A)-1$ and
+conclusion \code{Encode\{deliver: Slot(ar(A)), node: Atom(A, payloads)\}};
+and under \code{inst} the rule of Definition~\ref{def:inst}, one loud premise
+at slot 0 and conclusion \code{Encode\{deliver: Slot(1), node:
+Instantiate\{ctx: Slot(2), with: Payload(0)\}\}}. Rule classes, join plans,
+the grading and $w$ \MUST{} be derived from the emitted table.
+\end{requirement}
+
+\begin{requirement}[Only a forwarder reads a store]\label{req:quietjoin}
+As v0.1, and now a property of the generator: no generated rule other than
+$\mathsf{quote}$ \MAY{} have a quiet premise. $\cons_{\qq}$ \emph{builds} a
+store name and reads only messages. A test \MUST{} assert, for every generated
+consumer shape other than $\fw$, that it has no redex against a $\qq$ row.
+\end{requirement}
+
+\begin{requirement}[Classes and plans are checked]\label{req:plans}
+A test \MUST{} check, for the generated table of every corpus artefact: exactly
+one class-(c) rule; one class-(b) rule per member of $\Fam(P)$, plus
+$\mathsf{make}_{\mid}$ and, under \code{inst}, $\inst$; seven class-(a)
+rules; and a join plan per rule whose arity equals its premise count. This
+replaces v0.1's hand-stated count, which the family made obsolete.
+\end{requirement}
+
+\subsection{The grading, generated}
+
+\begin{requirement}[Grading]\label{req:grading}
+The weight $\Wt$ of \cite[Lem.~9.2]{draft3} --- $\bl,\br,\sy$ at two, $\mm$ at
+zero, every other non-message shape at one --- \MUST{} be derived from the
+table as in v0.1: one plus the heaviest non-message atom any of a shape's
+rules produces from it. For the family and for $\inst$ this gives one. The
+debug build \MUST{} assert that every non-$\mathsf{eval}$ firing decreases
+$\Wt$, and that without $\dd$ or $\ev$ firings a step does not increase
+messages plus stores (\cite[Thm.~6.1(iii)]{matnote}).
+\end{requirement}
+
+%======================================================================
+\section{Sparse algebra and redex finding}\label{sec:finders}
+
+The sparse layer (\code{Semiring}, \code{Csr}, Gustavson \code{spgemm},
+counting-sort \code{bucket}) is unchanged from v0.1, as are the three finders
+(\code{Naive}, \code{Product}, \code{Bucketed}), the canonical key, the
+distinctness and symmetry masks, and the requirement that all three return
+identical sorted redex sets. Two things change.
+
+\begin{requirement}[Joins are $n$-way]\label{req:nway}
+A join plan has up to $w-1$ premises. The \code{Product} finder \MUST{}
+compute one product per premise slot and an $n$-fold row-wise expansion with
+the masks; the \code{Bucketed} finder \MUST{} look up one bucket per slot.
+Neither \MAY{} special-case arity. The redex type is
+\code{(rule: u16, consumer: u32, premises: [u32; W-1])}.
+\end{requirement}
+
+\begin{requirement}[Validation covers the generated signature]\label{req:validate}
+Finder agreement (Obligation~\ref{obl:finders}) \MUST{} be run over every
+shape the generator can emit for the corpus, two levels of the family, and
+$\inst$ --- the reference's version~1.2 validation does this over
+twenty-nine shapes (\cite[Find.~10.1]{matnote}).
+\end{requirement}
+
+\begin{hazard}[Contention at static channels]\label{haz:statics}
+v0.1 flagged the quadratic join on a contended channel
+(\cite[Rem.~7.2]{matnote}). Phase two makes static channels contended by
+design: $n$ instances put $n$ messages at each allocation channel under
+literal erection, and at $r$ under \code{inst}. Under \code{inst} the
+contended rule has one premise and the redex count at $r$ is $n^{2}$, whose
+maximal independent set is a perfect matching, as in E2; under literal
+erection the multi-premise constructors at static channels enumerate
+$n^{m}$ candidates for an $m$-input member. The enumerated-to-fired ratio
+\MUST{} be reported per static channel.
+\end{hazard}
+
+%======================================================================
+\section{Conflict, selection, and resolvers}\label{sec:select}
+
+The conflict hypergraph, the priority function, the greedy maximal independent
+set and the proposition that greedy selection equals parallel rounds under
+shared priorities are unchanged from v0.1 (\code{mix64} of SplitMix64 over
+seed, step and canonical key; \cite{bfs}). So is the requirement that every
+backend compute exactly the greedy set.
+
+\subsection{Resolvers}\label{sec:resolvers}
+
+\begin{lstlisting}
+pub enum Resolver {
+    MaximalProgress,     // the greedy maximal step; the default
+    SingleByPriority,    // the first redex in priority order; linearises a step
+    SingleUniform,       // one redex, uniformly over the (symmetry-masked) redex set
+    CrossInstance,       // maximal progress, preferring redexes that join provenances
+}
+\end{lstlisting}
+
+\begin{requirement}[The cross-instance resolver]\label{req:cross}
+\code{CrossInstance} \MUST{} compute the greedy maximal independent set under
+the priority $(\,\neg x(r),\ h(r),\ \mathrm{key}(r)\,)$, where $x(r)$ holds
+iff the premises of $r$ carry two distinct non-\code{STATIC} provenance tags.
+It is the matrix machine's counterpart of the adversarial profile
+\cite[Obl.~11.2]{combspec} requires of \Camp, and is stronger: it prefers
+every cross at every static channel in the same step. It \MUST{} be used in
+the phase-two tests of Section~\ref{sec:test} alongside
+\code{MaximalProgress}, and a term that passes \Comb's conformance check
+\cite[Req.~5.14]{combspec} yet yields a \code{MIXED} row under it \MUST{} be
+reported as a counterexample to the conformance check, not patched.
+\end{requirement}
+
+\begin{requirement}[Races are visible]\label{req:races}
+As v0.1, with \cite[Req.~9.8]{combspec}'s third race added: every selected
+redex at a static channel whose excluded rivals carry a different provenance
+\MUST{} be a trace event at level \code{races}, naming both addresses by
+content hash.
+\end{requirement}
+
+%======================================================================
+\section{Firing}\label{sec:fire}
+
+\begin{requirement}[Order of effects]\label{req:insertorder}
+As v0.1: sort the step by canonical key; compute conclusions in that order,
+class (b) interning new names in that order --- including the names an
+$\inst$ substitution creates, in the order of a fixed traversal of $C$ ---
+and class (c) reading the arena; remove consumed rows by stable compaction;
+append produced rows in the order computed. Parallel backends \MAY{} compute
+concurrently but \MUST{} assign ids as if sequentially. Budget checks precede
+any mutation.
+\end{requirement}
+
+\begin{requirement}[Soundness is checked, not assumed]\label{req:soundcheck}
+As v0.1: the debug build re-finds redexes after each firing of a step in
+canonical order and checks the rest remain enabled.
+\end{requirement}
+
+%======================================================================
+\section{Addresses and freshness}\label{sec:addr}
+
+\begin{requirement}[One allocator for both machines]\label{req:oneallocator}
+The address allocator of \cite[Req.~9.5, Req.~5.23]{combspec} \MUST{} be
+factored out of \code{f1r3comb-run} into \code{f1r3comb-term} (module
+\code{addr}) and used unchanged by \Mat, so that a deploy on either machine
+receives the same root address for the same program and allocator state. Two
+machines that disagree on addresses cannot be compared trace for trace.
+\end{requirement}
+
+\begin{requirement}[Deploy checks]\label{req:deploychecks}
+Deploy \MUST{} perform \Comb's three freshness checks, with its diagnostics:
+the root address exceeds, by encoding size, every name of the image
+(\code{comb-address-too-small}, \cite[Req.~5.19]{combspec}); so does every
+static channel (\code{comb-static-not-fresh}, \cite[Req.~5.22]{combspec});
+and the root address is prefix-incomparable with every address in use
+(\code{comb-address-overlap}, \cite[Req.~5.23]{combspec}). Size comparison
+uses the \code{size} column; prefix comparison walks the \code{root} and
+$\Lft/\Rgt$ spine and is linear in depth.
+\end{requirement}
+
+%======================================================================
+\section{The operator layer, scoped}\label{sec:op}
+
+The operator layer of v0.1 --- species, markings, successors with
+mass-action coefficients, exploration, the materialised $T$, triangularity in
+the marking order graded by $\Wt$, closure by repeated squaring, and
+$T^{\top}\chi$ --- is unchanged in content. Its scope is restated.
+
+\begin{requirement}[Scope, stated in the tool]\label{req:opscope}
+Every phase-two image contains $\ev$ (each gate stores its body behind one
+\cite[Lem.~6.2]{draft3}, and each erection ends in one), so
+\code{explore} \MUST{} refuse every compiled program with an input with
+\code{comb-op-destructor} unless given a depth bound, and the documentation
+\MUST{} say that triangularity and closure
+(\cite[Thm.~6.1(ii), Cor.~6.2]{matnote}) apply to hand-written terms and to
+phase-one images of input-free programs only (\cite[\S14.2]{matnote}). The
+\code{successors} primitive is unrestricted and is what the logic's modality
+needs at a frontier.
+\end{requirement}
+
+\begin{remark}[\Comb's open question on the matrix encoding]
+\cite[\S15, item~5]{combspec} observes that an upper-triangular encoding wants
+a bounded name universe and that phase two grows it with every unfolding. The
+answer, from this side: the machine never wanted a bounded universe --- it
+multiplies the term-sized incidence, not the state-indexed operator
+(\cite[\S7]{matnote}), and its per-unfolding name cost is constant --- and the
+closure, which does want one, is unavailable to compiled programs with inputs
+for the independent reason that they contain $\ev$.
+\end{remark}
+
+%======================================================================
+\section{Instrumentation and the width gate}\label{sec:instr}
+
+\begin{requirement}[Reports]\label{req:reports}
+As v0.1 (steps, rewrites, width and enumeration histograms, names, arena,
+inert rows, per-rule counts), plus: steps and rewrites attributed to
+\emph{erection} --- $\inst$ and constructor firings whose conclusion is
+consumed by $\ev$ in the next step, and those $\ev$ firings --- separately
+from the rest; instances started; address depth high-water mark; new names per
+instance; and the count of \code{MIXED} rows.
+\end{requirement}
+
+\begin{requirement}[The width measurement]\label{req:widthcmd}
+\code{f1r3x comb-width} \MUST{} report, per program and per erection, the
+width distribution with erection separated from computation, as
+\cite[Obl.~14.6]{matnote} asks. Under \code{inst}, erection is two steps per
+instance and parallel across instances, so it should add width and not depth;
+the report is where that is confirmed or refuted. This is the instrument for
+\cite[Obl.~13.7]{matnote}, which \cite[Obl.~14.5]{matnote} now gates.
+\end{requirement}
+
+\begin{requirement}[Subcommands]\label{req:fx}
+\Fx{} gains \code{comb-mat}, \code{comb-run --machine=matrix} (with
+\code{-{}-resolver}, \code{-{}-erection}, \code{-{}-seed}, \code{-{}-cores},
+\code{-{}-trace}), \code{comb-width} and \code{comb-op}, alongside \Comb's
+\code{comb}, \code{comb-ir}, \code{comb-hash}, \code{comb-run} and
+\code{comb-lattice}.
+\end{requirement}
+
+%======================================================================
+\section{Architecture}\label{sec:arch}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+\toprule
+Crate & What it is & Depends on\\
+\midrule
+\code{f1r3comb-term} & (\Comb's) plus the rule generator
+(Decision~\ref{dec:ruletable}) and the address allocator
+(Requirement~\ref{req:oneallocator}) & \code{k1ndl1ng-norm}\\
+\code{f1r3comb-mat} & Intern table with size, root and depth columns; rows of
+width $w$; shape tables with provenance; import, export, \code{.cmat}; sparse
+layer & \code{f1r3comb-term}\\
+\code{f1r3comb-par} & Join plans, finders, conflict, priority, resolvers,
+firing (including $\inst$), deploy checks, backends, reports &
+\code{f1r3comb-mat}\\
+\code{f1r3comb-op} & Species, markings, successors, exploration, $T$,
+closure, \code{pre} & \code{f1r3comb-par}\\
+\code{f1r3comb-check} (shared) & Python parity, trace certification,
+phase-two tests, differential tests against \code{f1r3comb-run} and \Bell &
+all\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{requirement}[Independence]\label{req:indep}
+As v0.1, and in particular: none of the three crates \MAY{} depend on
+\code{f1r3comb-ir}, \code{f1r3comb-lower} or \code{f1r3comb-run}.
+\end{requirement}
+
+\subsection{Backends and the device seam}\label{sec:device}
+
+The \code{Backend} trait, the sequential and threaded host backends, and the
+rule that device backends live outside the workspace are unchanged from v0.1.
+The kernel contract is restated for the generated table.
+
+\begin{requirement}[Device kernels]\label{req:device}
+A device backend \MUST{} implement, against the \code{.cmat} layout: bucketing
+as a sort by key; one segmented $n$-way expansion per join plan with the
+masks; \code{mix64} priorities; the rounds of the greedy-equals-rounds
+proposition; stable compaction and a prefix-sum append; class (b) as a batched
+insert-or-get; class (c) as a gather from the arena; and, under \code{inst},
+substitution as a gather over the context's interned form with a batched
+insert-or-get of the results. It \MUST{} target $w = 4$ and the \code{inst}
+erection (Decision~\ref{dec:twoerect}); a device backend for literal erection
+\MUSTNOT{} be built, because under concurrency it computes wrong answers
+(Hazard~\ref{haz:gate}). It is accepted only on identical step traces to
+\code{HostSequential} on the conformance corpus, and no work on it \MAY{}
+begin before Obligations~\ref{obl:inst} and~\ref{obl:width} are discharged.
+\end{requirement}
+
+%======================================================================
+\section{Correctness obligations and testing}\label{sec:test}
+
+\begin{obligation}[Carried from v0.1]\label{obl:carried}
+Round trip; finder agreement over the generated signature
+(Requirement~\ref{req:validate}); Python parity on E1--E4, exact against
+\code{results.txt}; trace certification by an independent single-redex
+rewriter written from \cite[Def.~4.4]{combspec}; operator correctness on
+destructor-free terms; determinism across backends, core counts and
+WebAssembly; the invariants of Requirement~\ref{req:grading}; device
+conformance corpus.
+\end{obligation}
+
+\begin{obligation}[Finder agreement]\label{obl:finders}
+Requirement~\ref{req:validate}: on at least $10^{4}$ random states over every
+generated shape, the three finders agree exactly.
+\end{obligation}
+
+\begin{obligation}[The $W$ regression, on this machine]\label{obl:W}
+\cite[Obl.~11.1]{combspec}'s term $W$ and its three-instance variant, compiled
+by \Comb, run under \Mat{} with \code{MaximalProgress} and
+\code{CrossInstance}, for 100 seeds each, under each erection. Under
+\code{inst} the observation at $\enc{\quo{X}}$ \MUST{} match \Bell's on every
+seed and no row \MUST{} be \code{MIXED}. Under literal erection the test
+\MUST{} record the fraction of seeds producing the crossed residue; a
+fraction of zero under \code{CrossInstance} would contradict
+\cite[Find.~14.1]{matnote} and \MUST{} be investigated.
+\end{obligation}
+
+\begin{obligation}[The phase-two experiments, reproduced]\label{obl:phase2}
+\code{f1r3comb-check} \MUST{} reproduce \code{phase2-results.txt} in kind:
+the mixing counts of \cite[Find.~14.1]{matnote} are seed-dependent and are
+compared as rates within a tolerance; the $D_{x}$ laws of
+Requirement~\ref{req:dxlaw} are exact.
+\end{obligation}
+
+\begin{obligation}[Addresses]\label{obl:addr}
+\cite[Obl.~11.5, Obl.~11.10]{combspec} on this machine: the three deploy
+checks, including the adversarial source term $\quo{(\out{x}{\nil})}$ whose
+encoding is a leaf of $\enc{\quo{x}}$; and address independence, by running
+the corpus at two unrelated root addresses and comparing observations.
+\end{obligation}
+
+\begin{obligation}[Differential testing]\label{obl:diff}
+For programs whose observations are resolver-independent, \Mat, \code{f1r3comb-run}
+and \Bell{} \MUST{} agree on the observation of \cite[Obl.~11.7]{combspec}.
+Under \code{inst} this requires \Comb{} to emit the \code{inst} erection
+(Section~\ref{sec:paper}, item~2); until it does, \Mat{} compiles
+\code{inst} images from \Comb's phase-one output with its own test-only
+emitter in \code{f1r3comb-check}, which \MUSTNOT{} be linked into any
+product crate.
+\end{obligation}
+
+\begin{obligation}[The width of real programs]\label{obl:width}
+\cite[Obl.~13.7]{matnote}, under \code{inst}, with erection separated. Gates
+the device seam.
+\end{obligation}
+
+\begin{obligation}[Phase two's primitive]\label{obl:inst}
+\cite[Obl.~14.5]{matnote}: the paper decides phase two's primitive. Gates
+correctness of compiled programs under concurrency, hence the device seam.
+\end{obligation}
+
+%======================================================================
+\section{Errors and diagnostics}\label{sec:errors}
+
+Shared with \Comb{} \cite[\S12]{combspec}: \code{comb-feature-mismatch},
+\code{comb-presentation-mismatch}, \code{comb-name-budget},
+\code{comb-address-too-small}, \code{comb-static-not-fresh},
+\code{comb-address-overlap}, \code{comb-decode}. Specific to \Mat:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}ll>{\raggedright\arraybackslash}X@{}}
+\toprule
+Code & Where & Meaning\\
+\midrule
+\code{comb-mat-presentation} & any & Built or invoked under
+\code{presentation-b}\\
+\code{comb-mat-width} & import & The signature needs rows wider than the
+instantiated $w$\\
+\code{comb-mat-hole} & import, step & \code{HOLE} outside the context
+argument of an $\inst$ atom, or in a conclusion\\
+\code{comb-mat-hash-collision} & boundary & Structural key and content hash
+disagree\\
+\code{comb-mat-overflow} & sparse, op & Checked \code{Nat} arithmetic\\
+\code{comb-mat-decode} & import & Malformed \code{.cmat}\\
+\code{comb-op-destructor} & op & Exploration of a term that can reach $\ev$,
+without a depth bound; every compiled program with an input\\
+\code{comb-op-budget} & op & Exploration budget exceeded\\
+\code{comb-mat-internal} & any & An invariant assertion failed; names the
+requirement\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+%======================================================================
+\section{Performance, portability, determinism}\label{sec:perf}
+
+\begin{requirement}[Complexity]\label{req:complexity}
+As v0.1; in addition a step \MUSTNOT{} depend on address depth, which
+structural interning secures, and an $\inst$ firing \MUST{} cost $O(|C|_{\#})$
+where $|C|_{\#}$ is the number of distinct names in the context.
+\end{requirement}
+
+\begin{requirement}[Targets]\label{req:targets}
+v0.1's budget figures, plus: $10^{4}$ unfoldings of $D_{x}$ under \code{inst}
+with no rise in per-unfolding step time, which is \cite[Req.~13.2]{combspec}'s
+test of prefix sharing met by construction; and 64 concurrent instances of a
+$10^{3}$-atom unit erected in two steps.
+\end{requirement}
+
+\begin{requirement}[Portability and determinism]\label{req:port}
+As v0.1 and \cite[Req.~13.3]{combspec}: \code{wasm32-unknown-unknown},
+\code{forbid(unsafe\_code)}, no external dependency, no \code{RandomState};
+bit-identical traces, reports and exports across runs, hosts, core counts and
+WebAssembly, given the same term, root address, seed, resolver, erection and
+configuration.
+\end{requirement}
+
+%======================================================================
+\section{What the implementation asks of the papers}\label{sec:paper}
+
+\paragraph{Discharged since v0.1.} The atom-count lemma is weighted and the
+length bound restated \cite[Lem.~9.2, Prop.~9.9]{draft3}; the matrix note's
+nilpotency index, closure and message-plus-store invariant are corrected
+(\cite[Thm.~6.1, Cor.~6.2]{matnote}); the reference counts a symmetric match
+once; the rules of the shortcut constructors are now members of the family
+\cite[Def.~3.8]{draft3}; the rule table is generated
+\cite[Req.~4.5]{combspec}; the $\cons_{\qq}$ reconciliation v0.1 asked for is
+\cite[Rem.~3.9]{draft3}, and is trivial in the row representation.
+
+\paragraph{Open.}
+\begin{enumerate}[leftmargin=1.8em]
+
+\item \textbf{Draft~3, Definition~6.10 and Remark~6.12.} The discipline is
+stated for constructors, but a router holding a leaf at a static subject
+joins instances just as well ($\fw(k,\Lft\sigma) \mid \mm(k,\Lft\tau)$), so
+the proof of Lemma~6.11 needs the discipline for every redex
+(\cite[Def.~14.2]{matnote}). In that form it cannot be met by fixed-arity
+constructors for any atom mentioning two allocated names
+(\cite[Prop.~14.3]{matnote}), so Remark~6.12 describes no construction, and
+Remark~3.14's claim that the context-indexed constructor has ``the same
+reach'' as the family is true of reachability but false under the
+discipline. Proposed amendment: promote the context-indexed constructor, in
+its single-input multi-hole form, to a primitive, and state phase two with
+it. \textsf{GATE}
+
+\item \textbf{\Comb{} v0.4, Requirement~5.16.} The two-stage erection's
+stage~(ii) is unreachable from stage~(i) by the same proposition, so the
+requirement mandates a construction that does not exist. Proposed amendment:
+replace it with the $\inst$ erection of Definition~\ref{def:inst}, which
+removes Requirements~5.9, 5.12 and~5.16 and the constructors of constructors,
+and keeps 5.11, 5.19--5.23 unchanged.
+
+\item \textbf{\Comb{} v0.4, the tag table of Requirement~4.11.} The
+constructor flag covers constructors of base shapes, but under literal
+erection $\Fam(P)$ contains $\cons_{\cons_{A}}$ whenever the program has an
+(o5) occurrence, and those have no tag. Moot under item~2; otherwise the
+layout needs a level field.
+
+\item \textbf{\Comb{} v0.4, tags for the context constructor.} Under item~2,
+$\inst$ needs a shape tag and the hole needs a reserved name tag outside the
+source block (Requirement~\ref{req:hole}).
+
+\item \textbf{\Comb{} v0.4, Requirement~9.5.} It asks for ``a root address of
+a shape outside that program's family'', which is v0.3's shape-based
+freshness; Requirement~5.19 and draft~3's Lemma~6.14 are by size. Proposed
+amendment: restate 9.5 by size.
+
+\item \textbf{\Comb{} v0.4, citations to the logic note.} The weighted count
+is cited as \cite{logic}'s ``Def.~6.6, Prop.~9.2''; it is Definition~4.2 and
+Proposition~6.17 there, and \cite[Lem.~9.2]{draft3} in the companion.
+
+\item \textbf{\Comb{} v0.4, Requirements~9.7 and~13.1.} Prefix sharing makes
+\emph{interning} $O(1)$ per level, but the content hash of the full encoding
+remains $O(\text{depth})$, and \Camp{} keys channels by it. Proposed: a
+Merkle form of the canonical hash (tag, then child hashes) for names, which
+makes a new address's hash $O(1)$ and keeps equality of hashes equivalent to
+$\nequiv$; it is a change to \cite{k1ndl1ng}'s hashing and wants deciding
+there.
+
+\item \textbf{\Comb{} v0.4, Requirement~9.3} (decode by projection),
+unchanged from v0.1: scope it to builds where \code{presentation-b} is
+reachable (Decision~\ref{dec:decode}).
+
+\item \textbf{\Comb{} v0.4, the address allocator.} Move it to
+\code{f1r3comb-term} so both machines share it
+(Requirement~\ref{req:oneallocator}).
+
+\end{enumerate}
+
+%======================================================================
+\section{Open questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+\item \textbf{The primitive} (Obligation~\ref{obl:inst}): the single-input
+context constructor, or another construction meeting the discipline.
+\item \textbf{Width under instantiation.} Whether erection, at two steps per
+instance, adds width without depth on real programs.
+\item \textbf{Resolver fidelity and fairness} (\cite[Obl.~13.1,
+Obl.~13.6]{matnote}); now also: which resolver a correct phase-two image is
+insensitive to, which the permutation lemma says is all of them.
+\item \textbf{Contention at statics} (Hazard~\ref{haz:statics}): under
+\code{inst} the quadratic join sits at $r$, one per unit; whether bucketed
+matching at a one-premise channel should bypass enumeration.
+\item \textbf{Address compaction} \cite[\S15, item~1]{combspec}: whether a
+retired subtree may be reused, which the intern table would make cheap and
+the permutation lemma would have to license.
+\item \textbf{Garbage}, \textbf{the history unfolding}, \textbf{weights}: as
+v0.1.
+\end{enumerate}
+
+%======================================================================
+\section{Delivery}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}ll>{\raggedright\arraybackslash}X@{}}
+\toprule
+M & Deliverable & Done when\\
+\midrule
+X0 & \code{f1r3comb-mat} & Intern table with size, root and depth columns;
+rows of width $w$; provenance; import, export, \code{.cmat}; round trip.
+Needs \Comb{} M0 and the rule generator in \code{f1r3comb-term}\\
+X1 & Finders & $n$-way plans from the generated table; three finders; masks;
+agreement over the generated signature\\
+X2 & \code{f1r3comb-par}, sequential & Resolvers including
+\code{CrossInstance}; firing including $\inst$; deploy checks with the shared
+allocator; Python parity; certification; invariants; the $D_{x}$ laws\\
+X3 & Phase-two evidence & The $W$ regression under both erections and both
+resolvers; the mixing rates of \cite[Find.~14.1]{matnote}; reported to the
+paper as evidence for Obligation~\ref{obl:inst}\\
+X4 & The width gate & Under \code{inst}, with erection separated; needs
+\Comb{} M2 or the test-only emitter. \textbf{Gate} on X7\\
+X5 & Threaded host & Determinism across cores and \code{wasm32};
+differential tests\\
+X6 & \code{f1r3comb-op} & As v0.1, scoped per
+Requirement~\ref{req:opscope}\\
+X7 & Device conformance & Corpus under \code{inst}; external backend only
+after Obligations~\ref{obl:inst} and~\ref{obl:width}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+X3 is new and comes early on purpose. The machine is the cheapest instrument
+there is for the question phase two now hinges on, because maximal progress
+and \code{CrossInstance} produce, as a matter of course, the interleavings a
+store-based machine must be coaxed into.
+
+%======================================================================
+\section{Changes from v0.1}\label{sec:v1delta}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+v0.1 & v0.2\\
+\midrule
+Thirteen shapes, fifteen with shortcuts; fixed width four & Generated
+signature; width $w$ per artefact, four under \code{inst}\\
+One rule table, shared & Generated from \Comb's shape table\\
+Shortcut constructor rules fixed here & Members of the family\\
+No addresses & \Comb's allocator, shared; size, root and depth columns;
+deploy checks; provenance\\
+Three resolvers & Four; \code{CrossInstance} added\\
+--- & Section~\ref{sec:phase2}: phase two as the machine meets it; the
+$\inst$ erection behind a feature; Hazard~\ref{haz:gate}\\
+Operator layer for the $\ev$-free sublattice & The same, with its scope
+stated: no compiled program with an input\\
+Three errata against the notes & Discharged by their revisions\\
+Eleven asks of the papers & Nine, all but one new, the first a gate\\
+Delivery X0--X6 & X0--X7, with the phase-two evidence at X3\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+%======================================================================
+\begin{thebibliography}{99}
+
+\bibitem{matnote} L.\,G. Meredith.
+\emph{Rho combinators as sparse linear algebra.} Version~1.2,
+\code{publications/rho-combinators/rhocomb-matrix}, with \code{rhocombmat.py},
+\code{experiments.py} and \code{phase2.py}, September 2026.
+
+\bibitem{combspec} F1R3FLY.io.
+\emph{F1R3Comb: a compiler from kernel rho to the name-free rho combinators,
+and a machine that runs the result.} Specification v0.4,
+\code{publications/rho-combinators/f1r3comb-spec-v04}, 23 September 2026.
+
+\bibitem{draft3} L.\,G. Meredith and M. Stay.
+\emph{Name-free combinators for the rho calculus: a repair, a linear encoding,
+and the one operation that was missing.} Draft~3,
+\code{publications/rho-combinators}, September 2026.
+
+\bibitem{logic} F1R3FLY.io.
+\emph{A spatial-behavioural logic for the rho combinators.} Draft~2,
+revision~2, \code{publications/rho-combinators/rhocomb-logic}, 23 September
+2026.
+
+\bibitem{k1ndl1ng} F1R3FLY.io.
+\emph{K1ndl1ng: a parser and normaliser for kernel rholang.}
+\code{publications/campf1r3/k1ndl1ng-spec}, 2026.
+
+\bibitem{bfs} G.\,E. Blelloch, J.\,T. Fineman and J. Shun.
+Greedy sequential maximal independent set and matching are parallel on
+average. \emph{SPAA}, 2012.
+
+\bibitem{gustavson} F.\,G. Gustavson.
+Two fast algorithms for sparse matrices: multiplication and permuted
+transposition. \emph{ACM Transactions on Mathematical Software}, 1978.
+
+\bibitem{splitmix} G.\,L. Steele, D. Lea and C.\,H. Flood.
+Fast splittable pseudorandom number generators. \emph{OOPSLA}, 2014.
+
+\end{thebibliography}
+
+\end{document}

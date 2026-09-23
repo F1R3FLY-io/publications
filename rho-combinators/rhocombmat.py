@@ -3,12 +3,19 @@ rhocombmat.py -- a reference machine for the rho combinators in which every
 step of redex finding and conflict detection is a Boolean sparse matrix
 product, and a step fires a maximal independent set of redexes.
 
-Presentation A: every atom is a fixed-width tuple of interned name indices.
-The payload of q is stored by its quote, so q(a,p) is held as q(a, @p).
+Version 1.2.  The rule table is generated from a shape table, as the
+constructor family of draft 3 (Def. 3.8) requires: one constructor cons_A per
+atom shape A, of arity ar(A)+1, and optionally a second level cons_{cons_A}
+for erecting the constructors that phase one emits in (o5) chains.  An
+optional context-instantiation primitive `inst` (the context-indexed
+constructor of draft 3, Rem. 3.14, with holes in name positions) is included
+because the phase-two experiments in experiments.py need it.
 
-Names are interned: a name is the quote of a process, a process is a multiset
-of atoms, so the name table maps a name index to a sorted tuple of atoms and
-a hash-cons table maps back.
+Presentation A: every atom is a fixed-width tuple of interned name indices.
+The payload of q is stored by its quote, so q(a,p) is held as q(a, @p), and
+the constructor cons_q is then uniform with every other member:
+    cons_q(a,b,f) | m(a,v1) | m(b,v2)  ->  m(f, @q(v1, *v2)),
+whose normal form is the row (q, v1, v2).
 
 No dependency beyond numpy/scipy.
 """
@@ -20,25 +27,65 @@ import scipy.sparse as sp
 
 # ---------------------------------------------------------------- shapes
 
-# shape -> arity (number of name arguments)
-ARITY = {
-    'm': 2, 'd': 3, 'k': 1, 'fw': 2, 'bl': 2, 'br': 2,
-    's': 3, 'e': 1, 'q': 2,
-    'cons': 3, 'consm': 3, 'consd': 4, 'conss': 4,
-}
+BASE = {'m': 2, 'd': 3, 'k': 1, 'fw': 2, 'bl': 2, 'br': 2, 's': 3, 'e': 1,
+        'q': 2}
+PAR = 'cons'            # cons_| : parallel composition of two quotations
+INST = 'inst'           # inst(a, f, C) | m(a, v) -> m(f, @C[v])
+
+
+def family(levels=1):
+    """The generated shape table: base atoms, cons_|, and `levels` levels of
+    the constructor family.  Returns {shape: arity}."""
+    ar = dict(BASE)
+    ar[PAR] = 3
+    frontier = list(BASE) + [PAR]
+    for _ in range(levels):
+        nxt = []
+        for a in frontier:
+            c = 'cons_' + a
+            if c not in ar:
+                ar[c] = ar[a] + 1
+                nxt.append(c)
+        frontier = nxt
+    ar[INST] = 3
+    return ar
+
+
+ARITY = family(2)
 SHAPES = list(ARITY)
 
-# ---------------------------------------------------------------- names
 
+def is_member(sh):
+    return sh.startswith('cons_')
+
+
+def built_shape(sh):
+    return sh[len('cons_'):]
+
+
+def premises(sh):
+    """Premise slots joined against the message table, for a consumer shape.
+    None if the shape consumes nothing (m, q, and the hole marker)."""
+    if sh in ('d', 'k', 'fw', 'bl', 'br', 's', 'e', INST):
+        return [0]
+    if sh == PAR:
+        return [0, 1]
+    if is_member(sh):
+        return list(range(ARITY[sh] - 1))
+    return None
+
+
+# ---------------------------------------------------------------- names
 
 class NameTable:
     """Interns quoted processes. A process is a canonical sorted tuple of
     atoms; an atom is (shape, n1, ..., nk) with the n's name indices."""
 
     def __init__(self):
-        self._fwd = {}       # canonical process -> name index
-        self._bwd = []       # name index -> canonical process
-        self.nil = self.quote(())          # @0
+        self._fwd = {}
+        self._bwd = []
+        self.nil = self.quote(())                  # @0
+        self.hole = self.quote((('hole',),))       # context hole marker
 
     def quote(self, atoms):
         key = tuple(sorted(atoms))
@@ -50,8 +97,21 @@ class NameTable:
         return i
 
     def drop(self, n):
-        """*n : the components of the process the name quotes."""
         return self._bwd[n]
+
+    def subst(self, n, v, memo=None):
+        """C[v]: replace the hole by v, hereditarily under quotation."""
+        if memo is None:
+            memo = {}
+        if n == self.hole:
+            return v
+        if n in memo:
+            return memo[n]
+        comps = self.drop(n)
+        out = self.quote(tuple((a[0],) + tuple(self.subst(x, v, memo)
+                                              for x in a[1:]) for a in comps))
+        memo[n] = out
+        return out
 
     def __len__(self):
         return len(self._bwd)
@@ -60,12 +120,11 @@ class NameTable:
 # ---------------------------------------------------------------- state
 
 class State:
-    """A multiset of atom occurrences.  Occurrences carry identities so that
-    conflict between redexes is well defined; identity is machine-level only
-    and is invisible to the semantics."""
+    """A multiset of atom occurrences.  Occurrence identities are machine-level
+    only and invisible to the semantics."""
 
     def __init__(self, atoms=()):
-        self.occ = {}         # occurrence id -> atom
+        self.occ = {}
         self._next = 0
         for a in atoms:
             self.add(a)
@@ -92,29 +151,29 @@ class State:
 # ---------------------------------------------------------------- matrices
 
 def incidence(state, nt):
-    """For each shape and slot, the Boolean matrix M[shape][j][i, n] = 1 iff
-    the i-th occurrence of that shape carries name n in slot j.
-    Returns (ids, M) where ids[shape][i] is the occurrence id of row i."""
+    """M[shape][j][i, n] = 1 iff the i-th occurrence of shape carries name n
+    in slot j.  Returns (ids, M)."""
     ids = {sh: [] for sh in SHAPES}
     rows = {sh: [] for sh in SHAPES}
     for oid, atom in state.occ.items():
         sh = atom[0]
+        if sh not in ids:
+            continue
         ids[sh].append(oid)
         rows[sh].append(atom[1:])
     N = len(nt)
     M = {}
     for sh in SHAPES:
-        k = ARITY[sh]
         M[sh] = []
         n = len(rows[sh])
-        for j in range(k):
+        for j in range(ARITY[sh]):
             if n == 0:
                 M[sh].append(sp.csr_matrix((0, N), dtype=bool))
                 continue
             data = np.ones(n, dtype=bool)
-            r = np.arange(n)
-            c = np.array([t[j] for t in rows[sh]])
-            M[sh].append(sp.csr_matrix((data, (r, c)), shape=(n, N)))
+            M[sh].append(sp.csr_matrix(
+                (data, (np.arange(n), np.array([t[j] for t in rows[sh]]))),
+                shape=(n, N)))
     return ids, M
 
 
@@ -124,14 +183,9 @@ def _pairs(A, B):
     return list(zip(P.row.tolist(), P.col.tolist()))
 
 
-# consumer shapes whose rule is  C(a,...) | m(a,v)  ->  ...
-BINARY_M = ['d', 'k', 'fw', 'bl', 'br', 's', 'e']
-
-
 def _ordered(state, occs):
-    """Symmetry mask.  A redex is an unordered match (Prop. 5.3 divides by
-    m_alpha!): when two premise positions carry equal atoms, only the ordering
-    with ascending occurrence ids is kept, so each derivation is counted once."""
+    """Symmetry mask: a redex is an unordered match, so when two premise
+    positions carry equal atoms keep only ascending occurrence ids."""
     for x in range(len(occs)):
         for y in range(x + 1, len(occs)):
             if state.occ[occs[x]] == state.occ[occs[y]] and occs[x] > occs[y]:
@@ -139,111 +193,70 @@ def _ordered(state, occs):
     return True
 
 
+def _expand(state, cons_oid, lists, out, rule):
+    """Row-wise Cartesian product of per-slot candidate lists, with the
+    distinctness and symmetry masks."""
+    def go(i, acc):
+        if i == len(lists):
+            if _ordered(state, acc):
+                out.append((rule, (cons_oid,) + tuple(acc)))
+            return
+        for o in lists[i]:
+            if o not in acc:
+                go(i + 1, acc + [o])
+    go(0, [])
+
+
 def redexes_matrix(state, nt):
-    """All redexes, found by Boolean sparse matrix products.
-    A redex is (rule, tuple of consumed occurrence ids)."""
+    """All redexes, by Boolean sparse products derived from the shape table."""
     ids, M = incidence(state, nt)
     out = []
-
-    # two-premise rules against a message, joined on the subject
-    for sh in BINARY_M:
-        if M[sh][0].shape[0] == 0 or M['m'][0].shape[0] == 0:
+    nm = M['m'][0].shape[0]
+    for sh in SHAPES:
+        prem = premises(sh)
+        if prem is None or M[sh][0].shape[0] == 0 or nm == 0:
             continue
-        for i, j in _pairs(M[sh][0], M['m'][0]):
-            out.append((sh, (ids[sh][i], ids['m'][j])))
-
-    # fw(a,b) | q(a,p)  -> m(b,@p)
+        per = []
+        for slot in prem:
+            d = {}
+            for i, j in _pairs(M[sh][slot], M['m'][0]):
+                d.setdefault(i, []).append(ids['m'][j])
+            per.append(d)
+        for i in range(M[sh][0].shape[0]):
+            lists = [d.get(i, []) for d in per]
+            if all(lists):
+                _expand(state, ids[sh][i], lists, out, sh)
+    # fw(a,b) | q(a,p) -> m(b,@p)
     if M['fw'][0].shape[0] and M['q'][0].shape[0]:
         for i, j in _pairs(M['fw'][0], M['q'][0]):
             out.append(('quote', (ids['fw'][i], ids['q'][j])))
-
-    # three-premise constructors: join slot 0 and slot 1 against m's subject,
-    # then take the row-wise Cartesian product with distinctness masking
-    for sh in ['cons', 'consm']:
-        if M[sh][0].shape[0] == 0 or M['m'][0].shape[0] < 2:
-            continue
-        X, Y = {}, {}
-        for i, j in _pairs(M[sh][0], M['m'][0]):
-            X.setdefault(i, []).append(j)
-        for i, j in _pairs(M[sh][1], M['m'][0]):
-            Y.setdefault(i, []).append(j)
-        for i in X:
-            for j in X[i]:
-                for kk in Y.get(i, ()):
-                    if j != kk and _ordered(state, (ids['m'][j], ids['m'][kk])):
-                        out.append((sh, (ids[sh][i], ids['m'][j], ids['m'][kk])))
-
-    # four-premise constructors
-    for sh in ['consd', 'conss']:
-        if M[sh][0].shape[0] == 0 or M['m'][0].shape[0] < 3:
-            continue
-        J = []
-        for slot in range(3):
-            d = {}
-            for i, j in _pairs(M[sh][slot], M['m'][0]):
-                d.setdefault(i, []).append(j)
-            J.append(d)
-        for i in J[0]:
-            for a in J[0][i]:
-                for b in J[1].get(i, ()):
-                    if b == a:
-                        continue
-                    for c in J[2].get(i, ()):
-                        if c in (a, b):
-                            continue
-                        if not _ordered(state, (ids['m'][a], ids['m'][b],
-                                                ids['m'][c])):
-                            continue
-                        out.append((sh, (ids[sh][i], ids['m'][a],
-                                         ids['m'][b], ids['m'][c])))
     return out
 
 
 def redexes_naive(state, nt):
     """Independent enumeration, used only to validate redexes_matrix."""
     occ = state.occ
-    out = []
     msgs = [(i, a) for i, a in occ.items() if a[0] == 'm']
+    out = []
     for i, a in occ.items():
         sh = a[0]
-        if sh in BINARY_M:
-            for j, b in msgs:
-                if b[1] == a[1]:
-                    out.append((sh, (i, j)))
-        elif sh == 'fw':
-            pass
+        prem = premises(sh) if sh in ARITY else None
+        if prem is not None:
+            lists = [[j for j, b in msgs if b[1] == a[1 + s]] for s in prem]
+            if all(lists):
+                _expand(state, i, lists, out, sh)
         if sh == 'fw':
             for j, b in occ.items():
                 if b[0] == 'q' and b[1] == a[1]:
                     out.append(('quote', (i, j)))
-        if sh in ('cons', 'consm'):
-            for j, b in msgs:
-                if b[1] != a[1]:
-                    continue
-                for k2, c in msgs:
-                    if k2 != j and c[1] == a[2] and _ordered(state, (j, k2)):
-                        out.append((sh, (i, j, k2)))
-        if sh in ('consd', 'conss'):
-            for j, b in msgs:
-                if b[1] != a[1]:
-                    continue
-                for k2, c in msgs:
-                    if k2 == j or c[1] != a[2]:
-                        continue
-                    for l, e in msgs:
-                        if l in (j, k2) or e[1] != a[3]:
-                            continue
-                        if not _ordered(state, (j, k2, l)):
-                            continue
-                        out.append((sh, (i, j, k2, l)))
     return out
 
 
 def conflict_graph(redexes, state):
-    """B[r, o] = 1 iff redex r consumes occurrence o.  The conflict graph is
-    the nonzero pattern of B B^T off the diagonal -- another sparse product."""
+    """B[r, o] = 1 iff redex r consumes occurrence o; conflicts are the
+    off-diagonal nonzeros of B B^T."""
     if not redexes:
-        return sp.csr_matrix((0, 0), dtype=bool), 0
+        return sp.coo_matrix((0, 0), dtype=bool), 0
     oidx = {o: i for i, o in enumerate(state.occ)}
     rows, cols = [], []
     for r, (_, occs) in enumerate(redexes):
@@ -252,8 +265,7 @@ def conflict_graph(redexes, state):
             cols.append(oidx[o])
     B = sp.csr_matrix((np.ones(len(rows), dtype=np.int8), (rows, cols)),
                       shape=(len(redexes), len(state.occ)))
-    C = (B @ B.T).tocoo()
-    return C, B.nnz
+    return (B @ B.T).tocoo(), B.nnz
 
 
 def mis(redexes, C, rng):
@@ -267,9 +279,8 @@ def mis(redexes, C, rng):
             adj[r].append(c)
     prio = list(range(n))
     rng.shuffle(prio)
-    order = sorted(range(n), key=lambda r: prio[r])
     chosen, blocked = [], set()
-    for r in order:
+    for r in sorted(range(n), key=lambda r: prio[r]):
         if r in blocked:
             continue
         chosen.append(r)
@@ -283,42 +294,31 @@ def mis(redexes, C, rng):
 def fire(state, nt, redex):
     rule, occs = redex
     atoms = [state.occ[o] for o in occs]
-    produced = []
+    c, msgs = atoms[0], atoms[1:]
+    vals = [m[2] for m in msgs]
     if rule == 'd':
-        (_, a, b, c), (_, _, v) = atoms
-        produced = [('m', b, v), ('m', c, v)]
+        produced = [('m', c[2], vals[0]), ('m', c[3], vals[0])]
     elif rule == 'k':
         produced = []
     elif rule == 'fw':
-        (_, a, b), (_, _, v) = atoms
-        produced = [('m', b, v)]
+        produced = [('m', c[2], vals[0])]
     elif rule == 'bl':
-        (_, a, b), (_, _, v) = atoms
-        produced = [('fw', v, b)]
+        produced = [('fw', vals[0], c[2])]
     elif rule == 'br':
-        (_, a, b), (_, _, v) = atoms
-        produced = [('fw', b, v)]
+        produced = [('fw', c[2], vals[0])]
     elif rule == 's':
-        (_, a, b, c), (_, _, v) = atoms
-        produced = [('fw', b, c)]
+        produced = [('fw', c[2], c[3])]
     elif rule == 'e':
-        (_, a), (_, _, v) = atoms
-        produced = list(nt.drop(v))          # decode: a gather from the table
+        produced = list(nt.drop(vals[0]))      # decode: a gather
     elif rule == 'quote':
-        (_, a, b), (_, _, pq) = atoms
-        produced = [('m', b, pq)]
-    elif rule == 'cons':
-        (_, a, b, c), (_, _, p), (_, _, r) = atoms
-        produced = [('m', c, nt.quote(nt.drop(p) + nt.drop(r)))]
-    elif rule == 'consm':
-        (_, a, b, c), (_, _, u), (_, _, v) = atoms
-        produced = [('m', c, nt.quote((('m', u, v),)))]
-    elif rule == 'consd':
-        (_, a, b, c, f), (_, _, u), (_, _, v), (_, _, w) = atoms
-        produced = [('m', f, nt.quote((('d', u, v, w),)))]
-    elif rule == 'conss':
-        (_, a, b, c, f), (_, _, u), (_, _, v), (_, _, w) = atoms
-        produced = [('m', f, nt.quote((('s', u, v, w),)))]
+        produced = [('m', c[2], atoms[1][2])]
+    elif rule == PAR:
+        produced = [('m', c[3], nt.quote(nt.drop(vals[0]) + nt.drop(vals[1])))]
+    elif rule == INST:
+        produced = [('m', c[2], nt.subst(c[3], vals[0]))]
+    elif is_member(rule):
+        a = built_shape(rule)
+        produced = [('m', c[-1], nt.quote(((a,) + tuple(vals),)))]
     else:
         raise ValueError(rule)
     for o in occs:
@@ -337,7 +337,7 @@ def run_parallel(state, nt, seed=0, cap=10000):
         R = redexes_matrix(state, nt)
         if not R:
             break
-        C, nnz = conflict_graph(R, state)
+        C, _ = conflict_graph(R, state)
         sel = mis(R, C, rng)
         widths.append(len(sel))
         counts.append(len(R))

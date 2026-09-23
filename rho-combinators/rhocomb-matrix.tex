@@ -41,6 +41,8 @@
 \newcommand{\rhoc}{\textsf{rho}}
 \newcommand{\quo}[1]{@#1}
 \newcommand{\drp}[1]{{*}#1}
+\newcommand{\inp}[3]{\mathsf{for}(\,#1 \leftarrow #2\,)#3}
+\newcommand{\out}[2]{#1!(#2)}
 \newcommand{\nil}{\mathbf{0}}
 \newcommand{\red}{\longrightarrow}
 \newcommand{\wred}{\longrightarrow^{*}}
@@ -59,6 +61,9 @@
 \newcommand{\ev}{\mathsf{e}}
 \newcommand{\qq}{\mathsf{q}}
 \newcommand{\Wt}{\mathsf{W}}
+\newcommand{\Lft}{\mathsf{L}}
+\newcommand{\Rgt}{\mathsf{R}}
+\newcommand{\inst}{\mathsf{inst}}
 \newcommand{\cons}{\mathsf{cons}}
 \newcommand{\consm}{\mathsf{cons}_{\mm}}
 \newcommand{\consd}{\mathsf{cons}_{\dd}}
@@ -82,7 +87,7 @@
 \large A classical route from reflective concurrency to data-parallel execution}
 \author{L.\,G.\ Meredith\\
 \small CEO, F1R3FLY.io, and Chief Science Officer, F1R3FLY Industries}
-\date{22 September 2026 --- version 1.1}
+\date{23 September 2026 --- version 1.2}
 
 \begin{document}
 \maketitle
@@ -101,8 +106,9 @@ The answer has three parts. First, the factorisation exists and is standard,
 once the right state space is identified. The companion logic note proves
 that the multiset of top-level atoms is a complete invariant for structural
 congruence, so a combinator state \emph{is} an occupation vector and the one-step
-operator is a sum of ladder-operator monomials, one per rule, each of degree
-at most four. The equations of the calculus are quotiented by construction
+operator is a sum of ladder-operator monomials, one per rule of a table
+generated from the shape table, each of degree one more than the largest
+constructor arity the program uses. The equations of the calculus are quotiented by construction
 rather than by normalisation.
 
 Second, the three invariants used in the draft's expressiveness lattice ---
@@ -114,9 +120,9 @@ demand. A weighted atom count controls nilpotency, so the destructor decides
 whether the transfer operator is strictly block upper triangular. The count of
 messages and stores together controls occupation bounds. The lattice therefore already computes which matrix shape a
 term admits, and the eager and lazy parts of the operator are separated by the
-same analysis: seven of the twelve rules are constant-coefficient and fully
-schematic, four require an encode, and exactly one, the destructor, requires a
-decode.
+same analysis: seven rules are constant-coefficient and fully schematic,
+every member of the constructor family requires an encode, and exactly one,
+the destructor, requires a decode.
 
 Third, and this is the practical finding, the object worth multiplying is not
 the transition matrix of the reduction graph. It is the incidence matrix of
@@ -144,6 +150,21 @@ message count non-increasing without $\dd$ and $\ev$, which the
 $\mathsf{quote}$ rule violates; it now bounds messages and stores together.
 The reference implementation is also corrected to count a symmetric match
 once, as Proposition~\ref{prop:counts} requires; no measured number changes.
+
+\paragraph{Version 1.2.} Draft~3 now translates in two phases and replaces the
+four constructors with a family, one per atom shape
+\cite[Def.~3.8, \S6]{rhocomb3}. The rule table here is therefore generated
+rather than listed, and the counts that depended on there being twelve rules
+are restated. Section~\ref{sec:phase2} reads phase two from the machine. It
+reports two new measurements --- concurrent erection by the literal
+construction mixes the apparatus of distinct instances in most runs, and
+more often under maximal progress than under sequential choice --- and proves
+that the single-address-input discipline, in the form its permutation lemma
+needs, cannot be met by fixed-arity constructors for any atom mentioning two
+allocated names. A single-input, multi-hole constructor meets it, erects an
+instance in two steps, and runs the recursion combinator at constant cost
+per unfolding. Every compiled unit contains $\ev$, so the closure results of
+\S\ref{sec:three} apply to no compiled program.
 \end{abstract}
 
 \tableofcontents
@@ -168,8 +189,9 @@ nothing below depends on them.
 \item A combinator state is an occupation vector over a species set, with
   structural congruence quotiented by construction
   (\S\ref{sec:states}).
-\item The one-step relation is a sum of twelve ladder-operator monomials of
-  degree at most four, schematic in the names (\S\ref{sec:operator}).
+\item The one-step relation is a sum of ladder-operator monomials, one per
+  rule of the generated table, schematic in the names, of degree one more
+  than the largest constructor arity in use (\S\ref{sec:operator}).
 \item The three invariants of the draft's lattice section are the three
   finiteness conditions of that operator, one per lattice axis
   (\S\ref{sec:three}).
@@ -253,8 +275,8 @@ closed by the step semantics of \S\ref{sec:step}.
   Combinator atoms are fixed-arity tuples of names; under presentation~A every
   argument is a name, hence an integer index (\S\ref{sec:facts}). \\
 (G2) uniform work &
-  Twelve rules, each a fixed shape; one kernel per rule, no pattern matching
-  at runtime. The pattern matching happened in the compiler. \\
+  A rule table generated from the shape table, each rule a fixed shape; one
+  kernel per join plan, no pattern matching at runtime. The pattern matching happened in the compiler. \\
 (G3) bulk-synchronous phases &
   A step fires a maximal independent set of redexes, which is one barrier per
   causal layer (\S\ref{sec:step}). \\
@@ -274,14 +296,17 @@ term size (draft 3, Prop.~8.1: the image has $O(|P|)$ atoms).
 \section{The combinators, and four structural facts}
 \label{sec:facts}
 
-The calculus is that of draft~3, in the repaired form: two sorts, atoms
+The calculus is that of draft~3, in the repaired form: two sorts, the base
+atoms
 \[
-\mm,\ \dd,\ \kk,\ \fw,\ \bl,\ \br,\ \sy,\ \ev,\ \qq,\ \consp,\ \consm,
-\ \consd,\ \conss,
+\mm,\ \dd,\ \kk,\ \fw,\ \bl,\ \br,\ \sy,\ \ev,\ \qq,
 \]
-the equations of an abelian monoid on $\mid$ together with
-$\quo{\drp{a}} = a$, and, under presentation~A, $\drp{\quo{p}} = p$. The
-twelve rewrite rules are reproduced in Figure~\ref{fig:rules}.
+the parallel constructor $\consp$, and a constructor $\cons_{A}$ of arity
+$\mathrm{ar}(A)+1$ for each atom shape $A$ that a program needs
+\cite[Def.~3.8]{rhocomb3}; the equations of an abelian monoid on $\mid$
+together with $\quo{\drp{a}} = a$, and, under presentation~A,
+$\drp{\quo{p}} = p$. The rules are reproduced in Figure~\ref{fig:rules}, the
+constructors as one schema.
 
 \begin{figure}[t]
 \hrule\vspace{4pt}
@@ -297,17 +322,15 @@ twelve rewrite rules are reproduced in Figure~\ref{fig:rules}.
    & \fw(a,b) \mid \qq(a,p) \red \mm(b,\quo{p})\\[4pt]
  \multicolumn{2}{l}{\consp(a,b,c) \mid \mm(a,\quo{p}) \mid \mm(b,\quo{r})
    \red \mm(c,\quo{(p \mid r)})}\\
- \multicolumn{2}{l}{\consm(a,b,c) \mid \mm(a,u) \mid \mm(b,v)
-   \red \mm(c,\quo{\mm(u,v)})}\\
- \multicolumn{2}{l}{\consd(a,b,c,f) \mid \mm(a,u) \mid \mm(b,v) \mid \mm(c,w)
-   \red \mm(f,\quo{\dd(u,v,w)})}\\
- \multicolumn{2}{l}{\conss(a,b,c,f) \mid \mm(a,u) \mid \mm(b,v) \mid \mm(c,w)
-   \red \mm(f,\quo{\sy(u,v,w)})}
+ \multicolumn{2}{l}{\cons_{A}(a_{1},\dots,a_{n},f) \mid \mm(a_{1},v_{1})
+   \mid \cdots \mid \mm(a_{n},v_{n})
+   \red \mm(f,\quo{A(v_{1},\dots,v_{n})}) \qquad n = \mathrm{ar}(A)}
 \end{array}
 \]
 \vspace{2pt}\hrule
-\caption{The twelve rules, closed under $\mid$ and under the equations, with
-subjects matched up to $\nequiv$.}
+\caption{The rules, closed under $\mid$ and under the equations, with
+subjects matched up to $\nequiv$. The last line is a schema, one rule per
+member of the constructor family.}
 \label{fig:rules}
 \end{figure}
 
@@ -316,15 +339,18 @@ are theorems of the companion drafts; the fourth is a design recommendation.
 
 \begin{enumerate}[label=(F\arabic*),leftmargin=3em]
 \item \textbf{Atoms are flat.} Every atom is a head symbol applied to at most
-  four arguments, and every argument is a name, except the payload of $\qq$
-  and, under presentation~B, of $\mm$. There is no nesting, no binder, and no
+  $w$ arguments, and every argument is a name, except the payload of $\qq$
+  and, under presentation~B, of $\mm$. Here $w$ is the largest arity in the
+  family a program uses: four for the static-apparatus signature, five once
+  phase two must erect the constructors of (o5) chains
+  (\S\ref{sec:phase2}); it is known at compile time. There is no nesting, no binder, and no
   pattern variable.
 \item \textbf{The multiset is complete.} By the logic note's component lemma,
   $\cmp{P}$, the multiset of top-level atoms of the drop-free normal form, is
   a complete invariant: $P \scong Q$ iff $\cmp{P} = \cmp{Q}$ as multisets.
   \textsf{SETTLED}
 \item \textbf{Rules are small and subject-joined.} Every rule has between two
-  and four premises, each premise a single atom, and the premises share names.
+  and $w$ premises, each premise a single atom, and the premises share names.
   The logic note remarks that this is the only structural fact its modality
   uses; it is also the only structural fact the machine below uses.
   \textsf{SETTLED}
@@ -349,6 +375,14 @@ $(a, \quo{p})$ --- loses nothing, because $\quo{-}$ is injective on normal
 forms by (F4), and it makes the $\mathsf{quote}$ rule a field copy rather than
 a construction. This is the difference between rule class (a) and class (b) in
 \S\ref{sec:operator}, and it is obtained for free. \textsf{SETTLED}
+
+The same choice makes the constructor family uniform. Draft~3 states the
+member for $\qq$ in presentation~B's sorting and notes that under A it must be
+written $\quo{\qq(v_{1},\drp{v_{2}})}$, relying on the equation
+\cite[Rem.~3.9]{rhocomb3}. With the payload of $\qq$ held by its quote, the
+normal form of that name is the row $(\qq, v_{1}, v_{2})$, so $\cons_{\qq}$
+is an ordinary member whose conclusion is built from its premise names like
+any other, and the coercion never appears in the machine.
 \end{remark}
 
 %==============================================================================
@@ -449,7 +483,7 @@ variables by names,
 
 This is the factorisation asked for. $T$ is a representation of the rewrite
 rules alone: it is schematic in the names, independent of any particular term,
-and of degree at most four by (F3). The unfolding of the reduction graph is
+and of degree at most $w$ by (F3). The unfolding of the reduction graph is
 repeated application of $T$ to $|\gamma\rangle$.
 
 \begin{proposition}[Matrix elements count derivations]
@@ -470,7 +504,7 @@ occurrences of each premise species, unordered within a species.
 Proposition~\ref{prop:counts} is the mass-action law, and the coefficient is
 the same multiplicity $h$ that the Gillespie implementation in
 \texttt{rho-life} already computes. The combinators are a chemical reaction
-network with twelve reaction schemes. The classical reading taken here uses
+network whose reaction schemes are generated from its shape table. The classical reading taken here uses
 only the Boolean shadow of that coefficient; the weighted readings elsewhere
 in the programme use the coefficient itself.
 \end{remark}
@@ -478,7 +512,7 @@ in the programme use the coefficient itself.
 \subsection{Three classes of rule}
 \label{sec:classes}
 
-The twelve rules are not alike in how much of $T$ can be written down ahead of
+The rules are not alike in how much of $T$ can be written down ahead of
 time.
 
 \begin{description}[leftmargin=2.2em,style=nextline]
@@ -489,7 +523,8 @@ time.
   constant-coefficient ladder monomial, fully schematic, requiring no access
   to the intern table at all. Note that $\mathsf{quote}$ belongs here only
   because of Remark~\ref{rem:AforA}.
-\item[Class (b), four rules: encode.] The four constructors. The conclusion is
+\item[Class (b), one rule per constructor: encode.] The constructor family.
+  The conclusion is
   a single atom, so the arity is fixed, but its payload is a \emph{new} index,
   obtained by hash-consing a term built from the premise names. $H_r$ grows
   the index set.
@@ -525,7 +560,7 @@ Let $T$ be a combinator term over a constructor set $S$.
   name occurring in a reduct of $T$ lies in the closure of $\nms{T}$ under the
   node shapes $\{A : \cons_A \in S\}$. If $S = \emptyset$ the reachable name
   set is $\nms{T}$, which is finite, so $\Spec$ restricted to reachable
-  species is finite of size $O(|\nms{T}|^{4})$. If $S \neq \emptyset$ the
+  species is finite of size $O(|\nms{T}|^{w})$. If $S \neq \emptyset$ the
   reachable name set is the free $S$-algebra on $\nms{T}$, countable and
   graded by depth.
 \item \emph{(Nilpotency; destructor axis.)} By the atom-count lemma every rule
@@ -674,15 +709,15 @@ the seven two-premise rules against $\mm$
     messages at $n$ \\
 $\mathsf{quote}$
   & $M^{\fw}_{0} \cdot (M^{\qq}_{0})^{\!\top}$ & as above \\
-$\consp, \consm$
+$\consp$, and $\cons_{A}$ for $A$ binary
   & $X = M^{\cons}_{0}\cdot(M^{\mm}_{0})^{\!\top}$,
     $Y = M^{\cons}_{1}\cdot(M^{\mm}_{0})^{\!\top}$, then the row-wise
     Cartesian product $X \bowtie Y$ with $j \neq k$ masked out
   & two \textsc{SpGEMM}s plus a segmented expansion \\
-$\consd, \conss$
-  & three such products, then a three-fold row-wise product with
+$\cons_{A}$ for $A$ of arity $n \geq 3$
+  & $n$ such products, then an $n$-fold row-wise product with
     distinctness masking
-  & three \textsc{SpGEMM}s plus expansion \\
+  & $n$ \textsc{SpGEMM}s plus expansion \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -722,7 +757,7 @@ dimension is the number of states.
   ar/.style={-{Latex[length=2mm]}, thick}]
 \node[box] (st)  at (0,0)    {state $\gamma$\\[-2pt] \footnotesize multiset of atoms};
 \node[box] (inc) at (5.2,0)  {incidence $M^{A}_{j}$\\[-2pt] \footnotesize $\le 4|\gamma|$ nonzeros};
-\node[box] (rdx) at (10.4,0) {redexes\\[-2pt] \footnotesize twelve joins};
+\node[box] (rdx) at (10.4,0) {redexes\\[-2pt] \footnotesize one join per rule};
 \node[box] (cfl) at (10.4,-2.4) {conflict graph\\[-2pt] \footnotesize $BB^{\top}$};
 \node[box] (mis) at (5.2,-2.4)  {maximal\\[-2pt] independent set};
 \node[box] (fire) at (0,-2.4)   {fire\\[-2pt] \footnotesize remove $L$, append $R$};
@@ -806,7 +841,7 @@ rewrites should determine. See Obligation~\ref{obl:resolver}.
 \end{remark}
 
 \begin{remark}[Contention sets, generalised]
-The conflict structure is a hypergraph, since rules have up to four premises,
+The conflict structure is a hypergraph, since rules have up to $w$ premises,
 so the object here is an independent set in the conflict graph of redexes
 rather than a matching in a bipartite graph. This is the $k$-ary
 generalisation of the contention-set normalisation and maximal matchings
@@ -882,7 +917,9 @@ counts and widths, not timings.
 
 \begin{finding}[The join formulation is correct]
 \label{find:valid}
-On 400 randomly generated states over all thirteen head symbols and two to
+On 400 randomly generated states over every shape of the generated table ---
+in version~1.2, two levels of the family and the context constructor of
+\S\ref{sec:phase2}, twenty-nine shapes --- and two to
 five distinct names, the redex set computed by sparse matrix products agrees
 exactly with independent naive enumeration: $400/400$.
 \end{finding}
@@ -972,7 +1009,7 @@ work and should not begin until P2's number is in hand.
   \emph{Exit:} differential agreement with the sequential interpreter on
   reachable-state sets for the destructor-free fragment, where
   Corollary~\ref{cor:neumann} gives an independent closed form.
-\item[P4. The device port.] Move the incidence matrices, the twelve join
+\item[P4. The device port.] Move the incidence matrices, the join
   kernels, the conflict product and the independent-set selection to the
   accelerator; keep the intern table host-side initially, then move it behind
   a batched insert-or-get.
@@ -1088,6 +1125,210 @@ programs. This is P2 and it gates everything downstream.
 \end{obligation}
 
 %==============================================================================
+\section{The two-phase translation, seen from the machine}
+\label{sec:phase2}
+
+Draft~3 now compiles in two phases \cite[\S6]{rhocomb3}. Phase one targets the
+combinators extended with a name binder. Phase two removes the binder: each
+run-time instance receives an \emph{address} $\sigma$ at a static channel $r$,
+allocates its apparatus beneath it as leaves built by $\Lft\sigma =
+\quo{\mm(\sigma,\quo{\nil})}$ and $\Rgt\sigma = \quo{\mm(\sigma,K)}$, and
+erects each atom that mentions an allocated name by a constructor followed by
+$\ev$ \cite[Rem.~3.11, Def.~6.8]{rhocomb3}. The repair is correct in purpose
+--- positional apparatus names are unsound for code instantiated twice
+\cite[\S6.1]{rhocomb3} --- and it changes what the machine sees in five ways.
+The reference implementation is extended accordingly: its rule table is
+generated from a shape table, and \texttt{phase2.py} runs the experiments
+below.
+
+\subsection{The signature is generated, and its width is a program property}
+
+The rule table is one row per shape, and the constructor for a shape is
+derived from it. Phase two erects every phase-one atom that mentions a bound
+name, and the (o5) chains of phase one consist of constructor atoms whose
+channels are bound names, so a program with an (o5) occurrence needs
+$\cons_{\cons_{\dd}}$ and its siblings, of arity five with four premises.
+The family is finite for each program \cite[Rem.~6.15]{rhocomb3}, but it is
+not the one-level family of base shapes, and the fixed row width of
+Remark~\ref{rem:AforA} is therefore a compile-time parameter $w$ read off the
+program rather than a constant of the calculus. This is why (F1), (F3), claim
+(C2) and Theorem~\ref{thm:three}(i) are now stated in terms of $w$.
+
+\subsection{Every compiled unit sits at the destructor vertex}
+
+Each translated input stores its body behind a gate containing $\ev$
+\cite[Lem.~6.2]{rhocomb3}, and each erection is a constructor followed by
+$\ev$. Every compiled program with an input, and every phase-two image, is
+therefore at the top of the computation axis. Theorem~\ref{thm:three}(ii),
+Corollary~\ref{cor:neumann} and phase P6 of \S\ref{sec:plan} apply to
+hand-written combinator terms and to input-free programs, and to no compiled
+program with an input. The frontier reading of \S\ref{sec:triangular},
+route~(2), is the only one available to compiled code, which is what the
+machine of \S\ref{sec:step} uses in any case.
+
+The name universe also grows with every unfolding, since each instance
+allocates beneath a strictly deeper address \cite[Ex.~6.9]{rhocomb3}. With
+names interned structurally, as the reference does, a leaf beneath $\sigma$ is
+one new table entry whose single component refers to $\sigma$'s index, so
+descending one level costs $O(1)$ whatever the depth; a content hash of the
+full encoding would cost $O(\text{depth})$ per new address. This is a reason,
+beyond those of \S\ref{sec:reflection}, for the machine not to hash on its
+hot path.
+
+\subsection{Erection under maximal progress}
+
+Two deploys of one program, or two unfoldings of one recursive unit, are two
+instances sharing every static channel of the phase-two image. Draft~3 makes
+this safe under the single-address-input discipline \cite[Def.~6.10,
+Lem.~6.11]{rhocomb3}, and the literal erection of \cite[Def.~6.8]{rhocomb3}
+does not satisfy it: $\cons_{A}(t_{i_1},\dots,t_{i_m},f_{A})$ has $m$ address
+inputs at static channels. The question for a bulk-synchronous machine is
+how often that bites.
+
+\begin{finding}[Concurrent literal erection mixes instances]
+\label{find:mix}
+Take the unit $\{\fw(z_{1},z_{2}),\ \kk(z_{1})\}$, compiled by
+\cite[Def.~6.8]{rhocomb3} with per-node gadget channels and a leaf fan-out for
+$z_{1}$, and deploy $n$ instances at distinct fresh addresses. An erected
+forwarder is \emph{mixed} if its two leaves lie beneath different addresses.
+Over 50 seeds:
+\begin{center}\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+& \multicolumn{2}{c}{maximal progress} & \multicolumn{2}{c}{sequential uniform} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+instances & runs mixed & forwarders mixed & runs mixed & forwarders mixed & erected\\
+\midrule
+2  & 29/50 & 58  & 16/50 & 32  & 100\\
+4  & 48/50 & 144 & 38/50 & 95  & 200\\
+8  & 50/50 & 347 & 49/50 & 268 & 400\\
+16 & 50/50 & 754 & 50/50 & 659 & 800\\
+\bottomrule
+\end{tabular}
+\end{center}
+With single-input context instantiation (\S\ref{sec:ctxinst}) no forwarder is
+mixed in any run, at any instance count, under either scheduler; erection
+takes two parallel steps against five.
+\end{finding}
+
+The fraction of mixed forwarders approaches $1 - 1/n$, which is what uniformly
+random pairing of left and right leaves would give. Maximal progress mixes
+more than sequential choice because it fires every enabled constructor in the
+same step, when both instances' leaves are present at the static channels
+together. A device running many instances is the worst case, not a corner
+case: correctness cannot be left to the schedule.
+
+\subsection{The discipline cannot be met by fixed-arity constructors}
+
+Draft~3's remedy is a conforming construction \cite[Rem.~6.12]{rhocomb3}:
+thread one copy of the address through single-input chains and perform every
+join at an address-derived channel. The following says that no such
+construction exists for the atoms phase two most needs.
+
+Lemma~6.11's proof turns on one property of a redex fired at a static
+channel: that it cannot join material from two instances. Draft~3 states this
+for constructors, but a router does the same when it holds a leaf and receives
+an address --- $\fw(k,\Lft\sigma) \mid \mm(k,\Lft\tau)$ at static $k$ delivers
+$\tau$'s leaf into $\sigma$'s apparatus --- so the form of the discipline the
+lemma actually uses is the following.
+
+\begin{definition}[The discipline, as the permutation lemma uses it]
+\label{def:dstar}
+Fix an instance at address $\sigma$. A redex \emph{joins at a static channel}
+if one of its consumed channels is a static name and two of its premises
+contribute occurrences of $\sigma$ to its produced atoms. An image satisfies
+(D$^{\ast}$) if no reachable redex joins at a static channel.
+\end{definition}
+
+\begin{proposition}[Address multiplicity]
+\label{prop:multiplicity}
+Under (D$^{\ast}$), with the rules of \cite[Def.~3.3, Def.~3.8]{rhocomb3}, no
+reachable atom contains two occurrences of $\sigma$. Hence no atom mentioning
+two leaves beneath $\sigma$ is ever erected, and neither is any phase-one atom
+mentioning two bound names --- the distributor's $\dd(q_{1},p_{1},q_{2})$ and
+the gate's $\sy(p_{0},b,c)$ among them.
+\end{proposition}
+
+\begin{proof}
+Induction on reduction. Initially the phase-two image is closed and contains
+no occurrence of $\sigma$, and the address arrives as $\mm(r,\sigma)$, one
+occurrence. Suppose every atom so far contains at most one. A message or a
+store is an atom, so one whose payload contains $\sigma$ has a subject free of
+$\sigma$, which is a static channel. Every rule builds its produced atoms from
+names of its premises --- the consumer's arguments and the payloads of the
+consumed messages or store --- together with static names and, for
+$\mathsf{eval}$, the
+components of one payload, which contain at most one occurrence between them.
+A produced atom with two occurrences must therefore draw one from each of two
+premises. Those are two payloads, or a consumer argument and a payload; in
+either case a payload carrying $\sigma$ is consumed, so a consumed channel is
+static, and the redex joins at a static channel, which (D$^{\ast}$) excludes.
+A leaf beneath $\sigma$ contains exactly one occurrence of $\sigma$, so an
+atom mentioning two leaves contains two.
+\end{proof}
+
+A fixed-arity constructor places each input once. To build a name mentioning
+$\sigma$ twice from one copy of $\sigma$ it must duplicate and rejoin, and the
+rejoin is the forbidden join. The context-indexed constructor of
+\cite[Rem.~3.14]{rhocomb3}, with holes in name positions, places one input at
+every hole. Draft~3 records that it is derivable from the family by chaining,
+and that the two have the same reach; Proposition~\ref{prop:multiplicity} says
+the derivation does not preserve (D$^{\ast}$), so under the discipline the two
+do not have the same reach, and phase two needs the context-indexed form as a
+primitive. \textsf{SETTLED} for the proposition; the choice of primitive is
+the paper's.
+
+\subsection{Single-input context instantiation}
+\label{sec:ctxinst}
+
+Write $\inst(a,f,C) \mid \mm(a,v) \red \mm(f,\quo{C[v]})$ for a context $C$
+with a hole in name positions, possibly many, including beneath quotation. A
+unit's phase-two image becomes two atoms,
+\[
+  \inst(r,f,C_{\mathrm{unit}}) \mid \ev(f),
+\]
+where $C_{\mathrm{unit}}$ is the phase-one image with each bound name $z_{i}$
+replaced by the leaf at a fixed-length path $w_{i}$ beneath the hole, and with
+the spare leaves posted for nested units and for self-instantiation. The
+constructor at the static channel $r$ has one premise, so (D$^{\ast}$) holds
+by construction; permuting addresses among $\inst$ atoms is the harmless
+permutation of Lemma~6.11; and the whole instance appears in two steps. The
+allocation tree, the per-node gadget channels, the fan-out count and the
+constructors of constructors all disappear, and $w$ returns to four.
+
+For the machine, $\inst$ is one more class-(b) rule with a single premise: its
+row is fixed-width, its join is the cheapest there is, and its encode is a
+substitution over the context's interned form, memoised per name, costing
+$O(|C|)$ new table entries per instance. The hole is a reserved index that
+no rule can construct.
+
+\begin{finding}[The recursion combinator at constant cost]
+\label{find:dx}
+$D_{x} = \inp{y}{x}{(\out{x}{\drp{y}} \mid \drp{y})}$ compiled with
+$\inst$, per \cite[Ex.~6.9]{rhocomb3} with seven allocated names and a spare,
+run for 200 unfoldings: every unfolding takes exactly 7 parallel steps
+(between 9 and 11 sequential, averaging the draft's two erection steps plus
+eight), and adds exactly 16 names to the table, whatever the depth of the
+address.
+\end{finding}
+
+\begin{obligation}[Phase two's primitive]
+\label{obl:inst}
+Decide whether phase two erects by a single-input context constructor, or by
+some other construction that meets (D$^{\ast}$). Until one is fixed, the
+compiled images whose width Obligation~\ref{obl:width} asks to measure do not
+exist in a correct form. \textsf{GATE}
+\end{obligation}
+
+\begin{obligation}[Separate erection from computation]
+\label{obl:erectwidth}
+When the width of compiled programs is measured, report the steps spent in
+erection separately from the rest. Under $\inst$ erection is two steps per
+instance and perfectly parallel across instances, so it should inflate width
+rather than depth; the measurement should confirm it. \textsf{ROUTE}
+\end{obligation}
+
+%==============================================================================
 \section{Conclusion}
 
 The proposal that opened this line of work --- encode the reduction graph as an
@@ -1102,7 +1343,7 @@ redirection is that the matrix worth building is not the one indexed by states.
 It is the incidence of atoms against names, which is the size of the term; on
 it, redex finding and conflict detection are two sparse Boolean products, and
 a machine step is a maximal independent set. The factorisation asked for does
-exist, in the form of twelve ladder-operator monomials, and it is the right
+exist, in the form of one ladder-operator monomial per generated rule, and it is the right
 way to \emph{think} about the semantics; but the thing to \emph{multiply} is
 smaller and nearer to hand.
 
@@ -1122,10 +1363,11 @@ programs are wide, and that is a measurement, not a theorem.
 \section{The reference implementation}
 \label{app:code}
 
-Two files accompany the note. \texttt{rhocombmat.py} is the machine: an intern
-table, a state as a multiset of occurrences, incidence matrices, the twelve
+Three files accompany the note. \texttt{rhocombmat.py} is the machine: an intern
+table, a state as a multiset of occurrences, incidence matrices, the generated
 join expressions, the conflict product, a greedy maximal independent set, and
 the firing rules including the encode and decode paths.
+\texttt{phase2.py} runs the experiments of \S\ref{sec:phase2}.
 \texttt{experiments.py} builds the four term families, validates the matrix
 join against naive enumeration, and produces the table of
 Finding~\ref{find:width}. The core of the step is short enough to quote:
@@ -1136,7 +1378,7 @@ def run_parallel(state, nt, seed=0, cap=10000):
     rng = random.Random(seed)
     steps, fired, widths, counts = 0, 0, [], []
     while steps < cap:
-        R = redexes_matrix(state, nt)      # twelve joins on the incidence
+        R = redexes_matrix(state, nt)      # one join per generated rule
         if not R:
             break
         C, nnz = conflict_graph(R, state)  # B B^T
