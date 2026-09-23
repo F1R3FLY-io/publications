@@ -50,6 +50,7 @@
 \newcommand{\cons}{\mathsf{cons}}
 \newcommand{\Lft}{\mathsf{L}}
 \newcommand{\Rgt}{\mathsf{R}}
+\newcommand{\inst}{\mathsf{inst}}
 \newcommand{\red}{\longrightarrow}
 \newcommand{\wred}{\longrightarrow^{*}}
 \newcommand{\scong}{\equiv}
@@ -585,11 +586,14 @@ argument, so they too cost constructors.
 \label{rem:ctxindexed}
 The family can be collapsed into one atom indexed by a static context:
 $\cons[C](a,c) \mid \mm(a,v) \red \mm(c,\quo{C[v]})$ for a combinator context
-$C$ with holes in name positions. This is derivable from the family by
-chaining, and conversely each member is the instance
-$C = A(-,\dots,-)$. It shortens the translation at the price of an atom
-parameterised by a context rather than by names --- a considerable conceptual
-cost, which we do not pay, though the two formulations have the same reach.
+$C$ with holes in name positions. This is derivable from the family by chaining, and conversely each member is
+the instance $C = A(-,\dots,-)$, so the two have the same reach as term
+algebras. They do \emph{not} have the same reach under the discipline of
+\S\ref{sec:perm}: the chaining that derives $\inst$ from the family does not
+preserve it, and \S\ref{sec:join} shows this is what forces the choice of
+erection scheme. The remark is retained here because the construction is
+introduced in its own right; its role in phase two is argued in
+\S\ref{sec:schemes}.
 \end{remark}
 
 \section{Where the decoding happens}
@@ -1014,6 +1018,199 @@ Definition~\ref{def:consfamily}. $\mathrm{ERECT}$ erects only phase-one
 atoms, so the shapes a given program needs are those of atoms mentioning one
 of its bound names. The family therefore terminates at one level for each
 program, rather than regressing through constructors of constructors.
+\end{remark}
+
+\subsection{Erecting an instance: the join}
+\label{sec:join}
+
+Definition~\ref{def:phase2} erects each phase-one atom with a constructor at
+statically named channels. That construction does not meet
+Definition~\ref{def:sai}, and the failure is visible on a single instance.
+
+\begin{example}[The literal erection violates the discipline]
+\label{ex:literalfails}
+Take $R = \inp{y}{a}{\out{y}{\drp{y}}}$, whose body is the single atom
+$\mm(y,y)$, combining kinds (o2) and (o3), so the atom is deleted and two
+links share a proxy. Phase one gives seven bound names and seven atoms,
+\[
+  \dd(a,p_{0},q_{1}) \mid \dd(q_{1},p_{1},p_{2}) \mid \sy(p_{0},b,c') \mid
+  \qq(b,\nil) \mid \ev(c') \mid \br(p_{1},c) \mid \fw(p_{2},c),
+\]
+and literal erection supplies, for the first of these,
+$\cons_{\dd}(t_{a},t_{p_{0}},t_{q_{1}},f_{1}) \mid \ev(f_{1})$. Its channels
+are written into the term, hence static, and two of its inputs carry
+allocated names. That is two address-valued inputs at a static channel. The
+same holds of $\cons_{\sy}$, $\cons_{\br}$ and $\cons_{\fw}$; only
+$\cons_{\ev}$ and $\cons_{\qq}$, with one address input each, are clean. With
+a second instance at $\tau$ the first constructor may take $p_{0}$ from
+$\sigma$ and $q_{1}$ from $\tau$, erecting $\dd(a,\sigma\!\cdot\!000,
+\tau\!\cdot\!001)$.
+\end{example}
+
+The obvious repair is to give the erecting constructors allocated channels,
+so that only one instance can feed them. It regresses: the atom
+$\cons_{\dd}(\sigma\!\cdot\!a,\sigma\!\cdot\!b,\sigma\!\cdot\!c,
+\sigma\!\cdot\!f)$ mentions four leaves, so erecting \emph{it} needs a
+constructor at the $\cons_{\dd}$ shape, whose channels face the same choice.
+There is no base case.
+
+\begin{proposition}[Multiplicity]
+\label{prop:multiplicity}
+Under Definition~\ref{def:sai} extended to all rules, every atom reachable
+from a term holds at most one occurrence of an address $\sigma$. Hence no
+construction from the fixed-arity family erects an atom mentioning two leaves
+of $\sigma$.
+\end{proposition}
+
+\begin{proof}
+We sketch the argument; it is given in full as Proposition~14.3 of
+\cite{rhocombmat}. Induction on reduction, with the invariant as stated. Every rule builds its
+produced atoms from the names of its premises --- the consumer's arguments
+and the payloads consumed --- together with static names. A produced atom
+with two occurrences of $\sigma$ must therefore draw one from each of two
+premises, so a payload carrying $\sigma$ is consumed at a channel free of
+$\sigma$, which is static; the discipline excludes that join. A leaf beneath
+$\sigma$ contains exactly one occurrence, so an atom mentioning two leaves
+contains two.
+\end{proof}
+
+The obstruction is therefore not about arity in the term but about the
+premise count of the rule. A rule with one premise cannot mispair anything;
+a rule with two can, and matching is on subject names alone, so nothing can
+require two premises to agree about which instance they belong to. Instance
+identity can live only in the channel, and a channel scoped to an instance
+belongs to an atom which is itself a join of scoped names.
+
+\begin{definition}[Multiplicity of a rule]
+\label{def:mult}
+A rule has \emph{multiplicity $k$} if its right-hand side places some name of
+a single premise at $k$ positions. The fixed-arity constructors have
+multiplicity one: each input is placed once.
+\end{definition}
+
+\begin{lemma}
+\label{lem:needmult}
+A phase-two erection meeting Definition~\ref{def:sai} for a unit containing
+an atom with two scoped names requires a rule of multiplicity at least two.
+\end{lemma}
+
+\begin{proof}
+Such an atom holds two occurrences of the address. By
+Proposition~\ref{prop:multiplicity} no multiplicity-one construction reaches
+it, since each rule places each input once and the only way to obtain two
+occurrences is to duplicate and rejoin, the rejoin being the excluded join.
+\end{proof}
+
+\begin{remark}[Which names must be scoped]
+\label{rem:scoping}
+Not all seven need scoping, and the analysis is a decidable check on
+phase-one output. Mark every name that carries an instance-specific value.
+In Example~\ref{ex:literalfails}: $p_{0}$, $b$, $c'$ are unmarked, since the
+gate discards the value and $\qq$ carries static code; $q_{1}$ is unmarked,
+because $\dd$ duplicates one message, so a crossing there permutes which
+instance handles which value and both answers are right; $p_{1}$, $p_{2}$ and
+$c$ are marked, because the correlation created by $\dd$ is consumed
+separately by the two links. A program whose phase-one image has no atom
+mentioning two marked names is compiled correctly by the fixed family, and
+Lemma~\ref{lem:needmult} does not apply to it.
+\end{remark}
+
+\begin{example}[The deciding term]
+\label{ex:deciding}
+Two instances of $R$ above, receiving $v_{1}$ and $v_{2}$, with $p_{1}$,
+$p_{2}$, $c$ shared:
+\[
+\begin{array}{ll}
+  \br(p_{1},c) \mid \mm(p_{1},v_{2}) \red \fw(c,v_{2}), &
+  \fw(p_{2},c) \mid \mm(p_{2},v_{1}) \red \mm(c,v_{1}),\\
+  \fw(c,v_{2}) \mid \mm(c,v_{1}) \red \mm(v_{2},v_{1}), &
+  \text{and symmetrically } \mm(v_{1},v_{2}),
+\end{array}
+\]
+against the source's $\mm(v_{1},v_{1}) \mid \mm(v_{2},v_{2})$. An encoded
+observer at $v_{1}$ receives the wrong process.
+
+By contrast $\inp{y}{a}{(\drp{y} \mid \drp{y})}$, though it uses $y$
+non-linearly, is \emph{not} deciding: mixing gives each instance
+$v_{1} \mid v_{2}$, and the totals agree as multisets, so parallel
+composition absorbs the crossing. The criterion is two occurrences within one
+atom, which is exactly the shape Proposition~\ref{prop:multiplicity} forbids.
+\end{example}
+
+\subsection{Two schemes that meet the requirement}
+\label{sec:schemes}
+
+Lemma~\ref{lem:needmult} asks for multiplicity, not for any particular rule.
+Two constructions supply it.
+
+\paragraph{Curried, path-indexed constructors.} Let each constructor take the
+address itself and derive its arguments:
+\[
+  \cons^{*}_{A}[\vec w](t,f) \mid \mm(t,\sigma) \red
+  \mm(f, \quo{A(\sigma\!\cdot\!w_{1},\dots,\sigma\!\cdot\!w_{n})})
+\]
+indexed by a tuple of fixed-length paths. One premise, multiplicity $n$. On
+Example~\ref{ex:literalfails} the seven atoms are erected by seven such
+rules, each from its own copy of $\sigma$ delivered by a $\dd$-tree on static
+channels; since every rule has one premise, each produced atom is wholly an
+atom of the address it consumed, and a crossing permutes which copy of the
+text serves which instance rather than splitting an atom between two. The
+family is still generated from the shape table and rows stay fixed-width; the
+parameter is a tuple of bit strings rather than a context.
+
+\paragraph{Context instantiation.} Alternatively take the construction of
+Remark~\ref{rem:ctxindexed} as primitive:
+\[
+  a,f : \mathsf{N} \vdash \mathsf{inst} :
+  \inst(a,f,C) \mid \mm(a,v) \red \mm(f,\quo{C[v]})
+\]
+for a context $C$ with holes in name positions, possibly many and possibly
+beneath quotation. A unit's image is then two atoms,
+$\inst(r,f,C_{\mathrm{unit}}) \mid \ev(f)$, where $C_{\mathrm{unit}}$ is the
+phase-one image with each bound name replaced by the leaf at a fixed path
+beneath the hole. One premise, multiplicity equal to the number of bound
+occurrences, and the whole instance in two steps.
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & curried & $\inst$\\
+\midrule
+premises per rule & 1 & 1\\
+meets Def.~\ref{def:sai} & yes & yes\\
+parameter & tuple of paths & a context\\
+signature & generated from the shape table & one rule\\
+steps per unit of $n$ atoms & $n$, parallel & $2$\\
+allocation tree, gadget channels & still needed & removed\\
+constructors of constructors & not needed & not needed\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Both are correct, and the choice is an engineering one. The curried scheme
+keeps the signature fixed-arity and generated, which is the objection usually
+raised against an atom parameterised by a context; $\inst$ removes the
+allocation tree, the per-node gadget channels of
+Remark~\ref{rem:pernode} and the fan-out bookkeeping outright, and erects a
+unit in a constant number of steps regardless of its size.
+
+\begin{remark}[Recommendation]
+\label{rem:recommend}
+For implementation we favour $\inst$. The measurements in
+\cite[\S14]{rhocombmat} run the recursion combinator of
+Example~\ref{ex:dx} for two hundred unfoldings at exactly seven parallel
+steps and sixteen new names per unfolding, independent of address depth, with
+no mixing observed at any instance count under either schedule; the curried
+scheme has no comparable measurement. On a machine the deciding
+considerations are that $\inst$ keeps every row four names wide, that its
+join is the cheapest available since it has a single premise, and that
+erection becomes a fixed two steps per instance, perfectly parallel across
+instances, so that it inflates width rather than depth. The conceptual price
+--- an atom parameterised by a context --- is real, and
+\S\ref{sec:join} is the argument that some price must be paid: under the
+discipline the fixed-arity family does not reach the atoms phase two must
+erect, and the reach of the two constructions, equal as term algebras,
+differs once the discipline is imposed.
 \end{remark}
 
 \section{Correctness}
@@ -1753,6 +1950,10 @@ F1R3FLY.io, 2026.
 \bibitem{rhocomb} L.\,G. Meredith and M. Stay.
 \emph{Name-free combinators for concurrency.}
 Working draft, \texttt{rho4u}.
+
+\bibitem{rhocombmat} L.\,G. Meredith.
+\emph{A matrix representation for the rho combinators.}
+F1R3FLY.io, revision 1.2, 2026.
 
 \bibitem{Yoshida02} N. Yoshida.
 \emph{Minimality and separation results on asynchronous mobile processes:
