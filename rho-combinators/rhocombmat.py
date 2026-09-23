@@ -3,13 +3,13 @@ rhocombmat.py -- a reference machine for the rho combinators in which every
 step of redex finding and conflict detection is a Boolean sparse matrix
 product, and a step fires a maximal independent set of redexes.
 
-Version 1.2.  The rule table is generated from a shape table, as the
+Version 1.3.  The rule table is generated from a shape table, as the
 constructor family of draft 3 (Def. 3.8) requires: one constructor cons_A per
 atom shape A, of arity ar(A)+1, and optionally a second level cons_{cons_A}
 for erecting the constructors that phase one emits in (o5) chains.  An
-optional context-instantiation primitive `inst` (the context-indexed
-constructor of draft 3, Rem. 3.14, with holes in name positions) is included
-because the phase-two experiments in experiments.py need it.
+optional context-instantiation primitive `inst` (draft 3, S6.7) and the
+curried, path-indexed constructors cons*_A[w] (draft 3, S6.7) are included
+because the phase-two experiments in phase2.py compare them.
 
 Presentation A: every atom is a fixed-width tuple of interned name indices.
 The payload of q is stored by its quote, so q(a,p) is held as q(a, @p), and
@@ -31,6 +31,9 @@ BASE = {'m': 2, 'd': 3, 'k': 1, 'fw': 2, 'bl': 2, 'br': 2, 's': 3, 'e': 1,
         'q': 2}
 PAR = 'cons'            # cons_| : parallel composition of two quotations
 INST = 'inst'           # inst(a, f, C) | m(a, v) -> m(f, @C[v])
+CSTAR = 'cstar'         # cons*_A[w](t, f), draft 3 S6.7: the template T is one
+                        # atom whose arguments are paths below the hole or
+                        # static names; cstar(t, f, T) | m(t, s) -> m(f, @T[s])
 
 
 def family(levels=1):
@@ -48,6 +51,7 @@ def family(levels=1):
                 nxt.append(c)
         frontier = nxt
     ar[INST] = 3
+    ar[CSTAR] = 3
     return ar
 
 
@@ -66,7 +70,7 @@ def built_shape(sh):
 def premises(sh):
     """Premise slots joined against the message table, for a consumer shape.
     None if the shape consumes nothing (m, q, and the hole marker)."""
-    if sh in ('d', 'k', 'fw', 'bl', 'br', 's', 'e', INST):
+    if sh in ('d', 'k', 'fw', 'bl', 'br', 's', 'e', INST, CSTAR):
         return [0]
     if sh == PAR:
         return [0, 1]
@@ -112,6 +116,35 @@ class NameTable:
                                               for x in a[1:]) for a in comps))
         memo[n] = out
         return out
+
+    def is_path(self, n):
+        """True iff n is the hole or L/R applied to a path."""
+        while n != self.hole:
+            comps = self.drop(n)
+            if len(comps) != 1 or comps[0][0] != 'm':
+                return False
+            n = comps[0][1]
+        return True
+
+    def mentions_hole(self, n, memo=None):
+        if memo is None:
+            memo = {}
+        if n == self.hole:
+            return True
+        if n not in memo:
+            memo[n] = False
+            memo[n] = any(self.mentions_hole(x, memo)
+                          for a in self.drop(n) for x in a[1:])
+        return memo[n]
+
+    def curried_template(self, T):
+        """A curried template is one atom whose every argument is a path
+        beneath the hole or mentions no hole at all (a static name)."""
+        comps = self.drop(T)
+        if len(comps) != 1:
+            return False
+        return all(self.is_path(x) or not self.mentions_hole(x)
+                   for x in comps[0][1:])
 
     def __len__(self):
         return len(self._bwd)
@@ -315,6 +348,9 @@ def fire(state, nt, redex):
     elif rule == PAR:
         produced = [('m', c[3], nt.quote(nt.drop(vals[0]) + nt.drop(vals[1])))]
     elif rule == INST:
+        produced = [('m', c[2], nt.subst(c[3], vals[0]))]
+    elif rule == CSTAR:
+        assert nt.curried_template(c[3]), 'not a curried template'
         produced = [('m', c[2], nt.subst(c[3], vals[0]))]
     elif is_member(rule):
         a = built_shape(rule)
