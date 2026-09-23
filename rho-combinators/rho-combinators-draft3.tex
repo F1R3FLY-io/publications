@@ -496,10 +496,32 @@ constructor of arity $n+1$:
 \end{array}
 \]
 together with $\cons_{\mid}$ for parallel composition, taking quotations to
-the quotation of their composite, and the constant $\quo{\nil}$. The family
-is finite because the signature is, and it includes a member for each
-constructor, so the calculus is closed under its own constructions.
+the quotation of their composite, and the constant $\quo{\nil}$.
+For an atom shape with a process argument the member is stated directly in
+presentation B, where payloads are process-sorted; the case of $\qq$ is
+\[
+  a,b,c : \mathsf{N},\ p_{1},p_{2} : \mathsf{P} \vdash \mathsf{make}_{\qq} :
+  \cons_{\qq}(a,b,c) \mid \mm(a,p_{1}) \mid \mm(b,p_{2})
+  \red \mm(c, \qq(\quo{p_{1}}, p_{2}))
+\]
+and $\cons_{\mm}$ follows the same pattern. The family is finite because the
+signature is, and it includes a member for each constructor, so the calculus
+is closed under its own constructions.
 \end{definition}
+
+\begin{remark}[Process arguments and the two presentations]
+\label{rem:consq}
+Shapes with a process argument are where the presentations of
+\S\ref{sec:two} come apart a third time. Under B the member above is
+direct: $\quo{p_{1}} : \mathsf{N}$ and $p_{2} : \mathsf{P}$ are exactly the
+sorts $\qq$ wants. Under A, whose payloads are names, the same member must
+be written $\quo{\qq(v_{1}, \drp{v_{2}})}$, coercing a name back to a
+process by $\drp{-}$ --- which denotes the intended atom only because
+$\drp{\quo{p}} = p$. So A can build these constructors, but only by leaning
+on its equation, and B builds them without it. This bears on
+\S\ref{sec:phase2}, which erects a $\qq$ at allocated names in
+Example~\ref{ex:dx}.
+\end{remark}
 
 \begin{remark}
 Each constructor takes names and returns a name: it assembles the quotation
@@ -887,23 +909,111 @@ the initial configuration at a strictly deeper address, so no two unfoldings
 share a leaf.
 \end{example}
 
-\begin{remark}[Static channels are harmless; source values are not]
-\label{rem:harmless}
-Two live instances share every static channel of
-Definition~\ref{def:phase2} --- $r$, the $u_{i}$, $z_{0}$, $z_{1}$, the
-$f_{A}$ --- and may cross-match freely at them. This costs nothing. What
-crosses is addresses: instance one may read $\tau$ at $r$ while instance two
-reads $\sigma$, after which each allocates beneath the address it holds, and
-since neither is a prefix of the other their leaf sets are disjoint. The
-effect is a permutation of addresses among instances, never a sharing of
-apparatus.
+\subsection{The permutation discipline}
+\label{sec:perm}
 
-Source values never cross a static channel. After its first step each
-instance moves them only through allocated apparatus, which is why the
-failure of \S\ref{sec:whyphases} cannot recur: there $X$ and $Y$ themselves
-travelled through a shared proxy. This is the distinction the correctness
-argument turns on, and it is worth stating as the design rule it is:
-\emph{apparatus may be permuted, values may not}.
+Two live instances share every static channel of
+Definition~\ref{def:phase2} --- $r$, the allocation gadget's internal
+channels, the $f_{A}$ --- and may cross-match freely at them. Whether that
+costs anything depends on what crosses, and the distinction is sharp enough
+to be the design rule of phase two: \emph{apparatus may be permuted, values
+may not}. Source values never reach a static channel, because after its first
+step each instance moves them only through allocated apparatus; that is why
+the failure of \S\ref{sec:whyphases} cannot recur, since there $X$ and $Y$
+themselves travelled through a shared proxy.
+
+Apparatus is another matter, and the naive reading of ``harmless'' is false.
+A constructor with two address-valued inputs at static channels can draw one
+from each of two instances, erecting an atom whose subject belongs to one and
+whose continuations belong to another --- after which values do cross. The
+condition that rules this out is worth isolating.
+
+\begin{definition}[Single-address-input discipline]
+\label{def:sai}
+A phase-two image satisfies the discipline if every constructor placed at a
+statically named channel has at most one input carrying an address, and every
+join of two or more addresses occurs at a channel derived from a single
+address.
+\end{definition}
+
+\begin{lemma}[Permutation]
+\label{lem:perm}
+Let two instances run at prefix-incomparable $\sigma,\tau$ under
+Definition~\ref{def:sai}. Then every reachable configuration is one in which
+each instance holds only leaves of a single address, and the reachable
+configurations differ from the uncrossed ones by a permutation of
+$\{\sigma,\tau\}$ among the instances.
+\end{lemma}
+
+\begin{proof}
+A single-input constructor at a static channel emits a name determined by the
+one address it consumed, so its output is a leaf of that address; the
+cross-match merely exchanges which instance's chain consumes which address,
+which is the permutation. A multi-address join, by the discipline, sits at a
+channel derived from one address, and by Lemma~\ref{lem:alloc} that channel
+is a leaf of that address alone, so only that instance's chain can deliver to
+it. Hence no atom is erected from leaves of two addresses, and by
+prefix-incomparability the two leaf sets stay disjoint.
+\end{proof}
+
+\begin{remark}[One way to satisfy it]
+\label{rem:singlecopy}
+Erect each atom from a single copy of its instance's address, threading it
+through single-input chains and performing every join at an address-derived
+channel, rather than allocating the leaves once at shared channels and
+joining them there. This satisfies Definition~\ref{def:sai} by construction
+and costs a factor logarithmic in the number of allocated names, the depth of
+the chains. We state the discipline rather than this scheme because a cheaper
+scheme satisfying Definition~\ref{def:sai} would serve equally; but an
+implementation that ignores the question is wrong, not merely unproved.
+\end{remark}
+
+\begin{remark}[Per-node channels]
+\label{rem:pernode}
+Within a single instance the allocation gadget's internal channels must be
+per-node: a single shared $u$ or $z$ lets the tree mis-address its own
+leaves. Likewise, one spare leaf suffices for a self-instantiating unit such
+as Example~\ref{ex:dx}, but a unit with nested inputs needs one per nested
+unit.
+\end{remark}
+
+\subsection{Freshness}
+\label{sec:phase2fresh}
+
+Distinctness of leaves is not enough: they must also avoid the names of the
+translated program. This does not follow from Lemma~\ref{lem:alloc}, and it
+cannot be obtained by choosing a shape outside the constructor family, since
+by Definition~\ref{def:consfamily} there is a member at every shape.
+
+\begin{lemma}[Phase-two freshness]
+\label{lem:fresh2}
+Let $\sigma$ be an $\nequiv$-normal name larger than every $\nequiv$-normal
+name occurring in $\enc{P}$. Then no leaf beneath $\sigma$ occurs in
+$\enc{P}$, and no name constructed at run time by a link of kind (o5) is a
+leaf of $\sigma$.
+\end{lemma}
+
+\begin{proof}
+$\Lft$ and $\Rgt$ strictly increase size on normal forms, so every leaf
+exceeds $\sigma$ and hence every name of $\enc{P}$; this gives the first
+claim. For the second, every leaf mentions $\sigma$ hereditarily, while a
+link of kind (o5) builds its result from names received on source channels.
+Addresses never enter the payload of a source message --- that is the
+``values may not be permuted'' half of \S\ref{sec:perm} read in the other
+direction --- so no constructed name mentions $\sigma$.
+\end{proof}
+
+The second clause is an obligation on the translation rather than a property
+of the calculus, and it is mechanically checkable: no address-valued channel
+may feed a constructor chain of kind (o5).
+
+\begin{remark}[Finiteness of the family, made statable]
+\label{rem:familyfinite}
+Lemma~\ref{lem:fresh2} also settles a question left open by
+Definition~\ref{def:consfamily}. $\mathrm{ERECT}$ erects only phase-one
+atoms, so the shapes a given program needs are those of atoms mentioning one
+of its bound names. The family therefore terminates at one level for each
+program, rather than regressing through constructors of constructors.
 \end{remark}
 
 \section{Correctness}
@@ -1039,7 +1149,7 @@ Definition~\ref{def:combred}, including $\ev$ and $\cons$, whose right-hand
 sides are computed from the redex and so commute with $\beta$. For the
 labels, Lemma~\ref{lem:usage} shows an encoded context never names an allocated leaf
 of the term it observes, so no label distinguishes $T$ from its image.
-Remark~\ref{rem:harmless} is the same observation at run time: a permutation
+Lemma~\ref{lem:perm} is the same observation at run time: a permutation
 of addresses among instances is invisible, because only addresses ever cross
 a shared channel.
 \end{proof}
@@ -1138,9 +1248,17 @@ Phase two multiplies by a constant. Each bound name costs one allocation
 gadget of five atoms and three steps (Lemma~\ref{lem:alloc}), and each atom
 mentioning a bound name costs one constructor and one $\ev$
 (Remark~\ref{rem:erect}); both counts are proportional to the phase-one
-output. The run-time cost per instance rises by the same constant factor,
+output. Satisfying Definition~\ref{def:sai} by the scheme of
+Remark~\ref{rem:singlecopy} multiplies by a further factor logarithmic in the
+number of allocated names. The run-time cost per instance rises likewise,
 which is the price of per-instance allocation and what a positional scheme
 was trying, unsoundly, to avoid.
+
+One consequence is practical. Every loop descends one address level per
+unfolding, so names grow along any non-terminating computation; name growth
+is the common case rather than a pathology, and prefix sharing in an
+implementation's intern table is load-bearing for step cost rather than an
+optimisation.
 \end{proof}
 
 Yoshida must distribute the prefix through the body: her rule (I) splits at
@@ -1218,17 +1336,22 @@ $\mm(c,\quo{A(v_{1},\dots,v_{n})})$, whose name is $A$ applied to names
 already present. Structural congruence introduces no names.
 \end{proof}
 
-\begin{lemma}[Atom count]
+\begin{lemma}[Weighted atom count]
 \label{lem:atomcount}
-Every rule but that for $\ev$ strictly decreases the number of non-message
-atoms.
+Weight $\bl$, $\br$ and $\sy$ at $2$ and every other non-message atom at
+$1$. Every rule but that for $\ev$ strictly decreases the total weight.
 \end{lemma}
 
 \begin{proof}
-Each consumes one non-message atom and produces none, except that $\br$,
-$\bl$ and $\sy$ produce $\fw$ while consuming themselves. The rule for $\qq$
-consumes two non-message atoms and produces a message; a constructor rule
-consumes one and produces a message.
+$\dd$, $\kk$, $\fw$ and each constructor consume a weight-$1$ atom and
+produce none, so $1 \to 0$. The three binders consume themselves at weight
+$2$ and produce $\fw$ at weight $1$, so $2 \to 1$. The rule for $\qq$
+consumes $\fw$ and a $\qq$, so $2 \to 0$.
+
+The unweighted count does not work, and the reason is recorded in the rule
+itself: $\bl(a,b) \mid \mm(a,v) \red \fw(v,b)$ consumes one non-message
+atom and produces one, so the plain count is preserved rather than decreased.
+Weighting the binders above $\fw$ is the minimal repair.
 \end{proof}
 
 \begin{lemma}[Message count]
@@ -1312,13 +1435,15 @@ other, without constructors, has too little for rho to fit.
 \begin{proposition}
 \label{prop:sn}
 Without $\ev$, every reduction sequence from $T$ has length at most the
+weighted atom count of Lemma~\ref{lem:atomcount}, hence at most twice the
 number of non-message atoms of $T$. So the calculus is strongly normalising,
 hence not Turing complete, and $\ev$ is not definable in it.
 \end{proposition}
 
 \begin{proof}
 Lemma~\ref{lem:atomcount}, the rule for $\ev$ being the only one whose right
-side is an arbitrary process.
+side is an arbitrary process; the weight of a term is at most twice its
+non-message atom count.
 \end{proof}
 
 The destructor therefore carries the computational power that reflection
