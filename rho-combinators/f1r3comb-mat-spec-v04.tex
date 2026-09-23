@@ -1,0 +1,1014 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{stmaryrd}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[expansion=false]{microtype}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc}
+\usepackage[htt]{hyphenat}
+\usepackage[hidelinks,pdftitle={F1R3Comb-Mat v0.4}]{hyperref}
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\Comb}{\textsc{F1R3Comb}}
+\newcommand{\Mat}{\textsc{F1R3Comb-Mat}}
+\newcommand{\Kind}{\textsc{K1ndl1ng}}
+\newcommand{\Camp}{\textsc{CampF1R3}}
+\newcommand{\Bell}{\textsc{B3ll0ws}}
+\newcommand{\Fx}{\textsc{F1R3x}}
+\newcommand{\Rhobots}{\textsc{Rhobots}}
+\newcommand{\MUST}{\textsc{must}}
+\newcommand{\MUSTNOT}{\textsc{must not}}
+\newcommand{\SHOULD}{\textsc{should}}
+\newcommand{\SHOULDNOT}{\textsc{should not}}
+\newcommand{\MAY}{\textsc{may}}
+
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{*}#1}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\nequiv}{\equiv_{\mathcal{N}}}
+\newcommand{\nms}[1]{\mathcal{N}^{*}(#1)}
+\newcommand{\Nsort}{\mathsf{N}}
+\newcommand{\Psort}{\mathsf{P}}
+\newcommand{\red}{\longrightarrow}
+\newcommand{\wred}{\longrightarrow^{*}}
+\newcommand{\scong}{\equiv}
+\newcommand{\comps}[1]{\lvert #1 \rvert}
+
+\newcommand{\mm}{\mathsf{m}}
+\newcommand{\dd}{\mathsf{d}}
+\newcommand{\kk}{\mathsf{k}}
+\newcommand{\fw}{\mathsf{fw}}
+\newcommand{\bl}{\mathsf{b}_{\mathsf{l}}}
+\newcommand{\br}{\mathsf{b}_{\mathsf{r}}}
+\newcommand{\sy}{\mathsf{s}}
+\newcommand{\ev}{\mathsf{e}}
+\newcommand{\qq}{\mathsf{q}}
+\newcommand{\cons}{\mathsf{cons}}
+\newcommand{\consm}{\mathsf{cons}_{\mm}}
+\newcommand{\consd}{\mathsf{cons}_{\dd}}
+\newcommand{\conss}{\mathsf{cons}_{\sy}}
+\newcommand{\conse}{\mathsf{cons}_{\ev}}
+\newcommand{\consf}{\mathsf{cons}_{\fw}}
+
+\newcommand{\Spec}{\mathcal{S}}
+\newcommand{\Nm}{\mathcal{N}}
+\newcommand{\cre}[1]{a^{\dagger}_{#1}}
+\newcommand{\ann}[1]{a_{#1}}
+\newcommand{\Wt}{\mathsf{W}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{requirement}[definition]{Requirement}
+\newtheorem{decision}[definition]{Decision}
+\newtheorem{obligation}[definition]{Obligation}
+\newtheorem{hazard}[definition]{Hazard}
+\newtheorem{erratum}[definition]{Erratum}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{example}[definition]{Example}
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+
+\newcommand{\Lft}{\mathsf{L}}
+\newcommand{\Rgt}{\mathsf{R}}
+\newcommand{\inst}{\mathsf{inst}}
+\newcommand{\ERECT}{\mathrm{ERECT}}
+\newcommand{\ALLOC}{\mathrm{ALLOC}}
+\newcommand{\enc}[1]{\llbracket #1 \rrbracket}
+\newcommand{\inp}[3]{\mathsf{for}(\,#1 \leftarrow #2\,)#3}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\Fam}{\mathcal{F}}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  frame=leftline,
+  framesep=6pt,
+  xleftmargin=8pt,
+  rulecolor=\color{black!30},
+  showstringspaces=false,
+}
+
+\newcommand{\cstar}{\mathsf{cons}^{*}}
+
+\title{\textbf{\Mat}\\[1mm]
+\large The rho combinators as sparse linear algebra:\\
+a Rust implementation of the matrix representation,\\
+the bulk-synchronous machine, and the transfer operator\\[2mm]
+\normalsize Specification v0.4 --- companion to \Comb{} v0.5}
+\author{F1R3FLY.io}
+\date{23 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+\Mat{} is the third stage of the route from the rho calculus to a
+data-parallel device: it takes a \Comb{} term to the matrix representation of
+\cite{matnote} and runs it on a bulk-synchronous machine whose step is a
+maximal independent set of redexes. Phase two of the translation erects each
+run-time instance at an address, and draft~3 shows that doing so within the
+discipline its correctness proof needs requires a single-premise rule that
+places the address more than once \cite[Prop.~6.17, Lem.~6.19]{draft3}. It
+offers two such rules \cite[\S6.7]{draft3}: curried path-indexed
+constructors, and the context-labelled combinator
+$\inst(a,f,C) \mid \mm(a,v) \red \mm(f,\quo{C[v]})$.
+
+The implementation path is built on $\inst$, and this version makes that
+explicit. $\inst$ is the machine's primary erection: the default build, the
+only scheme the device contract targets, and the one against which width,
+cost and conformance are measured. The evidence of \code{phase2.py} supports
+the choice on every axis the machine cares about. Both schemes erect
+top-level atoms without mixing (E5). On the recursion combinator $\inst$ takes
+7 parallel steps and builds 16 names per unfolding against the curried
+scheme's 10 and 22 (E6). And $\inst$ reaches every gate store, while the
+curried scheme can assemble a store whose body mentions scoped names in two
+atoms only by a join, which mixes 44\% of stores at two instances and 87\% at
+eight (E7). $\inst$ also keeps every row four names wide, has the cheapest
+join available, and erects a unit in two steps regardless of its size, so
+erection adds width rather than depth.
+
+\Comb{} v0.5 currently defaults to the curried scheme
+\cite[Dec.~5.19]{combspec}. \Mat{} runs curried artefacts on the host so that
+it can execute what \Comb{} emits today, but the device path does not carry
+them, and the first request this version puts to \Comb{} is to make $\inst$
+its default, with the reasons v0.5 gave for the opposite choice answered
+from the machine's side. The rest of v0.3 stands: one instantiation kernel
+with a validity class for curried templates, the literal erection as a
+negative control, the marking read from the header, provenance, the marking
+oracle.
+Key words \MUST, \MUSTNOT, \SHOULD, \MAY{} are used in the sense of RFC~2119.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{Purpose and scope}\label{sec:purpose}
+
+\subsection{The route, and where this document sits on it}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+\toprule
+Stage & What it does & Specified in\\
+\midrule
+1 & K0 text to a canonical normal form & \cite{k1ndl1ng}\\
+2 & Normal form to combinator term, in two phases & \Comb{} v0.5 \cite{combspec}\\
+3 & Combinator term to matrix representation; the bulk-synchronous machine;
+    the transfer operator & this document\\
+4 & The machine's kernels on a device & Section~\ref{sec:device}, as a
+    contract\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+This version fixes $\inst$ as the machine's primary erection. Otherwise it
+leaves v0.3's changes to phase two, and the rest of v0.2 \cite{matv02}, as
+they were. Where a requirement below says ``as
+v0.2'', v0.2's text is normative; where the two differ, this document
+governs. Two properties govern everything below. The machine computes exactly one step
+per state, seed and configuration, so a host and a device can be compared
+trace for trace (\cite[P4]{matnote}); and it runs what stage two emits,
+including every instance of every unit, at the width the program has
+(\cite[Princ.~10.4]{matnote}).
+
+\subsection{What exists today}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Artefact & What it gives this project\\
+\midrule
+\code{rho-combinators-draft3} & The calculus and its presentations
+(\S3.2--3.3); the constructor family (Def.~3.8, Rem.~3.9); erection at a
+computed name (Rem.~3.11); phase one (\S6.2) and phase two (\S6.3, Def.~6.8,
+Ex.~6.9); the discipline and the permutation lemma (Def.~6.10, Lem.~6.11);
+freshness by size (Lem.~6.14); \emph{new:} the literal erection's failure
+(Ex.~6.16), multiplicity (Prop.~6.17, Def.~6.18, Lem.~6.19), the marking
+(Rem.~6.20), the deciding term (Ex.~6.21), the two schemes and the
+recommendation (\S6.7, Rem.~6.22); the weighted count (Lem.~9.2)\\
+\code{f1r3comb-spec-v05} & The term type and shape table; tags; phase two as
+a compiler; \emph{new:} the literal erection forbidden (Req.~5.15), v0.4's
+two-stage erection withdrawn (Rem.~5.16), the marking analysis (Req.~5.17),
+the deciding term as a test (Req.~5.18), curried by default
+(Dec.~5.19--Req.~5.23), the mixing and marking obligations (Obl.~11.3,
+11.4)\\
+\code{rhocomb-matrix} v1.2 & The state space, incidence, step and operator;
+\S14, phase two seen from the machine\\
+\code{rhocombmat.py} v1.3, \code{phase2.py}, \code{phase2-results.txt} & The
+reference machine with the generated table, $\inst$, and the curried
+constructor $\cstar$; the three-arm experiments E5--E7 of
+Section~\ref{sec:evidence}\\
+\code{rhocomb-logic} rev.~2 & Components (Def.~2.9); drop elimination
+(Lem.~2.8); injective quotation (Prop.~2.10); the weighted count as a formula
+(Def.~4.2, Prop.~6.17)\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Nomenclature}\label{sec:nomen}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Term & Meaning in this document\\
+\midrule
+\emph{term}, \emph{shape table}, \emph{family} & As in v0.2: a closed
+drop-free \code{Term}; \Comb's table of shapes; the constructors a program
+uses, $\Fam(P)$\\
+\emph{row width}, $w$ & The largest arity in the program's signature\\
+\emph{name id}, \emph{row}, \emph{row ref} & As in v0.2\\
+\emph{address}, \emph{leaf}, \emph{static channel}, \emph{unit},
+\emph{instance} & As in v0.2 and \cite[\S1.3]{combspec}\\
+\emph{scoped}, \emph{marked} & A bound name allocated beneath the address; a
+name carrying an instance-specific value, in the sense of
+\cite[Rem.~6.20]{draft3}\\
+\emph{template} & An interned name over the reserved \code{HOLE}: the thing
+an erecting rule instantiates at an address\\
+\emph{scheme} & How a unit is erected: \emph{curried}
+\cite[\S6.7]{draft3}, \emph{$\inst$} \cite[\S6.7]{draft3}, or \emph{literal}
+\cite[Def.~6.8]{draft3}\\
+\emph{provenance} & The instance a row belongs to, as far as the machine can
+tell; metadata, never semantics\\
+\emph{mixed} & An atom mentioning scoped names of two addresses\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Goals}
+
+\begin{enumerate}[leftmargin=1.6em]
+\item A total, lossless, round-trippable map from \Comb{} terms to the matrix
+representation, for every shape \Comb's shape table generates and every
+scheme \Comb{} emits.
+\item Redex finding as joins derived from the generated rule table, with three
+finders that agree.
+\item A bulk-synchronous step defined bit-exactly.
+\item Phase-two images erected by the context-labelled combinator $\inst$
+run correctly, with \Comb's allocator, freshness checks and marking; curried
+artefacts run on the host for compatibility with \Comb{} v0.5; the literal
+scheme is available as a negative control.
+\item The instruments that bear on \Comb's open choices: width with erection
+separated, per-scheme cost, cross-instance mixing, and a brute-force oracle
+for the marking analysis.
+\item On the destructor-free sublattice, the transfer operator, scoped
+honestly.
+\item \Comb's portability envelope.
+\end{enumerate}
+
+\noindent
+Non-goals are those of v0.2: device code (a contract only), presentation~B,
+weights, the logic, the history unfolding, intern-table collection, and phase
+one and two themselves. \Mat{} takes a \code{Term} and \MUSTNOT{} depend on
+\code{f1r3comb-lower} or \code{f1r3comb-ir}.
+
+%======================================================================
+\section{Position relative to \Comb}\label{sec:position}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\toprule
+& \Comb{} machine (\code{f1r3comb-run}) & \Mat{} (\code{f1r3comb-par})\\
+\midrule
+State & \Camp{} store keyed by \code{Hash32} & shape tables of \code{NameId}
+rows, width $w$\\
+Name identity & content hash of the encoding & structural intern in-run,
+content hash at the boundary\\
+Event & one comm & one step, a maximal independent set\\
+Resolver & store order key; adversarial profile \cite[Obl.~11.2]{combspec}
+& priority function; cross-instance profile\\
+Rules & generated from the shape table & generated from the same table\\
+Erection & curried by default; $\inst$ under \code{inst-erection} &
+$\inst$ primary; curried on the host for compatibility; literal as a negative
+control\\
+Addresses & allocator \cite[Req.~9.5]{combspec} & the same allocator\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Decisions}
+
+\begin{decision}[Presentation A only]\label{dec:aonly}
+Unchanged from v0.2. Under B rows are ragged and (G1) of
+\cite[\S2.1]{matnote} fails; the A/B comparison \cite[Obl.~11.10]{combspec}
+is run on \code{f1r3comb-run}.
+\end{decision}
+
+\begin{decision}[A store row holds the quotation of its payload]
+\label{dec:qrow}
+Unchanged from v0.2: the row for $\qq(a,p)$ is
+$(\qq,\mathrm{id}(a),\mathrm{id}(\quo{p}))$, lossless under A, with the shape
+tag carrying the $\mm$/$\qq$ distinction, and $\cons_{\qq}$ uniform with every
+other member.
+\end{decision}
+
+\begin{decision}[Decode by arena read]\label{dec:decode}
+Unchanged from v0.2, and still at odds with \cite[Req.~9.3]{combspec}
+(Section~\ref{sec:paper}, item~9).
+\end{decision}
+
+\begin{decision}[The rule table is generated from \Comb's shape table]
+\label{dec:ruletable}
+Unchanged from v0.2. The generator lives in \code{f1r3comb-term}; \Mat{} lists
+no rules of its own.
+\end{decision}
+
+\begin{decision}[$\inst$ is the primary erection]\label{dec:schemes}
+The implementation path erects by the context-labelled combinator $\inst$.
+\Mat{}'s default feature set \MUST{} enable \code{inst-erection}, the feature
+name \Comb{} uses, so that one build configuration means the same thing on
+both machines. Every measurement that bears on the path --- width, cost per
+instance, conformance, the device conformance corpus --- \MUST{} be made on
+$\inst$ artefacts first, and the device contract targets $\inst$ alone
+(Requirement~\ref{req:device}). \Mat{} runs whatever scheme the artefact
+header names, and \MUST{} also run curried artefacts on the host, because
+curried is \Comb's default today \cite[Dec.~5.19]{combspec}; that support is
+for compatibility and differential testing, not a second supported path, and
+is asked to be retired by Section~\ref{sec:paper}, item~1. It \MUST{} support the
+literal scheme under a test-only feature \code{literal-erection}, which no
+product crate enables, because \cite[Obl.~11.3]{combspec} requires the broken
+construction as a negative control and \Comb{} is forbidden to emit it
+\cite[Req.~5.15]{combspec}. It \MUST{} accept units that \Comb's marking
+analysis has compiled with the fixed-arity family \cite[Req.~5.17]{combspec},
+reading the marking from the header (Section~\ref{sec:marking}).
+\end{decision}
+
+\begin{decision}[One kernel, whose primary client is $\inst$]
+\label{dec:onekernel}
+A curried constructor $\cstar_{A}[\vec w](t,f)$ and an $\inst(a,f,C)$ both
+consume one message and deliver the quotation of a template instantiated at
+its payload. \Mat{} \MUST{} implement both by one rule shape with one encode,
+\code{Instantiate\{template, with\}}, and distinguish them by a validity class
+on the template (Requirement~\ref{req:template}). \cite[Rem.~5.22]{combspec}'s
+second reason for the curried default --- that $\inst$ forfeits the property
+that makes \Comb's runtime a store with a three-line matcher --- is a property
+of \code{f1r3comb-run}; on this machine both schemes are the same kernel, and
+the curried scheme's leaves are built by the same substitution
+(Section~\ref{sec:paper}, item~4).
+\end{decision}
+
+%======================================================================
+\section{Phase two, with the evidence}\label{sec:evidence}
+
+\subsection{The obstruction, now in the paper}
+
+\cite[\S6.6]{draft3} shows the literal erection fails the discipline on a
+single instance (Ex.~6.16), that the obvious repair regresses, and that the
+obstruction is structural: under the discipline extended to all rules every
+reachable atom holds at most one occurrence of an address
+(Prop.~6.17), so erecting any atom with two scoped names needs a rule of
+multiplicity at least two (Lem.~6.19). v0.2's Section~3.2 is discharged by
+this and \Comb{} v0.5 withdraws its two-stage construction
+\cite[Rem.~5.16]{combspec}. \cite[\S6.7]{draft3} supplies two single-premise
+rules of the required multiplicity:
+\[
+  \cstar_{A}[\vec w](t,f) \mid \mm(t,\sigma) \red
+  \mm(f,\quo{A(\sigma\!\cdot\!w_{1},\dots,\sigma\!\cdot\!w_{n})}),
+  \qquad
+  \inst(a,f,C) \mid \mm(a,v) \red \mm(f,\quo{C[v]}).
+\]
+
+\subsection{Three arms}
+
+\cite[Rem.~5.20]{combspec} observed that v0.2's measurements compared the
+literal scheme with $\inst$ and had no curried arm. \code{phase2.py} now runs
+all three, with the curried scheme implemented as \cite[Rem.~5.21]{combspec}
+describes it: no allocation gadget, one $\dd$ per erected atom fanning the
+address out on static channels, one $\cstar$ and one $\ev$ per atom. Its
+templates allow a static name at an argument position, as
+\cite[Ex.~6.16]{draft3}'s $\dd(a,p_{0},q_{1})$ requires.
+
+\begin{center}\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\multicolumn{5}{@{}l}{\textbf{E5.} Unit $\{\fw(z_{1},z_{2}),\ \kk(z_{1})\}$;
+runs with a mixed atom, of 50}\\
+\midrule
+instances & 2 & 4 & 8 & 16\\
+\midrule
+literal, maximal progress / sequential & 29 / 16 & 48 / 38 & 50 / 49 & 50 / 50\\
+curried, either schedule & 0 & 0 & 0 & 0\\
+$\inst$, either schedule & 0 & 0 & 0 & 0\\
+\midrule
+parallel steps to erect: literal 5, curried 3, $\inst$ 2\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\multicolumn{4}{@{}l}{\textbf{E6.} $D_{x}$ of \cite[Ex.~6.9]{draft3}, 200
+unfoldings, per unfolding}\\
+\midrule
+scheme & parallel steps & sequential steps & new names\\
+\midrule
+curried & 10 & 32.0 (29--35) & 22\\
+$\inst$ & 7 & 10.0 (9--11) & 16\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\multicolumn{3}{@{}l}{\textbf{E7.} Store $\qq(b,\quo{(\fw(c_{1},c_{3}) \mid
+\kk(c_{2}))})$, $b$ static, $c_{i}$ scoped; mixed stores}\\
+\midrule
+scheme & 2 instances & 8 instances\\
+\midrule
+curried, payload joined by $\cons_{\mid}$ & 44 / 100 & 347 / 400\\
+$\inst$ & 0 / 100 & 0 / 400\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Three conclusions, each a requirement below.
+
+\emph{Both conforming schemes are correct for top-level atoms.} E5 settles
+\cite[Rem.~5.20]{combspec}'s question on conformance: no mixing under either,
+at any count, under either schedule. Conformance does not separate them;
+cost and reach do.
+
+The three together are why the implementation path uses $\inst$.
+
+\emph{On this machine the curried scheme does more work, not less.}
+\cite[Rem.~5.22]{combspec}'s first reason is that $\inst$'s two steps hide
+$O(|\mathrm{unit}|)$ work in one rule, recomputing encodings and content
+hashes up the rebuilt term. Structural interning computes no hashes
+(Requirement~\ref{req:hashfree}), so the work on this machine is the names
+interned: 16 per unfolding under $\inst$ against 22 under curried, where each
+$\cstar$ builds its leaves by $d$ interns from the address and the duplicator
+tree adds depth. Both schemes should be charged by names built, not by steps,
+and on that measure $\inst$ is cheaper here.
+
+\emph{The curried scheme does not reach every store.} Its template places the
+address at argument positions of one atom. A gate store whose body mentions
+scoped names in two atoms --- which is the body of any input whose bound name
+occurs in two atoms of its continuation --- needs its payload assembled from
+two address-bearing pieces, and the only rule that assembles them is a join.
+The store atom then mentions two marked names, which is
+\cite[Rem.~6.20]{draft3}'s own criterion, so Lemma~6.19 applies to it; the
+multiplicity it needs is beneath a quotation, which the curried rule does not
+supply. \cite[Req.~4.9]{combspec}'s recipe (build the payload by $\cons_{\ev}$,
+feed it to $\cons_{\qq}$) conforms exactly when the store's subject is static
+and the payload has one scoped atom, which is the case of
+\cite[Ex.~6.9]{draft3}; E6 uses it there. E7 is the case beyond it.
+
+\begin{hazard}[Curried stores]\label{haz:curriedstores}
+Under the curried scheme, a unit whose gate store's payload mentions scoped
+names in more than one atom, or beneath a further quotation, cannot be erected
+within the discipline, and a compiler that falls back to a join produces the
+mixing E7 measures. Whether that mixing is observable is the deciding-term
+question of \cite[Ex.~6.21]{draft3} applied to stores, which the marking
+analysis does not yet ask (Section~\ref{sec:paper}, item~2). \Mat{} \MUST{}
+detect such stores at deploy under the curried scheme and report them as
+\code{comb-mat-curried-store}, a warning, naming the unit.
+\end{hazard}
+
+\subsection{Templates}
+
+\begin{requirement}[One representation for both schemes]\label{req:template}
+A template \MUST{} be an interned name over the reserved \code{NameId::HOLE}.
+Both erecting rules \MUST{} be rows of arity three --- $(t,f,T)$ for $\cstar$,
+$(a,f,C)$ for $\inst$ --- with the template in the third column, so the row
+width is four under either scheme. A $\cstar$ template \MUST{} satisfy the
+curried validity class: it is a single atom, and each argument is either a
+path beneath \code{HOLE} (a $\Lft/\Rgt$ spine) or a name that does not mention
+\code{HOLE}. The check runs at import and at every firing in debug builds;
+a violation is \code{comb-mat-template}. An $\inst$ template is any name over
+\code{HOLE}. \cite[Req.~5.23]{combspec}'s ``context node, with holes numbered
+canonically'' maps onto this representation with every hole identified with
+\code{HOLE}, since a single-input context has one hole variable.
+\end{requirement}
+
+\begin{requirement}[The hole]\label{req:hole}
+As v0.2: \code{HOLE} has no counterpart in the term type outside a template
+position, is rejected by import anywhere else (\code{comb-mat-hole}), and no
+rule's conclusion may contain it. Its tag is \Comb's to allocate
+(Section~\ref{sec:paper}, item~8).
+\end{requirement}
+
+\begin{requirement}[Instantiation]\label{req:subst}
+The encode \MUST{} compute $T\{v/\code{HOLE}\}$ over the interned form,
+hereditarily beneath quotation, with a per-firing memo keyed by name id, so
+its cost is the number of distinct names in $T$. Result names are interned in
+canonical order (Requirement~\ref{req:insertorder}). The report \MUST{}
+attribute the names built to the scheme, which is the work figure of E6.
+\end{requirement}
+
+\begin{requirement}[The measured costs are regressions, $\inst$ first]
+\label{req:dxlaw}
+\code{f1r3comb-check} \MUST{} reproduce E6 as laws over the number of
+unfoldings to $10^{4}$: 7 parallel steps and 16 names per unfolding under
+$\inst$, with a sequential mean of 10, as the primary regression; and 10, 22
+and 32 under curried as the compatibility regression. A golden
+file \MUSTNOT{} be compared across schemes \cite[Dec.~5.19]{combspec}.
+\end{requirement}
+
+\subsection{Marking, and when a crossing is sanctioned}\label{sec:marking}
+
+\cite[Req.~5.17]{combspec} compiles a unit with the fixed-arity family when no
+atom of its phase-one image mentions two marked names, since crossings there
+permute which instance handles which value and every answer is right. On such
+a unit this machine will observe crossings --- that is what the analysis
+licenses --- and must not report them as defects.
+
+\begin{requirement}[The header's marking is read, and checked]
+\label{req:marking}
+\Mat{} \MUST{} read the marking from the artefact header and carry, for each
+scoped name, whether it is marked. A row mentioning scoped names of two
+addresses is \emph{mixed}; it is \emph{sanctioned} if at most one of those
+names is marked and \emph{unsanctioned} otherwise. Unsanctioned mixed rows
+\MUST{} raise a trace event at every trace level and be counted in the run
+report; under a conforming scheme with a correct marking there are none, and
+the test suite \MUST{} assert it under \code{CrossInstance}.
+\end{requirement}
+
+\begin{requirement}[The oracle for the marking analysis]\label{req:oracle}
+\cite[Obl.~11.4]{combspec} checks the marking against exhaustive scheduling
+at two and three instances. \code{f1r3comb-op}'s bounded exploration
+(Section~\ref{sec:op}) \MUST{} serve as that oracle: given a unit, an instance
+count and a depth bound, it explores every interleaving, collects the encoded
+observations at quiescent markings, and reports whether they differ. It
+\MUST{} classify $R = \inp{y}{a}{\out{y}{\drp{y}}}$ as unsafe and
+$\inp{y}{a}{(\drp{y} \mid \drp{y})}$ as safe \cite[Req.~5.18]{combspec},
+and \SHOULD{} also be run on E7's store, which neither \Comb{} nor the draft
+has yet classified.
+\end{requirement}
+
+\subsection{Provenance}\label{sec:prov}
+
+\begin{definition}[Provenance]\label{def:prov}
+As v0.2: every row carries \code{Prov}, \code{STATIC} on import; a produced
+row takes its premises' common non-static tag, \code{STATIC} if all are
+static, \code{MIXED} otherwise; and a row naming a leaf takes that leaf's
+root's tag from the intern table's \code{root} column. For a template
+instantiation the tag is the consumed address's.
+\end{definition}
+
+\begin{requirement}[Provenance is metadata]\label{req:provmeta}
+As v0.2: it \MUSTNOT{} affect redexes, selection under
+\code{MaximalProgress}, or conclusions; it appears in traces as the root
+address's content hash. \code{MIXED} rows are classified sanctioned or
+unsanctioned by Requirement~\ref{req:marking}.
+\end{requirement}
+
+%======================================================================
+\section{The representation}\label{sec:rep}
+
+v0.2's representation is unchanged: structural interning with no hash on the
+hot path; \code{size}, \code{root} and \code{depth} columns; ids never leaving
+the process; the budget, including address depth; structure-of-arrays shape
+tables with a provenance column; import, export and round trip; the
+canonical \code{.cmat}. Three points are restated.
+
+\begin{requirement}[Structural interning]\label{req:hashfree}
+As v0.2, with the observation of E6 added: prefix sharing is by construction,
+and per-unfolding name cost is constant under both schemes (16 and 22).
+\end{requirement}
+
+\begin{requirement}[Width]\label{req:soa}
+$w$ is read from the header and instantiated for $w \in \{4,5,6\}$. Under the
+curried scheme and under $\inst$, $w = 4$: base shapes have arity at most
+three, $\cons_{\dd}$ and $\cons_{\sy}$ four, the erecting rows three. $w = 5$
+arises only under \code{literal-erection} with an (o5) occurrence, which is a
+negative control.
+\end{requirement}
+
+\begin{requirement}[\code{.cmat}]\label{req:cmat}
+As v0.2, with the header extended by the scheme, the marking, and the
+template names; \code{HOLE} relabelled to index $0$.
+\end{requirement}
+
+%======================================================================
+\section{The rule table}\label{sec:rules}
+
+\begin{requirement}[What the generator emits]\label{req:gen}
+As v0.2 --- the seven routing and destructor rules, $\mathsf{quote}$,
+$\mathsf{make}_{\mid}$, one rule per member of $\Fam(P)$ --- and, per the
+header's scheme, the erecting rule: under curried, $\cstar$ with one loud
+premise at slot 0 and conclusion
+\code{Encode\{deliver: Slot(1), node: Instantiate\{template: Slot(2), with:
+Payload(0)\}\}}; under $\inst$ the same with its own shape; under literal,
+nothing further, the family doing the erecting. Classes, join plans, the
+grading and $w$ are derived from the emitted table.
+\end{requirement}
+
+\begin{requirement}[Only a forwarder reads a store]\label{req:quietjoin}
+As v0.2, a property of the generator.
+\end{requirement}
+
+\begin{requirement}[Classes and plans are checked]\label{req:plans}
+As v0.2, per scheme: one class-(c) rule; one class-(b) rule per member of
+$\Fam(P)$, plus $\mathsf{make}_{\mid}$ and the scheme's erecting rule; seven
+class-(a) rules.
+\end{requirement}
+
+\begin{requirement}[Grading]\label{req:grading}
+As v0.2. The erecting rules, like the family, have weight one.
+\end{requirement}
+
+%======================================================================
+\section{Redex finding, selection, firing}\label{sec:machine}
+
+The sparse layer, the three finders, the canonical key, the distinctness and
+symmetry masks, $n$-way joins over the generated signature, the conflict
+hypergraph, the \code{mix64} priority, the greedy maximal independent set and
+its equality with parallel rounds, the four resolvers including
+\code{CrossInstance}, race visibility, the order of effects, and debug-build
+soundness checking are unchanged from v0.2.
+
+\begin{requirement}[Order of effects]\label{req:insertorder}
+As v0.2: sort the step by canonical key; compute conclusions in that order,
+interning new names --- including those an instantiation creates, in a fixed
+traversal of the template --- in that order; remove consumed rows by stable
+compaction; append produced rows in the order computed. Parallel backends
+\MUST{} assign ids as if sequentially.
+\end{requirement}
+
+\begin{hazard}[Contention at statics, per scheme]\label{haz:statics}
+Under $\inst$, $n$ instances contend at one static channel $r$ per unit with a
+one-premise rule: $n^{2}$ redexes, a perfect matching in one step. Under
+curried the contention is spread over the duplicator tree and the $\cstar$
+channels, each one-premise, so each is a perfect matching; the enumerated
+count is $n^{2}$ per erected atom. Under literal the multi-premise
+constructors enumerate $n^{m}$. The enumerated-to-fired ratio \MUST{} be
+reported per static channel and per scheme.
+\end{hazard}
+
+%======================================================================
+\section{Addresses and freshness}\label{sec:addr}
+
+\begin{requirement}[One allocator for both machines]\label{req:oneallocator}
+As v0.2: \Comb's allocator \cite[Req.~9.5]{combspec}, factored into
+\code{f1r3comb-term}.
+\end{requirement}
+
+\begin{requirement}[Deploy checks]\label{req:deploychecks}
+As v0.2, citing \Comb{} v0.5: root address larger than every name of the image
+(\cite[Req.~5.24]{combspec}), static channels likewise
+(\cite[Req.~5.27]{combspec}), root addresses prefix-incomparable
+(\cite[Req.~5.28]{combspec}), with \Comb's diagnostics. Under curried and
+$\inst$ the static channels include every template's delivery channel $f$
+and, under curried, every channel of the duplicator tree.
+\end{requirement}
+
+%======================================================================
+\section{The operator layer}\label{sec:op}
+
+v0.2's operator layer is unchanged in content --- species, markings,
+successors with mass-action coefficients, exploration, the materialised
+$T$ graded by $\Wt$, closure, $T^{\top}\chi$ --- and so is its scope: every
+compiled unit with an input contains $\ev$, so triangularity and closure apply
+to none of them, which \Comb{} now reports too \cite[Req.~10.2]{combspec}. One
+use is added.
+
+\begin{requirement}[Bounded multi-instance exploration]\label{req:multiexplore}
+\code{explore} \MUST{} accept an instance count $k \in \{2,3\}$ and a depth
+bound, deploy $k$ instances at prefix-incomparable addresses, and enumerate
+every interleaving to the bound, returning the set of encoded observations at
+quiescent markings. This is Requirement~\ref{req:oracle}'s oracle. The
+exploration is truncated by construction and \MUST{} say so; it makes no
+triangularity or closure claim.
+\end{requirement}
+
+%======================================================================
+\section{Instrumentation}\label{sec:instr}
+
+\begin{requirement}[Reports]\label{req:reports}
+As v0.2, with erection attributed per scheme --- the $\cstar$ or $\inst$
+firings and their $\ev$, and under curried the duplicator tree --- and with
+names built per instance, sanctioned and unsanctioned mixed rows, and curried
+stores detected (Hazard~\ref{haz:curriedstores}).
+\end{requirement}
+
+\begin{requirement}[The width measurement]\label{req:widthcmd}
+\code{f1r3x comb-width} \MUST{} report, per program, the width distribution
+under $\inst$ with erection separated from computation, and \MAY{} report the
+curried scheme alongside for comparison. Under $\inst$
+erection is two steps per instance; under curried it is the duplicator tree's
+depth plus two. Whether either adds width without depth on real programs is
+the measurement \cite[Obl.~13.7]{matnote} asks for.
+\end{requirement}
+
+\begin{requirement}[Subcommands]\label{req:fx}
+As v0.2, with \code{-{}-scheme} on \code{comb-run --machine=matrix} and
+\code{comb-width}, and \code{-{}-instances} on \code{comb-op}.
+\end{requirement}
+
+%======================================================================
+\section{Architecture}\label{sec:arch}
+
+The crates are v0.2's: \code{f1r3comb-term} (\Comb's, plus the rule generator
+and the allocator), \code{f1r3comb-mat}, \code{f1r3comb-par},
+\code{f1r3comb-op}, and the shared \code{f1r3comb-check}; none depends on
+\code{f1r3comb-ir}, \code{f1r3comb-lower} or \code{f1r3comb-run}. The
+test-only \code{literal-erection} feature \MUST{} live in
+\code{f1r3comb-check}'s emitter and \code{f1r3comb-par}'s dev-dependencies
+only.
+
+\subsection{The device seam}\label{sec:device}
+
+\begin{requirement}[Device kernels]\label{req:device}
+As v0.2, with the erection fixed: a device backend \MUST{} target $w = 4$ and
+the $\inst$ erection. Its substitution kernel is a gather over the template's
+interned form with a batched insert-or-get of the results; its one erecting
+join is a one-premise match at each unit's static $r$. Curried artefacts
+\MUSTNOT{} reach a device --- they add a duplicator tree per unit, build more
+names (E6) and cannot erect every store (E7) --- and neither may
+\code{literal-erection}. A curried artefact submitted to a device backend
+\MUST{} be rejected with \code{comb-mat-scheme}. It is accepted only on
+identical step traces to \code{HostSequential} on the $\inst$ conformance
+corpus, and no work on it \MAY{} begin before Obligation~\ref{obl:width} is
+discharged. v0.2's gate on phase two's primitive is discharged by
+\cite[\S6.7]{draft3}: the primitive is $\inst$.
+\end{requirement}
+
+%======================================================================
+\section{Correctness obligations and testing}\label{sec:test}
+
+\begin{obligation}[Carried from v0.2]\label{obl:carried}
+Round trip; finder agreement over every generated shape, now including
+$\cstar$; Python parity on E1--E4; trace certification; operator correctness;
+determinism across backends, core counts and WebAssembly; the invariants of
+Requirement~\ref{req:grading}; device conformance.
+\end{obligation}
+
+\begin{obligation}[The phase-two experiments, three arms]\label{obl:phase2}
+\code{f1r3comb-check} \MUST{} reproduce \code{phase2-results.txt}: the E5
+mixing rates for the literal scheme within a tolerance, and exactly zero for
+curried and $\inst$ at every instance count under \code{MaximalProgress},
+sequential choice and \code{CrossInstance}; the E6 laws exactly
+(Requirement~\ref{req:dxlaw}); and E7, zero for $\inst$ and a nonzero rate
+for the curried join. This is \cite[Obl.~11.3]{combspec} with the curried arm
+it lacked, and the literal scheme is its negative control.
+\end{obligation}
+
+\begin{obligation}[The $W$ regression and the deciding terms]\label{obl:W}
+$W$ \cite[Obl.~11.1]{combspec}, its three-instance variant, and both halves of
+\cite[Req.~5.18]{combspec}, run under \code{MaximalProgress} and
+\code{CrossInstance} for 100 seeds each, under each conforming scheme: the
+observation at $\enc{\quo{X}}$ \MUST{} match \Bell's on every seed and no row
+\MUST{} be unsanctioned-mixed. Under \code{literal-erection} the rate of the
+crossed residue is recorded as a negative control.
+\end{obligation}
+
+\begin{obligation}[The marking oracle]\label{obl:marking}
+Requirement~\ref{req:oracle} run on \Comb's marking corpus; any disagreement
+with \Comb's analysis \MUST{} be reported to \Comb{} as a counterexample
+\cite[Obl.~11.4]{combspec}.
+\end{obligation}
+
+\begin{obligation}[Addresses and differential testing]\label{obl:addr}
+As v0.2, citing \cite[Obl.~11.7, 11.9, 11.12]{combspec}. \Comb{} now emits
+both conforming schemes, so v0.2's test-only $\inst$ emitter is retired.
+\end{obligation}
+
+\begin{obligation}[The width of real programs]\label{obl:width}
+\cite[Obl.~13.7]{matnote}, on $\inst$ artefacts, with erection separated.
+Gates the device seam.
+\end{obligation}
+
+%======================================================================
+\section{Errors and diagnostics}\label{sec:errors}
+
+As v0.2, with three additions:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}ll>{\raggedright\arraybackslash}X@{}}
+\toprule
+Code & Where & Meaning\\
+\midrule
+\code{comb-mat-template} & import, step & A $\cstar$ template outside the
+curried validity class (Requirement~\ref{req:template})\\
+\code{comb-mat-curried-store} & deploy & Warning: a curried unit whose store
+payload needs a join (Hazard~\ref{haz:curriedstores})\\
+\code{comb-mat-scheme} & deploy & A scheme the backend does not carry: curried
+or literal on a device (Requirement~\ref{req:device})\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+%======================================================================
+\section{Performance, portability, determinism}\label{sec:perf}
+
+As v0.2, with the targets stated for $\inst$: $10^{4}$ unfoldings of $D_{x}$
+with no rise in per-unfolding step time; 64 concurrent instances of a
+$10^{3}$-atom unit erected in two steps. For comparison only, the curried
+scheme would take $\lceil\log_{2}(\text{atoms})\rceil + 2$.
+
+%======================================================================
+\section{What the implementation asks of the papers}\label{sec:paper}
+
+\paragraph{Discharged since v0.2.} The multiplicity obstruction is the
+paper's (\cite[Prop.~6.17, Lem.~6.19]{draft3}), and v0.2's proposal that
+Remark~3.14's ``same reach'' fails under the discipline is adopted
+\cite[Rem.~3.14]{draft3}; phase two has two conforming schemes
+\cite[\S6.7]{draft3}; the two-stage erection is withdrawn
+\cite[Rem.~5.16]{combspec}; the tag gap for constructors of constructors is
+moot under either conforming scheme; the third arm \Comb{} asked for is run
+(Section~\ref{sec:evidence}).
+
+\paragraph{Open.}
+\begin{enumerate}[leftmargin=1.8em]
+
+\item \textbf{\Comb{} v0.5, Decision~5.19: make $\inst$ the default.} The
+implementation path is built on $\inst$, and the machine's measurements agree
+with it: equal conformance (E5), fewer steps and fewer names per unfolding
+(E6), and reach over every store (E7). v0.5's three reasons for the curried
+default are answered as follows. The first two --- hidden
+$O(|\mathrm{unit}|)$ work and the loss of \Camp's three-line matcher --- are
+properties of the content-hashed store, not of the scheme (item~4). The third
+--- that $\inst$ has no home in \cite{logic}'s grammar --- is real but is a
+question for the logic, not a reason to erect differently: both schemes erect
+the same atoms, so the running program's occupancy is identical, and the
+logic needs a production for $\inst$'s transient row only if it is to describe
+erection itself (item~5). Proposed: make \code{inst-erection} the default,
+keep the curried scheme behind a feature for comparison, and retire
+\Mat's compatibility support once no artefact in the corpus needs it.
+
+\item \textbf{The curried scheme's reach} (Hazard~\ref{haz:curriedstores},
+E7). \cite[\S6.7]{draft3} places the address at argument positions of one
+atom. A gate store whose body mentions scoped names in two atoms, or beneath a
+further quotation, needs multiplicity beneath a quotation, which only
+$\inst$ supplies; by \cite[Rem.~6.20]{draft3}'s own criterion the store is an
+atom mentioning two marked names, so Lemma~6.19 applies. Proposed: state the
+limit in \S6.7; say whether such stores are deciding, which the marking
+analysis should then examine inside store payloads (\cite[Req.~5.17]{combspec});
+and choose among three repairs --- widen the curried template to allow shape
+formers beneath quotation, which converges on one-atom $\inst$; keep stores
+static and hand the released body its parent's address so it derives the
+outer names itself, which changes \cite[Req.~5.11]{combspec}; or use $\inst$
+for those units.
+
+\item \textbf{\Comb{} v0.5, Obligation~11.3.} Its $D_{x}$ figures, seven
+steps and sixteen names, are $\inst$'s. Under the curried default they are ten
+and twenty-two. Proposed: state the obligation per scheme.
+
+\item \textbf{\Comb{} v0.5, Remark~5.22, first and second reasons.} The first
+(``$\inst$ hides $O(|\mathrm{unit}|)$ work'') is a cost of a content-hashed
+store: rebuilding a term recomputes its ancestors' hashes. With structural
+interning both schemes pay in names built, and $\inst$ builds fewer (E6). The
+second is a property of \code{f1r3comb-run}, not of the scheme: on this
+machine both are one kernel (Decision~\ref{dec:onekernel}). Proposed: scope
+both reasons to the \Camp{} machine; the third reason, the logic's grammar,
+stands on its own (item~4).
+
+\item \textbf{A place for $\inst$ in the logic} (\cite[\S14, item~4]{combspec}).
+With $\inst$ on the implementation path, \cite{logic} should be read over it.
+Both schemes erect the same atoms.
+After erection an instance under either scheme is a multiset of base atoms
+and family members, and occupancy of the running program is the same; the
+schemes differ only in the transient erecting rows, whose occupancy is
+uninformative in any case \cite[Req.~10.1]{combspec}. The curried template
+is itself a non-name parameter, a tuple of paths and constants, so the
+logic's productions would be indexed by a static parameter under either
+scheme; for $\inst$ the parameter is a template, and a structural production
+$\inst(\quo{\phi},\quo{\psi},\chi)$ with $\chi$ ranging over templates is the
+natural addition.
+
+\item \textbf{\Comb{} v0.5, Requirement~9.5} still describes the root address
+as ``of a shape outside that program's family''; freshness is by size
+(Req.~5.24, \cite[Lem.~6.14]{draft3}). Carried from v0.2.
+
+\item \textbf{\Comb{} v0.5, Requirement~10.4} still cites \cite{logic}'s
+weighted count as ``Def.~6.6''; it is Def.~4.2 and Prop.~6.17. Carried.
+
+\item \textbf{Tags for the erecting rows and the hole.} Neither $\cstar$,
+$\inst$ nor \code{HOLE} has a tag in \cite[Req.~4.11]{combspec}; the curried
+template's parameter needs an encoding too. Carried and extended.
+
+\item \textbf{\Comb{} v0.5, Requirement~9.3} (decode by projection): scope it
+to builds where \code{presentation-b} is reachable. Carried.
+
+\item \textbf{The allocator in \code{f1r3comb-term}}, and \textbf{a Merkle
+form of the content hash} for $O(1)$ hashing of new addresses on
+\code{f1r3comb-run}. Carried.
+
+\item \textbf{\Comb{} v0.5, open question~5} (a bounded name universe for the
+matrix encoding) was answered in v0.2: the machine multiplies the term-sized
+incidence and needs no bounded universe; the closure that would is
+unavailable to compiled programs for the independent reason that they
+contain $\ev$.
+
+\end{enumerate}
+
+%======================================================================
+\section{Open questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+\item \textbf{Width under $\inst$} on real programs, with erection separated:
+does two-step erection add width without depth, as E5 and E6 predict?
+\item \textbf{Cost accounting for $\inst$}: charging by names built rather
+than by step, as \cite[Rem.~5.22]{combspec} anticipates.
+\item \textbf{Resolver fidelity and fairness} (\cite[Obl.~13.1,
+Obl.~13.6]{matnote}).
+\item \textbf{Address compaction} \cite[\S15, item~1]{combspec}.
+\item \textbf{Garbage}, \textbf{the history unfolding}, \textbf{weights}: as
+v0.2.
+\end{enumerate}
+
+%======================================================================
+\section{Delivery}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}ll>{\raggedright\arraybackslash}X@{}}
+\toprule
+M & Deliverable & Done when\\
+\midrule
+X0 & \code{f1r3comb-mat} & As v0.2, with templates and \code{HOLE}\\
+X1 & Finders & As v0.2, over the generated signature including the erecting
+rows\\
+X2 & \code{f1r3comb-par}, sequential & Resolvers; the instantiation kernel,
+$\inst$ first, then the curried validity check; deploy checks; marking read
+from the header; the E6 laws, $\inst$ primary\\
+X3 & Phase-two evidence & The three arms of Obligation~\ref{obl:phase2}; $W$
+and the deciding terms under $\inst$, and under curried for comparison;
+reported to \Comb{} with the request of Section~\ref{sec:paper}, item~1\\
+X4 & The marking oracle & Multi-instance bounded exploration
+(Requirement~\ref{req:multiexplore}); Obligation~\ref{obl:marking} on
+\Comb's corpus\\
+X5 & The width gate & Under $\inst$, erection separated; needs \Comb{} M2.
+\textbf{Gate} on X8\\
+X6 & Threaded host & Determinism across cores and \code{wasm32}\\
+X7 & \code{f1r3comb-op} & As v0.2, scoped\\
+X8 & Device conformance & $\inst$ only; external backend only after
+Obligation~\ref{obl:width}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+%======================================================================
+\section{Changes from v0.3}\label{sec:v3delta}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+v0.3 & v0.4\\
+\midrule
+Curried default, following \Comb{} v0.5 & $\inst$ primary; default feature
+set enables \code{inst-erection}; curried on the host for compatibility\\
+Device kernels serve both conforming schemes & Device targets $\inst$ only;
+curried and literal rejected with \code{comb-mat-scheme}\\
+Regressions and width per scheme & $\inst$ primary, curried as comparison\\
+Asks: ten & Eleven; the first asks \Comb{} to make $\inst$ its default\\
+The logic's scheme left open & The logic read over $\inst$; a production for
+its row proposed\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+v0.3's changes from v0.2 --- the three-arm evidence, the one instantiation
+kernel, the curried validity class, the marking read from the header, the
+marking oracle --- carry forward unchanged.
+
+%======================================================================
+\begin{thebibliography}{99}
+
+\bibitem{matnote} L.\,G. Meredith.
+\emph{Rho combinators as sparse linear algebra.} Version~1.2,
+\code{publications/rho-combinators/rhocomb-matrix}, with \code{rhocombmat.py},
+\code{experiments.py} and \code{phase2.py}, September 2026.
+
+\bibitem{matv02} F1R3FLY.io.
+\emph{F1R3Comb-Mat: the rho combinators as sparse linear algebra.}
+Specification v0.2, \code{publications/rho-combinators/f1r3comb-mat-spec-v02},
+23 September 2026.
+
+\bibitem{combspec} F1R3FLY.io.
+\emph{F1R3Comb: a compiler from kernel rho to the name-free rho combinators,
+and a machine that runs the result.} Specification v0.5,
+\code{publications/rho-combinators/f1r3comb-spec-v05}, 23 September 2026.
+
+\bibitem{draft3} L.\,G. Meredith and M. Stay.
+\emph{Name-free combinators for the rho calculus: a repair, a linear encoding,
+and the one operation that was missing.} Draft~3,
+\code{publications/rho-combinators}, September 2026.
+
+\bibitem{logic} F1R3FLY.io.
+\emph{A spatial-behavioural logic for the rho combinators.} Draft~2,
+revision~2, \code{publications/rho-combinators/rhocomb-logic}, 23 September
+2026.
+
+\bibitem{k1ndl1ng} F1R3FLY.io.
+\emph{K1ndl1ng: a parser and normaliser for kernel rholang.}
+\code{publications/campf1r3/k1ndl1ng-spec}, 2026.
+
+\end{thebibliography}
+
+\end{document}
