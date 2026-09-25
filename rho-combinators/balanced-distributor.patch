@@ -1,0 +1,42 @@
+diff --git a/f1r3comb/crates/f1r3comb-lower/src/phase1.rs b/f1r3comb/crates/f1r3comb-lower/src/phase1.rs
+index e597fc2..75bd4c2 100644
+--- a/f1r3comb/crates/f1r3comb-lower/src/phase1.rs
++++ b/f1r3comb/crates/f1r3comb-lower/src/phase1.rs
+@@ -396,6 +396,29 @@ impl Phase1 {
+         if k == 0 {
+             parts.push(Node::atom(Shape::S, vec![subj, v(b), v(c)]));
+         } else {
++            if std::env::var("F1R3COMB_BALANCED_D").is_ok() && k >= 2 {
++                // experimental: a balanced distributor tree, depth ceil(log2(k+1))
++                // rather than the linear chain of Def. 6.2 (depth k)
++                fn tree(src: IName, lv: &[u32], qs: &[u32], qi: &mut usize, out: &mut Vec<Node>) {
++                    let (l, r) = lv.split_at(lv.len() / 2);
++                    let mut side = |half: &[u32], out: &mut Vec<Node>| -> IName {
++                        if half.len() == 1 {
++                            IName::Var(half[0])
++                        } else {
++                            let q = qs[*qi];
++                            *qi += 1;
++                            tree(IName::Var(q), half, qs, qi, out);
++                            IName::Var(q)
++                        }
++                    };
++                    let a = side(l, out);
++                    let b = side(r, out);
++                    out.push(Node::atom(Shape::D, vec![src, a, b]));
++                }
++                let mut qi = 0usize;
++                tree(subj.clone(), &ps[..=k], &qs, &mut qi, &mut parts);
++                debug_assert_eq!(qi, qs.len());
++            } else {
+             let q1 = if k == 1 { ps[1] } else { qs[0] };
+             parts.push(Node::atom(Shape::D, vec![subj, v(ps[0]), v(q1)]));
+             for j in 1..k {
+@@ -403,6 +426,7 @@ impl Phase1 {
+                 let to = if j + 1 == k { ps[k] } else { qs[j] };
+                 parts.push(Node::atom(Shape::D, vec![v(from), v(ps[j]), v(to)]));
+             }
++            }
+             parts.push(Node::atom(Shape::S, vec![v(ps[0]), v(b), v(c)]));
+         }
+         parts.push(Node::q(v(b), big_b));
