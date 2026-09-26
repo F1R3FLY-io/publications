@@ -1,0 +1,1196 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\setlength{\emergencystretch}{2.5em}
+
+\theoremstyle{definition}
+\newtheorem{requirement}{Requirement}[section]
+\newtheorem{decision}[requirement]{Decision}
+\newtheorem{definition}[requirement]{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}[requirement]{Remark}
+\newtheorem{finding}[requirement]{Finding}
+
+% NOTATION RULES: the rho calculus is never written with the Greek letter;
+% quoting is @P, dropping is *x.
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\Rnn}{\mathbb{R}_{\geq 0}}
+\newcommand{\Qnn}{\mathbb{Q}_{\geq 0}}
+\newcommand{\Pit}{\Pi}
+\newcommand{\Dur}{\Delta}
+\newcommand{\nm}[3]{\langle @#1,\,#2,\,#3\rangle}
+\newcommand{\crisp}[1]{\lceil #1 \rceil}
+\newcommand{\len}[1]{|#1|}
+\newcommand{\nulld}{\epsilon}
+\newcommand{\rest}{\mathsf{r}}
+\newcommand{\MUST}{\textsc{must}}
+\newcommand{\SHOULD}{\textsc{should}}
+\newcommand{\MAY}{\textsc{may}}
+\newcommand{\cmd}[1]{\texttt{#1}}
+\newcommand{\atm}[1]{\mathsf{#1}}
+\newcommand{\V}{\mathbb{V}}
+\newcommand{\Rec}{\mathsf{Rec}}
+\newcommand{\Fan}{\mathsf{Fan}}
+\newcommand{\Server}{\mathsf{Server}}
+\newcommand{\Voice}{\mathsf{Voice}}
+\newcommand{\Call}{\mathsf{Call}}
+\newcommand{\Resp}{\mathsf{Resp}}
+
+\definecolor{codebg}{gray}{0.96}
+\lstdefinelanguage{score}{
+  morekeywords={score,pitches,durations,timbres,chance,def,factor,machine,table,
+    for,where,par,in,at,play,line,import,proc,name,timbre,pitch,dur,clause,
+    true,false,nu,mu,held,carry,prev,step,back,last,passes,leads},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+\lstdefinelanguage{Rust}{
+  morekeywords={pub,struct,enum,impl,fn,trait,let,mut,use,for,where,self,Self,Box,Vec,Result},
+  sensitive=true, morecomment=[l]{//}, morestring=[b]",
+}
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=none,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{black!60},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  xleftmargin=6pt,
+  aboveskip=6pt, belowskip=6pt,
+  breaklines=true,
+}
+
+\title{\bfseries The f1r3score Player\\[4pt]
+\large Specification for a Rust tool that reads a textual score\\
+and plays a run of it}
+
+\author{F1R3FLY.io}
+
+\date{Specification --- 25 September 2026\\[2pt]
+\normalsize Revision 1. Implements \emph{Scores as Processes} (second version),
+\texttt{publications/f1r3score}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This specification defines \cmd{f1r3score}, a Rust command-line player and
+library for the score calculus of \emph{Scores as Processes}. The player reads a
+score written in a textual surface syntax, elaborates it to a closed term of the
+calculus, and executes one run: it enumerates candidates at each location,
+evaluates the graded where-clauses on them, groups them into contention sets,
+selects a maximal matching with probability proportional to the product of its
+weights, and stamps the emitted notes with onsets computed from the data. Its
+outputs are the performance (the multiset of timed notes of positive length), a
+replayable trace, a Standard MIDI File, and optionally live MIDI.
+
+Three properties organise the design. \emph{Faithfulness}: the engine implements
+the reduction and resolution rules of the note literally, with no knowledge of
+voices, fans or idioms; those exist only as library definitions in the surface
+syntax. \emph{Exactness}: weights are exact rationals and chance is consumed by
+exact interval decoding, so a score, a chance source and a scheduler determine
+a run bit for bit on every platform. \emph{Conformance}: the Python reference
+simulator \texttt{skeinsim.py} and its thirteen tests are ported as the
+acceptance suite, with the same statistics and the same thresholds.
+
+The document fixes the textual format (\S\ref{sec:syntax}), the crate
+architecture and data model (\S\ref{sec:arch}), the clause language and its
+checkable fragment (\S\ref{sec:clauses}), the engine (\S\ref{sec:engine}), the
+chance sources (\S\ref{sec:chance}), the outputs and command line
+(\S\S\ref{sec:outputs}--\ref{sec:cli}), conformance (\S\ref{sec:conformance}),
+a phased plan (\S\ref{sec:phases}) and the decisions still open
+(\S\ref{sec:open}).
+\end{abstract}
+
+\tableofcontents
+
+%==============================================================================
+\section{Purpose and scope}\label{sec:scope}
+
+\subsection{What the tool does}
+
+Given a file \texttt{piece.score}, the command
+\begin{lstlisting}
+f1r3score play piece.score --chance prng:7 --notes 64 --midi piece.mid
+\end{lstlisting}
+parses and elaborates the score, runs it until 64 notes of positive length have
+sounded or nothing more can fire, writes the performance to standard output,
+and writes a MIDI file. The same run, replayed from its trace, reproduces the
+same performance exactly.
+
+\subsection{What was reviewed}
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+\item \texttt{publications/f1r3score/score-calculus.tex} (second version): the
+  normative semantics. Section and result numbers below refer to it.
+\item \texttt{publications/f1r3score/skeinsim.py}: the stdlib-only reference
+  simulator (716 lines, tests T0--T12). Its data model --- a soup indexed by
+  (quote, timbre), hash-consed quotes, generic candidate generation --- is the
+  model this specification adopts.
+\item \texttt{publications/fuzzyware/graded-where-pln.tex} (Paper~II): the
+  two formula sorts, per-candidate evaluation, contention sets, and the
+  resolution algebra $(\Rnn,+,\times,0,1)$.
+\item \texttt{publications/f1r3skein/f1r3skein-drawn-distributions.tex}: the
+  weighted state machines drawn on the instrument, their canonical form, the
+  \texttt{Machines} Theory, and exact interval decoding (Algorithm~1).
+\item \texttt{F1R3Games/F1R3Skein}: the Rust workspace (\texttt{spigot\_stream},
+  \texttt{dual\_spigot}, \texttt{spigot\_midi}, \texttt{leap\_spigot}), for
+  reusable digit streams and MIDI code.
+\item The rho-weighted crate and its design (\texttt{publications/rho-life/Gillespie}),
+  for the ideal-versus-checkable discipline expressed as types.
+\end{itemize}
+
+\subsection{What the tool is not}
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+\item \textbf{Not an interpreter on a shard.} Following the precedent set for
+  the weighted-GSLT simulator, the player is a separate, offline execution path.
+  It has no dependency on \texttt{f1r3node-rust}, RSpace or consensus.
+\item \textbf{Not F1R3Skein.} The score calculus generalises an idea from the
+  instrument; it is not a formalisation of it. The instrument's streams are one
+  score among many (Remark~4.6 of the note), and the player treats them so: a
+  drawn machine can be imported as a clause factor, nothing more.
+\item \textbf{Out of scope:} tempo as a graded dimension, dynamics and
+  articulation, timbre change in a communication, complex grading, and learning
+  styles from a corpus --- all listed as open threads in the note. The renderer
+  takes a fixed tempo as a rendering parameter only.
+\end{itemize}
+
+\subsection{Conventions}
+
+\MUST, \SHOULD{} and \MAY{} have their RFC~2119 meanings. Requirements are
+numbered R$n$ and decisions D$n$. Rust identifiers are indicative; the phase
+exit criteria are normative.
+
+%==============================================================================
+\section{The semantic contract}\label{sec:contract}
+
+This section restates, as obligations on the implementation, what the note
+defines. Anything not stated here follows the note.
+
+\begin{requirement}[Data]\label{req:data}
+A score fixes a finite pitch alphabet $\Pit$ containing the rest $\rest$, a
+finite duration alphabet $\Dur$ with lengths $\len{\cdot}:\Dur\to\Qnn$ in whole
+notes, containing the null duration $\nulld$ with $\len{\nulld}=0$, and a finite
+set of timbres. $\Pit$ and $\Dur$ \MUST{} be disjoint, since a datum fixes the
+polarity of its name.
+\end{requirement}
+
+\begin{requirement}[Terms]\label{req:terms}
+Names are variables or triples $\nm{P}{\tau}{d}$; processes are $0$, receipts
+$\mathsf{for}(y\leftarrow x\;\mathsf{where}\;\psi)P$, joins (chord receipts,
+Definition~5.5), messages $x!(Q,\tau,d)$, parallel composition and
+$\ast x$. There is no replication, no \textsf{new}, and no recursion
+former.
+\end{requirement}
+
+\begin{requirement}[Congruence]\label{req:cong}
+Structural congruence is the least congruence closed under
+$\alpha$-conversion making $(\mid,0)$ a commutative monoid and satisfying
+$\ast\nm{P}{\tau}{d}\equiv P$. Two names are equivalent when their quoted
+processes are congruent and their decorations are equal. The implementation
+\MUST{} decide name equivalence exactly.
+\end{requirement}
+
+\begin{requirement}[Communication]\label{req:comm}
+A candidate is a top-level receipt and a top-level message at the same location
+and timbre, of opposite polarities, whose payload timbre equals the subject
+timbre (\textsc{Comm}$_1$/\textsc{Comm}$_2$). Firing it emits the note
+$(\tau,\pi,\delta)$ --- the pitch from whichever side carries one --- and
+continues with $P\{\nm{Q}{\tau}{d}/y\}$. Every reduction emits exactly one note;
+there are no silent steps (Proposition~2.4).
+\end{requirement}
+
+\begin{requirement}[Weights and resolution]\label{req:resolve}
+A candidate at a receipt with clause $\psi$ is \emph{available} iff
+$\psi\llbracket c\rrbracket>0$. Contention sets are the connected components of
+the relation ``shares a receipt or a message'' over available candidates. A set
+is resolved by choosing a maximal matching $\mathcal M$ with probability
+proportional to $\prod_{c\in\mathcal M}\psi_c\llbracket c\rrbracket$ and firing
+all of it (Definition~3.3).
+\end{requirement}
+
+\begin{requirement}[Time]\label{req:time}
+Every top-level receipt and message carries a stamp in $\Qnn$. A communication
+has onset $\max(t_r,t_m)$, emits the timed note $(t,\tau,\pi,\delta)$, and
+stamps what its continuation brings to top level with $t+\len{\delta}$; a
+chord stamps with $t+\max_i\len{\delta_i}$. Runs are onset-ordered: a set is
+resolved only when its onset (the least onset of its candidates) is minimal
+among all sets. The performance is the multiset of timed notes of positive
+length.
+\end{requirement}
+
+\begin{requirement}[Engine neutrality]\label{req:neutral}
+The engine \MUST{} know nothing of voices, fans, hands, servers, machines or
+idioms. Those are definitions in the surface syntax that elaborate to terms.
+(This is the property \texttt{skeinsim.py} states in its header, and it is what
+makes Finding~8.3 --- the reflective voice plays the notes of the step
+semantics --- a test of the calculus rather than of the code.)
+\end{requirement}
+
+\begin{remark}[What the note leaves to the implementation]
+Three things are parameters of the semantics rather than parts of it: the chance
+source (Definition~3.3 names it a parameter), the order in which simultaneously
+due contention sets are resolved, and whether a set fires a maximal matching or
+a single candidate. The last is \texttt{mode='one'} in the simulator and is
+retained only as a diagnostic (T3). The first two are made explicit and recorded
+in every trace (\S\ref{sec:chance}, \S\ref{ssec:sched}).
+\end{remark}
+
+%==============================================================================
+\section{The textual format}\label{sec:syntax}
+
+\subsection{Design position}
+
+\begin{decision}[A dialect of the f1r3|@ng control flow sublanguage]\label{dec:dialect}
+The surface syntax reuses the concrete syntax of the f1r3|@ng CFL wherever the
+calculus has the same former: \texttt{for (y <- x where ...) \char`\{ P \char`\}},
+\texttt{x!(...)}, \texttt{|}, \texttt{*x}, \texttt{@P}. What is new is the
+decoration of names, the alphabet declarations, and a small elaboration-time
+macro layer. The grammar is kept small enough to be restated later as a
+\texttt{Theory Score} in the f1r3|@ng DDL once the Theory syntax lands in the
+node; the parser crate is therefore a replaceable front end over a stable core
+AST (\S\ref{sec:arch}).
+\end{decision}
+
+Files use the extension \texttt{.score} and are UTF-8. Comments are
+\texttt{//} to end of line and \texttt{/* ... */}.
+
+\subsection{Declarations}
+
+A score file is a sequence of imports, declarations and definitions, followed by
+exactly one \texttt{play} item giving the initial configuration.
+
+\begin{lstlisting}[language=score]
+score Twinkle
+
+pitches   { r, C3, F3, G3, C4, D4, E4, F4, G4, A4 }   // r: the rest, required
+durations { q = 1/4, h = 1/2 }                        // eps = 0 is implicit
+timbres   { piano = gm(0) on 1, bass = gm(32) on 2 }  // GM program, MIDI channel
+\end{lstlisting}
+
+\begin{requirement}[Alphabets]\label{req:alph}
+\begin{enumerate}[label=(\roman*),itemsep=1pt]
+\item \texttt{pitches} lists $\Pit$ \emph{in order}; that order defines
+  $\mathsf{step}(k)$ (\S\ref{ssec:atoms}). \texttt{r} \MUST{} be present and is
+  unordered. A pitch written in scientific notation (\texttt{C4}, \texttt{F\#3},
+  \texttt{Bb2}) gets its MIDI number implicitly (C4 = 60); any other identifier
+  \MUST{} be given one, \texttt{deg7 = 67}.
+\item \texttt{durations} gives each length as a non-negative rational literal
+  (\texttt{1/6} for a triplet eighth, \texttt{3/8} for a dotted quarter).
+  \texttt{eps = 0} is always present and \MUST{} not be redeclared. Other
+  zero-length durations are permitted.
+\item Ranges \MAY{} abbreviate alphabets:
+  \texttt{pitches \char`\{ r, scale major C4 .. C7 \char`\}},
+  \texttt{durations \char`\{ w=1, h=1/2, q=1/4, e=1/8, s=1/16 \char`\}}.
+  Expansion is at elaboration time; the alphabet is always finite.
+\item Identifiers in $\Pit$, $\Dur$ and the timbre set \MUST{} be pairwise
+  distinct; the elaborator rejects overlap.
+\end{enumerate}
+\end{requirement}
+
+\subsection{Core process syntax}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+calculus & surface & note \\
+\midrule
+$0$ & \texttt{0} & \\
+$\nm{P}{\tau}{d}$ & \texttt{<@P, tau, d>} & parenthesise compound \texttt{P} \\
+$x!(Q,\tau,d)$ & \texttt{x!(Q, tau, d)} & \\
+$\mathsf{for}(y\leftarrow x\;\mathsf{where}\;\psi)P$ &
+  \texttt{for (y <- x where psi) \char`\{ P \char`\}} & clause optional \\
+join & \texttt{for (y1 <- x1 \& y2 <- x2 where psi) \char`\{P\char`\}} & chord \\
+$P\mid Q$ & \texttt{P | Q} & \\
+$\ast x$ & \texttt{*x} & \\
+stamp & \texttt{at 3/4 \char`\{ P \char`\}} & top level of \texttt{play} only \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The underscore \texttt{\_} is a binder that is not used. In the
+\texttt{play} item every top-level receipt and message is stamped $0$ unless an
+\texttt{at} says otherwise (an entrance).
+
+\subsection{Definitions: the elaboration-time macro layer}
+
+The note builds everything from abbreviations: $\mathsf N$, $\Rec$, $\Fan$,
+$\mathsf{Step}$, $\Server$, $\Voice$, $\Call$, $\Resp$. The surface syntax needs
+exactly this facility and no more.
+
+\begin{lstlisting}[language=score]
+def N(L: proc, tau: timbre, p: pitch, d: dur; K: proc) =
+  for (_ <- <@L, tau, p>) { K } | <@L, tau, d>!(0, tau, r)
+\end{lstlisting}
+
+\begin{requirement}[Definitions are macros]\label{req:macros}
+\begin{enumerate}[label=(\roman*),itemsep=1pt]
+\item Parameters are sorted: \texttt{proc}, \texttt{name}, \texttt{timbre},
+  \texttt{pitch}, \texttt{dur}, \texttt{clause}, and \texttt{cont} (a
+  continuation: a definition of arity one in a name, passed by name).
+\item Definitions are expanded at elaboration time and \MUST{} form an acyclic
+  call graph. A recursive definition is rejected with a diagnostic pointing to
+  \S4.2 of the note: unbounded behaviour is obtained by reflection, not by
+  recursion (Remark~2.1).
+\item Expansion is capture-avoiding. The elaborated term is a closed term of
+  the core syntax and nothing else.
+\end{enumerate}
+\end{requirement}
+
+\paragraph{Finite products.} $\prod_{v\in\Dur^+}\prod_{t\in\Pit}$ is written as
+a comprehension that expands to a parallel composition:
+\begin{lstlisting}[language=score]
+def Fan(x: name, tau: timbre) =
+  par v in durations+, t in pitches {
+    <@*x, tau, v>!( <@*x, tau, v>!(*x, tau, t), tau, t )
+  }
+\end{lstlisting}
+Generators range over \texttt{pitches}, \texttt{pitches-r} (the ordered
+pitches), \texttt{durations}, \texttt{durations+} (positive length), and
+explicit lists.
+
+\paragraph{Lines.} A written part is a right-nested chain of written notes. The
+derived form
+\begin{lstlisting}[language=score]
+line(Lm, piano) [ C4 q, C4 q, G4 q, G4 q, A4 q, A4 q, G4 h ]
+\end{lstlisting}
+elaborates to $\mathsf N_{Lm,\mathsf{piano}}(\mathrm{C4},\mathsf q;\,\cdots\,
+\mathsf N_{Lm,\mathsf{piano}}(\mathrm{G4},\mathsf h;\,0)\cdots)$. An optional
+trailing \texttt{then K} replaces the final $0$ with a continuation, which is
+how a written phrase hands off to a responder (\S6.5 of the note).
+
+\paragraph{Locations.} A \emph{base} is written \texttt{base "Lm"} and
+elaborates to the closed receipt
+$\mathsf{for}(\_\leftarrow\nm{0}{\tau_\bot}{\rest})\,0$ tagged with the string,
+where $\tau_\bot$ is a reserved timbre no message may use. Distinct tags give
+inequivalent bases.
+
+\subsection{The standard library}
+
+\begin{requirement}[\texttt{std.score}]\label{req:std}
+The distribution \MUST{} ship \texttt{std.score}, written entirely in the
+surface syntax, defining: \texttt{N}, \texttt{line}; \texttt{Rec}, \texttt{Fan},
+\texttt{Seed} ($H_0$); \texttt{Step}, \texttt{Req}, \texttt{Server},
+\texttt{Refresh}, \texttt{Voice} (\S4.2 of the note); \texttt{Call},
+\texttt{Resp} (handoff); \texttt{HocketA}/\texttt{HocketB} (alternation); and
+the dual (rhythm-leads) variants of \texttt{Fan} and \texttt{Step}.
+\texttt{Voice} \MUST{} be the reflective voice, with no engine support: its
+server keeps its own code on a code channel and re-sends it
+(Proposition~4.4).
+\end{requirement}
+
+\begin{lstlisting}[language=score]
+// std.score, excerpt: the reflective voice
+def Req(z: name, tau: timbre, BS: proc) = <@BS, tau, eps>!(*z, tau, r)
+
+def Server(tau: timbre, psi: clause, BS: proc, BC: proc) =
+  for (w <- <@BS, tau, r>) {
+    Step(w, tau, psi, Req(_, tau, BS)) | Refresh(tau, BC)
+  }
+
+def Refresh(tau: timbre, BC: proc) =
+  for (c <- <@BC, tau, r>) { *c | <@BC, tau, eps>!(*c, tau, r) }
+
+def Voice(tau: timbre, psi: clause, p0: pitch, u0: dur, tag: string) =
+  Server(tau, psi, base tag ++ "/S", base tag ++ "/C")
+  | <@(base tag ++ "/C"), tau, eps>!(Server(tau, psi, base tag ++ "/S",
+                                            base tag ++ "/C"), tau, r)
+  | <@(base tag ++ "/S"), tau, eps>!(Seed(base tag, tau, p0, u0), tau, r)
+\end{lstlisting}
+
+\subsection{Clauses and factors}
+
+Clause syntax is given in \S\ref{sec:clauses}. At the top level a score may name
+factors so that style, register and physicality are written once and combined:
+\begin{lstlisting}[language=score]
+factor stepwise = table step { -2..2: 3, _: 3/10 }
+factor country  = machine pitch { C4 -> D4 @ 2, C4 -> E4 @ 3, D4 -> E4 @ 1, ... }
+factor rhythm   = machine dur uniform
+
+play Voice(piano, country * stepwise * rhythm, C4, q, "A")
+   | Voice(bass,  walking * rhythm,            C3, h, "B")
+\end{lstlisting}
+
+\subsection{Twinkle, in full}
+
+\begin{lstlisting}[language=score]
+score Twinkle
+import std
+pitches   { r, C3, F3, G3, C4, D4, E4, F4, G4, A4 }
+durations { q = 1/4, h = 1/2 }
+timbres   { piano = gm(0) on 1, bass = gm(32) on 2 }
+
+play line(base "Lm", piano) [ C4 q, C4 q, G4 q, G4 q, A4 q, A4 q, G4 h,
+                              F4 q, F4 q, E4 q, E4 q, D4 q, D4 q, C4 h ]
+   | line(base "Lb", bass)  [ C3 h, C3 h, F3 h, C3 h, F3 h, C3 h, G3 h, C3 h ]
+\end{lstlisting}
+
+\begin{requirement}[Golden score]\label{req:golden}
+This file \MUST{} play, under every scheduler, the 22 timed notes of the table in
+\S2.5 of the note, ending at 4 whole notes (conformance test T12).
+\end{requirement}
+
+\subsection{Diagnostics and lints}
+
+The elaborator \MUST{} reject: overlapping alphabets; undeclared data or
+timbres; recursive definitions; ill-sorted arguments; use of $\tau_\bot$;
+clauses outside the checkable fragment (\S\ref{ssec:fragment}). It \SHOULD{}
+warn when a message's payload timbre differs from its subject's timbre (such a
+message can never communicate), and when a top-level receipt and message of the
+same polarity share a location (they never communicate,
+Proposition~2.4(ii)).
+
+%==============================================================================
+\section{Architecture and data model}\label{sec:arch}
+
+\subsection{Crates}
+
+\begin{center}
+\small
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{9.2cm}@{}}
+\toprule
+crate & responsibility \\
+\midrule
+\texttt{score-core}   & data alphabets, hash-consed terms, congruence normal
+  form, substitution, names and locations. No I/O. \\
+\texttt{score-syntax} & lexer, parser, surface AST, macro elaboration,
+  \texttt{std.score}, pretty-printer, diagnostics with spans. \\
+\texttt{score-logic}  & crisp and graded formula ASTs, the checkable-fragment
+  type, candidate views, evaluation, tables and machines. \\
+\texttt{score-engine} & the soup, candidate generation, contention sets,
+  maximal matchings, resolution, time, scheduling, collection, trace events. \\
+\texttt{score-chance} & chance sources: PRNG digit streams, spigot digit
+  streams, exact interval decoding, human choice, replay. \\
+\texttt{score-render} & performance and trace serialisation, Standard MIDI
+  File writer, live MIDI (feature \texttt{live}). \\
+\texttt{f1r3score}    & the binary: command line, wiring, exit codes. \\
+\texttt{score-conformance} & the ported skeinsim suite and golden files. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{requirement}[Portability]\label{req:port}
+\texttt{score-core}, \texttt{score-syntax}, \texttt{score-logic},
+\texttt{score-engine} and \texttt{score-chance} (without the spigot feature)
+\MUST{} build for \texttt{wasm32-unknown-unknown} and \MUST{} perform no I/O,
+so that the same engine can be embedded in a browser page or an Apple Vision
+Pro client. They \SHOULD{} have no dependencies beyond \texttt{num-bigint} /
+\texttt{num-rational}. The workspace targets stable Rust, edition 2021, with
+\texttt{rust-version} pinned.
+\end{requirement}
+
+\subsection{Terms and hash-consing}
+
+\begin{lstlisting}[language=Rust]
+pub struct Datum(u16);                 // index into Pi + Delta (disjoint)
+pub enum Polarity { Channel, CoChannel }
+pub struct Timbre(u16);
+pub struct ProcId(u32);                // hash-consed, congruence-normal process
+pub struct Loc { pub quote: ProcId, pub timbre: Timbre }
+
+pub enum Name { Var(VarIdx), Quote { proc: ProcId, timbre: Timbre, datum: Datum } }
+
+pub enum Proc {                        // normal form only
+    Nil,
+    Par(Box<[ProcId]>),                // flattened, >= 2, sorted by id, no Nil
+    Recv { binds: Box<[(Name /*subject*/)]>, clause: ClauseId, body: ProcId },
+    Send { subj: Name, payload: ProcId, ptimbre: Timbre, carry: Datum },
+    Drop(Name),                        // only on a variable: *<@P,..> normalises to P
+}
+
+pub struct Arena { /* Vec<Proc>, HashMap<Proc, ProcId> */ }
+\end{lstlisting}
+
+\begin{requirement}[Congruence by construction]\label{req:nf}
+The arena \MUST{} intern only normal forms: parallel compositions flattened,
+$0$ removed, children sorted by \texttt{ProcId} (a multiset), singletons
+unwrapped; $\ast\nm{P}{\tau}{d}$ replaced by $P$; bound variables in de Bruijn
+form so that $\alpha$-equivalent terms are identical. Then $P\equiv Q$ iff
+their ids are equal, and location equivalence is integer equality. A property
+test \MUST{} check this against an independent, unoptimised congruence decision
+procedure on random terms.
+\end{requirement}
+
+\begin{remark}[Why sorting by id is sound]
+Children are interned before their parent, so sorting by id is a canonical
+order on already-normal children. Ids depend on interning order, which differs
+between runs of different scores; they are never serialised as identities.
+Serialised terms and digests use a structural encoding
+(\S\ref{ssec:digest}).
+\end{remark}
+
+\begin{requirement}[Substitution]\label{req:subst}
+Firing substitutes a closed name $\nm{Q}{\tau}{d}$ for the bound variable and
+re-normalises; occurrences of $\ast y$ become $Q$ and names built from $y$ are
+compared up to congruence thereafter. Substitution \MUST{} be memoised on
+(body, name) since the same body is instantiated repeatedly by a voice.
+\end{requirement}
+
+\subsection{The soup}
+
+The running configuration is not stored as a term. As in the simulator, it is a
+\emph{soup}: the top-level receipts and messages, each an \emph{occurrence} with
+a stable occurrence number, a stamp and (for receipts) its clause, indexed by
+location.
+
+\begin{lstlisting}[language=Rust]
+pub struct RecvOcc { id: OccId, subjects: Box<[Name]>, clause: ClauseId,
+                     body: ProcId, stamp: Time, stream: StreamKey }
+pub struct SendOcc { id: OccId, subj: Name, payload: ProcId,
+                     ptimbre: Timbre, carry: Datum, stamp: Time }
+pub struct Soup {
+    recv: BTreeMap<Loc, Vec<RecvOcc>>,
+    send: BTreeMap<Loc, Vec<SendOcc>>,
+    dirty: BTreeSet<Loc>,               // locations whose candidates may have changed
+    next_occ: OccId,
+}
+\end{lstlisting}
+
+\begin{requirement}[Determinism of iteration]\label{req:btree}
+Every collection whose iteration order can influence a run \MUST{} be ordered
+(\texttt{BTreeMap}, sorted \texttt{Vec}), keyed by occurrence number or by a
+structural key. Occurrence numbers are assigned in firing order. Consequently a
+score, a chance source and a scheduler determine the run exactly.
+\end{requirement}
+
+Putting a process into the soup (\emph{spawning} at stamp $t$) decomposes its
+normal form: \texttt{Par} spawns each child; \texttt{Recv} and \texttt{Send}
+become occurrences at their subjects' locations; \texttt{Nil} does nothing. A
+top-level $\ast y$ cannot occur in a closed term.
+
+\subsection{Digests}\label{ssec:digest}
+
+Every elaborated score has a \emph{digest}: SHA-256 over a canonical,
+id-independent serialisation of its term, alphabets and lengths. The digest
+heads every trace and performance file and is the identity under which a score
+would later be stored as a content-addressed value on a shard.
+
+%==============================================================================
+\section{The clause language}\label{sec:clauses}
+
+\subsection{Grammar}
+
+The two sorts of Paper~II, with the atoms of Definition~3.1 of the note.
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+sort & surface & meaning \\
+\midrule
+graded $\psi$ & \texttt{3/2}, \texttt{0.3} & constant $w\in\Qnn$ \\
+ & \texttt{[beta]} & $\crisp\beta$ \\
+ & \texttt{psi * psi}, \texttt{psi + psi} & $\otimes$, $\oplus$ \\
+ & \texttt{<>psi} & graded behavioural modality $\langle K\rangle_\V$ \\
+ & \texttt{mu X. psi}, \texttt{nu X. psi} & graded fixed points \\
+ & \texttt{table key \char`\{ ... \char`\}}, \texttt{machine ...} & sugar, below \\
+ & factor name & reference to a named factor \\
+crisp $\beta$ & \texttt{true}, \texttt{!b}, \texttt{b \&\& b}, \texttt{b || b} &
+  propositional \\
+ & atoms & \S\ref{ssec:atoms} \\
+ & \texttt{<>b}, \texttt{leads(b)}, \texttt{nu X. b} & behavioural \\
+spatial $\sigma$ & \texttt{true}, \texttt{0}, \texttt{s | s}, \texttt{!s}, \texttt{s \&\& s} &
+  over processes \\
+ & \texttt{<n, tau, d>!(s, tau, d)} & $\mathsf{out}$: a message \\
+ & \texttt{for(<n, tau, d>) s} & $\mathsf{in}$: a receipt \\
+ & \texttt{@s} & name predicate \\
+\bottomrule
+\end{tabular}
+\end{center}
+\noindent In message and receipt patterns, \texttt{\_} matches any location,
+timbre or datum; \texttt{n} is itself a spatial formula applied to the quoted
+location, so patterns nest. Graded formulae have no negation (Paper~II,
+Definition~2.4).
+
+\subsection{Atoms and the candidate view}\label{ssec:atoms}
+
+A clause is evaluated on a candidate $c$ against the configuration in which it
+stands. The view is
+\begin{lstlisting}[language=Rust]
+pub struct View<'a> {
+    pub timbre: Timbre, pub pitch: Datum, pub dur: Datum,   // the note nu(c)
+    pub carry: Datum,                                       // kappa(c)
+    pub loc: ProcId,                                        // @S
+    pub passes: ProcId,                                     // Q of <@Q,tau,d>
+    pub chord: &'a [ChordSlot],                             // joins only
+    pub residue: Lazy<'a, Residue>,                         // behavioural atoms only
+}
+\end{lstlisting}
+
+\begin{center}
+\small
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{9.3cm}@{}}
+\toprule
+atom & holds when \\
+\midrule
+\texttt{pitch(s)}, \texttt{dur(v)}, \texttt{carry(e)} & the note's pitch, its
+  duration, the carried datum equal the argument \\
+\texttt{step(k)} & carry and pitch are ordered pitches and
+  $\mathrm{ord}(\kappa)-\mathrm{ord}(\pi)=k$ \\
+\texttt{at(s)} & the location's quote satisfies $\sigma$ \\
+\texttt{passes(s)} & the passed process satisfies $\sigma$ \\
+\texttt{held(t)} & \texttt{at(<\_,\_,\_>!(true, \_, t))} (derived) \\
+\texttt{prev(u)} & \texttt{at(<\_,\_,u>!true)} (derived) \\
+\texttt{back(j, e)} & the record $j$ levels into the past carries $e$ (derived) \\
+\texttt{last[m1 .. mk]} & $\mathsf{at}(\mathsf{Last}(m))$, \S6.1 of the note (derived) \\
+\texttt{pitch\#i}, \texttt{dur\#i}, \texttt{carry\#i} & per-pattern atoms of a
+  chord receipt \\
+\texttt{leads(b)} & the residue of firing $c$, in the present configuration,
+  satisfies $\beta$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{requirement}[Derived atoms are sugar]\label{req:derived}
+\texttt{held}, \texttt{prev}, \texttt{back}, \texttt{last} \MUST{} elaborate to
+spatial formulae. The evaluator \MAY{} compile them to direct walks over the
+record chain (as the simulator's \texttt{back} and \texttt{repeat} do), but a
+test \MUST{} check the compiled and the formula forms agree on random views,
+exactly as T9 does for tables.
+\end{requirement}
+
+\subsection{Tables and machines}
+
+\texttt{table key \char`\{ k: w, ..., \_: w \char`\}} is a sum over mutually exclusive crisp
+conjunctions evaluated by lookup, keyed by \texttt{(pitch, carry)},
+\texttt{(prev, dur)}, \texttt{step}, or any tuple of atoms that are functions of
+the view. \texttt{\_} is the default (absent means 0). Ranges such as
+\texttt{-2..2} are allowed on \texttt{step}.
+
+\texttt{machine pitch \char`\{ s -> t @ w, ... \char`\}} and \texttt{machine dur \char`\{ u -> v @ w, ...\char`\}}
+are Example~5.2's factors: the pitch machine is a table keyed by
+\texttt{(pitch, carry)}, the duration machine a table keyed by
+\texttt{(prev, dur)}. The arrow syntax is that of the \texttt{Machines} Theory in
+the drawn-distributions design, and \texttt{machine pitch import
+"file.machine"} reads a canonical machine exported by the instrument, mapping
+its state indices onto the declared pitch alphabet by position (with the rest as
+the last state, as on the instrument). \texttt{machine dur uniform} is the
+complete uniform machine.
+
+\subsection{Evaluation}
+
+\begin{requirement}[Exact weights]\label{req:exact}
+Clause values are exact non-negative rationals (\texttt{BigRational}, with a
+fast path for \texttt{u64/u64} that promotes on overflow). Decimal literals are
+read exactly (\texttt{0.3} is $3/10$). No floating point enters a weight, a
+normalisation, or a choice.
+\end{requirement}
+
+\begin{requirement}[Purity]\label{req:pure}
+Evaluation is a pure function of the view and the configuration. Evaluating a
+clause on a candidate that does not fire changes nothing.
+\end{requirement}
+
+$\otimes$ short-circuits on $0$; $\oplus$ sums; $\crisp\beta$ is $1$ or $0$.
+Graded fixed points are evaluated only inside the checkable fragment, by
+iteration to the exact fixed point over a finite state space; if the iteration
+does not reach an exact fixed point within the declared bound the score is
+rejected at elaboration, never approximated at run time.
+
+\subsection{The checkable fragment}\label{ssec:fragment}
+
+The ideal logic defines; the fragment decides. As in \texttt{rho-weighted}, the
+distinction is a type, not a comment.
+
+\begin{lstlisting}[language=Rust]
+pub struct Checked<F> { formula: F, class: Locality, depth: usize }
+pub enum Locality { Local, Behavioural { window: usize } }
+impl<F> Checked<F> { pub fn try_new(f: F, alph: &Alphabets) -> Result<Self, WhyNot>; }
+\end{lstlisting}
+
+\begin{requirement}[Fragment membership]\label{req:fragment}
+A clause is admitted iff it is in one of two classes.
+\begin{enumerate}[label=(\roman*),itemsep=1pt]
+\item \textbf{Local}: no behavioural modality, no \texttt{leads}. Its value
+  depends only on the view. Spatial formulae are decidable on the finite
+  quoted terms involved; separating conjunction is decided by enumerating splits
+  of a multiset and \MUST{} be bounded by a configured maximum split count.
+\item \textbf{Window-behavioural}: behavioural modalities and fixed points are
+  admitted when every spatial formula in \emph{every} clause of the score reads
+  the past to depth at most $d$ (the depth grading of the rho-life notes) and
+  the alphabets are finite. Then the state relevant to the formula is finite
+  (\S6.2 of the note), and $\nu$ is computed exactly by Knaster--Tarski
+  iteration over the abstract graph whose nodes are configurations with every
+  location truncated to depth $d$ and stamps erased.
+\end{enumerate}
+Anything else is rejected with \texttt{WhyNot} naming the offending
+subformula.
+\end{requirement}
+
+\begin{decision}[Behavioural modalities read the actual company]\label{dec:company}
+In Proposition~6.3 the contexts $K$ range over ``the one-hole contexts supplied
+by the rest of the score''. A player has exactly one such context at each
+moment: the rest of the current configuration. The player evaluates
+$\langle K\rangle$ and \texttt{leads} against that, and the \texttt{<>} surface
+form carries no explicit context. Quantifying over hypothetical companies is an
+analysis task, not a playing task, and is out of scope.
+\end{decision}
+
+\begin{requirement}[Locality classes drive caching]\label{req:locality}
+Local clauses depend only on the candidate, so a location's candidate list is
+recomputed only when that location is dirty. If any receipt in the soup carries
+a behavioural clause, every such receipt's candidates are re-evaluated after
+every resolution. The engine \MUST{} report in the trace header which regime
+the run used.
+\end{requirement}
+
+%==============================================================================
+\section{The engine}\label{sec:engine}
+
+\subsection{One resolution}
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item \textbf{Candidates.} For each dirty location, pair every receipt with
+  every message of opposite polarity whose payload timbre equals the location's
+  timbre (for a join, every injective assignment of messages to its patterns,
+  all at that location). Build the view, evaluate the clause, keep the
+  candidates of positive weight.
+\item \textbf{Contention sets.} Union--find over shared receipt or message
+  occurrence numbers, per location. Since communication requires equal locations,
+  a contention set never spans two locations; the engine \MUST{} assert this.
+\item \textbf{Onsets.} A candidate's onset is $\max(t_r,t_m)$ (for a join, the
+  maximum over all its stamps); a set's onset is the least of its candidates'.
+\item \textbf{Due sets.} Let $t_{\min}$ be the least onset over all sets. The
+  due sets are those with onset $t_{\min}$; the scheduler picks one
+  (\S\ref{ssec:sched}).
+\item \textbf{Alternatives.} Enumerate the maximal matchings of the chosen set
+  in canonical order, each with weight $\prod_{c\in\mathcal M}\psi\llbracket
+  c\rrbracket$.
+\item \textbf{Choice.} Ask the set's chance source for an index with
+  probability proportional to the weights (\S\ref{sec:chance}).
+\item \textbf{Firing.} For each candidate in the matching: remove both
+  occurrences, emit the timed note, form the substituted continuation and spawn
+  it at the new stamp. Mark affected locations dirty. Append one trace event.
+\end{enumerate}
+
+\begin{requirement}[Canonical order of alternatives]\label{req:canon}
+Candidates are ordered by (receipt occurrence number, message occurrence
+numbers); matchings by the lexicographic order of their sorted candidate lists.
+Together with R\ref{req:btree}, this makes ``the $i$-th alternative'' a
+well-defined, replayable quantity.
+\end{requirement}
+
+\subsection{Maximal matchings}
+
+\begin{requirement}[Stars and the general case]\label{req:matchings}
+\begin{enumerate}[label=(\roman*),itemsep=1pt]
+\item \textbf{Star fast path.} If every candidate in a set shares one receipt,
+  or every candidate shares one message, the maximal matchings are the single
+  candidates. This covers every voice, every chord receipt and every null note,
+  and \MUST{} be $O(\text{set size})$ with no enumeration.
+\item \textbf{General case.} Otherwise enumerate maximal matchings of the
+  bipartite (for joins, hypergraph) contention structure by backtracking with
+  maximality pruning. The number of alternatives \MUST{} be bounded by a
+  configurable limit (default $10^5$); exceeding it is a run-time error naming
+  the location, never a silent truncation.
+\item \textbf{Mode \texttt{one}.} A diagnostic mode, off by default, in which
+  a set fires a single candidate chosen with probability proportional to its
+  weight. It exists to reproduce T3's second column and is recorded in the
+  trace header.
+\end{enumerate}
+\end{requirement}
+
+\subsection{Scheduling simultaneous sets}\label{ssec:sched}
+
+When several sets are due at the same onset, the note is indifferent for
+independent parts (Theorem~2.6, Theorem~7.1) and the order matters only where
+parts contend. The player makes the order an explicit, recorded parameter.
+
+\begin{decision}[Schedulers]\label{dec:sched}
+\texttt{canonical} (default): the due set whose location has the least
+structural key (digest of the quote, then timbre). \texttt{random:SEED}: a
+dedicated PRNG, separate from every chance source, shuffles the due sets.
+\texttt{by-timbre:A,B,...}: a stated priority, for the Twinkle-style ``melody
+first / bass first'' tests. The scheduler never consumes digits from a musical
+chance source.
+\end{decision}
+
+\subsection{Time}
+
+Stamps are exact rationals. Continuations spawned by a firing receive the stamp
+of R\ref{req:time}. Joins use the ``longest duration'' convention of
+Definition~5.5; since the note lists this as an open thread, the convention is a
+single function in the engine, not a scattered assumption.
+
+\subsection{Termination and productivity}
+
+A run stops at the first of: no available candidate anywhere (the score has
+ended or every part has fallen silent); a \texttt{--notes N} limit on notes of
+positive length; a \texttt{--until T} limit on onsets (whole notes); a
+\texttt{--max-steps} limit on resolutions.
+
+\begin{requirement}[Unproductive loops]\label{req:productive}
+The note does not yet give a syntactic productivity check (open thread 6). The
+engine \MUST{} therefore bound the number of consecutive zero-length notes at one
+onset (default $10^5$) and stop with an \texttt{unproductive} error naming the
+locations involved. A voice plays exactly two null notes per note
+(Proposition~4.4), so the bound is never approached by a well-formed voice.
+\end{requirement}
+
+\subsection{Collection of inert locations}
+
+A voice leaves $|\Dur^+|\cdot|\Pit|-1$ inert messages and $|\Pit|-1$ inert
+hands behind at every note (Findings~8.1 and 8.3). Keeping them is correct but
+costs memory linear in the length of the piece.
+
+\begin{requirement}[Freshness collection]\label{req:gc}
+Collection is off by default. With \texttt{--gc freshness}, after a resolution
+at a location whose quote is a message (a record, not a base) and which then has
+no available candidate, the location's occurrences are dropped and its key is
+added to a tombstone set. If anything is later spawned at a tombstoned location,
+the engine \MUST{} stop with a \texttt{freshness-violated} error: the collection
+was unsound for this score. For scores built from \texttt{std.score} voices this
+cannot happen (Lemma~4.5).
+\end{requirement}
+
+\begin{remark}[Why not reachability]
+Collecting a location because no live term mentions it is not sound in this
+calculus: any process can quote any closed term it can build, and bases are
+built from nothing. Freshness is a theorem about how voices use locations, so
+the player relies on it only where it is checked.
+\end{remark}
+
+%==============================================================================
+\section{Chance sources}\label{sec:chance}
+
+\subsection{One interface}
+
+\begin{lstlisting}[language=Rust]
+pub trait Chance {
+    /// Choose an index into `weights` (exact, all > 0) with probability
+    /// proportional to weight. Returns the index and what was consumed.
+    fn choose(&mut self, weights: &[Weight], ctx: &ChoiceCtx) -> (usize, Consumed);
+    fn describe(&self) -> SourceSpec;          // recorded in the trace header
+}
+pub trait DigitStream { fn base(&self) -> u32; fn next(&mut self) -> u32; }
+\end{lstlisting}
+
+\begin{decision}[Every automatic source is a digit stream]\label{dec:digits}
+Every non-human source is a stream of digits in some base, and every choice is
+made by the exact interval decoding of the drawn-distributions design
+(Algorithm~1): cumulative weights are cleared to a common denominator, digits
+narrow a $b$-adic interval, and the choice is the bin that contains it. There is
+no floating point and no rejection sampling, so a given digit stream yields the
+same choices on every machine. $K_{\max}$ (default 64 digits per choice) and its
+deterministic fallback are part of the source's specification.
+\end{decision}
+
+\begin{center}
+\small
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{9.2cm}@{}}
+\toprule
+spec & source \\
+\midrule
+\texttt{prng:SEED} & a specified counter-based generator (SplitMix64 feeding
+  xoshiro256**, fixed in this specification so it can never drift with a
+  dependency), emitting base-$2^{32}$ digits \\
+\texttt{spigot:C/B} & digits of the fractional part of constant \texttt{C}
+  $\in\{$\texttt{pi, e, ln2, liouville, champernowne, thue-morse}$\}$ in base
+  \texttt{B}, from \texttt{spigot\_stream} (feature \texttt{spigot}); the
+  integer part is skipped \\
+\texttt{human} & an interactive chooser (\S\ref{ssec:human}) \\
+\texttt{replay:FILE} & the choice indices recorded in a trace \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Which source a choice uses}
+
+Theorem~7.1(iii) holds \emph{surely} only when each voice has its own source
+(T2 uses one stream per voice). The player routes choices through \emph{stream
+keys}.
+
+\begin{decision}[Stream keys]\label{dec:streams}
+Every receipt occurrence carries a stream key, inherited from the receipt that
+spawned it. The key is the receipt's timbre by default, and \MAY{} be set
+explicitly with an annotation \texttt{for \#A (...)} or on a definition
+application \texttt{Voice(...) \#A}; annotations are metadata and do not change
+the elaborated term's congruence class or digest. The command line maps keys to
+sources: \texttt{--chance prng:7 --stream A=spigot:pi/16 --stream B=prng:12}.
+A contention set uses the stream of its least receipt occurrence. Sets with a
+single alternative (every null note) consume nothing.
+\end{decision}
+
+\subsection{Factorised resolution}
+
+Lemma~5.3 (factorised resolution) lets a star whose weights factor as $f(a)g(b)$
+be resolved by two independent draws. T4 depends on this: pitch from the
+hexadecimal digits of $\pi$, duration from the base-5 digits of $e$, one digit
+each.
+
+\begin{requirement}[Factor routing]\label{req:factor}
+When a star's clause is a product of factors that are functions of disjoint
+parts of the view (the elaborator can see this syntactically: a
+\texttt{(pitch, carry)} machine times a \texttt{(prev, dur)} machine), the
+engine \MAY{} resolve it factor by factor, each factor drawing from its own
+stream (\texttt{--stream A.pitch=spigot:pi/16 --stream A.dur=spigot:e/5}). This
+is an equivalent resolution by Lemma~5.3 and \MUST{} be recorded in the trace.
+Without a per-factor stream the joint draw is used.
+\end{requirement}
+
+\subsection{Human choice}\label{ssec:human}
+
+Proposition~6.4 makes the improviser a chance source that ignores the
+probabilities and chooses among available candidates.
+
+\begin{requirement}[Human chooser]\label{req:human}
+The \texttt{human} source presents, for each set with more than one
+alternative, the alternatives as notes (pitch, duration, carried pitch), with
+their normalised probabilities shown for guidance, and accepts an index. Only
+alternatives of positive weight are offered, so every trace a human produces is
+admissible, and with a viability factor never runs out
+(Proposition~6.4(iii)). Mixed performance --- a human on one stream key, an
+algorithmic source on the others --- is the default when \texttt{human} is bound
+to a single key. In this version the human chooser is step-wise, not real time.
+\end{requirement}
+
+%==============================================================================
+\section{Outputs}\label{sec:outputs}
+
+\subsection{Performance}
+
+The performance is printed as a table by default and as JSON with
+\texttt{--out perf.json}:
+\begin{lstlisting}
+{ "score": "sha256:...", "end": "4",
+  "notes": [ { "onset": "0", "timbre": "piano", "pitch": "C4", "dur": "q", "len": "1/4" },
+             { "onset": "0", "timbre": "bass",  "pitch": "C3", "dur": "h", "len": "1/2" }, ... ] }
+\end{lstlisting}
+Notes are sorted by (onset, timbre, pitch, duration) so that two runs with the
+same performance produce byte-identical files; this is how interleaving
+invariance is tested. Null notes are excluded (they are not part of the
+performance); \texttt{--include-null} adds them for diagnosis.
+
+\subsection{Trace}
+
+\begin{requirement}[Replayable trace]\label{req:trace}
+With \texttt{--trace run.jsonl} the player writes JSON Lines: a header
+(format version, player version, score digest, alphabets, every source spec,
+stream bindings, scheduler, matching mode, locality regime, collection mode),
+then one event per resolution: step number, onset, location key, set size,
+number of alternatives, chosen index, digits consumed per stream, and the notes
+emitted. \texttt{f1r3score replay} \MUST{} reproduce the performance and the
+event sequence from the score and the trace alone, and \MUST{} fail if the
+score's digest differs from the header's.
+\end{requirement}
+
+\subsection{MIDI}
+
+\begin{requirement}[Standard MIDI File]\label{req:midi}
+\texttt{--midi out.mid} writes a format-1 file with one track per timbre, a
+program change from the timbre's declaration, and note-on/note-off pairs at
+$\mathrm{ticks}(t)$ and $\mathrm{ticks}(t+\len\delta)$. Rests produce no
+events. The division (ticks per quarter) is the least value making every onset
+and length in the performance an integer number of ticks, if that is at most
+32767; otherwise 960 with rounding and a warning. Tempo is \texttt{--bpm}
+(default 120), a rendering parameter only.
+\end{requirement}
+
+\begin{finding}[\texttt{spigot\_midi} cannot be reused as is]
+\texttt{spigot\_midi::MidiTrack} writes format 0 from a sequence of
+(pitch, duration, velocity) notes with no onsets: it is monophonic and
+sequential by construction. A score is polyphonic, with explicit onsets and
+simultaneous strikes. The player therefore needs its own small writer. It
+\SHOULD{} follow \texttt{spigot\_midi}'s dependency-free style, reuse its
+\texttt{GeneralMidi} enumeration for program names, and \MAY{} later be
+upstreamed to replace it.
+\end{finding}
+
+\subsection{Live MIDI}
+
+With feature \texttt{live} and \texttt{--live [PORT]}, a playback thread
+receives timed notes from the engine through a bounded channel and sends them to
+a MIDI port via \texttt{midir}, as \texttt{leap\_spigot::player} does. The
+engine runs ahead of the clock by a configurable look-ahead in whole notes. The
+engine never waits on the clock: live output is a rendering of the same run,
+and its trace is identical to an offline run's.
+
+%==============================================================================
+\section{Command line}\label{sec:cli}
+
+\begin{lstlisting}
+f1r3score check   piece.score              # parse, elaborate, lint, report fragment and digest
+f1r3score expand  piece.score              # print the elaborated core term
+f1r3score play    piece.score [options]    # run once
+f1r3score replay  piece.score run.jsonl [--midi out.mid]
+f1r3score machine import skein.machine --pitches piece.score   # print as a factor
+
+options for play:
+  --chance SPEC            default source (prng:SEED | spigot:C/B | human)
+  --stream KEY=SPEC        bind a stream key (repeatable; KEY.pitch / KEY.dur for factors)
+  --scheduler S            canonical | random:SEED | by-timbre:A,B,...
+  --notes N | --until T | --max-steps N
+  --mode max|one           matching mode (default max)
+  --gc off|freshness       collection (default off)
+  --max-alternatives N     bound on maximal matchings per set (default 100000)
+  --out FILE  --trace FILE  --midi FILE  --bpm N  --live [PORT]  --include-null
+\end{lstlisting}
+
+\noindent Exit codes: 0 success; 1 usage; 2 parse or elaboration error; 3
+run-time error (\texttt{unproductive}, \texttt{freshness-violated}, alternative
+limit); 4 replay mismatch.
+
+%==============================================================================
+\section{Conformance}\label{sec:conformance}
+
+\subsection{The ported suite}
+
+Each skeinsim test becomes a Rust integration test in
+\texttt{score-conformance}, reading its score from a \texttt{.score} file (not
+constructed in Rust), so the suite tests the front end as well as the engine.
+Statistical thresholds are those the note reports; tests are seeded and
+deterministic.
+
+\begin{center}
+\small
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{5.2cm}>{\raggedright\arraybackslash}p{5.3cm}@{}}
+\toprule
+test & what & pass criterion \\
+\midrule
+T0 & inertness of the unplayed & one live location per step; exactly 79 stale
+  messages per note (16 pitches, 5 durations) \\
+T1 & law of one voice (pitch leads) & pitch, duration and joint deviations
+  within sampling error: every $|z|\le 3.5$; no off-machine transition \\
+T2 & harmony by independence & five schedulers, byte-identical performances \\
+T3 & two-sided fitting & \texttt{max}: first resolution emits $\min(m,n)$ notes;
+  \texttt{one}: 1, then $\min(m,n)-1$ more \\
+T4 & instrument as a score & pitch = hex digits of $\pi$, duration = base-5
+  digits of $e$, one digit each, 400 notes \\
+T5 & law of the dual (rhythm leads) & as T1, via \textsc{Comm}$_2$ \\
+T6 & simultaneity by contention & two notes per resolution; equal durations
+  never \\
+T7 & style $\otimes$ physicality & transitions match normalised product;
+  $|z|\le 3.5$; no forbidden transition \\
+T8 & idioms from the past & zero triple repeats under the crisp factor; no
+  silence; motif completion within $0.03$ of analytic \\
+T9 & table = formula & zero difference over 3000 random views (exact
+  rationals) \\
+T10 & reflective = step semantics & identical performance over 3000 notes;
+  exactly two null notes per note, all $(\rest,\nulld)$ \\
+T11 & reflective voice, inertness & at most one record location with a
+  candidate; $|\Pit|-1$ dead hands per note \\
+T12 & Twinkle & 22 notes, end 4, identical under both orders \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent T10 is the central test. In the simulator it compares the reflective
+voice against a Python-constant voice. Here both sides are scores: the
+reflective \texttt{Voice} from \texttt{std.score} against an unrolled voice of
+$k$ written steps, with the same clause and the same musical stream.
+
+\subsection{Additional tests}
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+\item \textbf{Congruence.} Normal-form interning agrees with an independent
+  decision procedure on $10^4$ random term pairs, including $\ast@$ and
+  $\alpha$-variants.
+\item \textbf{Cross-implementation differential.} For T0--T12 scores and
+  random small scores, the Rust player and \texttt{skeinsim.py}, driven by the
+  same recorded choice indices, emit the same note sequence. The Python side
+  gains a small adapter that accepts a choice list; this is the faithfulness
+  obligation, kept as a permanent CI job.
+\item \textbf{Replay.} Every conformance run's trace replays to an identical
+  performance.
+\item \textbf{Enforcement.} A window-behavioural score using
+  $\mathsf{Viable}_\beta$ (Proposition~6.3) runs $10^4$ notes without violating
+  $\beta$ and without falling silent; the same score without the viability
+  factor is shown, on a fixture, to fall silent.
+\item \textbf{Chords.} A chord receipt emits $k$ notes at one onset, and its
+  continuation is stamped at the longest duration.
+\item \textbf{Freshness guard.} A deliberately non-fresh score run with
+  \texttt{--gc freshness} fails with \texttt{freshness-violated}.
+\item \textbf{MIDI.} Twinkle's file is byte-identical to a golden file.
+\end{itemize}
+
+%==============================================================================
+\section{Phasing}\label{sec:phases}
+
+\begin{center}
+\small
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{5.4cm}>{\raggedright\arraybackslash}p{5.2cm}@{}}
+\toprule
+phase & content & exit criteria \\
+\midrule
+P0 & workspace; \texttt{score-core} arena, normal forms, substitution, digests;
+  parser for the core syntax and alphabets; pretty-printer &
+  round-trip parse/print; congruence property test; Twinkle parses \\
+P1 & engine with clause-free receipts: soup, candidates, contention, maximal
+  matchings, time, schedulers; performance output; trace &
+  T3, T6, T12 \\
+P2 & local clauses: atoms, spatial formulae, tables, machines, exact weights;
+  PRNG source with interval decoding; macros and \texttt{par} comprehensions &
+  T0, T1, T5, T7, T8, T9 \\
+P3 & \texttt{std.score}: reflective voice, handoff, hocket; freshness collection;
+  stream keys & T2, T10, T11; freshness guard \\
+P4 & MIDI writer; spigot sources and factor routing; replay; live MIDI &
+  T4; replay; MIDI golden \\
+P5 & window-behavioural fragment: \texttt{<>}, \texttt{leads}, $\nu$; chord
+  receipts & enforcement and chord tests \\
+P6 & human chooser; wasm build of the core crates; cross-implementation CI &
+  differential job green; wasm build in CI \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent P0--P3 deliver a player for every example in the note except
+Proposition~6.3 and Definition~5.5; P4 makes it musically usable; P5 completes
+the calculus as the note defines it.
+
+%==============================================================================
+\section{Decisions to confirm}\label{sec:open}
+
+\begin{enumerate}[leftmargin=*,itemsep=3pt]
+\item \textbf{Home of the code.} Candidates: a new repository
+  \texttt{F1R3FLY-io/f1r3score}; a directory beside the note in
+  \texttt{publications/f1r3score}; or \texttt{F1R3Games}. Since the calculus is
+  deliberately not F1R3Skein, the proposal is a new repository, with the note's
+  directory linking to it.
+\item \textbf{Surface syntax.} Confirm Decision~\ref{dec:dialect}: a CFL
+  dialect now, restated as \texttt{Theory Score} in the DDL later. In
+  particular confirm the name syntax \texttt{<@P, tau, d>} and the file
+  extension \texttt{.score}.
+\item \textbf{Exact rationals by default.} Decision~\ref{dec:digits} and
+  R\ref{req:exact} put bit-for-bit reproducibility ahead of speed. An
+  \texttt{f64} mode could be added for large ensembles; the proposal is not to
+  add one until a measured need appears.
+\item \textbf{Stream keys.} Decision~\ref{dec:streams} defaults to timbre, with
+  optional labels. Two voices sharing a timbre (hocket) would otherwise share a
+  stream; confirm that labels are the right remedy rather than, say, keying by
+  base.
+\item \textbf{Scheduler default.} \texttt{canonical} makes runs reproducible
+  without a seed. Confirm, or prefer a seeded random default.
+\item \textbf{Behavioural modalities.} Decision~\ref{dec:company} evaluates them
+  against the actual company, and R\ref{req:fragment} admits them only in the
+  window fragment. Confirm that a bounded-lookahead approximation, which would
+  not guarantee liveness, should stay out.
+\item \textbf{Chord continuation.} The longest-duration convention of
+  Definition~5.5 is isolated in one function; confirm it as the default while
+  open thread 5 is pursued.
+\item \textbf{Handoff record.} Proposition~6.5 notes that the outermost record
+  of a handoff carries a pitch that was never played. Confirm that
+  \texttt{last[...]} should not skip it automatically (the proposal: expose it,
+  and give \texttt{std.score} a \texttt{call[...]} atom that skips it).
+\item \textbf{Pitch naming.} Scientific pitch names with C4 = 60, and explicit
+  MIDI numbers otherwise. Confirm, including enharmonic spellings as distinct
+  data (so \texttt{F\#4} and \texttt{Gb4} are different pitches with the same
+  MIDI number).
+\end{enumerate}
+
+\end{document}
