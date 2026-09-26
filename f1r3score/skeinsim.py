@@ -36,6 +36,12 @@ def rec(H, tau, subj_datum, carried):  # <@H,tau,subj>!(H, tau, carried)
     return intern(('send', H, tau, subj_datum, H, tau, carried))
 
 WILD = '_'                           # the wildcard decoration
+ALL = '*'                            # index marker: a location, all timbres
+def meet(a, b):
+    if a == b: return a
+    if a == WILD: return b
+    if b == WILD: return a
+    return None
 def P(i): return ('p', i)            # pitch datum  -> channel
 def D(j): return ('d', j)            # duration datum -> co-channel
 def pol(d): return d[0]
@@ -92,6 +98,7 @@ def atom(a, c):
 def _prev(c):
     n = node(c['quote']); return n[3] if n[0] == 'send' else None
 KEYS = {
+    'dur':         lambda c: c['dur'],
     'pitch,carry': lambda c: (c['pitch'], c['carry']),
     'prev,dur':    lambda c: (_prev(c), c['dur']),
     'step':        lambda c: c['carry'][1] - c['pitch'][1]
@@ -128,27 +135,31 @@ def dual_clause(EP, ED):
 # --------------------------------------------------------------------------
 class Soup:
     def __init__(self):
-        self.R = {}   # loc -> list of receipts  {id,datum,psi,cont,stamp,tag}
-        self.M = {}   # loc -> list of messages  {id,subj,payload,ptau,carry}
+        # Indexed by LOCATION only: loc = (quote, ALL).  Each item keeps its own
+        # subject timbre, which may be WILD; matching meets the two timbres.
+        self.R = {}   # loc -> list of receipts  {id,tau,datum,psi,cont,stamp,tag}
+        self.M = {}   # loc -> list of messages  {id,tau,subj,payload,ptau,carry}
         self.n = 0
         self.touched = set()
     def fresh(self): self.n += 1; return self.n
     def receipt(self, quote, tau, datum, psi, cont, stamp, tag=None):
-        self.R.setdefault((quote, tau), []).append(
-            dict(id=self.fresh(), datum=datum, psi=psi, cont=cont, stamp=stamp, tag=tag))
+        self.R.setdefault((quote, ALL), []).append(
+            dict(id=self.fresh(), tau=tau, datum=datum, psi=psi, cont=cont, stamp=stamp,
+                 tag=tag))
     def send(self, quote, tau, subj, payload, ptau, carry, stamp=0):
-        self.M.setdefault((quote, tau), []).append(
-            dict(id=self.fresh(), subj=subj, payload=payload, ptau=ptau, carry=carry,
-                 stamp=stamp))
+        self.M.setdefault((quote, ALL), []).append(
+            dict(id=self.fresh(), tau=tau, subj=subj, payload=payload, ptau=ptau,
+                 carry=carry, stamp=stamp))
 
     def candidates(self, loc):
         out = []
         for r in self.R.get(loc, []):
             for m in self.M.get(loc, []):
                 if pol(r['datum']) == pol(m['subj']): continue      # no rule
-                if m['ptau'] not in (loc[1], WILD): continue        # payload timbre matches
-                pitch, dur = (r['datum'], m['subj']) if pol(r['datum']) == 'p' \
-                             else (m['subj'], r['datum'])
+                if meet(r['tau'], m['tau']) in (None, WILD): continue  # timbres
+                # matching concerns the two SUBJECTS only; the payload is data.
+                # Reduction is unlabelled: the note is read off the record.
+                _, pitch, dur = note_of(record(loc, r, m))
                 view = dict(pitch=pitch, dur=dur, carry=m['carry'], quote=loc[0])
                 w = ev(r['psi'], view)
                 if w > 0.0:
@@ -175,6 +186,20 @@ class Soup:
 
     def remove(self, loc, r, m):
         self.R[loc].remove(r); self.M[loc].remove(m)
+
+def record(loc, r, m):
+    """The data the communication matched: the receipt's subject, the message's
+    subject, and the payload.  Playback reads the note off this record."""
+    return dict(receipt_subject=(loc[0], r['tau'], r['datum']),
+                message_subject=(loc[0], m['tau'], m['subj']),
+                payload=(m['payload'], m['ptau'], m['carry']))
+
+def note_of(rec_):
+    """nu(record) = (timbre meet, the pitch, the duration)."""
+    (_, t1, d1), (_, t2, d2) = rec_['receipt_subject'], rec_['message_subject']
+    tau = t1 if t1 != WILD else t2
+    pitch, dur = (d1, d2) if pol(d1) == 'p' else (d2, d1)
+    return tau, pitch, dur
 
 def maximal_matchings(comp):
     """All maximal sets of pairwise non-contending candidates (brute force)."""
@@ -227,7 +252,7 @@ def resolve(soup, rng_for, mode='max', schedule=None, gc=False, log=None):
         soup.remove(loc, r, m)
         soup.touched.add(loc)
         onset = max(r['stamp'], m['stamp'])
-        if log is not None: log.append((onset, r['tag'], loc[1], note))
+        if log is not None: log.append((onset, r['tag'], meet(r['tau'], m['tau']), note))
         z = (m['payload'], m['ptau'], m['carry'])    # <@Q, payload timbre, payload datum>
         r['cont'](soup, z, onset + dur_value(note[1]))
     # Dead-location collection.  A location that is the quote of a RECORD is never
@@ -701,6 +726,114 @@ def T12_twinkle():
     finally:
         dur_value = old
 
+# --------------------------------------------------------------------------
+# Musicians and instruments.
+#   Key(P,k,tau) := for(y <- <@K(P,k), tau, k> where psi_tau) ( *y | Refresh )
+#   Refresh      := for(c <- <@C(P,k,tau), tau, r>) ( *c | <@C,tau,eps>!(*c,_,_) )
+# A touch is a message <@K(P,k), tau^, d>!(Q,_,_); the sequencing sugar
+#   touch ; R  :=  touch-with-payload(Q | ack) | for(_ <- <@A, ctl, r>) R
+# ------------------------------------------------------------------------
+from fractions import Fraction as _Fr
+DURS = {'e': _Fr(1, 8), 'q': _Fr(1, 4), 'h': _Fr(1, 2), 'w': _Fr(1)}
+def Dn(name): return ('d', (name, DURS[name]))
+
+def key_loc(P, k): return intern(('key', P, k))
+
+def install_key(soup, P, k, tau, psi, stamp=0):
+    C = intern(('keycode', P, k, tau))
+    code = intern(('code', 'Key', P, k, tau))
+    def run_key(s, t):
+        s.receipt(key_loc(P, k), tau, ('p', k), psi, struck, t, ('key', P, k, tau))
+    CODE[code] = run_key
+    def refresh(s, c, t):
+        CODE[c[0]](s, t)
+        s.send(C, tau, NULL, c[0], WILD, WILD, t)
+    def struck(s, y, t):                         # *y | Refresh
+        if y[0] in CODE: CODE[y[0]](s, t)
+        s.receipt(C, tau, REST, ('const', 1.0), refresh, t, ('null', 'refresh'))
+    run_key(soup, stamp)
+    soup.send(C, tau, NULL, code, WILD, WILD, stamp)
+
+_ack = [0]
+def play(soup, P, touches, then, t, tau=WILD, tag='player'):
+    """touches: list of steps; a step is a list of (k, dur) struck together.
+    Steps are joined by ';' (synchronous output), a step's touches by '|'."""
+    if not touches:
+        if then: then(soup, t)
+        return
+    step, rest = touches[0], touches[1:]
+    _ack[0] += 1
+    A = intern(('ack', _ack[0]))
+    for (k, d) in step:
+        pay = intern(('ackcode', _ack[0], k))
+        CODE[pay] = (lambda A_: lambda s_, t_: s_.send(A_, 'ctl', NULL, base('0'), WILD, WILD, t_))(A)
+        soup.send(key_loc(P, k), tau, Dn(d), pay, WILD, WILD, t)
+    need = [len(step)]
+    def acked(s, _, t2):                          # wait for every touch of the step
+        need[0] -= 1
+        if need[0] == 0: play(s, P, rest, then, t2, tau, tag)
+        else: s.receipt(A, 'ctl', REST, ('const', 1.0), acked, t2, ('null', 'ack'))
+    soup.receipt(A, 'ctl', REST, ('const', 1.0), acked, t, ('null', 'ack'))
+
+def _with_named_durations(fn):
+    global dur_value
+    old = dur_value
+    dur_value = lambda d: d[1][1] if isinstance(d[1], tuple) else old(d)
+    try: return fn()
+    finally: dur_value = old
+
+def T13_piano():
+    """A 2n-hands piano (n = 2).  Two players on separate keyboards are
+    independent; a third player on keyboard 1 contends for the key A3."""
+    def run(order, third):
+        soup = Soup(); log = []
+        for P in (1, 2):
+            for k in ('A2', 'E2', 'C3', 'E3', 'A3'):
+                install_key(soup, P, k, 'piano', ('const', 1.0))
+        play(soup, 1, [[('A3', 'q')], [('C3', 'q')], [('E3', 'q')],
+                       [('A3', 'h'), ('C3', 'h'), ('E3', 'h')]], None, _Fr(0))
+        play(soup, 2, [[('A2', 'h')], [('E2', 'h')]], None, _Fr(0))
+        if third:
+            play(soup, 1, [[('A3', 'q')]], None, _Fr(0))
+        rng = random.Random(order)
+        while resolve(soup, lambda r: rng, schedule=lambda due: rng.shuffle(due), log=log): pass
+        mus = tuple(sorted((e[0], e[3][0][1], e[3][1][1][0]) for e in log if e[3][1] != NULL))
+        nul = sum(1 for e in log if e[3][1] == NULL)
+        return mus, nul
+    def fmt(m): return [(str(t), p, d) for t, p, d in m]
+    two = [_with_named_durations(lambda o=o: run(o, False)) for o in range(20)]
+    three = [_with_named_durations(lambda o=o: run(o, True)) for o in range(20)]
+    outs3 = sorted(set(m for m, _ in three))
+    return dict(two_players=fmt(two[0][0]), two_players_null_notes=two[0][1],
+                two_players_same_under_20_schedules=all(m == two[0][0] for m, _ in two),
+                three_players_distinct_outcomes=len(outs3),
+                three_players_outcomes=[fmt(m) for m in outs3],
+                three_players_null_notes=three[0][1])
+
+def T14_chimera(reps=1500):
+    """Keys with two timbres; a wildcard-timbre player; timbre follows the touch."""
+    w_v = {'e': 9.0, 'q': 1.0, 'h': 1.0}
+    w_s = {'e': 1.0, 'q': 1.0, 'h': 9.0}
+    psi = {'vibes':   ('table', 'dur', {Dn(d): w for d, w in w_v.items()}),
+           'strings': ('table', 'dur', {Dn(d): w for d, w in w_s.items()})}
+    def run(dur, tau, seed_):
+        soup = Soup(); log = []
+        for k in ('A3', 'C3', 'E3'):
+            for tb in ('vibes', 'strings'):
+                install_key(soup, 1, k, tb, psi[tb])
+        play(soup, 1, [[(k, dur)] for _ in range(reps) for k in ('A3', 'C3', 'E3')],
+             None, _Fr(0), tau=tau)
+        rng = random.Random(seed_); worst = 0
+        while resolve(soup, lambda r: rng, log=log):
+            for k in ('A3', 'C3', 'E3'):
+                worst = max(worst, len(soup.R.get((key_loc(1, k), ALL), [])))
+        mus = [e for e in log if e[3][1] != NULL]
+        share = sum(1 for e in mus if e[2] == 'vibes') / len(mus)
+        return dict(notes=len(mus), vibes_share=round(share, 3), max_receipts_per_key=worst)
+    return _with_named_durations(lambda: dict(
+        eighths_wild=run('e', WILD, 1), quarters_wild=run('q', WILD, 2),
+        halves_wild=run('h', WILD, 3), halves_insisting_on_vibes=run('h', 'vibes', 4)))
+
 if __name__ == '__main__':
     for name, fn in [('T0 inertness of the unplayed', T0_inertness),
                      ('T1 law of one voice (pitch leads)', T1_law),
@@ -714,5 +847,7 @@ if __name__ == '__main__':
                      ('T9 lookup factor = its formula', T9_table_equals_formula),
                      ('T10 reflective voice = constant voice', T10_reflective),
                      ('T11 reflective voice: the unplayed is inert', T11_reflective_inert),
-                     ('T12 Twinkle, written', T12_twinkle)]:
+                     ('T12 Twinkle, written', T12_twinkle),
+                     ('T13 a 2n-hands piano', T13_piano),
+                     ('T14 a chimeric instrument', T14_chimera)]:
         print(name); print('   ', fn()); sys.stdout.flush()
