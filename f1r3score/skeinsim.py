@@ -35,6 +35,7 @@ def base(tag):                       # B_tag : for(_ <- <@0, dead, tag>) 0
 def rec(H, tau, subj_datum, carried):  # <@H,tau,subj>!(H, tau, carried)
     return intern(('send', H, tau, subj_datum, H, tau, carried))
 
+WILD = '_'                           # the wildcard decoration
 def P(i): return ('p', i)            # pitch datum  -> channel
 def D(j): return ('d', j)            # duration datum -> co-channel
 def pol(d): return d[0]
@@ -145,7 +146,7 @@ class Soup:
         for r in self.R.get(loc, []):
             for m in self.M.get(loc, []):
                 if pol(r['datum']) == pol(m['subj']): continue      # no rule
-                if m['ptau'] != loc[1]: continue                    # timbre
+                if m['ptau'] not in (loc[1], WILD): continue        # payload timbre matches
                 pitch, dur = (r['datum'], m['subj']) if pol(r['datum']) == 'p' \
                              else (m['subj'], r['datum'])
                 view = dict(pitch=pitch, dur=dur, carry=m['carry'], quote=loc[0])
@@ -227,7 +228,7 @@ def resolve(soup, rng_for, mode='max', schedule=None, gc=False, log=None):
         soup.touched.add(loc)
         onset = max(r['stamp'], m['stamp'])
         if log is not None: log.append((onset, r['tag'], loc[1], note))
-        z = (m['payload'], loc[1], m['carry'])       # <@Q, tau, d>
+        z = (m['payload'], m['ptau'], m['carry'])    # <@Q, payload timbre, payload datum>
         r['cont'](soup, z, onset + dur_value(note[1]))
     # Dead-location collection.  A location that is the quote of a RECORD is never
     # re-entered once its voice has moved on (freshness), so once nothing there
@@ -283,11 +284,12 @@ def reflective_voice(soup, tag, tau, psi, NP, ND, p0, u0, stamp=0):
     CODE[code] = run_server
     def refresh(s, c, t):                       # for(c <- K) ( *c | K!(*c) )
         CODE[c[0]](s, t)
-        s.send(K, tau, NULL, c[0], tau, REST, t)
+        s.send(K, tau, NULL, c[0], WILD, WILD, t)      # passes @Server
     def req(s, z, t):                           # the hand's continuation
-        s.send(S, tau, NULL, z[0], tau, REST, t)
+        s.send(S, tau, NULL, z[0], WILD, WILD, t)      # passes @*z exactly
     def handle(s, w, t):                        # the server's body
-        H = w[0]                                # location @*w; datum unused
+        assert w[1] == WILD and w[2] == WILD    # w is the general name @*z
+        H = w[0]                                # location @*w
         for pt in range(NP):                    # one guarded hand per pitch
             s.receipt(H, tau, P(pt), ('tensor', psi, ('crisp', ('back', 0, P(pt)))),
                       req, t, tag)
@@ -295,9 +297,9 @@ def reflective_voice(soup, tag, tau, psi, NP, ND, p0, u0, stamp=0):
         s.receipt(K, tau, REST, ('const', 1.0), refresh, t, ('null', tag))
     # initial configuration: Server | code message | request carrying the seed
     run_server(soup, stamp)
-    soup.send(K, tau, NULL, code, tau, REST, stamp)
+    soup.send(K, tau, NULL, code, WILD, WILD, stamp)
     H0 = rec(base(tag), tau, D(u0), P(p0))
-    soup.send(S, tau, NULL, H0, tau, REST, stamp)
+    soup.send(S, tau, NULL, H0, WILD, WILD, stamp)
 
 
 def seed(tag, tau, p0, u0, dual=False):
@@ -484,7 +486,7 @@ def T4_embedding(notes=400):
         pick = [c for c in comp if c[3][1] == D(v) and c[1]['carry'] == P(t)][0]
         soup.remove(loc, pick[0], pick[1])
         log.append(pick[3])
-        z = (pick[1]['payload'], loc[1], pick[1]['carry'])
+        z = (pick[1]['payload'], pick[1]['ptau'], pick[1]['carry'])
         pick[0]['cont'](soup, z, 0)
         soup.M.pop(loc, None); soup.R.pop(loc, None)
     ok_p = all(log[i][0][1] == pd[i] for i in range(notes))
@@ -672,12 +674,12 @@ def T12_twinkle():
               ('F4', q), ('F4', q), ('E4', q), ('E4', q), ('D4', q), ('D4', q), ('C4', h)]
     bass = [('C3', h), ('C3', h), ('F3', h), ('C3', h), ('F3', h), ('C3', h), ('G3', h), ('C3', h)]
     def part(soup, L, tau, notes, t):
-        # N(p,d,P) := for(_ <- <@L,tau,p>) P | <@L,tau,d>!(0, tau, r)
+        # N(p,d,P) := for(_ <- <@L,tau,p>) P | <@L,tau,d>!(0, _, _)
         if not notes: return
         (p, (dname, dlen)), rest = notes[0], notes[1:]
         soup.receipt(L, tau, ('p', p), ('const', 1.0),
                      lambda s_, z, t2: part(s_, L, tau, rest, t2), t, tau)
-        soup.send(L, tau, ('d', (dname, dlen)), base('zero'), tau, REST, t)
+        soup.send(L, tau, ('d', (dname, dlen)), base('zero'), WILD, WILD, t)
     global dur_value
     old = dur_value
     dur_value = lambda d: d[1][1] if isinstance(d[1], tuple) else old(d)
