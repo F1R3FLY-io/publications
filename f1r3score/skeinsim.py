@@ -664,6 +664,41 @@ def T11_reflective_inert(notes=200):
                 max_locations_with_a_candidate_incl_machinery=worst_all,
                 dead_hands_left=dead_hands, per_note=round(dead_hands / notes, 2))
 
+def T12_twinkle():
+    """The written first phrase of Twinkle Twinkle Little Star with a bass line."""
+    from fractions import Fraction as Fr
+    q, h = ('q', Fr(1, 4)), ('h', Fr(1, 2))
+    melody = [('C4', q), ('C4', q), ('G4', q), ('G4', q), ('A4', q), ('A4', q), ('G4', h),
+              ('F4', q), ('F4', q), ('E4', q), ('E4', q), ('D4', q), ('D4', q), ('C4', h)]
+    bass = [('C3', h), ('C3', h), ('F3', h), ('C3', h), ('F3', h), ('C3', h), ('G3', h), ('C3', h)]
+    def part(soup, L, tau, notes, t):
+        # N(p,d,P) := for(_ <- <@L,tau,p>) P | <@L,tau,d>!(0, tau, r)
+        if not notes: return
+        (p, (dname, dlen)), rest = notes[0], notes[1:]
+        soup.receipt(L, tau, ('p', p), ('const', 1.0),
+                     lambda s_, z, t2: part(s_, L, tau, rest, t2), t, tau)
+        soup.send(L, tau, ('d', (dname, dlen)), base('zero'), tau, REST, t)
+    global dur_value
+    old = dur_value
+    dur_value = lambda d: d[1][1] if isinstance(d[1], tuple) else old(d)
+    try:
+        perfs = []
+        for order in ('melody-first', 'bass-first'):
+            soup = Soup(); log = []
+            part(soup, base('Lm'), 'piano', melody, Fr(0))
+            part(soup, base('Lb'), 'bass', bass, Fr(0))
+            sched = (lambda due: due.sort(key=lambda lc: lc[0][1] != 'piano')) if order == 'melody-first' \
+                    else (lambda due: due.sort(key=lambda lc: lc[0][1] == 'piano'))
+            while resolve(soup, lambda r: random.Random(0), schedule=sched, log=log): pass
+            perfs.append(sorted((e[0], e[2], e[3][0][1], e[3][1][1][0]) for e in log))
+        strikes = {}
+        for t, tau, p, d in perfs[0]: strikes.setdefault(t, []).append(p)
+        together = sorted((str(t), v) for t, v in strikes.items() if len(v) == 2)
+        return dict(notes=len(perfs[0]), identical_under_both_orders=perfs[0] == perfs[1],
+                    end=str(max(t for t, *_ in perfs[0]) + Fr(1, 2)), strike_together=together)
+    finally:
+        dur_value = old
+
 if __name__ == '__main__':
     for name, fn in [('T0 inertness of the unplayed', T0_inertness),
                      ('T1 law of one voice (pitch leads)', T1_law),
@@ -676,5 +711,6 @@ if __name__ == '__main__':
                      ('T8 idioms read from the past', T8_idioms),
                      ('T9 lookup factor = its formula', T9_table_equals_formula),
                      ('T10 reflective voice = constant voice', T10_reflective),
-                     ('T11 reflective voice: the unplayed is inert', T11_reflective_inert)]:
+                     ('T11 reflective voice: the unplayed is inert', T11_reflective_inert),
+                     ('T12 Twinkle, written', T12_twinkle)]:
         print(name); print('   ', fn()); sys.stdout.flush()
