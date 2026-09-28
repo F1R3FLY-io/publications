@@ -1,0 +1,1132 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{mathpazo}
+\usepackage{amsmath,amssymb,amsthm,mathtools,stmaryrd}
+\usepackage[expansion=false]{microtype}
+\usepackage{xcolor}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,calc,backgrounds}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
+\usepackage{pdflscape}
+
+\theoremstyle{definition}
+\newtheorem{requirement}{Requirement}
+\newtheorem{principle}{Principle}
+\newtheorem{decision}{Open decision}
+\newtheorem{obligation}{Obligation}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+\newcommand{\fl}{f1r3lang}
+\newcommand{\Camp}{CampF1R3}
+\newcommand{\Kind}{K1ndl1ng}
+\newcommand{\MUST}{\textsc{must}}
+\newcommand{\MUSTNOT}{\textsc{must not}}
+\newcommand{\SHOULD}{\textsc{should}}
+\newcommand{\MAY}{\textsc{may}}
+\usepackage[htt]{hyphenat}
+\newcommand{\code}[1]{\texttt{#1}}
+\setlength{\emergencystretch}{3em}
+
+\definecolor{kw}{RGB}{0,0,140}
+\definecolor{cm}{RGB}{90,110,90}
+\lstdefinelanguage{Rho}{
+  keywords={new,in,for,Nil,where,match,if,else,true,false,contract},
+  sensitive=true,
+  comment=[l]{//},
+  morestring=[b]",
+}
+\lstset{
+  language=Rho,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{kw},
+  commentstyle=\color{cm}\itshape,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  framerule=0.3pt,
+  rulecolor=\color{black!30},
+  xleftmargin=4pt,xrightmargin=4pt,
+  aboveskip=6pt,belowskip=6pt,
+  breaklines=true,
+  literate={<-}{{$\leftarrow$}}1 {<=}{{$\Leftarrow$}}1
+}
+
+\newcommand{\Gz}{F1R3Gaze}
+\newcommand{\enc}[1]{\llbracket #1 \rrbracket}
+\newtheorem{workpackage}{Work package}
+\newtheorem{finding}{Finding}
+\lstdefinelanguage{RustLite}{
+  keywords={pub,fn,struct,enum,trait,impl,for,type,let,mut,self,Self,use,mod,const,where,match,if,else,return,Some,None,Ok,Err,dyn,Box,Vec,Option,Result,u8,u16,u32,u64,i64,u128,bool,String,str},
+  sensitive=true, comment=[l]{//}, morestring=[b]",
+}
+\title{\textbf{\Gz{}: Implementation Specification}\\[4pt]
+\large A browser whose only execution mechanism is \fl{} on a native RSpace\\[6pt]
+\normalsize Version 0.1 (draft for review), companion to the architecture proposal v0.2}
+\author{Lucius Gregory Meredith\\
+\small CEO, F1R3FLY.io, and Chief Science Officer, F1R3FLY Industries}
+\date{28 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+The architecture proposal in \code{publications/f1r3gaze} settles \emph{what} the
+browser is: Blitz as the document engine, the \Camp{} executive as the only
+execution mechanism, a F1R3FLY shard as the server, Servo quarantined for legacy
+pages, and \code{f1r3x-wasm} as the reach tier. This document settles \emph{how}
+to build it. It pins the code it builds on, records what a line-by-line review of
+that code found --- including four places where the proposal assumes machinery
+that does not yet exist --- and then specifies, to the level of types, wire forms
+and algorithms, the upstream changes to \Camp{}, the \code{.knf} container, the
+tab executive and its frame loop, the replay log, the DOM protocol, every
+capability's protocol, the shard bridge and its light-client check, key-bound
+sessions, the graded resolver, the process model, devtools, the reach tier, the
+legacy tab, the projection gateway, and the conformance suite. It closes with work
+packages mapped onto the proposal's five gates, and with the obligations and
+decisions that remain open. The working name \Gz{} follows the name of the
+directory in which the proposal lives.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{Scope and conventions}\label{sec:scope}
+
+\subsection{What this document is}
+The proposal (v0.2) is normative for architecture; this specification is normative
+for implementation. Where the two disagree, this document says so explicitly and
+gives the reason, which in every case is something found in the code. The key words
+\MUST{}, \MUSTNOT{}, \SHOULD{} and \MAY{} have their usual meaning.
+
+\subsection{Pinned baselines}
+Everything below was read at the commits in Table~\ref{tab:pins}. Work packages
+\MUST{} re-pin at the start of each phase and re-run the findings of
+Section~\ref{sec:findings} against the new pins.
+
+\begin{table}[!htb]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}lp{3.1cm}X@{}}
+\toprule
+Repository & Commit (date) & Role here\\
+\midrule
+\code{F1R3FLY-io/campf1r3} & \code{b46e16c} (18 Sep 2026) & the executive: 11 crates, $\approx$12{,}600 lines, 170 tests, no external dependencies\\
+\code{F1R3FLY-io/f1r3node-rust} & \code{fce422a} (18 Sep 2026), \code{master} & the shard: HTTP API, \code{/ws/events}, \code{VersionedRegistry.rho}, \code{rho-pure-eval}, cost accounting\\
+\code{F1R3FLY-io/publications} & HEAD, 28 Sep 2026 & \code{f1r3gaze} (proposal), \code{campf1r3} (store, kernel, bytecode specs), \code{fuzzyware} (graded where-clauses)\\
+\code{F1R3FLY-io/embers} & HEAD, 28 Sep 2026 & prepare/sign/send deploy pattern; \code{firefly-client} crate\\
+\code{F1R3FLY-io/F1R3Drive} & \code{0f3849a} & chunked on-chain file layout; write-back cache with bulk deploys\\
+\code{F1R3FLY-io/F1R3Sky} & \code{57dcae5} & client-held keys through \code{@f1r3fly-io/embers-client-sdk}\\
+\code{DioxusLabs/blitz} & \code{674d7d2} (28 Sep 2026), 0.3.0-beta.2 & document engine; Rust 1.91, edition 2024\\
+\bottomrule
+\end{tabularx}
+\caption{Baselines. The node pins nightly-2026-02-09; \Camp{} targets Rust 1.75 and
+edition 2021; Blitz requires 1.91 and edition 2024.}
+\label{tab:pins}
+\end{table}
+
+\begin{requirement}[Toolchain]
+The \Gz{} workspace \MUST{} build on stable Rust $\geq$1.91, edition 2024. \Camp{}
+crates \MUST{} be consumed unmodified as git dependencies at a pinned revision
+(edition-2021 crates compile inside an edition-2024 workspace), and every change to
+them \MUST{} land upstream first (Section~\ref{sec:upstream}). No crate in the page
+path \MAY{} require nightly.
+\end{requirement}
+
+%======================================================================
+\section{Findings from the code review}\label{sec:findings}
+
+Each finding states what the proposal assumes, what the code does, and what this
+specification does about it.
+
+\begin{finding}[No ground data in the kernel]\label{f:ground}
+The proposal's examples send strings (\code{doc!("query1", "\#lamp", *found)}). The
+\Kind{} specification lists ``ground literals of every sort, collections, methods''
+as explicitly out of scope, and \code{k1ndl1ng-norm}'s \code{Node} has no literal
+constructor. \emph{Response:} a ground-data sort, K1G, specified in
+\S\ref{sec:u-ground} and scheduled into P0.
+\end{finding}
+
+\begin{finding}[Guards are parsed and discarded]\label{f:guards}
+At K2 the parser recognises \code{where} and then skips tokens to the closing
+parenthesis; nothing is recorded and nothing evaluates. The node's
+\code{rho-pure-eval} cannot be reused in the client: it depends on \code{models},
+which depends on \code{rspace++} (\code{heed}, \code{tokio}) and \code{tonic}.
+\emph{Response:} a portable evaluator, \code{k1ndl1ng-eval}
+(\S\ref{sec:u-guards}), differentially tested against \code{rho-pure-eval}.
+\end{finding}
+
+\begin{finding}[No host channels, and no way to meter]\label{f:apertures}
+\code{b3ll0ws::Machine} owns an \code{RSpace} fixed to \code{NoObserver}, so the
+page meter cannot be installed; and a send on a grounded name can only be seen by
+the host by polling the store. \emph{Response:} a \code{Machine} generic over its
+observer, and \emph{apertures} (\S\ref{sec:u-apertures}).
+\end{finding}
+
+\begin{finding}[No oracle seam]\label{f:oracle}
+The proposal speaks of an oracle $\omega$ to which a Graded profile attaches. In the
+code, choice is first-match inside \code{Space::try\_candidate}, and \code{Profile}
+is an enum whose \code{Free} variant is currently treated as \code{Deterministic}.
+\emph{Response:} a \code{Resolver} trait over enumerated candidates
+(\S\ref{sec:u-resolver}).
+\end{finding}
+
+\begin{finding}[Mixed persistence in joins is well defined here]
+\code{b3ll0ws::receipt\_parts} makes a continuation persistent if \emph{any} bind is
+persistent, while data persistence stays per datum. The proposal's lamp,
+\code{for (\_ <= clicks \& \_ <- off)}, therefore means ``a persistent handler that
+consumes one click and the \code{off} token'', which is what was intended. The
+example stands; Appendix~\ref{app:lamp} gives it in K1G form.
+\end{finding}
+
+\begin{finding}[Blitz dispatch is synchronous]\label{f:sync}
+\code{blitz\_dom::EventHandler::handle\_event} receives an \code{EventState} and must
+decide \code{prevent\_default} and \code{stop\_propagation} before it returns. The
+proposal's ``apply the default after a deadline'' cannot be implemented on it.
+\emph{Response:} static listener options, plus an opt-in synchronous drain bounded
+by a count of communications (\S\ref{sec:events}).
+\end{finding}
+
+\begin{finding}[Blitz is one process, and already hosts a script engine]\label{f:blitz}
+\code{blitz-shell} drives a \code{Box<dyn Document>} in the window's process;
+there is no renderer/browser split. \code{anyrender\_serialize} exists and makes a
+display-list transport feasible. Blitz now also ships \code{blitz-vibey-script}, a
+Boa-backed \code{ScriptDocument}; its shape (wrap \code{BaseDocument}, implement
+\code{Document::handle\_ui\_event} and \code{Document::poll}) is the template for
+\code{RhoDocument}. \emph{Response:} one OS process with a worker thread per tab
+through P3; process separation in P4 (\S\ref{sec:process}). \code{blitz-vibey-script}
+\MUSTNOT{} be linked into any binary that hosts \fl{} pages.
+\end{finding}
+
+\begin{finding}[Node API, registry and costs]\label{f:node}
+The node serves more than the proposal lists: \code{/api/explore-deploy},
+\code{/api/explore-deploy-by-block-hash}, \code{/api/data-at-name-by-block-hash},
+\code{/api/registry/\{uri\}} with a \code{block\_hash} query parameter,
+\code{/api/estimate-cost}, \code{/api/prepare-deploy},
+\code{/api/deploy-finalization-status/\{sig\}}, and \code{/ws/events} carrying
+\code{block-added}, \code{block-created}, \code{block-finalised} and deploy
+lifecycle events. There is no inclusion-proof endpoint. In
+\code{VersionedRegistry.rho} the header records that Step~6 (the public
+\code{rho:registry:1.0.0} entry point) and Step~7 (notify firing) were pending; the
+notify list is captured but ``ignored for now''. Storage cost is computed from
+\code{prost}-encoded sizes of \code{Par}s. \emph{Response:} freshness by
+re-resolution on \code{block-finalised} until Step~7 lands; the client meter is a
+local budget, and deploy costs are quoted from \code{/api/estimate-cost}
+(\S\ref{sec:meter}).
+\end{finding}
+
+\begin{finding}[Session names in \code{f1r3x-serve} are bearer tokens]\label{f:serve}
+A client attaches at a path of the form
+\code{ws://host/s/<session-name>}, choosing the name itself,
+and ``an unknown name creates the session''. Whoever learns the name owns the
+session. \emph{Response:} authenticated attach (\S\ref{sec:u-serve}).
+\end{finding}
+
+\begin{finding}[Existing F1R3FLY clients already do half the shard bridge]\label{f:embers}
+Embers exposes each mutation as \code{/prepare} (the server renders a \fl{} template
+and returns an unsigned contract under a JWT) and \code{/send} (the client returns it
+signed); F1R3Sky holds the private key in the client through the Embers SDK.
+Embers' \code{firefly-client} crate already signs \code{DeployData} with
+\code{secp256k1}, submits over gRPC and HTTP, and consumes \code{/ws/events}.
+F1R3Drive stores a file as a metadata map with a first chunk inline and further
+chunks on sub-channels, deployed in bulk from a write-back cache.
+\emph{Response:} the shard bridge depends on \code{firefly-client}
+(\S\ref{sec:shard}); F1R3Drive's layout is the on-chain fallback for blobs
+(\S\ref{sec:blobs}).
+\end{finding}
+
+\begin{finding}[One missing adapter]
+The proposal cites a \code{campf1r3-ispace} adapter for differential replay against
+\code{rspace++}. It is not in the pinned repository. Obligation~\ref{ob2:replay}
+carries it.
+\end{finding}
+
+%======================================================================
+\section{Workspace}\label{sec:workspace}
+
+A new repository, \code{F1R3FLY-io/f1r3gaze}, Apache-2.0, holds everything that is
+not an upstream change. Crates, in dependency order:
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}p{3.3cm}p{1.5cm}X@{}}
+\toprule
+Crate & Target & Contents\\
+\midrule
+\code{gaze-ground} & all & \code{Ground} values, conversion to and from K1G normal forms, the reply-tuple conventions of \S\ref{sec:proto-conv}\\
+\code{gaze-knf} & all & the \code{.knf} container: reader, writer, manifest, integrity strings\\
+\code{gaze-exec} & all & \code{TabExec}: executive, apertures, meter, resolver, recorder, frame loop\\
+\code{gaze-graded} & all & semirings, resolvers, deterministic PRNG, fairness, ceiling check\\
+\code{gaze-dom-core} & all & the DOM protocol engine over a \code{DomBackend} trait; name table; attenuation; event routing\\
+\code{gaze-dom-blitz} & native & \code{DomBackend} over \code{blitz-dom}; \code{RhoDocument}; \code{RhoEventHandler}\\
+\code{gaze-broker} & native & manifests to grants, policy, prompts, routing table, revocation\\
+\code{gaze-net} & native & \code{blitz\_traits::net::NetProvider} with hash verification; the \code{net} capability\\
+\code{gaze-store} & native & per-origin key-value store behind the \code{store} capability\\
+\code{gaze-shard} & native & shard bridge: keystore, deploys, registry, reads, proofs, sessions, watches\\
+\code{gaze-blob} & native & \code{BlobSource} implementations and the content cache\\
+\code{gaze-shell} & native & the application: windows, tabs, chrome, prompts, settings\\
+\code{gaze-devtools} & all & debug capability; the devtools page is itself \fl{}\\
+\code{gaze-reach} & wasm32 & \code{cdylib} bundling the executive and \code{gaze-dom-core}, plus \code{gaze-reach.js}\\
+\code{gaze-legacy} & native & P4: Servo in its own process\\
+\code{gaze-gateway} & native & P4: headless projection server\\
+\code{gaze-conformance} & all & the protocol and determinism suites of \S\ref{sec:testing}\\
+\code{f1r3c} & native & toolchain CLI: surface \fl{} or kernel text to \code{.knf}; site publishing\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{requirement}[Portable core]
+\code{gaze-ground}, \code{gaze-knf}, \code{gaze-exec}, \code{gaze-graded},
+\code{gaze-dom-core} and \code{gaze-devtools} \MUST{} build for
+\code{wasm32-unknown-unknown}, \MUST{} carry \code{\#![forbid(unsafe\_code)]}, and
+\MUSTNOT{} depend on \code{std::time}, threads, sockets, floating point on any path
+that affects output, or any crate outside the Rust standard library and \Camp{}.
+\end{requirement}
+
+\noindent
+This is the rule that makes the native browser and the reach tier one
+implementation: the protocol engine and the executive are the same code in both,
+and only the \code{DomBackend} differs.
+%======================================================================
+\section{Upstream changes to \Camp{}}\label{sec:upstream}
+
+Every change here is application-agnostic, so it respects the constraint recorded
+when \Camp{} was split from Rhobots-in-Space: nothing in that repository may know
+that a browser exists. Each change is behind a cargo feature, off by default, so the
+Rhobots path and the 170 existing tests are unaffected.
+
+\subsection{U1: ground data (level K1G, feature \code{ground})}\label{sec:u-ground}
+
+\paragraph{Sort.} A new process constructor carries ground values:
+\begin{lstlisting}[language=RustLite]
+pub enum Node { /* existing variants */, Ground(Lit) }
+pub enum Lit {
+    Bool(bool), Int(i64), Str(Box<str>), Bytes(Box<[u8]>),
+    List(Vec<Norm>), Tuple(Vec<Norm>), Map(Vec<(Norm, Norm)>),
+}
+\end{lstlisting}
+Collection elements are arbitrary normal forms, so names (as \code{*x}) may sit
+inside lists, tuples and maps. There are no floats: every consumer in this
+specification needs bit-identical results across targets.
+
+\paragraph{Encoding.} Tags continue the table of the \Kind{} specification in the
+unused range between \code{Wild} (\code{0x08}) and \code{Quote} (\code{0x10}):
+
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Tag & Constructor & Payload\\
+\midrule
+\code{0x09} & \code{Bool} & one byte, \code{0} or \code{1}\\
+\code{0x0A} & \code{Int} & zigzag LEB128 \code{i64}\\
+\code{0x0B} & \code{Str} & LEB128 length, UTF-8 bytes (no normalisation)\\
+\code{0x0C} & \code{Bytes} & LEB128 length, bytes\\
+\code{0x0D} & \code{List} & $n$, $\enc{e_1}\cdots\enc{e_n}$, source order\\
+\code{0x0E} & \code{Tuple} & $n$, $\enc{e_1}\cdots\enc{e_n}$, source order\\
+\code{0x0F} & \code{Map} & $n$, then pairs sorted by $\enc{k}$ bytewise; duplicate keys are a normalisation error\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Requirement \emph{order key is the encoding itself} of the \Kind{} specification is
+preserved. Whether bytewise order on these tags agrees with the node's
+\code{models} \code{Score} order for the corresponding \code{Expr}s is added to that
+specification's sort-agreement obligation; until it is discharged, a normal form
+containing ground data \MUSTNOT{} be claimed equal to a node term by hash.
+
+\paragraph{Surface syntax.} Rholang's literal syntax, as \code{rholang-tree-sitter}
+fixes it: \code{true}, \code{false}, decimal integers with optional sign, double-quoted
+strings with rholang's escapes, \code{[\ldots]}, \code{(a, b, \ldots)} with at least
+two elements, \code{\{k: v, \ldots\}}. Bytes have no surface form at K1G; they occur
+only in \code{.knf} encodings and in data injected by a host, and the printer shows
+them as \code{0x\ldots}. Methods remain out of scope.
+
+\paragraph{Matching.} In \code{k1ndl1ng-campf1r3::spatial}, a ground pattern matches
+a ground datum iff their encodings are equal; collection patterns match elementwise,
+with \code{FreeVar}, \code{Wild} and \code{Eval(Name::Free)} binding inside them as
+they already do inside processes. Map patterns match exactly (no row
+variables) in v1.
+
+\subsection{U2: guards (level K2, feature \code{guards})}\label{sec:u-guards}
+
+A new crate, \code{k1ndl1ng-eval}, pure and portable, evaluates the guard subset:
+ground literals, bound variables, \code{== != < <= > >=} on \code{Int} and on
+\code{Str} (bytewise), \code{+ - * / \%} on \code{Int} with checked arithmetic
+(overflow and division by zero make the guard evaluate to an error, which is
+\emph{not enabled}), \code{++} on \code{Str}, \code{Bytes} and \code{List},
+\code{and}, \code{or}, \code{not}, and two graded scalars used only in graded pages:
+\code{w(n, d)} and \code{cost(n)} (\S\ref{sec:graded}). The parser records the guard
+as a tree instead of skipping it; the normal form stores it on the \code{Receive}
+node under a new tag \code{0x21} (\code{Guard}), after the binds and before the body.
+
+\begin{requirement}[Guard evaluation site]
+Guards \MUST{} be evaluated in \code{Matcher::check\_commit(k, bound)}, which is
+where the store already asks, once per candidate. For crisp pages the result is a
+Boolean; for graded pages it is routed to the resolver (U5).
+\end{requirement}
+
+\subsection{U3: an observer-generic machine}\label{sec:u-observer}
+\begin{lstlisting}[language=RustLite]
+pub struct Machine<B: Backend = Direct, M: NameMinter = Sequential,
+                   O: Observer<Chan, BindPat, Data, Cont> = NoObserver> { .. }
+impl<B, M, O> Machine<B, M, O> {
+    pub fn with_observer(cfg: Config, backend: B, minter: M, observer: O) -> Self;
+}
+\end{lstlisting}
+\code{k1ndl1ng-campf1r3::rspace} gains \code{rspace\_with(cfg, observer)}.
+\code{f1r3x::Executive} keeps its signature.
+
+\subsection{U4: apertures}\label{sec:u-apertures}
+
+An aperture is a channel owned by the host. The page can send on it; the store
+never sees those sends.
+
+\begin{lstlisting}[language=RustLite]
+pub struct ApertureId(pub u32);
+pub struct Outbound { pub aperture: ApertureId, pub args: Vec<Norm>, pub seq: u64 }
+
+impl<B, M, O> Machine<B, M, O> {
+    /// Sends on `chan` go to the outbox instead of the store.
+    pub fn bind_aperture(&mut self, chan: Name, id: ApertureId);
+    pub fn unbind_aperture(&mut self, id: ApertureId);
+    pub fn take_outbound(&mut self) -> Vec<Outbound>;
+    /// Host-originated send: enqueued as a `Send` job at the tail of the queue.
+    pub fn inject(&mut self, chan: Name, args: Vec<Norm>);
+}
+\end{lstlisting}
+
+\begin{itemize}[nosep]
+\item A \code{Send} job whose channel is bound to an aperture is appended to the
+  outbox with a monotone \code{seq}, emits \code{Step::Outbound}, and calls a new
+  \code{Observer::observe\_aperture} hook, which may abort like any other.
+\item A persistent send on an aperture is delivered once and emits a diagnostic.
+\item A receipt on an aperture channel is stored and is inert: the host never
+  produces on apertures, it injects on names the page gave it.
+\item \code{inject} is the only host write path. It does not bypass the store,
+  the observer or the resolver.
+\end{itemize}
+
+\subsection{U5: the resolver seam and the Graded profile}\label{sec:u-resolver}
+
+\code{Profile} gains \code{Graded}. In that profile \code{try\_candidate} does not
+return the first admissible candidate; it enumerates up to
+\code{Config::max\_candidates} (default 256) admissible candidates in the existing
+deterministic order, asks the matcher for each one's value, and asks the resolver to
+choose.
+
+\begin{lstlisting}[language=RustLite]
+pub trait Matcher<P, A, K> {
+    fn get(&self, p: &P, a: &A) -> Option<A>;
+    fn check_commit(&self, k: &K, bound: &[A]) -> bool { true }
+    /// Graded profile only: the clause's value, opaque to the store.
+    fn weigh(&self, k: &K, bound: &[A]) -> Weight { Weight::ONE }
+}
+pub struct Weight(pub u128);            // semiring-specific packing
+pub trait Resolver: Send + Sync + 'static {
+    /// `ws` in candidate order; None means no candidate is enabled.
+    fn select(&self, site: Hash32, ws: &[Weight]) -> Option<usize>;
+}
+\end{lstlisting}
+
+\noindent
+The log gains \code{Event::Select \{ site, n, chosen \}}. In \code{Replay} the
+selection is read back from the log rather than recomputed, so sampled runs replay
+exactly. Truncation at \code{max\_candidates} emits a diagnostic and is recorded.
+
+\begin{remark}[Local versus contention-set resolution]\label{rem:local}
+The store resolves at a cut: the candidates are those that use the arriving record.
+The quantum paper normalises over the \emph{contention component}, the connected
+component of the conflict relation over the whole term. For idempotent semirings
+(Boolean, Viterbi, tropical) the cut-local argmax is what a page asks for. For
+sampled $\mathbb{R}_{\geq 0}$ pages it is an approximation of the paper's
+semantics, and the specification says so rather than hiding it. An exact
+\emph{round mode}, which collects the enabled sites of an admitted round, builds the
+conflict graph on shared occurrences and resolves per component, is
+Obligation~\ref{ob2:round}.
+\end{remark}
+
+\subsection{U6: a keyed minter}
+\code{Sequential} is a pure function of binder path and counter, which is right for
+Rhobots and wrong where names might be exported. \code{Keyed \{ seed: [u8; 32],
+counter: u64 \}} mints \code{blake2b\_256("k1ndl1ng/keyed/" || seed || counter ||
+path)}. The browser seeds it from the OS at tab creation and records the seed in
+the replay log.
+
+\subsection{U7: authenticated attach in \code{f1r3x-serve}}\label{sec:u-serve}
+\code{ready} gains a 32-byte nonce. A client attaches with
+\code{auth <pubkey-hex> <sig-hex>} over the nonce and the session path, and the
+session is keyed by the public key; the path segment becomes a label. An
+unauthenticated attach is refused unless the server is started with
+\code{--open}, which the browser never uses. The Rhobots client is updated in the
+same change.
+
+%======================================================================
+\section{The \code{.knf} container and how pages load}\label{sec:knf}
+
+\subsection{Format}
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Field & Contents\\
+\midrule
+magic & \code{F1R3KNF\textbackslash0} (8 bytes)\\
+version & \code{u16}, 1\\
+level & \code{u8}: 0 K0, 1 K1, 2 K1G, 3 K2 (implies K1G)\\
+sections & repeated \code{(tag u8, len LEB128, bytes)}, tags ascending, each at most once\\
+\quad\code{0x01} manifest & a K1G \code{Map} (below), encoded\\
+\quad\code{0x02} body & the \emph{ungrounded} normal-form encoding\\
+\quad\code{0x03} source map & optional; spans for diagnostics and devtools\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+The manifest is:
+\begin{lstlisting}
+{ "imports":  [ ("doc", "rho:gaze:doc"), ("net", "rho:gaze:net"), ... ],
+  "semiring": "boolean" | "viterbi" | "tropical" | "prob",
+  "fair":     false,
+  "ceiling":  "crisp" | "idempotent" | "sampled",
+  "budget":   { "frame": 20000, "sync": 512 } }
+\end{lstlisting}
+\code{imports} lists every free identifier of the body in level order with the
+capability it requests. An identifier the manifest does not list is a load error.
+
+\subsection{Identity}
+\begin{requirement}[Two hashes]
+The \emph{program hash} is \code{k1ndl1ng-norm}'s BLAKE2b-256 of the body, exactly
+as the executive computes it; it keys the parse and plan caches. The \emph{grant
+hash} is BLAKE2b-256 of \code{program hash || enc(manifest)}; it keys stored grants,
+because the manifest, not the body, states the authority requested.
+The HTML \code{integrity} attribute \MUST{} carry the program hash as
+\code{blake2b-256:<64 hex>}.
+\end{requirement}
+
+\subsection{In HTML}
+\begin{lstlisting}
+<script type="application/f1r3lang" src="app.knf"
+        integrity="blake2b-256:9f2c...e1"></script>
+\end{lstlisting}
+Inline kernel text is accepted with \code{level}, \code{imports} and
+\code{semiring} attributes standing in for the manifest; the loader parses it at the
+declared level and builds the manifest from the attributes. A document may carry
+several \fl{} scripts; each is a separate deploy into the same tab executive, in
+document order, sharing grants by identifier. Scripts of any other type are never
+executed; if a document has JavaScript scripts and no \fl{} script, the shell offers
+to reopen it in a legacy tab (\S\ref{sec:legacy}).
+
+\subsection{Load sequence}
+\begin{enumerate}[nosep]
+\item Blitz parses the document; \code{RhoDocument} collects \fl{} scripts.
+\item Each \code{src} is fetched through \code{gaze-net}; its program hash is
+  recomputed and compared with \code{integrity}. A mismatch is fatal to the page.
+\item The broker turns the manifest into grants (\S\ref{sec:broker}), prompting where
+  policy requires. The tab shows the grants before anything runs.
+\item For each import the broker returns a 32-byte key; the executive binds an
+  aperture on \code{Name::Unforgeable(key)} and grounds the body with
+  \code{ground\_free(keys)}. Denied imports are grounded to fresh keys that are
+  bound to nothing: dead channels.
+\item The grounded term is spawned; the first frame runs.
+\end{enumerate}
+
+%======================================================================
+\section{The tab executive}\label{sec:tabexec}
+
+\subsection{Structure}
+\begin{lstlisting}[language=RustLite]
+pub struct TabExec {
+    machine:   Machine<Direct, Keyed, PageMeter>,
+    apertures: BTreeMap<ApertureId, Service>,  // doc, net, store, ...
+    inbox:     Vec<Injection>,                 // filled by services between frames
+    recorder:  Recorder,                        // the replay log, section 6.3
+    dom:       gaze_dom_core::Engine,
+    frame:     u64,
+}
+\end{lstlisting}
+
+\subsection{The frame}
+\code{TabExec::frame(now\_ms)} is the whole driver. It is a pure function of the
+executive state, the inbox and \code{now\_ms}.
+
+\begin{enumerate}[nosep]
+\item \textbf{Order the inbox} by (source class, arrival sequence) with classes in
+  the fixed order: DOM replies, timers, input events, network, store, shard. Record
+  \code{Frame\{n, now\_ms\}} and then each \code{Inject}.
+\item \textbf{Inject} each entry with \code{Machine::inject}.
+\item \textbf{Run} \code{machine.run(budget)} where \code{budget} is the manifest's
+  frame budget in steps, reduced by the meter's remaining allowance.
+\item \textbf{Drain} \code{take\_outbound()} in \code{seq} order. DOM messages go to
+  \code{gaze-dom-core}, which answers reads from the snapshot taken at the start of
+  the frame and appends writes to the frame's commit batch; everything else goes to
+  its service, which will answer by adding to the inbox of a later frame.
+\item \textbf{Commit}: the batch is handed to the \code{DomBackend} and applied with
+  one \code{DocumentMutator} and one \code{flush()}. Replies the DOM engine produced
+  (names of created nodes, read results) enter the inbox for frame $n+1$.
+\end{enumerate}
+
+\begin{requirement}[Frame atomicity, restated]
+Writes produced in frame $n$ \MUST{} become visible to layout together, after step
+5. Reads in frame $n$ \MUST{} observe the document as committed at the end of frame
+$n-1$, and their replies \MUST{} arrive in frame $n+1$. A page therefore never
+observes a half-applied frame, and a read is never answered from state that another
+read in the same frame could not see.
+\end{requirement}
+
+\begin{remark}[Why not \code{Session::poll}]
+The proposal drives the executive through \code{f1r3x-host::Session::poll}. A
+\code{Session} exists to serialise rounds and scenes for a client across a boundary;
+in the page process the renderer is in-process and needs the outbox, not scenes.
+\code{TabExec} therefore drives the machine directly and keeps the host's admission
+rule for the debugger's lockstep mode. \code{Session} is used where it belongs: when
+devtools or a Rhobots headset attaches to a tab (\S\ref{sec:devtools}).
+\end{remark}
+
+\subsection{The replay log}\label{sec:log}
+A \code{.gzlog} file is a header and a record stream.
+\begin{description}[nosep,leftmargin=1.5em,style=nextline]
+\item[Header] program hashes of all scripts, grant hash, grants by capability kind
+  (never keys or secrets), minter seed, profile, semiring, executive and bridge
+  build identifiers.
+\item[Records] \code{Frame\{n, now\_ms\}}; \code{Inject\{class, aperture\_or\_name,
+  args\}} with arguments as K1G encodings; \code{Sync\{listener, event\}} for
+  synchronous drains; \code{Select\{site, n, chosen\}} copied from the store log;
+  \code{Commit\{n, batch\_hash\}}; \code{Budget\{n, exhausted\}}.
+\end{description}
+Replay loads the header, rebuilds the tab with the same seed and with services
+replaced by the log, and re-injects each record at its frame. The observable result
+--- the committed document at every frame, compared by \code{batch\_hash} --- \MUST{}
+be identical on \code{x86\_64}, \code{aarch64} and \code{wasm32}.
+
+%======================================================================
+\section{The DOM protocol}\label{sec:proto}
+
+This section discharges the proposal's Obligation on the DOM protocol. It is
+implemented once, in \code{gaze-dom-core}, over:
+\begin{lstlisting}[language=RustLite]
+pub trait DomBackend {
+    type Node: Copy + Ord;
+    fn query_in(&self, root: Self::Node, sel: &str, all: bool) -> Result<Vec<Self::Node>, SelErr>;
+    fn read(&self, n: Self::Node, what: Read) -> ReadResult;
+    fn apply(&mut self, batch: &[Write<Self::Node>]) -> Vec<Created<Self::Node>>;
+    fn is_descendant(&self, n: Self::Node, of: Self::Node) -> bool;
+}
+\end{lstlisting}
+\code{gaze-dom-blitz} implements it with \code{BaseDocument::query\_selector\_all\_in},
+\code{DocumentMutator} and \code{NodeId}; \code{gaze-reach} implements it over the
+host browser's DOM.
+
+\subsection{Conventions}\label{sec:proto-conv}
+\begin{itemize}[nosep]
+\item Every request is a send on an element name: \code{E!(verb, args\ldots, ret)}
+  where \code{verb} is a \code{Str} and \code{ret} is a name, or \code{E!(verb,
+  args\ldots)} for writes that need no acknowledgement.
+\item Every reply is one tuple on \code{ret}: \code{("ok", v)} or
+  \code{("err", code, detail)}. Receivers match with patterns such as
+  \code{for (@("ok", *el) <- r)}.
+\item Element names are unforgeable names minted by the engine, one per live node,
+  stable for the node's life: asking twice for the same node yields the same name,
+  so name equality is node equality.
+\item Error codes: \code{"attenuated"} (outside the holder's subtree),
+  \code{"detached"} (node removed), \code{"selector"}, \code{"type"} (wrong argument
+  sort), \code{"verb"}, \code{"quota"}, \code{"revoked"}.
+\end{itemize}
+
+\begin{principle}[Attenuation is the tree, enforced]
+Every verb that returns or addresses a node \MUST{} check
+\code{is\_descendant(target, holder\_root)} where \code{holder\_root} is the node of
+the name the request was sent on. \code{parent} and \code{closest} never return a node
+above the holder.
+\end{principle}
+
+\subsection{Verbs}
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}p{4.4cm}X@{}}
+\toprule
+Request & Meaning and reply\\
+\midrule
+\code{query1(sel, ret)} & first match in the subtree; \code{("ok", *E)} or \code{("err","none",sel)}\\
+\code{query(sel, ret)} & all matches; \code{("ok", [*E1, ...])}\\
+\code{children(ret)}, \code{parent(ret)}, \code{closest(sel, ret)} & navigation, attenuated\\
+\code{attr(k, ret)}, \code{setAttr(k, v)}, \code{removeAttr(k)} & attributes; \code{attr} replies \code{("ok", v)} or \code{("ok", Nil)}\\
+\code{text(ret)}, \code{setText(s)} & text content\\
+\code{value(ret)}, \code{setValue(s)} & form-control values\\
+\code{classAdd(c)}, \code{classRemove(c)}, \code{classToggle(c)} & class list\\
+\code{style(k, v)}, \code{unstyle(k)} & inline style properties\\
+\code{append(frag, ret)}, \code{prepend}, \code{before}, \code{after}, \code{replaceWith} & insert a fragment; replies \code{("ok", \{ref: *E\})} for every \code{("ref", k)} marker\\
+\code{setHTML(html)} & parse with \code{html5ever} and replace children; scripts in the fragment are inert\\
+\code{remove()} & detach; the name dies\\
+\code{rect(ret)} & layout box as \code{(x, y, w, h)} in integer CSS pixels, from the last committed layout\\
+\code{focus()}, \code{blur()}, \code{scrollIntoView()} & focus and scroll\\
+\code{listen(type, ch, opts, ret)} & subscribe (\S\ref{sec:events}); replies \code{("ok", *sub)}; \code{sub!("cancel")}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+A fragment is either a \code{Str} of HTML or a structured term, which avoids
+string parsing and is the preferred form:
+\begin{lstlisting}
+("el", "li", {"class": "todo"}, [ ("text", "buy milk"), ("ref", "check") ])
+\end{lstlisting}
+The document root name \code{doc} additionally answers \code{title}, \code{setTitle},
+\code{head}, \code{body} and \code{location}. Navigation is the \code{nav}
+capability, not a document verb.
+
+\subsection{Events}\label{sec:events}
+
+\code{listen(type, ch, opts, ret)} with \code{opts} a map of Booleans:
+\code{capture}, \code{once}, \code{prevent}, \code{stop}, \code{decide}.
+Each occurrence is injected as one datum on \code{ch}:
+\begin{lstlisting}
+( type, { "target": *E, "x": 120, "y": 44, "button": 0, "key": "Enter",
+          "mods": ["shift"], "value": "...", "reply": *R } )
+\end{lstlisting}
+Fields absent for a type are absent from the map. \code{target} is always inside
+the listener's subtree, since the listener was installed on a name for that subtree.
+
+\code{RhoEventHandler} implements \code{blitz\_dom::EventHandler}. For each
+\code{DomEvent} it walks Blitz's chain, capture phase then bubble phase, and for
+each node with listeners of that type:
+\begin{enumerate}[nosep]
+\item applies static options: \code{prevent} calls \code{EventState::prevent\_default},
+  \code{stop} calls \code{stop\_propagation} after this node;
+\item if \code{decide} is false (the default), queues the datum for the next frame;
+\item if \code{decide} is true, injects the datum now and runs the tab executive
+  synchronously for at most the manifest's \code{sync} budget in steps, then reads
+  whatever \code{"prevent"} and \code{"stop"} messages arrived on \code{R}. The drain
+  is recorded as \code{Sync}. If the budget expires, the default action proceeds.
+\end{enumerate}
+The budget is in steps, not milliseconds, so the decision is deterministic and
+replayable. Text editing, caret movement and IME composition are Blitz's; the page
+sees \code{input} events with \code{value}.
+%======================================================================
+\section{Capabilities and the broker}\label{sec:broker}
+
+\subsection{Grants}
+The broker maps each manifest import to a grant. A grant is a routing-table entry
+\code{(tab, ApertureId) $\mapsto$ (service, attenuation, quota)}; the page holds only
+the aperture's unforgeable name.
+
+\begin{principle}[Revocation is a table update]
+The proposal revokes by killing a forwarder process. With apertures the forwarder is
+the routing entry: removing it makes every later send on the name answer
+\code{("err","revoked")}, and the page cannot tell a revoked name from a dead one.
+\end{principle}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}p{2.7cm}p{3.1cm}X@{}}
+\toprule
+Capability & Default policy & Attenuation\\
+\midrule
+\code{rho:gaze:doc} & granted & the document root; components get subtrees by name passing\\
+\code{rho:gaze:log} & granted & console of this tab\\
+\code{rho:gaze:clock} & granted & frame ticks, timers, frame-quantised time\\
+\code{rho:gaze:rand} & granted & OS entropy, recorded in the log\\
+\code{rho:gaze:net} & granted, same site & origin allow-list; widened only by prompt\\
+\code{rho:gaze:store} & granted & this origin's space; quota\\
+\code{rho:gaze:nav} & granted & same-site navigation; cross-site opens a new tab\\
+\code{rho:gaze:shard} & prompt & per verb class: read, explore, deploy, session\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+Grants are stored per (site identity, grant hash); a new manifest is a new request.
+The shell lists a tab's grants and open sessions, and any entry can be revoked.
+
+\subsection{Protocols}
+\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt]
+\item[\code{clock}] \code{("frames", ch)} injects \code{("tick", n, now\_ms)} each
+  frame until \code{("stop", ch)}; \code{("after", ms, ch)} fires once; \code{("now",
+  ret)} replies with the current frame's time.
+\item[\code{log}] \code{(level, v)} with level \code{"debug"}, \code{"info"},
+  \code{"warn"} or \code{"error"}; \code{v} is printed with \code{show\_pretty}.
+\item[\code{rand}] \code{("u64", ret)}, \code{("bytes", n, ret)}.
+\item[\code{net}] \code{("fetch", \{"url", "method", "headers", "body",
+  "integrity"\}, ret)} replies \code{("ok", \{"status", "headers", "body",
+  "digest"\})}. With \code{integrity} set, the body is verified before delivery and a
+  mismatch is \code{("err","integrity",url)}. Streaming and WebSockets are deferred;
+  the shard bridge covers live data.
+\item[\code{store}] \code{("get", k, ret)}, \code{("put", k, v, ack)}, \code{("del", k,
+  ack)}, \code{("list", prefix, ret)}. Keys are \code{Str}; values are any closed
+  normal form, stored as encodings. Unforgeable names inside stored values are
+  rejected, because a name must not outlive the tab that minted it.
+\item[\code{nav}] \code{("go", url)}, \code{("replace", url)}, \code{("back")},
+  \code{("state", v)}.
+\item[\code{shard}] \S\ref{sec:shard}.
+\end{description}
+
+\noindent
+\code{gaze-store} keeps one append-only file per origin with periodic compaction.
+The proposal's ``persistent space as a \Camp{} checkpoint'' is replaced by this
+key-value protocol: it needs no upstream store serialisation and is simpler to
+quota.
+
+\subsection{The page meter}\label{sec:meter}
+\code{PageMeter} implements \code{Observer}. It debits a per-tab allowance for each
+produce, consume, COMM and aperture send, plus a per-byte charge on datum
+encodings, from a table in \code{gaze-exec}. The allowance is refilled per frame,
+larger for the foreground tab. Exhaustion aborts the operation atomically; the tab
+stops making progress, the shell shows why, and the user can grant more. The meter
+is a local budget and \MUSTNOT{} be presented as a prediction of shard cost:
+shard cost is computed from \code{prost} sizes of \code{Par}s
+(Finding~\ref{f:node}), so deploy costs are always quoted from
+\code{/api/estimate-cost}.
+
+%======================================================================
+\section{The shard bridge}\label{sec:shard}
+
+\subsection{Components}
+\code{gaze-shard} runs in the browser process on \code{tokio} and depends on
+Embers' \code{firefly-client} for \code{DeployData} construction, \code{secp256k1}
+signing, submission and the \code{/ws/events} stream. It adds the keystore, the
+registry resolver, the assurance ladder, the light client and sessions. Keys live in
+the operating system's credential store; each (user, site) pair gets its own key,
+generated on first grant, so sites cannot correlate a user by key.
+
+\subsection{Addresses}
+\begin{lstlisting}
+f1r3://<publisher-pubkey-hex>/<project>@<semver-range>/<path>
+f1r3h://blake2b-256/<64 hex>
+\end{lstlisting}
+The first resolves through \code{rho:serve:1:<pubkey>:<project>:<range>}; the second
+names immutable content directly and may be fetched from anywhere.
+
+\subsection{Site manifest}
+A published version's registry entry holds, as its code, a process that sends a K1G
+map:
+\begin{lstlisting}
+{ "gaze": 1, "entry": "index.html",
+  "files": { "index.html": 0x9f2c..., "app.knf": 0x41aa..., "style.css": 0x07be... },
+  "mirrors": [ "https://cdn.example.org/blob/" ] }
+\end{lstlisting}
+Every file is named by its BLAKE2b-256 hash, so the node never has to agree with
+the client on how to hash a \code{Par}; this settles the proposal's obligation on
+canonical code hashes for sites, because code travels as \code{.knf} bytes
+addressed by hash rather than as registry terms.
+
+\subsection{Resolution}
+\begin{enumerate}[nosep]
+\item Take the last finalized block from \code{/api/last-finalized-block} on each
+  configured observer.
+\item Query \code{/api/registry/\{uri\}?block\_hash=B} for the versioned URN.
+\item Verify the answer at the configured rung (\S\ref{sec:ladder}).
+\item Reject if \code{B} is older than the highest finalized block at which this
+  publisher's binding was previously seen (freshness).
+\item Fetch files by hash from any source (\S\ref{sec:blobs}); verify each hash.
+\item Subscribe: on each \code{block-finalised} event, re-resolve open sites and
+  notify tabs of changes. When \code{VersionedRegistry} Step~7 lands, subscribe to the
+  notify channel instead.
+\end{enumerate}
+
+\subsection{The assurance ladder in code}\label{sec:ladder}
+Every shard reply to a page carries its rung as the second tuple field, as in
+\code{("ok", rung, v)}, where \code{rung} is one of \code{"node"}, \code{"quorum"},
+\code{"proof"} or \code{"replayed"}.
+
+\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt]
+\item[node] one observer's answer.
+\item[quorum] identical canonical encodings from $k$ of $n$ configured observers
+  run by distinct operators (default $k=2$, $n=3$).
+\item[proof] requires node work package N1: \code{GET /api/proof/data-at-name} and
+  \code{GET /api/proof/registry/\{uri\}}, each returning the block header,
+  justification signatures, \code{post\_state\_hash} and the radix-trie path. The
+  client checks signatures against a bonded-set checkpoint shipped with the browser
+  and advanced only through finalized blocks it has verified, requires signatures
+  from validators holding more than two thirds of bonded stake, and recomputes the
+  path's BLAKE2b-256 hashes up to \code{post\_state\_hash}.
+\item[replayed] fetch the process by hash and its inputs at the proof rung, and run
+  it locally in \code{Replay}; available only once Obligation~\ref{ob2:replay} is
+  discharged.
+\end{description}
+
+\subsection{Page verbs}
+\code{("lookup", uri, ret)}, \code{("read", name, ret)} (data at a name the site
+names by URN or registry entry), \code{("explore", knf\_hash, args, ret)} (exploratory
+deploy), \code{("deploy", knf\_hash, args, opts, ret)}, \code{("watch", uri, ch)} and
+\code{("session", uri, ret)}. \code{deploy} always prompts, showing the cost from
+\code{/api/estimate-cost}, and replies once with the deploy id and again with the
+finalization status from \code{/api/deploy-finalization-status}. Pages send code by
+hash: the bridge refuses to sign a term the page assembled from strings.
+
+\subsection{Blobs}\label{sec:blobs}
+\begin{lstlisting}[language=RustLite]
+pub trait BlobSource { fn get(&self, h: [u8; 32]) -> BlobFuture; fn name(&self) -> &str; }
+\end{lstlisting}
+Implementations, tried in order: the local content cache; mirrors named in the site
+manifest and in settings (\code{GET <mirror><hex>}); and, for blobs up to 256\,KiB,
+the on-chain layout F1R3Drive already uses --- a metadata map with a first chunk
+inline and further chunks on sub-channels --- read through data-at-name. Every source
+is untrusted; the hash decides.
+
+\subsection{Sessions}\label{sec:sessions}
+\code{("session", uri, ret)} makes the bridge generate a fresh key pair, deploy
+\code{svc!("open", pubkey, ack)} signed with it, and reply to the page with a
+session name --- an aperture whose sends the bridge turns into deploys (or session-host
+messages) signed by that key. The page holds the name; the bridge holds the key.
+The service keys its session channel by the public key and accepts a message only
+from a deploy whose authenticated deployer (\code{rho:deploy:data},
+\code{rho:system:deployerId:ops}, as \code{VersionedRegistry} already does) matches.
+\code{DeployData}'s timestamp, \code{validAfterBlockNumber} and
+\code{expiration\_timestamp} stop replay. Closing the tab destroys the key.
+
+Interactive traffic goes to a session host: an \code{f1r3x-serve} beside a node,
+attached with U7's authenticated handshake, running \code{Deterministic}, which
+deploys its log hash to the shard every $N$ rounds or $T$ seconds, whichever first.
+
+%======================================================================
+\section{The graded resolver}\label{sec:graded}
+
+\code{gaze-graded} implements \code{Resolver} and the \code{weigh} packing for four
+semirings. All arithmetic is on integers.
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}p{2.1cm}p{3.4cm}p{2.8cm}X@{}}
+\toprule
+Semiring & Representation & $\oplus$, $\otimes$ & Resolver\\
+\midrule
+Boolean & \code{bool} & or, and & first enabled (today's behaviour)\\
+Viterbi & Q32.32 in \code{u64}, $[0,1]$ & max, product rounded down & argmax; ties by candidate order\\
+tropical & \code{i64}, $+\infty$ sentinel & min, saturating $+$ & argmin; ties by candidate order\\
+$\mathbb{R}_{\geq0}$ & Q32.32 in \code{u64} & saturating $+$, product & sample $\propto$ weight with a 128-bit draw from a xoshiro256** stream seeded from the minter seed\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+In a graded page, a guard is a clause: a Boolean subexpression is crisp ($1$ or
+$0$), \code{w(n, d)} is the scalar $n/d$ rounded down to Q32.32, \code{cost(n)} is a
+tropical scalar, and \code{and} and \code{or} are $\otimes$ and $\oplus$ --- the
+fuzzyware papers' reading of conjunction and disjunction. With \code{"fair": true}
+the resolver adds the least positive value $\varepsilon$ to every enabled candidate
+before choosing, which is the $\psi\oplus\varepsilon$ weak-fairness combinator.
+
+\begin{requirement}[Ceiling]
+The manifest's \code{ceiling} bounds the strength of every clause the tab may run:
+\code{crisp} admits Boolean clauses only, \code{idempotent} adds Viterbi and tropical,
+\code{sampled} adds $\mathbb{R}_{\geq0}$. The static check covers the body at load;
+\code{PageMeter::observe\_consume} checks every continuation at the cut, which covers
+code that arrived by reflection and was dropped, and aborts one that exceeds the
+ceiling.
+\end{requirement}
+
+\noindent
+Learning in the fibre, and $V=\mathbb{C}$, are out of scope; the resolver seam is
+where they would attach.
+
+%======================================================================
+\section{Process model}\label{sec:process}
+
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[P1--P3: one process, a worker per tab.] The shell's main thread owns windows
+  and every tab's \code{RhoDocument}. Each tab's \code{TabExec} runs on its own
+  worker thread. Events go from \code{RhoEventHandler} to the worker over a channel;
+  commit batches come back and are applied in \code{RhoDocument::poll}, which then
+  requests a redraw. Synchronous \code{decide} drains block the main thread for at
+  most the \code{sync} budget. Isolation between pages is by capability discipline
+  and safe Rust.
+\item[P4: page processes.] A page process owns its \code{BaseDocument}, layout and
+  painting, and ships frames to the browser process as \code{anyrender\_serialize}
+  scenes over shared memory; the browser process composites and forwards input. The
+  measurement that decides between scene transport and shared GPU textures is
+  Obligation~\ref{ob2:ipc}. Process per site, as the proposal requires.
+\end{description}
+
+%======================================================================
+\section{Devtools, reach, legacy and gateway}\label{sec:devtools}
+
+\paragraph{Devtools.} A \code{rho:gaze:debug} capability, granted only to the
+built-in devtools page, attaches to a target tab through \code{f1r3x-host}'s session
+vocabulary (\code{pause}, \code{step}, \code{play}, \code{scene}, \code{log}) plus
+\code{checkpoints} and \code{revert}. Time travel keeps a ring of soft checkpoints
+every 60 frames (default 32 checkpoints); stepping back reverts to the nearest
+checkpoint and replays the log to the target frame. The devtools page is written in
+\fl{}, which makes it the first real application of the platform. A Rhobots headset
+can attach to a tab the same way.
+
+\paragraph{Reach tier.} \code{gaze-reach} compiles the executive, \code{gaze-exec}
+and \code{gaze-dom-core} into one \code{cdylib} with the same export conventions as
+\code{f1r3x-wasm} (no \code{wasm-bindgen}). \code{gaze-reach.js}, a few hundred
+lines, supplies the \code{DomBackend} imports over a table of host elements indexed
+by \code{u32}, the frame callback from \code{requestAnimationFrame}, \code{fetch}
+with hash verification for \code{net}, and \code{IndexedDB} for \code{store}.
+Sessions and deploys are unavailable in the reach tier in v1, since a stock browser
+offers no key custody the page cannot reach.
+
+\paragraph{Legacy tab (P4).}\label{sec:legacy} \code{gaze-legacy} embeds the \code{servo} crate at its
+current LTS branch in a separate process, connected to the browser process by one
+channel carrying ground values encoded as K1G. It gets no grants. CEF behind the
+same channel is the fallback.
+
+\paragraph{Gateway (P4).} \code{gaze-gateway} runs \code{RhoDocument} without a
+window, runs the page for a bounded number of frames or to quiescence, serialises the
+document, and responds with \code{ETag} set to the hash, \code{Content-Digest} using
+\code{sha-256} (RFC~9530 registers SHA-2, not BLAKE2b) plus
+\code{F1R3-Digest:~blake2b-256=\ldots}, an RFC~9421 signature by the gateway's own
+Ed25519 key (secp256k1 is not a registered RFC~9421 algorithm) plus the publisher's
+secp256k1 signature over the hash in \code{F1R3-Publisher-Signature}, and
+\code{Link:~<f1r3://\ldots>;~rel="alternate"}.
+
+%======================================================================
+\section{Testing and conformance}\label{sec:testing}
+
+\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt]
+\item[Protocol conformance] a corpus of \code{.knf} pages with scripted injections
+  and expected committed-DOM hashes per frame, run against \code{gaze-dom-blitz} and
+  against \code{gaze-reach} in headless Chromium and Firefox. Both bridges \MUST{}
+  pass the same corpus.
+\item[Determinism] every corpus run is replayed from its log on \code{x86\_64},
+  \code{aarch64} and \code{wasm32}; per-frame \code{batch\_hash} sequences must be
+  identical.
+\item[Differential] \code{k1ndl1ng-eval} against \code{rho-pure-eval} on generated
+  guards over the shared subset; K1G encoding order against \code{models} Score order;
+  \Camp{} against \code{rspace++} on recorded logs (Obligation~\ref{ob2:replay}); the
+  graded resolvers against \code{fuzzyware/gradedsim.py} on shared examples.
+\item[Hostile proxy] a test harness proxy that rewrites, reorders, truncates and
+  replays responses between the browser and a local three-validator shard; gate G2
+  requires that every rewritten resource is refused and every replayed session
+  request rejected.
+\item[Fuzzing] \code{cargo-fuzz} targets for the \code{.knf} reader, the K1G decoder,
+  the DOM protocol engine, and \code{setHTML} fragments.
+\item[Performance] TodoMVC with 1{,}000 items and a 200-mutation interaction: the
+  executive and commit portion of a frame \SHOULD{} stay under 4\,ms at p95 on an
+  M-series laptop. Missing it triggers the compiled-backend question the bytecode
+  note already frames.
+\end{description}
+
+%======================================================================
+\section{Work packages and schedule}\label{sec:plan}
+
+Phases and gates are the proposal's, from 5 October 2026. The upstream packages
+move into P0, because gate G0 --- a program changing rendered text --- cannot pass
+without ground strings and apertures. Estimates are engineer-weeks.
+
+\begin{center}\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\linewidth}{@{}p{1.1cm}p{0.9cm}X p{1.1cm}@{}}
+\toprule
+WP & Phase & Deliverable & Est.\\
+\midrule
+U1 & P0 & K1G ground data: AST, parser, normaliser, encoding, matcher, printer & 3\\
+U3, U4 & P0 & observer-generic machine; apertures & 2\\
+B0 & P0 & \code{RhoDocument} spike: K1G program sets text through a minimal bridge; frame-time and wasm-size measurements & 2\\
+E1 & P1 & \code{gaze-knf}, loader, manifest, grounding through a stub broker & 2\\
+E2 & P1 & \code{TabExec}, frame loop, recorder, replay & 3\\
+D1 & P1 & \code{gaze-dom-core} with the full verb set; \code{gaze-dom-blitz} & 4\\
+D2 & P1 & events: \code{RhoEventHandler}, static options, \code{decide} drains & 2\\
+T1 & P1 & conformance and determinism suites; TodoMVC in \fl{} & 2\\
+C1 & P2 & broker, prompts, revocation; \code{clock}, \code{log}, \code{rand}, \code{net}, \code{store}, \code{nav} & 3\\
+S1 & P2 & shard bridge: keystore, resolution, quorum rung, deploys, watches, blobs & 4\\
+S2 & P2 & sessions; U7 in \code{f1r3x-serve}; session host with log anchoring & 3\\
+N1 & P2 & node: proof endpoints; client light-client check & 4\\
+M1 & P2 & page meter; cost quotes & 1\\
+U2, U5 & P3 & guards and \code{k1ndl1ng-eval}; resolver seam; \code{Graded} profile & 4\\
+G1 & P3 & \code{gaze-graded}: four semirings, fairness, ceiling & 2\\
+V1 & P3 & devtools page, time travel, headset attach & 3\\
+R1 & P1--P3 & reach tier & 4\\
+L1 & P4 & legacy process (Servo; CEF fallback) & 4\\
+W1 & P4 & gateway & 2\\
+X1 & P4 & page processes and scene transport & 4\\
+K1 & P4 & DNS and passkey bootstrap; chrome as a \fl{} page; installers & 4\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+The total is about 62 engineer-weeks over 38 calendar weeks, consistent with the
+proposal's three to four engineers. The schedule risk is P0: seven engineer-weeks of
+work in four calendar weeks requires the upstream packages to start on day one with
+two engineers, one of them familiar with \Camp{}.
+
+%======================================================================
+\section{Obligations and decisions}\label{sec:open}
+
+\begin{obligation}\label{ob2:replay}
+Build the \code{campf1r3-ispace} adapter and establish whether \Camp{} replays
+\code{rspace++} logs; the \emph{replayed} rung depends on it.
+\end{obligation}
+
+\begin{obligation}\label{ob2:round}
+Specify and implement round-mode resolution over contention components, and state
+for which pages the cut-local resolver of Remark~\ref{rem:local} is exact.
+\end{obligation}
+
+\begin{obligation}\label{ob2:ipc}
+Measure scene serialisation against shared GPU textures for P4, on all three
+desktop platforms.
+\end{obligation}
+
+\begin{obligation}
+Extend the \Kind{} sort-agreement obligation to the K1G tags, and settle whether
+K1G's encoding should match the node's \code{Expr} encoding closely enough for
+content hashes to agree across the two.
+\end{obligation}
+
+\begin{obligation}
+Specify the passkey-to-session-key delegation (P-256 WebAuthn assertion authorising
+a secp256k1 session key), carried over from the proposal.
+\end{obligation}
+
+\subsection{Proposal decisions this specification settles, subject to review}
+\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt]
+\item[DOM granularity] per-element verbs plus structured fragments with
+  \code{ref} markers; whole-subtree patches as quoted processes are not needed.
+\item[Blob storage] untrusted mirrors first, F1R3Drive's on-chain layout as the
+  fallback for small blobs, a node blob endpoint not required.
+\item[Repository and name] \code{F1R3FLY-io/f1r3gaze}, working name \Gz{}.
+\end{description}
+
+\subsection{Still open}
+Compilation of surface \fl{} in the browser (this specification keeps it out of v1);
+HTML versus a DDL-defined document language; Servo versus CEF for the legacy tab;
+end-to-end encryption versus session-host confinement for private sessions.
+
+%======================================================================
+\appendix
+\section{The lamp, in K1G}\label{app:lamp}
+\begin{lstlisting}
+new found, sub, clicks, on, off in {
+  doc!("query1", "#lamp", *found) |
+  for (@("ok", *lamp) <- found) {
+    lamp!("listen", "click", *clicks, {}, *sub) |
+    off!(Nil) |
+    for (_ <= clicks & _ <- off) { lamp!("classAdd", "lit")    | on!(Nil)  } |
+    for (_ <= clicks & _ <- on)  { lamp!("classRemove", "lit") | off!(Nil) }
+  }
+}
+\end{lstlisting}
+\noindent
+Manifest: \code{imports = [("doc", "rho:gaze:doc")]}, semiring \code{boolean},
+ceiling \code{crisp}. The two handlers are persistent continuations that each consume
+one click and one token; exactly one token exists, so exactly one fires per click.
+The reply to \code{listen} on \code{sub} is left unconsumed, which is permitted.
+
+%======================================================================
+\begin{thebibliography}{99}\small
+\bibitem{prop} L.~G.~Meredith, \emph{A Browser with f1r3lang as its Native Execution
+  Mechanism}, v0.2, \path{publications/f1r3gaze/f1r3-browser-proposal.tex}, 28 Sep 2026.
+\bibitem{camp} L.~G.~Meredith, \emph{CampF1R3}, \emph{K1ndl1ng}, \emph{Bytecode, or the
+  normal form?}, \path{publications/campf1r3}; implementation in \code{F1R3FLY-io/campf1r3}
+  (\code{README.md}, \code{HOSTING.md}).
+\bibitem{fuzzy} L.~G.~Meredith, \emph{Graded Where-Clauses} and \emph{Races Decided by the
+  Born Rule} (v6), \path{publications/fuzzyware}.
+\bibitem{node} \code{F1R3FLY-io/f1r3node-rust}: \path{node/src/rust/web/web_api_routes.rs},
+  \path{node/src/rust/web/events_info.rs},
+  \path{casper/src/main/resources/VersionedRegistry.rho}, \path{rho-pure-eval},
+  \path{rholang/src/rust/interpreter/accounting/costs.rs}.
+\bibitem{embers} \code{F1R3FLY-io/embers}: \path{packages/firefly-client},
+  \path{packages/embers/src/api}.
+\bibitem{drive} \code{F1R3FLY-io/F1R3Drive}: \path{docs/rholang_data_storage.md},
+  \path{docs/system_data_flow.md}.
+\bibitem{blitz} DioxusLabs, \code{blitz} 0.3.0-beta.2: \path{packages/blitz-dom}
+  (\code{Document}, \code{EventHandler}, \code{DocumentMutator}, query selectors),
+  \path{packages/blitz-traits/src/net.rs}, \path{packages/blitz-vibey-script}.
+\bibitem{rfc9530} R.~Polli, L.~Pardue, \emph{Digest Fields}, RFC~9530, 2024.
+\bibitem{rfc9421} A.~Backman, J.~Richer, M.~Sporny, \emph{HTTP Message Signatures},
+  RFC~9421, 2024.
+\end{thebibliography}
+\end{document}
