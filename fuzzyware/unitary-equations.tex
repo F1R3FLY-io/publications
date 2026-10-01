@@ -1,0 +1,619 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+\usepackage[T1]{fontenc}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\setlength{\emergencystretch}{2.5em}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{decision}[theorem]{Decision}
+\newtheorem{question}[theorem]{Open question}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% NOTATION RULES OBSERVED THROUGHOUT:
+%   * the rho calculus is never written with the Greek letter rho
+%   * quoting is @P, dropping is *x; corner quotes are pre-2016 notation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\sem}[1]{[\![#1]\!]}
+\newcommand{\ket}[1]{\lvert #1 \rangle}
+\newcommand{\cpl}[1]{\langle\!\langle #1 \rangle\!\rangle}
+\newcommand{\Zt}{\mathbb{Z}/2}
+\newcommand{\Ze}{\mathbb{Z}/8}
+\newcommand{\Sc}{\mathbb{Z}[\tfrac{1}{\sqrt2},\omega]}
+\newcommand{\out}[2]{#1!#2}
+\newcommand{\rcv}[3]{\mathsf{for}(#1 \leftarrow #2)#3}
+\newcommand{\drop}[1]{{*}#1}
+\newcommand{\bdrop}[2]{{*}(#1,\,#2)}
+\newcommand{\Sig}[2]{\Sigma #1.\,#2}
+\newcommand{\red}{\rightarrow}
+\newcommand{\scong}{\equiv}
+\newcommand{\fv}{\mathrm{fv}}
+
+\title{Unitary in the Equations, Measurement in the Reductions\\[0.4em]
+\large A paired-message \rhoc{} calculus with a value binder,\\
+path-sum equations, and traced execution}
+\author{L.G. Meredith\\ F1R3FLY.io}
+\date{Working note, 1 October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note records a design session exploring a single intuition: in a
+graph-structured lambda theory the \emph{unitary} behaviour lives in the
+(possibly augmented) equations, while \emph{measurement} lives in the
+reductions. The \rhoc{} calculus with graded where-clauses is the vehicle,
+because every weighted GSLT translates into it. Working the intuition out
+forces a small number of changes to \rhoc{}: messages and names become
+\emph{pairs} of a process and a phase label; dropping splits into a binary,
+phase-preserving \emph{equation} and a unary, semantically-substituted
+\emph{execution} whose erasure is \emph{traced}; superposition enters through
+a binder $\Sigma$ over $\Zt$-valued variables; and couplings between values are
+inert atoms governed by path-sum equations, which are the algebraic face of the
+graph-like ZX-calculus. Reductions then come in exactly two measuring flavours
+(resolving a value, or running received code) and one coherent flavour
+(binding receipts). Persistent receipts are dropped, recursion is recovered by
+reflection, and loop guards are classical by theorem. A worked example computes
+$HZH\ket{0} = \ket{1}$ by equations alone, and contrasts it with a
+which-rail detector that destroys the interference by reductions alone. The
+note closes with the decisions taken and the questions left open.
+\end{abstract}
+
+\tableofcontents
+
+%=============================================================================
+\section{The intuition and where it comes from}
+%=============================================================================
+
+The intuition under study is:
+
+\begin{quote}
+\emph{The unitary behaviour of a quantum-interpreted GSLT lives in its
+(possibly augmented) equations; measurement lives in its reductions.}
+\end{quote}
+
+It has roots in earlier work in this line. The first version of the
+weighted-GSLT note assigned the Hamiltonian to equations and the jump
+operators to rewrites, and its second version distilled the slogan that a
+weighted GSLT is quantum exactly to the extent that its presentation withholds
+equations from the quotient. What is new here is taking the intuition as the
+\emph{organising principle} for \rhoc{} with graded where-clauses. That
+reverses the direction of the graded-where programme
+\cite{GWv6}, in which reductions carried coherent amplitude: here reductions
+are where coherence ends.
+
+Three observations make the reversal natural in \rhoc{}.
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{COMM quotes.} Firing substitutes $@Q$ into a continuation; the
+  payload becomes a name, and names are compared by equality. A communication
+  therefore writes a record, which is precisely Barandes's criterion for a
+  division event \cite{Barandes}.
+\item \textbf{Cost.} Equations are free and rewrites are costed. Cost lands
+  where information is erased, which is Landauer's principle read
+  operationally.
+\item \textbf{Hermiticity.} An equation is symmetric; a directed rewrite is
+  not. A weighted symmetric relation can be Hermitian; a directed one cannot.
+\end{itemize}
+
+\paragraph{Reading order.} Section~\ref{sec:path} retraces the design path,
+because several of the choices only make sense against the alternatives that
+were rejected. Section~\ref{sec:calculus} states the calculus.
+Section~\ref{sec:props} records its basic properties.
+Section~\ref{sec:example} works an example. Sections~\ref{sec:context}
+and~\ref{sec:open} place the work and list what remains.
+
+%=============================================================================
+\section{The design path}\label{sec:path}
+%=============================================================================
+
+\subsection{Embedding ZX: the graph-like fragment}
+
+The starting point was to embed the ZX-calculus \cite{CoeckeDuncan} into
+\rhoc{}, and the cleanest target is the \emph{graph-like} fragment
+\cite{DKPW}: only green spiders, joined by Hadamard edges, into which every
+diagram rewrites and to which PyZX normalises. Reading a quantum name as a
+$Z$-spider, scope as the boundary, and AC of parallel composition plus scope
+extrusion as ``only connectivity matters'' gives spider fusion and identity
+removal for free.
+
+Two lessons came from this first pass and survive into the final design.
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Once the congruence contains a complete ZX theory, syntactic
+  matching on quantum structure is not well defined.} The $\scong$-class of a
+  quantum subterm is its linear map, so the only $\scong$-invariant
+  observations are semantic. Deciding $\scong$ is simulation.
+\item \textbf{Unbinding is post-selection.} Making a spider internal plugs
+  $\langle 0\rvert + \langle 1\rvert = \sqrt2\langle +\rvert$ into it.
+  Genuine discard needs the ground of ZX$_{\perp}$ \cite{CJPV}, and that is
+  where reductions belong.
+\end{enumerate}
+
+\subsection{Quoted pairs, and closure under reflection}
+
+The proposal that channels be quoted pairs $@(P,\phi)$ moves the phase into the
+name. Making only channels into pairs breaks the invariant that keeps \rhoc{}
+closed under reflection: the payload sort and the quoted sort must coincide.
+Making \emph{messages} pairs as well, $x!(Q,\phi)$, restores it. A
+communication substitutes $@(Q,\phi)$, which is again a name.
+
+\subsection{Binary drop}
+
+The remaining seam was the drop in process position, which would yield a pair
+where a process is expected. The resolution is a \emph{binary} drop
+\[
+  \bdrop{@(P,\phi)}{u} \;:=\; u!(P,\phi),
+\]
+which never produces a process. It is invertible (the message determines both
+arguments), it preserves the phase, and it is an equation. On its own it gives
+an exactly closed calculus, but nothing executes quoted code any more, so
+recursion is lost; with linear receipts every term strongly normalises.
+
+\subsection{Semantic substitution and traced erasure}
+
+Recursion is recovered as in the original \rhoc{} paper \cite{MR05}: drop in
+process position is resolved by \emph{semantic substitution}, and on
+substitution the process begins running and its phase is erased.
+
+Erasure read literally, $(P,\phi)\mapsto P$, is many-to-one; amplitudes of
+branches that differ only in label add, which is not an isometry and
+reintroduces the norm leak (and with it PostBQP). Erasure is therefore read as
+a \emph{trace}: the information goes to an environment nobody reads, and the
+step is a completely positive instrument. Substitution is \emph{eager}: the
+trace happens at the communication, even if the drop is guarded and never
+reached.
+
+What the trace records was refined twice. Recording only the label lets
+superposed control through (two routed payloads with equal labels but
+different code). Recording the \emph{whole message} closes the gap, and is the
+choice most consistent with context-labelled bisimulation \cite{LeiferMilner},
+where what an observer learns from a transition is its label and labels carry
+whole contexts. Messages are compared up to structural congruence.
+
+\subsection{The coupling: bicharacter, and by equation}
+
+At a communication, a sending label $a$ and a receiving label $b$ could combine
+as a difference $e^{i(a-b)}$ or as a bicharacter $\chi(a,b)$. The difference is
+a $U(1)$ connection with gauge freedom per channel, and it has a sharp
+limitation: every maximal matching of a complete join uses each occurrence
+once, so all matchings carry the same total phase and the site matrix has rank
+one. The bicharacter is what ZX is built on. Hadamard has entries
+$(-1)^{ab}/\sqrt2$, a Hadamard edge in graph-like ZX is a $CZ$ with amplitude
+$(-1)^{ab}$, and a $Z$-spider of phase $k\pi/4$ contributes $\omega^{ka}$
+with $\omega = e^{i\pi/4}$, which is a bicharacter
+$\Ze\times\Zt\to U(1)$. In ZX the coupling is static, so it is evaluated by
+\emph{equation}, not at the communication.
+
+\subsection{A correction: labels are data, couplings are atoms}
+
+A static coupling needs values to sum over, hence a binder. The first attempt
+put value-dependent terms into the phase slot of a pair. That fails for two
+reasons.
+\begin{itemize}[leftmargin=1.5em]
+\item A label that depends on a summed variable is \emph{data in the
+  configuration}, so the branches it separates are distinct basis
+  configurations. It is a which-path record, and it destroys the very
+  interference the coupling was meant to produce.
+\item The trace reads a message's label, and the path-sum equations rewrite
+  labels, so the reduction would not be invariant under $\scong$.
+\end{itemize}
+The resolution separates the two roles. The phase slot of a pair holds a
+\emph{constant} $k\in\Ze$, which is data: part of the name, and traced on
+execution. Couplings between values live in a separate inert atom
+$\cpl{\phi}$ that is never received, run or traced, so the equations may
+rearrange it freely.
+
+%=============================================================================
+\section{The calculus}\label{sec:calculus}
+%=============================================================================
+
+\subsection{Syntax}
+
+\begin{definition}[Syntax]\label{def:syntax}
+\[
+\begin{array}{rcll}
+e & ::= & v \mid 0 \mid 1 \mid e\oplus e & \text{values, in } \Zt\\[2pt]
+\phi & ::= & k\cdot m \mid \phi+\phi & k\in\Ze,\ m \text{ a monomial in values}\\[2pt]
+s & \in & \Sc & \text{scalars}, \ \omega=e^{i\pi/4}\\[2pt]
+M & ::= & (P,k) & \text{messages}, \ k\in\Ze \text{ constant}\\[2pt]
+x & ::= & @M \mid y \mid x[e] & \text{names}\\[2pt]
+P & ::= & 0 \mid x!M \mid \rcv{y}{x}{P} \mid \rcv{y}{x[u]}{P} & \\
+  & \mid & \drop{y} \mid \bdrop{x}{u} \mid P \mid P
+        \mid \Sig{v}{P} \mid \cpl{\phi} \mid s\cdot P & \text{processes}
+\end{array}
+\]
+The receipt $\rcv{y}{x[u]}{P}$ binds both $y$ and the index variable $u$.
+$\Sig{v}{P}$ binds the value variable $v$ in $P$, including occurrences in
+indices and couplings. For Clifford, monomials of degree at most two suffice;
+$(-1)^{ab}$ is written $\cpl{4\cdot ab}$.
+\end{definition}
+
+\begin{definition}[Name identity]\label{def:identity}
+Indexed names $x[0]$ and $x[1]$ are distinct. A name $@(P,k)$ is identified by
+its whole pair; the label $k$ is part of the name, as data. A name $x[e]$ with
+$e$ depending on $\Sigma$-bound variables denotes different channels in
+different branches.
+\end{definition}
+
+\begin{remark}[What is not primitive]
+There are no persistent receipts, no replication and no summation operator on
+processes. There is no restriction operator either; fresh names arise by
+quotation. The binder $\Sigma$ is deliberately separate from any freshness
+binder: $\Sigma$ gives a spider a value, a fresh name gives a channel an
+identity, and conflating them would make every fresh channel a superposition.
+\end{remark}
+
+\subsection{Equations: the unitary side}
+
+\begin{definition}[Structural congruence]\label{def:cong}
+$\scong$ is the least congruence, closed under $\alpha$-conversion of both
+name and value binders, satisfying:
+\begin{description}[leftmargin=2.5em,style=nextline]
+\item[(E1) Monoid and scalars] $P\mid 0\scong P$, $P\mid Q\scong Q\mid P$,
+  $(P\mid Q)\mid R\scong P\mid(Q\mid R)$; $(s\cdot P)\mid Q\scong s\cdot(P\mid
+  Q)$, $s\cdot(t\cdot P)\scong (st)\cdot P$, $1\cdot P\scong P$.
+\item[(E2) Binary drop] $\bdrop{@M}{u}\scong u!M$.
+\item[(E3) Scope] $(\Sig{v}{P})\mid Q\scong \Sig{v}{(P\mid Q)}$ when
+  $v\notin\fv(Q)$; $\Sig{v}{\Sig{w}{P}}\scong\Sig{w}{\Sig{v}{P}}$;
+  $\Sig{v}{(s\cdot P)}\scong s\cdot\Sig{v}{P}$.
+\item[(E4) Couplings] $\cpl{\phi}\mid\cpl{\psi}\scong\cpl{\phi+\psi}$,
+  $\cpl{0}\scong 0$, $\cpl{k\cdot 1}\scong \omega^k\cdot 0$, with arithmetic in
+  $\Ze$ and $v^2 = v$.
+\item[(E5) Elim] $\Sig{v}{P}\scong 2\cdot P$ when $v\notin\fv(P)$.
+\item[(E6) HH] $\Sig{w'}{\Sig{w}{(\cpl{4\cdot w\cdot(w'\oplus e)}\mid P)}}
+  \scong 2\cdot P\{e/w'\}$ when $w\notin\fv(P,e)$ and $w'\notin\fv(e)$.
+\item[(E7) $\omega$-rule] The rule completing the Clifford fragment of the
+  path-sum calculus \cite{Amy}; its statement in this syntax is open
+  (Question~\ref{q:e7}).
+\end{description}
+\end{definition}
+
+E6 is the identity $\sum_{w\in\Zt}(-1)^{w f} = 2\,\delta_{f=0}$: a linear
+constraint on a summed variable becomes a substitution. In ZX it is the Hopf
+law and Hadamard cancellation; in this calculus it is name fusion. E2 is the
+only equation that touches communication syntax, and it is a bijection between
+term shapes. Every equation is an equality, hence invertible, so the unitary
+content sits where the intuition places it.
+
+\subsection{Denotation}
+
+\begin{definition}[Path-sum denotation]\label{def:denot}
+Every closed term is $\scong$ to one of the form
+$\Sig{\vec v}{(s\cdot\cpl{\phi}\mid C)}$ with $C$ coupling-free and
+scalar-free. It denotes
+\[
+  \sem{\Sig{\vec v}{(s\cdot\cpl{\phi}\mid C)}}
+  \;=\; s\sum_{\vec v\in\Zt^n}\omega^{\phi(\vec v)}\,\ket{C(\vec v)},
+\]
+where the configurations $C(\vec v)$, taken modulo E1--E3, form an orthonormal
+basis.
+\end{definition}
+
+This is the path-sum representation of Dawson et al.\ \cite{Dawson} and Amy
+\cite{Amy}: the algebraic twin of ZX. Note that in this architecture a term
+class \emph{is} a vector; there is no time evolution generated by the
+equations, and gates are applied by composition.
+
+\subsection{Reductions: the measurement side}
+
+Reductions are closed under parallel composition, scalars, $\Sigma$, and
+$\scong$. Write $\mathrm{idx}(c[e]) = e$ and $\mathrm{idx}(x) = 0$ for an
+unindexed name.
+
+\begin{definition}[Reduction rules]\label{def:red}
+\begin{description}[leftmargin=2.5em,style=nextline]
+\item[(R1) Coherent COMM] The rule is
+  \[
+  c[e]!(P,k)\mid\rcv{y}{c[u]}{Q}\;\red\;\cpl{k\cdot e}\mid Q\{@(P,k)/y,\ e/u\}.
+  \]
+  The receipt binds the index symbolically, so nothing is resolved. The
+  payload's label is \emph{banked} as amplitude against the index: this is the
+  bicharacter coupling of a phase with a value. The unindexed case,
+  $x!(P,k)\mid\rcv{y}{x}{Q}\red Q\{@(P,k)/y\}$, banks nothing.
+\item[(R2) Resolving COMM]
+  A receipt on $c[b]$ with $b$ a constant, facing $c[e]!M$ with $e$ dependent
+  on $\Sigma$-bound variables, fires only on the assignments where $e = b$.
+  The step is a projective instrument with two outcomes: \emph{fired}, which
+  restricts the sum to $e=b$ and then proceeds as R1; and \emph{not fired},
+  which restricts to $e\neq b$. Outcome probabilities are Born weights of the
+  restricted sums. In general: \emph{a communication whose enabledness varies
+  across assignments measures the variables it depends on.}
+\item[(R3) Traced execution]
+  If $\drop{y}$ occurs in process position anywhere in $Q$ (guarded
+  occurrences included), the communication additionally records the received
+  message $M=(P,k)$, up to $\scong$, to an environment, and
+  \[
+  (\drop{y})\{@(P,k)/y\} \;=\; P.
+  \]
+  On binary drops the substitution is syntactic:
+  $\bdrop{y}{u}\{@M/y\} = \bdrop{@M}{u}\scong u!M$.
+\end{description}
+\end{definition}
+
+\begin{remark}[R3 as an instrument]
+With Kraus operators indexed by $\scong$-classes of messages,
+$K_{[M]}$ projects onto the branches in which $M$ was consumed and then
+substitutes; $\sum K^\dagger K = I$, so the step is trace preserving. Its
+Stinespring form writes $M$ to a channel nobody holds. Three perspectives
+coincide with those requested of the heralds in \cite{GWv6}: globally the state
+is pure; for anyone without the record's capability it is dephased; for anyone
+who reads the record it is a measurement with an outcome.
+\end{remark}
+
+\begin{remark}[When the trace is inert]
+The record is inert, and the step coherent, exactly when the same message (up
+to $\scong$) is consumed in every branch. In particular running code with a
+constant label and no $\Sigma$-bound values in it costs no coherence.
+\end{remark}
+
+%=============================================================================
+\section{Properties}\label{sec:props}
+%=============================================================================
+
+\begin{proposition}[Closure under reflection]
+Quotation takes messages to names and the binary drop takes names back to
+messages: $\bdrop{@M}{u}\scong u!M$, and every communication substitutes a name
+of the form $@M$. The payload sort and the quoted sort coincide.
+\end{proposition}
+
+\begin{proposition}[Replication is derivable]
+Let $R := \rcv{y}{x}{(\bdrop{y}{x}\mid\drop{y})}$ and
+$!P := x!(R\mid P,0)\mid R$. Then $!P\red x!(R\mid P,0)\mid R\mid P$.
+The trace at each unfolding records the same message in every branch and is
+therefore inert.
+\end{proposition}
+
+\begin{proposition}[Classical control]\label{prop:control}
+Within the scope of a $\Sigma$ binder, \emph{which communications fire and
+which code runs} is the same under every assignment of the bound values,
+except at R2 and R3 events.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+$\Sigma$-bound values occur only in indices, couplings and inside quoted
+payloads. A message's presence cannot depend on a value except through its
+index, so unindexed communications are enabled uniformly, and binding receipts
+$c[u]$ fire uniformly. A communication whose enabledness varies is R2, which
+resolves; this includes matching a quoted name whose identity depends on a
+value. The code that runs can differ across branches only if the messages
+consumed differ, and R3 records them.
+\end{proof}
+
+\begin{remark}[Consequences of Proposition~\ref{prop:control}]
+The coherent part of any run is a fixed circuit whose shape is classical. This
+is Selinger's \emph{quantum data, classical control} \cite{Selinger}. Loop
+guards are classical, so loops are monotone and the Löwner-order obstruction to
+recursion under quantum alternation \cite{BP} does not arise. Mach--Zehnder
+style routing survives, because it moves data along rails without forking
+code, so the positioning against quantum alternation in \cite{GWv6} is
+unaffected.
+\end{remark}
+
+\begin{remark}[The discipline the trace imposes]
+Running code that mentions a $\Sigma$-bound value measures that value, because
+a context could tell the variants apart. Quantum data must therefore enter code
+through binding receipts, never through the code itself. Gates written as in
+Section~\ref{sec:example} obey this: their code mentions only their rails, and
+they acquire the index at the communication.
+\end{remark}
+
+\begin{remark}[Measurement criterion]
+A communication is coherent when its subject does not depend on a bound value
+(or is matched by a binding receipt) \emph{and} its continuation does not run
+what it receives (or runs the same message in every branch). Otherwise it
+measures. This is a weak reading of ``measurement in the reductions'' with a
+syntactic criterion; the strong reading is the special case in which every
+continuation runs what it receives.
+\end{remark}
+
+%=============================================================================
+\section{A worked example}\label{sec:example}
+%=============================================================================
+
+A qubit is a token $T := 0$ on a rail $q[v]$. A Hadamard gate is a process:
+\[
+  H(q,q') \;:=\; \rcv{y}{q[u]}{\;\Sig{w}{\big(2^{-1/2}\cdot\cpl{4\cdot u\cdot w}
+  \;\mid\; \bdrop{y}{q'[w]}\big)}}.
+\]
+It binds the input index $u$, sums a fresh output value $w$ with coupling
+$(-1)^{uw}$, and forwards the pair unchanged by binary drop. Nothing is run, so
+the gate is coherent.
+
+\begin{example}[$HZH\ket{0}=\ket{1}$ by equations alone]\label{ex:hzh}
+Start from
+\[
+  q_0[0]!(T,4)\;\mid\;H(q_0,q_1)\;\mid\;H(q_1,q_2).
+\]
+The token carries label $4$, so every hop banks $(-1)^{\mathrm{index}}$; it
+acts as a $Z$ at each hop.
+\begin{enumerate}[leftmargin=1.5em]
+\item \emph{Fire $H(q_0,q_1)$.} By R1, $u:=0$ and $\cpl{4\cdot 0}\scong 0$:
+  \[ 2^{-1/2}\cdot\Sig{w}{\,q_1[w]!(T,4)}\;\mid\;H(q_1,q_2), \]
+  which denotes $\ket{+}$.
+\item \emph{Fire $H(q_1,q_2)$.} After extruding $\Sigma w$ over the gate (E3),
+  R1 binds $u:=w$ symbolically and banks $\cpl{4\cdot w}$, which is the $Z$:
+  \[ 2^{-1/2}\cdot\Sig{w}{\Big(\cpl{4\cdot w}\mid 2^{-1/2}\cdot
+     \Sig{w'}{\big(\cpl{4\cdot w\cdot w'}\mid q_2[w']!(T,4)\big)}\Big)}. \]
+\item \emph{Equations only.} By E4 the couplings fuse to
+  $\cpl{4\cdot w\cdot(w'\oplus 1)}$; by E1 and E3 the scalars float out and the
+  binders reorder to $\Sigma w'.\Sigma w$; E6 with $e=1$ gives
+  \[ 2^{-1/2}\cdot 2^{-1/2}\cdot 2\cdot q_2[1]!(T,4) \;=\; q_2[1]!(T,4). \]
+\end{enumerate}
+The $w'=0$ branch is cancelled by interference inside the equations, with no
+reduction involved. A receipt on $q_2[1]$ now fires with probability~$1$.
+With label $0$ the same steps give $q_2[0]!(T,0)$, which is $HH=I$.
+\end{example}
+
+\begin{example}[A which-rail detector destroys the interference]
+Replace the second gate's input rail by detectors:
+\[
+  \rcv{y}{q_1[0]}{\bdrop{y}{d[0]}}\;\mid\;\rcv{y}{q_1[1]}{\bdrop{y}{d[1]}}
+  \;\mid\; H(d,q_2).
+\]
+Each detector is enabled on only one value of $w$, so by R2 each resolves $w$.
+The state becomes an equal mixture of $d[0]!(T,4)$ and $d[1]!(T,4)$, and the
+gate then yields each output with probability $1/2$. The equations are
+unchanged; only the reductions differ, and they alone remove the interference.
+\end{example}
+
+%=============================================================================
+\section{Context}\label{sec:context}
+%=============================================================================
+
+\paragraph{ZX and path sums.} The equations are path-sum rewrite rules
+\cite{Dawson,Amy}, whose completeness for Clifford is known, and which are the
+algebraic counterpart of graph-like ZX \cite{DKPW} with its completeness
+results \cite{JPV,Vilmart}. R3 plays the role of the ground in ZX$_\perp$
+\cite{CJPV}.
+
+\paragraph{Measurement-based computation.} Graph states with local phases plus
+single-qubit measurements and classical feed-forward are universal
+\cite{RB}, and gflow \cite{BKMP} is the condition under which internal spiders
+are realised by real measurements and corrections rather than post-selection.
+The calculus has this shape: static couplings, measuring reductions, classical
+control. This suggests that a strong reading of the intuition costs no
+expressiveness, but that has not been checked here.
+
+\paragraph{Quantum control versus quantum data.} The classical-control theorem
+places the calculus with Selinger \cite{Selinger} and with CQP \cite{CQP} as
+regards control, while the coherent routing of R1 keeps the Mach--Zehnder
+reading of quantum alternation \cite{BP,YYF} available for data.
+
+\paragraph{Barandes.} Division events \cite{Barandes} are R2 and R3 steps:
+moments at which the branch distinction is written into a name or a record.
+Between them the process is indivisible in his sense.
+
+\paragraph{Context-labelled bisimulation.} R3 records exactly what a
+context-labelled transition exposes, so decoherence classes and observation
+classes coincide by construction (up to the $\scong$-versus-$\sim$ gap noted in
+Question~\ref{q:sim}).
+
+\paragraph{The catamorphism notes.} The weighting notes in the repository
+dilate the rewrite operator and post-select per step. This note moves the
+unitary out of the rewrites altogether; if the weighting functor is required to
+respect the equations, augmentation makes it a projective (twisted) functor.
+
+%=============================================================================
+\section{Decisions and open questions}\label{sec:open}
+%=============================================================================
+
+\subsection{Decisions taken}
+
+\begin{center}
+\begin{tabular}{@{}p{0.34\textwidth}p{0.58\textwidth}@{}}
+\toprule
+\textbf{Question} & \textbf{Decision}\\
+\midrule
+Payload sort & Messages are pairs $(P,k)$; names are quoted messages.\\
+Drop & Binary drop is an equation; unary drop is semantic substitution.\\
+Erasure on execution & Traced, not coherent.\\
+When the trace happens & Eagerly, at the communication.\\
+What the trace records & The whole message, up to $\scong$.\\
+How labels couple & By bicharacter, evaluated by equation.\\
+Label versus coupling & Labels are constant data; couplings are inert atoms.\\
+Superposition & A dedicated binder $\Sigma$ over $\Zt$.\\
+Persistent receipts & Dropped; replication is derivable.\\
+Loop guards & Classical (now a theorem).\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Open questions}
+
+\begin{question}[Per-hop banking]\label{q:hop}
+As written, R1 banks a payload's label at every indexed channel it crosses, so
+a labelled payload acts as a phase gate at every hop. This is consistent but
+may be more than intended. The alternative is to bank once, for instance when
+the label is first placed.
+\end{question}
+
+\begin{question}[Born normalisation]
+How normalisation interacts with maximal progress, and whether R2's
+``not fired'' outcome should be an outcome at all or be absorbed by maximal
+progress.
+\end{question}
+
+\begin{question}[Race normalisation]
+Re-deriving contention-set completion \cite{GWv6} in this calculus, now that
+some communications are instruments and the coherent ones only move pairs.
+\end{question}
+
+\begin{question}[E7 and the zero scalar]\label{q:e7}
+Stating the $\omega$-rule in this syntax, and deciding how to treat $0\cdot P$,
+which collapses all terms of a given shape.
+\end{question}
+
+\begin{question}[$\scong$ versus $\sim$]\label{q:sim}
+The trace compares messages up to $\scong$, which can decohere branches that no
+context distinguishes. Coarsening to bisimilarity is available later, at the
+price of a fixed-point definition.
+\end{question}
+
+\begin{question}[Beyond Clifford]
+Completeness of the equations once T-type couplings are present, and the cost
+of comparing payloads that carry their own internal sums in R3.
+\end{question}
+
+\paragraph{Acknowledgement.} The design was worked out in dialogue with Claude
+(Anthropic), which also drafted this note.
+
+\begin{thebibliography}{99}
+\bibitem{Amy} M.~Amy. Towards large-scale functional verification of universal
+  quantum circuits. \emph{QPL 2018}, EPTCS 287, 2019.
+\bibitem{BP} C.~B\u{a}descu and P.~Panangaden. Quantum alternation: prospects
+  and problems. \emph{QPL 2015}, EPTCS 195, 2015.
+\bibitem{Barandes} J.~A.~Barandes. The stochastic-quantum correspondence.
+  arXiv:2302.10778, 2023.
+\bibitem{BKMP} D.~E.~Browne, E.~Kashefi, M.~Mhalla and S.~Perdrix. Generalized
+  flow and determinism in measurement-based quantum computation. \emph{New J.
+  Phys.} 9:250, 2007.
+\bibitem{CJPV} T.~Carette, E.~Jeandel, S.~Perdrix and R.~Vilmart. Completeness
+  of graphical languages for mixed states quantum mechanics. \emph{ICALP 2019}.
+\bibitem{CoeckeDuncan} B.~Coecke and R.~Duncan. Interacting quantum
+  observables: categorical algebra and diagrammatics. \emph{New J. Phys.}
+  13:043016, 2011.
+\bibitem{Dawson} C.~M.~Dawson, H.~L.~Haselgrove, A.~P.~Hines, D.~Mortimer,
+  M.~A.~Nielsen and T.~J.~Osborne. Quantum computing and polynomial equations
+  over the finite field $\mathbb{Z}_2$. \emph{Quantum Inf. Comput.}
+  5(2):102--112, 2005.
+\bibitem{DKPW} R.~Duncan, A.~Kissinger, S.~Perdrix and J.~van de Wetering.
+  Graph-theoretic simplification of quantum circuits with the ZX-calculus.
+  \emph{Quantum} 4:279, 2020.
+\bibitem{CQP} S.~J.~Gay and R.~Nagarajan. Communicating quantum processes.
+  \emph{POPL 2005}.
+\bibitem{JPV} E.~Jeandel, S.~Perdrix and R.~Vilmart. A complete axiomatisation
+  of the ZX-calculus for Clifford+T quantum mechanics. \emph{LICS 2018}.
+\bibitem{LeiferMilner} J.~J.~Leifer and R.~Milner. Deriving bisimulation
+  congruences for reactive systems. \emph{CONCUR 2000}.
+\bibitem{MR05} L.~G.~Meredith and M.~Radestock. A reflective higher-order
+  calculus. \emph{ENTCS} 141(5):49--67, 2005.
+\bibitem{GWv6} L.~G.~Meredith. Races decided by the Born rule (graded-where,
+  quantum case, version~6). F1R3FLY-io/publications, \texttt{fuzzyware/}, 2026.
+\bibitem{RB} R.~Raussendorf and H.~J.~Briegel. A one-way quantum computer.
+  \emph{Phys. Rev. Lett.} 86:5188, 2001.
+\bibitem{Selinger} P.~Selinger. Towards a quantum programming language.
+  \emph{Math. Struct. Comput. Sci.} 14(4):527--586, 2004.
+\bibitem{Vilmart} R.~Vilmart. A near-minimal axiomatisation of ZX-calculus for
+  pure qubit quantum mechanics. \emph{LICS 2019}.
+\bibitem{YYF} M.~Ying, N.~Yu and Y.~Feng. Alternation in quantum programming:
+  from superposition of data to superposition of programs. arXiv:1402.5172,
+  2014.
+\end{thebibliography}
+
+\end{document}
