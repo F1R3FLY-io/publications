@@ -80,7 +80,15 @@ alternatives change the shape of bisimulation; and that change is the formal
 shadow of a practical cost, because once substitution is detached from
 communication the programmer must coordinate by hand which substitutions
 happen together and which happen in order. Worked examples show both burdens:
-on the programmer, and on the bisimulation proofs.
+on the programmer, and on the bisimulation proofs. A generic catalyst
+transformation, which turns any unary rule $A\red B$ into $A\mid C\red B$,
+answers the first objection; the note shows that it leaves the other two
+standing, and that it makes the remaining coordination burden explicit rather
+than removing it. The conclusion ties the argument to the rho combinators:
+the size of translations from languages with variables into combinator
+languages is usually read as evidence of the compression variables offer, but
+when delivery of values is concurrent part of that compression is a
+consolidation of coordination, and semantic substitution is what achieves it.
 \end{abstract}
 
 \tableofcontents
@@ -117,8 +125,9 @@ compares all three by asking where the unquote, and with it the erasure of the
 datum, takes place. Section~\ref{sec:argument} states the argument.
 Sections~\ref{sec:programmer} and~\ref{sec:bisim} give the examples, first the
 programmer's burden and then the burden on bisimulation proofs.
-Section~\ref{sec:fair} records what the alternatives do offer, and
-Section~\ref{sec:open} lists what remains open.
+Section~\ref{sec:fair} records what the alternatives do offer.
+Section~\ref{sec:conclusion} draws the conclusion, connecting the argument
+to the rho combinators, and Section~\ref{sec:open} lists what remains open.
 
 %=============================================================================
 \section{The core calculus}\label{sec:core}
@@ -328,6 +337,7 @@ $\drop{\qn{p}{d}}\scong p$, completes the picture.
 Equation, $\drop{\qn{p}{d}}\scong p$ & no step & no step & in $\scong$, at no cost\\
 Semantic substitution ($\Sem$) & yes & yes & at the COMM\\
 Deferred unquote ($\Unq$) & no & no & at a UNQ step, per occurrence\\
+Deferred unquote, catalysed ($\Unq^{C}$) & yes, with the catalyst & no & at a catalysed step, per occurrence\\
 Explicit substitution ($\ES$), equational & no & no & as in $\Unq$\\
 Explicit substitution ($\ES$), interactional & yes & no & at each resolution\\
 \bottomrule
@@ -339,9 +349,10 @@ while information erasure is not: an equation that forgets $d$ makes $\scong$
 identify configurations that differ in data, and cost accounting has nowhere to
 charge for the loss. Semantic substitution charges the erasure to the COMM,
 which is already the step that interaction pays for. The deferred unquote
-charges it to a step that no interaction pays for. Explicit substitution
-either inherits that placement or spreads the erasure across as many steps as
-there are occurrences.
+charges it to a step that no interaction pays for, unless it is catalysed
+(Section~\ref{sec:catalyst}), in which case the catalyst pays. Explicit
+substitution either inherits that placement or spreads the erasure across as
+many steps as there are occurrences.
 
 %=============================================================================
 \section{The argument}\label{sec:argument}
@@ -355,7 +366,8 @@ there are occurrences.
   every redex of $\Sem$ is a sender and receiver meeting. A redex that is
   complete on its own contributes transitions that no context takes part in,
   and that the environment can neither cause nor see except through their
-  effects.
+  effects. This objection, unlike the other two, has a generic answer, the
+  catalyst transformation of Section~\ref{sec:catalyst}.
 \item \textbf{Both proposals change bisimulation.} $\Unq$ adds internal steps
   between a communication and the running of what it delivered. $\ES$ puts
   substitution terms into the states being compared. Either way the
@@ -551,6 +563,88 @@ received code therefore survives in $\Unq$ at best as a weak law, and
 extending the context-labelled congruence results from strong to weak
 equivalences requires further conditions that must then be checked.
 
+\subsection{The catalyst transformation}\label{sec:catalyst}
+
+Mike Stay pointed out that the first objection has a generic answer. It comes
+from a device the author introduced in 2014 to repair a categorical semantics
+for the pi-calculus, published as the catalysis construction of \cite{SM15},
+where it restricts the 2-morphisms interpreting rewrites to the contexts in
+which they may apply. The idea is to make a unary reduction depend on a \emph{catalyst}, a fixed
+process whose presence enables it.
+
+\begin{definition}[Catalyst transformation]
+Fix a process $C$. Every rule of the form $A\red B$ in which no interaction
+triggers the step is replaced by
+\[
+  A\mid C\;\red\;B .
+\]
+In the reactive system, the step then has the labelling context
+$[\,]\mid C$. In the \emph{catalytic} variant the catalyst is returned,
+$A\mid C\red B\mid C$.
+\end{definition}
+
+Applied to $\Unq$, this gives a calculus $\Unq^{C}$ with
+\[
+  \textsc{(Unq$_C$)}\qquad \unq{\qn{p}{d}}\mid C\;\red\;p
+  \qquad\text{or}\qquad
+  \unq{\qn{p}{d}}\mid C\;\red\;p\mid C .
+\]
+Now $\unq{\qn{p}{d}}$ is no longer a complete redex on its own. Its transition
+is
+\[
+  \unq{\qn{p}{d}}\xrightarrow{\;[\,]\mid C\;}p ,
+\]
+labelled by the context that supplies the catalyst, and every reduction of $\Unq^{C}$ is an interaction. The
+first objection is met in full, and generically: any calculus with unary rules
+can be brought inside the context-labelled programme this way.
+
+The interactional reading of $\ES$ is an instance of the catalytic variant,
+with the substitution term itself as the catalyst:
+$\esub{N}{y}\mid\unq{y}\red\esub{N}{y}\mid p$. This explains why that reading
+already answered the first objection in Section~\ref{sec:alts}.
+
+The transformation makes each unquote an interaction. It does not make the
+unquote part of the communication that delivered the code, and the remaining
+objections are about exactly that.
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{Atomicity is not restored.} A COMM followed by $k$ unguarded
+  unquotes is still $k+1$ steps, now $k$ of them catalysed. The $2^k$ partial
+  states of Example~\ref{ex:together} and of the next subsection remain, and so
+  does the simultaneity problem: one catalysed step enables one unquote.
+\item \textbf{Quotation is untouched.} No reduction acts inside a quote,
+  catalysed or not, so Example~\ref{ex:name} and
+  Proposition~\ref{prop:namefail} hold for $\Unq^{C}$ as stated.
+\item \textbf{Strong equivalences still separate $\unq{\qn{p}{d}}$ from $p$.}
+  The step is now labelled $[\,]\mid C$ instead of the identity, but it is
+  still a step, so strong context-labelled bisimilarity still distinguishes
+  the pending unquote from the running code.
+\end{itemize}
+
+What changes is who can control the timing. If $C$ is ambient, for instance a
+catalyst that is always present and always returned, the labels change but the
+programmer gains no handle on when unquotes fire. If $C$ is something the
+program emits and withholds, say an output $\out{\kappa}{\pr{0}{d_0}}$ on a
+name $\kappa$ that the program holds, then the program can decide when each
+unquote is allowed to happen. That helps with ordering, but only partly.
+To activate $p_2$ only after $p_1$ in Example~\ref{ex:order}, the receiver
+needs evidence that the first unquote has completed. Under $A\mid C\red B$
+there is none: the catalyst is consumed and nothing new appears. Under the
+catalytic variant the catalyst reappears, but its presence does not
+distinguish ``not yet used'' from ``used and returned'', and a receiver that
+waits on it competes with the unquote for it. So
+Proposition~\ref{prop:noack} carries over. Evidence of completion exists only
+if the catalysed rule is designed to emit a signal, $A\mid C\red B\mid C'$.
+
+A catalyst that signals completion is, however, a small synchronisation
+protocol laid alongside every unquote: release the catalyst, wait for the
+signal, proceed. That is the coordination of the third objection, written out
+explicitly. The catalyst transformation therefore does not remove the
+programmer's burden; it makes the burden visible as protocol. It shows that
+what separates the alternatives from semantic substitution is not the absence
+of an interaction but the absence of atomicity. $\Sem$ needs no catalyst,
+because its only unquote is already part of the one interaction that
+delivered the code.
+
 \subsection{The relations get larger}
 
 Consider a receiver with $k$ unguarded drops of the received variable,
@@ -657,6 +751,65 @@ denying them.
 \end{itemize}
 
 %=============================================================================
+\section{Conclusion: two kinds of compression}\label{sec:conclusion}
+%=============================================================================
+
+Translating a term language with variables and nested scopes into a
+combinator language, which is much flatter, typically blows up the size of
+terms. The effect is especially striking for Yoshida's concurrent combinators
+for the pi-calculus \cite{Yoshida02}. On the family
+$P_d=\rcv{x_1}{a}{\rcv{x_2}{a}{\cdots\rcv{x_d}{a}{0}}}$, of size $d+1$, her
+prefix elimination produces $(3^{d-1}+1)/2$ atoms \cite{RC3}. It is natural
+to take such blow-ups as strong evidence for the compression that variables
+provide.
+
+The usual account of that compression is abstraction. A variable is a single
+point of reference, and a binder consolidates the mechanism that carries a
+value from the environment to its place in the term. SKI has no such
+mechanism \cite{CF58}. Bracket abstraction rebuilds the route from the outside
+of a term to each use of a value on the inside, again and again: at every
+application node, and once more for every level of nesting. Measured against
+SKI, the value of variables appears to be the consolidation of these
+\emph{routes}.
+
+There is a richer perspective, and this note is what exposes it. When the
+calculations that carry a value to its uses are allowed to be concurrent,
+there is a second cost beyond routing: \emph{coordination}. Delivering a value
+to several occurrences becomes several independent events. Someone must then
+arrange that deliveries which have to coincide do, and deliveries which have
+to be ordered are. Sections~\ref{sec:programmer} and~\ref{sec:bisim} show
+that this cost is real, both for the programmer and in the proofs, and the
+catalyst transformation of Section~\ref{sec:catalyst} shows that paying it
+amounts to laying a small protocol alongside every occurrence. Semantic
+substitution consolidates these coordination costs. A single interaction
+delivers the value to every occurrence at once, and the coordination is borne
+by the communication that was going to happen anyway. This is a richer form of
+compression than abstraction alone: variables with semantic substitution
+compress not only the description of \emph{where} a value goes, but also the
+protocol by which it arrives \emph{everywhere at once}.
+
+Yoshida's blow-up can be read in these terms. In the recurrence
+$T(j+1)=3T(j)-1$ behind the count above, each level of nesting adds two kinds
+of atom to a body of $n$ atoms. Rule~(I) adds $n-1$ duplicators, which split
+the body at every parallel composition: that is routing, the part of the cost
+SKI would recognise. Rule~(VI) puts every atom behind a synchroniser of its
+own, adding $n$ more: that is coordination, one synchronisation per
+occurrence, which is exactly the per-occurrence structure of the deferred
+unquote. Composed down a chain of nested prefixes, both compound. The
+reflective encoding of \cite{RC3} reaches $3d+1$ by quoting a continuation
+once and releasing it through a three-atom gate. The gate is a single
+synchronisation for the whole continuation, which is the combinator-level
+counterpart of installing received code by semantic substitution.
+Reflection does for the combinators what semantic substitution does for the
+term language: it consolidates coordination.
+
+The comparison in this note also isolates the coordination component cleanly.
+$\Sem$, $\Unq$ and $\ES$ all keep variables and binders, so routing is the
+same in each. Whatever a faithful translation from $\Sem$ into one of the
+alternatives costs, it is the price of coordination alone, with abstraction
+held fixed.
+
+%=============================================================================
 \section{Open questions}\label{sec:open}
 %=============================================================================
 
@@ -683,6 +836,24 @@ middle reading exists that both keeps every resolution an interaction and
 restores atomicity.
 \end{question}
 
+\begin{question}[Which catalyst]
+For $\Unq^{C}$ the choice of catalyst matters: ambient or emitted, consumed or
+returned, silent or signalling. With a signalling catalyst emitted by the
+receiver, is there a systematic translation of $\Sem$ into $\Unq^{C}$ that
+reconstructs atomicity by protocol, and what does it cost, in steps and in the
+size of the bisimulations needed to prove it correct?
+\end{question}
+
+\begin{question}[Measuring the two compressions]
+Can the split of Section~\ref{sec:conclusion} be made precise, as two
+measures on translations: one counting routing (duplicators, path
+construction) and one counting coordination (synchronisers, catalysed
+steps)? A natural first test is the translation of $\Sem$ into $\Unq^{C}$
+with a signalling catalyst, where routing is unchanged and every cost of the
+translation should register as coordination; a second is to apportion the
+$\Theta(3^{d})$ of Yoshida's elimination between the two measures.
+\end{question}
+
 \begin{question}[Structure on $D$]
 Nothing here uses structure on $D$. The quantum note \cite{UE} uses a group;
 other choices (costs, provenance tags, types) suggest themselves. The question
@@ -698,6 +869,8 @@ with Claude (Anthropic).
 \begin{thebibliography}{99}
 \bibitem{ACCL91} M.~Abadi, L.~Cardelli, P.-L.~Curien and J.-J.~L\'evy.
   Explicit substitutions. \emph{J. Funct. Program.} 1(4):375--416, 1991.
+\bibitem{CF58} H.~B.~Curry and R.~Feys. \emph{Combinatory Logic}, vol.~I.
+  North-Holland, 1958.
 \bibitem{GW00} P.~Gardner and L.~Wischik. Explicit fusions. \emph{MFCS 2000},
   LNCS 1893, 2000.
 \bibitem{LM00} J.~J.~Leifer and R.~Milner. Deriving bisimulation congruences
@@ -708,6 +881,15 @@ with Claude (Anthropic).
   calculus. \emph{ENTCS} 141(5):49--67, 2005.
 \bibitem{PV98} J.~Parrow and B.~Victor. The fusion calculus: expressiveness and
   symmetry in mobile processes. \emph{LICS 1998}.
+\bibitem{RC3} F1R3FLY.io. Name-free combinators for the rho calculus.
+  Research note, draft~3, F1R3FLY-io/publications, \texttt{rho-combinators/},
+  2026.
+\bibitem{SM15} M.~Stay and L.~G.~Meredith. Higher category models of the
+  pi-calculus. \emph{Higher-Dimensional Rewriting and Applications (HDRA)},
+  Warsaw, 2015. arXiv:1504.04311.
+\bibitem{Yoshida02} N.~Yoshida. Minimality and separation results on
+  asynchronous mobile processes: representability theorems by concurrent
+  combinators. \emph{Theoret. Comput. Sci.} 274(1--2):231--276, 2002.
 \end{thebibliography}
 
 \end{document}
