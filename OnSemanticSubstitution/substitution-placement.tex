@@ -1,0 +1,713 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+\usepackage[T1]{fontenc}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\setlength{\emergencystretch}{2.5em}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{question}[theorem]{Open question}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% NOTATION RULES OBSERVED THROUGHOUT:
+%   * the rho calculus is never written with the Greek letter rho
+%   * quoting is @P, dropping is *x; corner quotes are pre-2016 notation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\pr}[2]{\langle #1,\,#2\rangle}
+\newcommand{\qn}[2]{@\langle #1,\,#2\rangle}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\rcv}[3]{\mathsf{for}(#1 \leftarrow #2)\,#3}
+\newcommand{\drop}[1]{{*}#1}
+\newcommand{\bdrop}[2]{{*}(#1,\,#2)}
+\newcommand{\unq}[1]{\mathop{\&}#1}
+\newcommand{\esub}[2]{[\,#1/#2\,]}
+\newcommand{\scope}[2]{(#1)\,#2}
+\newcommand{\red}{\rightsquigarrow}
+\newcommand{\scong}{\equiv_{S}}
+\newcommand{\ssub}[2]{\{#1/#2\}}
+\newcommand{\ysub}[2]{\{#1/#2\}_{\mathrm{syn}}}
+\newcommand{\Sem}{\textsf{Sem}[D]}
+\newcommand{\Unq}{\textsf{Unq}[D]}
+\newcommand{\ES}{\textsf{ES}[D]}
+\newcommand{\fv}{\mathrm{fv}}
+\newcommand{\barb}[1]{\mathop{\downarrow}_{#1}}
+\newcommand{\nbarb}[1]{\mathop{\not\downarrow}_{#1}}
+
+\title{Where Substitution Happens\\[0.4em]
+\large Semantic substitution, deferred unquote and explicit substitution\\
+in a paired-message \rhoc{} calculus}
+\author{L.G. Meredith\\ F1R3FLY.io}
+\date{Working note, 1 October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The note \emph{Unitary in the Equations, Measurement in the Reductions}
+\cite{UE} arrived, on the way to a quantum interpretation, at a small
+extension of the \rhoc{} calculus that stands on its own: messages and names
+are pairs of a process and a datum drawn from a type $D$, dropping splits into
+a binary equation that preserves the datum and a unary drop resolved by
+semantic substitution, and replication is derived by reflection. This note
+extracts that core, independently of any quantum reading, and uses it to
+compare three treatments of information exchange at interaction. In the first,
+the one adopted, the received code is installed by semantic substitution at
+the communication itself. In the second, substitution is syntactic and a
+separate unary rule $\unq{\qn{p}{d}}\red p$ unquotes later. In the third, the
+substitution is a process term left beside the continuation, in the style of
+explicit fusions. The two alternatives were proposed by Mike Stay. The
+argument against them has three parts: unary reductions that no interaction
+triggers do not fit the context-labelled bisimulation programme; both
+alternatives change the shape of bisimulation; and that change is the formal
+shadow of a practical cost, because once substitution is detached from
+communication the programmer must coordinate by hand which substitutions
+happen together and which happen in order. Worked examples show both burdens:
+on the programmer, and on the bisimulation proofs.
+\end{abstract}
+
+\tableofcontents
+
+%=============================================================================
+\section{Introduction}
+%=============================================================================
+
+Every process calculus must say what happens to the information carried by a
+message at the moment it is received. In the \rhoc{} calculus \cite{MR05} the
+question has an extra edge, because what is received is a quoted process, and
+the receiver may do two quite different things with it: treat it as a name, or
+run it. The original paper answers with \emph{semantic substitution}:
+substitution is syntactic everywhere except at a drop $\drop{y}$, where it
+installs the received process in place. The quantum design session recorded in
+\cite{UE} rediscovered this choice under pressure, and in doing so produced a
+version of the calculus in which the choice is unusually easy to see. Names
+and messages are pairs, so there is a datum to lose; the binary drop keeps it
+and the unary drop erases it; and nothing else in the calculus touches the
+question.
+
+That makes the core calculus a good place to compare alternatives. In
+conversation, Mike Stay proposed two. The first keeps substitution uniformly
+syntactic and moves execution of received code into a separate unary
+reduction. The second makes substitution a process term, after Wischik and
+Gardner's explicit fusions \cite{GW00}. Both are natural, and both are standard
+moves elsewhere in the literature on substitution \cite{ACCL91}. This note
+records why the paired-message calculus keeps semantic substitution, and makes
+the reasons concrete with examples.
+
+\paragraph{Reading order.} Section~\ref{sec:core} states the core calculus.
+Section~\ref{sec:alts} states the two alternatives. Section~\ref{sec:where}
+compares all three by asking where the unquote, and with it the erasure of the
+datum, takes place. Section~\ref{sec:argument} states the argument.
+Sections~\ref{sec:programmer} and~\ref{sec:bisim} give the examples, first the
+programmer's burden and then the burden on bisimulation proofs.
+Section~\ref{sec:fair} records what the alternatives do offer, and
+Section~\ref{sec:open} lists what remains open.
+
+%=============================================================================
+\section{The core calculus}\label{sec:core}
+%=============================================================================
+
+The construction is a type parameterisation of the \rhoc{} calculus. Fix a
+nonempty set $D$ of data, and a distinguished $d_0\in D$. Nothing below uses
+any structure on $D$; in \cite{UE} it is the group $\mathbb{Z}/8$ of phase
+labels, but here it is arbitrary.
+
+\begin{definition}[Syntax of $\Sem$]\label{def:syntax}
+\[
+\begin{array}{rcll}
+M & ::= & \pr{P}{d} & \text{messages},\ d\in D\\[2pt]
+x,u & ::= & @M \mid y & \text{names}\\[2pt]
+P & ::= & 0 \mid \out{x}{M} \mid \rcv{y}{x}{P} \mid P\mid P
+      \mid \bdrop{x}{u} \mid \drop{y} & \text{processes}
+\end{array}
+\]
+The receipt $\rcv{y}{x}{P}$ binds $y$ in $P$. The unary drop $\drop{y}$
+applies only to variables. There is no restriction operator and no persistent
+receipt: fresh names arise by quotation, and replication is derived
+(Proposition~\ref{prop:repl}).
+\end{definition}
+
+\begin{definition}[Structural congruence]\label{def:cong}
+$\scong$ is the least congruence, closed under $\alpha$-conversion, satisfying
+\begin{description}[leftmargin=2.5em,style=nextline]
+\item[(E1) Monoid] $P\mid 0\scong P$,\quad $P\mid Q\scong Q\mid P$,\quad
+  $(P\mid Q)\mid R\scong P\mid(Q\mid R)$.
+\item[(E2) Binary drop] $\bdrop{\qn{p}{d}}{u}\scong \out{u}{\pr{p}{d}}$.
+\end{description}
+Names are identified up to the congruence of what they quote:
+$\qn{p}{d}=\qn{q}{e}$ iff $p\scong q$ and $d=e$.
+\end{definition}
+
+\begin{remark}[Why E2 is an equation]
+E2 could have been read as a notational abbreviation instead. It is folded into
+$\scong$ for two reasons. As an equation it is a bijection between term
+shapes: every output $\out{u}{M}$ is congruent to exactly one binary drop
+$\bdrop{@M}{u}$, and nothing is lost in either direction. And because it sits in
+the quotient, the observation theory of Section~\ref{sec:bisim}, which is
+defined up to $\scong$, never has to distinguish a forwarded message from its
+expansion. The binary drop forwards the whole pair; in particular it
+\emph{preserves the datum}.
+\end{remark}
+
+\begin{definition}[Semantic substitution]\label{def:sub}
+Let $N=\qn{p}{d}$. The substitution $\ssub{N}{y}$ acts on names by
+$y\ssub{N}{y}=N$, $z\ssub{N}{y}=z$ for $z\neq y$, and
+$\qn{Q}{e}\ssub{N}{y}=\qn{Q\ssub{N}{y}}{e}$. On processes it commutes with
+every constructor, renaming bound variables to avoid capture, with one
+exception:
+\[
+  (\drop{y})\ssub{\qn{p}{d}}{y} \;=\; p .
+\]
+In particular $\bdrop{y}{u}\ssub{N}{y}=\bdrop{N}{u}\scong\out{u}{\pr{p}{d}}$
+keeps the datum, while the unary drop discards it. Substitution acts under
+quotation, so a name built from received code changes at the moment the code
+arrives.
+\end{definition}
+
+\begin{definition}[Reduction]\label{def:red}
+\[
+\begin{array}{ll}
+\textsc{(Comm)} & \rcv{y}{x}{P}\mid\out{x}{\pr{q}{d}}
+                  \;\red\; P\ssub{\qn{q}{d}}{y}\\[4pt]
+\textsc{(Par)} & P\red P' \;\Rightarrow\; P\mid Q\red P'\mid Q\\[4pt]
+\textsc{(Struct)} & P\scong P',\ P'\red Q',\ Q'\scong Q
+                    \;\Rightarrow\; P\red Q
+\end{array}
+\]
+COMM is the only rule that does any work, and every reduction is the meeting of
+a sender and a receiver.
+\end{definition}
+
+\begin{proposition}[Closure under reflection]
+Every communication substitutes a name of the form $@M$, and E2 takes such a
+name back to a message. The payload sort and the quoted sort coincide.
+\end{proposition}
+
+\begin{proposition}[Replication is derivable]\label{prop:repl}
+Let $R_x := \rcv{y}{x}{(\bdrop{y}{x}\mid\drop{y})}$ and
+$!P := \out{x}{\pr{R_x\mid P}{d_0}}\mid R_x$. Then
+\[
+  !P \;\red\; \out{x}{\pr{R_x\mid P}{d_0}}\mid R_x\mid P .
+\]
+\end{proposition}
+
+\begin{proof}
+COMM substitutes $N=\qn{R_x\mid P}{d_0}$ for $y$. The binary drop becomes
+$\bdrop{N}{x}\scong\out{x}{\pr{R_x\mid P}{d_0}}$, which re-emits the message
+with its datum intact, and the unary drop becomes $R_x\mid P$.
+\end{proof}
+
+The proof shows the two drops doing different jobs within a single step: one
+forwards a copy for the next unfolding, the other installs a copy to run. Both
+happen at once, because both are effects of the same substitution.
+
+\begin{remark}[Installation and execution]\label{rem:install}
+Semantic substitution fixes the moment received code is \emph{installed}: at
+the COMM. It does not force the code to run then. If $\drop{y}$ is guarded,
+say $\rcv{y}{x}{\rcv{z}{c}{\drop{y}}}$, then $p$ is installed under the guard
+at the first COMM and runs when the guard is lifted by the second. Both
+moments are communications, and both are under the program's control.
+\end{remark}
+
+%=============================================================================
+\section{The two alternatives}\label{sec:alts}
+%=============================================================================
+
+\subsection{Deferred unquote}
+
+\begin{definition}[$\Unq$]
+Replace the unary drop with an unquote operator, and substitute
+syntactically:
+\[
+\begin{array}{rcl}
+P & ::= & 0 \mid \out{x}{M} \mid \rcv{y}{x}{P} \mid P\mid P
+      \mid \bdrop{x}{u} \mid \unq{x}\\[4pt]
+\textsc{(Comm$_{\textsf{U}}$)} & & \rcv{y}{x}{P}\mid\out{x}{\pr{q}{d}}
+      \;\red\; P\ysub{\qn{q}{d}}{y}\\[4pt]
+\textsc{(Unq)} & & \unq{\qn{p}{d}} \;\red\; p
+\end{array}
+\]
+with E1, E2, PAR and STRUCT as before.
+\end{definition}
+
+The operator must apply to arbitrary names, not only to variables, because
+syntactic substitution turns $\unq{y}$ into $\unq{\qn{q}{d}}$. A consequence is
+that $\unq{\qn{p}{d}}$ can be written directly in source text, as a term that
+reduces with nobody else involved. In $\Sem$ the corresponding term is never
+formed. The binary drop is unaffected: substitution into $\bdrop{y}{u}$ is
+already syntactic, and E2 applies.
+
+\subsection{Explicit substitution}
+
+The second proposal leaves the substitution itself in the term, more or less
+following explicit fusions \cite{GW00,PV98}. The rules below are a
+reconstruction, made to have something definite to argue about; the precise
+rules intended may differ, and the argument is written so that it does not
+depend on the details.
+
+\begin{definition}[$\ES$]
+Extend the syntax of $\Unq$ with a substitution term and a scope for the
+variable it governs:
+\[
+\begin{array}{rcl}
+P & ::= & \cdots \mid \esub{N}{y} \mid \scope{y}{P}\\[4pt]
+\textsc{(Comm$_{\textsf{E}}$)} & & \rcv{y}{x}{P}\mid\out{x}{M}
+      \;\red\; \scope{y}{(P\mid\esub{@M}{y})}
+\end{array}
+\]
+with UNQ for unquoting, and the fusion-style equations
+\begin{description}[leftmargin=2.5em,style=nextline]
+\item[(X1) Propagation] $\scope{y}{(P\mid\esub{N}{y})}\scong
+  \scope{y}{(P\ysub{N}{y}\mid\esub{N}{y})}$.
+\item[(X2) Collection] $\scope{y}{\esub{N}{y}}\scong 0$.
+\item[(X3) Extrusion] $(\scope{y}{P})\mid Q\scong\scope{y}{(P\mid Q)}$ when
+  $y\notin\fv(Q)$.
+\end{description}
+\end{definition}
+
+The scope is needed. In the receipt, $y$ is bound by the input prefix; COMM$_{\textsf{E}}$ removes the prefix, so something else must keep $y$ from
+becoming a free, global variable. In the fusion calculus that job is done by
+restriction, which keeps fusions local. The \rhoc{} calculus has no
+restriction, deliberately, since fresh names arise by quotation, so $\ES$ must
+import one.
+
+There are two ways to read the propagation of the substitution term, and they
+lead to different calculi.
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{Equational reading.} X1 holds as stated. Then by X1, X3 and X2,
+  $\scope{y}{(P\mid\esub{N}{y})}\scong P\ysub{N}{y}$, so $\ES$ coincides with
+  $\Unq$ up to $\scong$ and adds only the bookkeeping of the scope. Everything
+  said about $\Unq$ below then applies to it unchanged.
+\item \textbf{Interactional reading.} X1 is dropped, and each unguarded
+  occurrence of $y$ (as a channel subject, or under $\unq{}$) is resolved by its
+  own reduction against the substitution term, which persists until collected:
+  for instance $\esub{\qn{p}{d}}{y}\mid\unq{y}\red\esub{\qn{p}{d}}{y}\mid p$.
+  Each resolution is now an interaction, which answers the first objection
+  below, but a single COMM is followed by one resolution step per occurrence,
+  and occurrences under quotation are never reached, because nothing reduces
+  inside a name.
+\end{itemize}
+
+%=============================================================================
+\section{Where the unquote lives}\label{sec:where}
+%=============================================================================
+
+The three calculi agree on everything except the treatment of the unary drop.
+The binary drop is the same equation in all of them. Without the unary drop,
+nothing runs received code, recursion is lost, and with linear receipts every
+term strongly normalises \cite{UE}. So the unary drop is exactly where
+recursion comes from, and the whole comparison concerns one operator.
+
+The unary drop is also the one place the datum is erased:
+$\qn{p}{d}\mapsto p$ is many-to-one. It is therefore useful to ask, of each
+design, which step performs that erasure. A fourth placement, the equation
+$\drop{\qn{p}{d}}\scong p$, completes the picture.
+
+\begin{center}
+\begin{tabular}{@{}L{0.30\textwidth}L{0.16\textwidth}L{0.16\textwidth}L{0.28\textwidth}@{}}
+\toprule
+\textbf{Placement} & \textbf{Triggered by interaction} & \textbf{Atomic with the COMM} & \textbf{Where $d$ is erased}\\
+\midrule
+Equation, $\drop{\qn{p}{d}}\scong p$ & no step & no step & in $\scong$, at no cost\\
+Semantic substitution ($\Sem$) & yes & yes & at the COMM\\
+Deferred unquote ($\Unq$) & no & no & at a UNQ step, per occurrence\\
+Explicit substitution ($\ES$), equational & no & no & as in $\Unq$\\
+Explicit substitution ($\ES$), interactional & yes & no & at each resolution\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The equational placement is ruled out in \cite{UE} because equations are free
+while information erasure is not: an equation that forgets $d$ makes $\scong$
+identify configurations that differ in data, and cost accounting has nowhere to
+charge for the loss. Semantic substitution charges the erasure to the COMM,
+which is already the step that interaction pays for. The deferred unquote
+charges it to a step that no interaction pays for. Explicit substitution
+either inherits that placement or spreads the erasure across as many steps as
+there are occurrences.
+
+%=============================================================================
+\section{The argument}\label{sec:argument}
+%=============================================================================
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Reductions should be interactions.} A unary rule like
+  $\unq{\qn{p}{d}}\red p$, which fires without any interaction triggering it,
+  does not fit the context-labelled bisimulation programme \cite{LM00}. There,
+  a transition is labelled by the minimal context that completes a redex, and
+  every redex of $\Sem$ is a sender and receiver meeting. A redex that is
+  complete on its own contributes transitions that no context takes part in,
+  and that the environment can neither cause nor see except through their
+  effects.
+\item \textbf{Both proposals change bisimulation.} $\Unq$ adds internal steps
+  between a communication and the running of what it delivered. $\ES$ puts
+  substitution terms into the states being compared. Either way the
+  equivalence, and the proofs about it, must be rethought.
+\item \textbf{That change reflects a cost to the programmer.} In $\Sem$ the
+  substitution happens atomically, at the COMM, and the programmer
+  coordinates when and where substitutions happen with the full power of the
+  language, because every substitution is a communication. In the
+  alternatives, substitutions are detached from the communications that
+  produced them, and the programmer has to do extra work to make sure that
+  substitutions that must coincide do, and substitutions that must be ordered
+  are.
+\end{enumerate}
+
+Points 2 and 3 are one point seen from two sides: the more complicated
+bisimulation is the formal record of the coordination the programmer now has
+to do. The next two sections give examples of each side.
+
+%=============================================================================
+\section{The burden on the programmer}\label{sec:programmer}
+%=============================================================================
+
+Throughout, $a$, $b$, $c$, $x$, $x_1$, $x_2$ and $\mathit{ack}$ are fixed,
+distinct quoted names, and $e\in D$ is an arbitrary datum. Write $P\barb{a}$ when
+$P\scong\out{a}{M}\mid Q$ for some $M$ and $Q$, so that $P$ offers an output
+on $a$.
+
+\subsection{Knowing that received code is live}
+
+\begin{example}[Install, then acknowledge]\label{ex:ack}
+A receiver installs code it is sent and then acknowledges:
+\[
+  S \;=\; \out{x}{\pr{p}{d}}\mid
+         \rcv{y}{x}{(\drop{y}\mid\out{\mathit{ack}}{\pr{0}{e}})}.
+\]
+In $\Sem$,
+$S\red p\mid\out{\mathit{ack}}{\pr{0}{e}}$. Whoever consumes the
+acknowledgement does so in a state where $p$ is already installed: the
+acknowledgement means what it says. In $\Unq$,
+\[
+  S \;\red\; \unq{\qn{p}{d}}\mid\out{\mathit{ack}}{\pr{0}{e}},
+\]
+and the acknowledgement can be consumed, and acted on, before UNQ fires.
+\end{example}
+
+The natural repair is for the receiver to acknowledge \emph{after} the
+unquote. That cannot be done from the receiver's side. Suppose the receiver
+wraps the code, sends the wrapper to itself, and unquotes it:
+\[
+  \rcv{y}{x}{\big(\out{w}{\pr{\unq{y}\mid\out{\mathit{ack}}{\pr{0}{e}}}{e}}
+     \mid\rcv{z}{w}{\unq{z}}\big)}.
+\]
+After both communications and the UNQ of the wrapper, the state is
+$\unq{\qn{p}{d}}\mid\out{\mathit{ack}}{\pr{0}{e}}$, which is where it started.
+Every wrapper leaves the inner unquote pending.
+
+\begin{proposition}[No receiver-side signal of liveness]\label{prop:noack}
+In $\Unq$, no part of the receiver can be causally downstream of the step
+$\unq{\qn{p}{d}}\red p$, except through actions of $p$ itself.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+UNQ has a single residual, $p$, and no partner. Anything else in the term is
+unchanged by the step and so cannot depend on it. The only events that follow
+it causally are those of $p$.
+\end{proof}
+
+So in $\Unq$ the acknowledgement must be built into the shipped code: the
+\emph{sender} must send $\pr{p\mid\out{\mathit{ack}}{\pr{0}{e}}}{d}$. That moves
+a receiver's coordination problem across the trust boundary to the sender,
+and it changes the message, hence the name $@M$, hence any protocol keyed on
+that name. In $\Sem$ the receiver needs no help. Its continuation running is
+the evidence that the code is installed, because both are the same step.
+
+\subsection{Substitutions that must happen in order}
+
+\begin{example}[Activation follows reception]\label{ex:order}
+A receiver takes two pieces of code in sequence and runs each:
+\[
+  T \;=\; \out{x}{\pr{p_1}{d_1}}\mid\out{x}{\pr{p_2}{d_2}}\mid
+       \rcv{y_1}{x}{\big(\drop{y_1}\mid\rcv{y_2}{x}{\drop{y_2}}\big)}.
+\]
+Taking $p_1$ as the first one received, in $\Sem$ every run passes through
+$p_1\mid\rcv{y_2}{x}{\drop{y_2}}\mid\out{x}{\pr{p_2}{d_2}}$: the first code
+is installed before the second can be received. In $\Unq$ this run is
+available:
+\[
+\begin{array}{rcl}
+T & \red & \unq{\qn{p_1}{d_1}}\mid\rcv{y_2}{x}{\unq{y_2}}\mid\out{x}{\pr{p_2}{d_2}}\\
+  & \red & \unq{\qn{p_1}{d_1}}\mid\unq{\qn{p_2}{d_2}}\\
+  & \red & \unq{\qn{p_1}{d_1}}\mid p_2\\
+  & \red & p_1\mid p_2 .
+\end{array}
+\]
+The second code is live while the first is not.
+\end{example}
+
+The order of reception no longer fixes the order of activation. When that
+order matters, as when $p_2$ is an update meant to supersede $p_1$, the
+programmer must restore it, and by Proposition~\ref{prop:noack} the only way
+is the one from Example~\ref{ex:ack}: the sender of $p_1$ builds in a
+signal, and the receiver guards the second receipt on it.
+
+\subsection{Substitutions that must happen together}
+
+\begin{example}[Simultaneous availability]\label{ex:together}
+Two pieces of code arrive on different channels, from different senders, and
+should become available together. Let $p_1=\out{a}{\pr{0}{e}}$ and
+$p_2=\out{b}{\pr{0}{e}}$, and
+\[
+  U \;=\; \out{x_1}{\pr{p_1}{d_1}}\mid\out{x_2}{\pr{p_2}{d_2}}\mid
+       \rcv{y_1}{x_1}{\rcv{y_2}{x_2}{(\drop{y_1}\mid\drop{y_2})}}.
+\]
+In $\Sem$, $p_1$ is installed under the guard on $x_2$ at the first COMM, and
+both are released by the second: $U\red\red p_1\mid p_2$. Along every run,
+a state offers output on $a$ only if it also offers output on $b$:
+$P\barb{a}$ implies $P\barb{b}$. In $\Unq$, after both COMMs and one UNQ the
+state is $p_1\mid\unq{\qn{p_2}{d_2}}$, with $\barb{a}$ but $\nbarb{b}$.
+\end{example}
+
+As in the previous examples, the receiver cannot repair this. Packaging the
+two received codes into one wrapper, $\out{w}{\pr{\unq{y_1}\mid\unq{y_2}}{e}}$,
+and unquoting it leaves $\unq{\qn{p_1}{d_1}}\mid\unq{\qn{p_2}{d_2}}$, two
+independent pending steps again. In $\Unq$, two codes received from
+independent senders cannot be made live simultaneously by the receiver alone.
+In $\Sem$ it takes no effort at all, because a single COMM installs every
+drop of the variables it has bound so far.
+
+With $k$ unguarded drops of received variables, a single COMM of $\Sem$
+corresponds in $\Unq$ to a COMM followed by $k$ independent unquotes, with
+$2^k$ reachable states of partial activation. Each of these is a state the
+programmer must either show to be harmless or rule out.
+
+\subsection{Names computed from received code}
+
+Because substitution in $\Sem$ acts under quotation, a name built from
+received code is resolved at the COMM along with everything else. This is how
+\rhoc{} programs compare code: two processes rendezvous on a name exactly when
+the code they quote is congruent.
+
+\begin{example}[Naming the code that arrived]\label{ex:name}
+Let $n(y)=\qn{\drop{y}}{d_0}$, a name computed from received code, and
+\[
+  V \;=\; \out{x}{\pr{p}{d}}\mid\rcv{y}{x}{\out{n(y)}{\pr{0}{e}}}
+       \mid\rcv{z}{\qn{p}{d_0}}{Q}.
+\]
+In $\Sem$, COMM gives $n(y)\ssub{\qn{p}{d}}{y}=\qn{p}{d_0}$, so the output
+meets the third component and $Q$ runs. In $\Unq$ the output lands on
+$\qn{\unq{\qn{p}{d}}}{d_0}$, which is a different name from $\qn{p}{d_0}$,
+because UNQ is a reduction, not an equation, and nothing reduces inside a
+quote. The rendezvous never happens.
+\end{example}
+
+The workaround in $\Unq$ is to listen on $\qn{\unq{\qn{p}{d}}}{d_0}$. But that
+name depends on the datum $d$ of the message in which the code happened to
+travel. The same code obtained by three routes, received with datum $d$,
+received with datum $d'$, or written literally, gets three different names.
+Code identity becomes route-dependent, and the programmer must track the route
+of every piece of code whose name is used.
+
+$\ES$ under the interactional reading adds a variant of this burden even for
+channel positions. A standard \rhoc{} idiom is to reply on the name of the
+request itself:
+\[
+  \out{x}{M}\mid\rcv{r}{@M}{S}\;\mid\;\rcv{y}{x}{\out{y}{\pr{q}{e}}}.
+\]
+In $\Sem$ the server's reply is on $@M$ as soon as the request is received.
+Under the interactional reading the reply sits on the variable $y$ until a
+separate resolution step against $\esub{@M}{y}$, and if the server replies
+twice, the two resolutions are independent and the simultaneity problem of
+Example~\ref{ex:together} returns.
+
+%=============================================================================
+\section{The burden on bisimulation}\label{sec:bisim}
+%=============================================================================
+
+\subsection{Unary redexes and labels}
+
+In the approach of Leifer and Milner \cite{LM00}, an agent $a$ has a
+transition $a\xrightarrow{C}a'$ when $C[a]\red a'$ and $C$ is a minimal
+context that makes this happen; their congruence theorem is for the strong
+equivalences built on these labels. In $\Sem$ every redex consists of a
+receiver and a sender, so a label is either the missing half of a
+communication or the identity, when both halves are already present in the
+agent. In $\Unq$ the term $\unq{\qn{p}{d}}$ is a complete redex on its own. It
+contributes identity-labelled transitions that correspond to no communication
+at all.
+
+Strong equivalences count these steps. $\unq{\qn{p}{d}}$ has exactly one
+transition and its target is $p$, so it is not strongly bisimilar to $p$
+except in degenerate cases. Every law of $\Sem$ that involves running
+received code therefore survives in $\Unq$ at best as a weak law, and
+extending the context-labelled congruence results from strong to weak
+equivalences requires further conditions that must then be checked.
+
+\subsection{The relations get larger}
+
+Consider a receiver with $k$ unguarded drops of the received variable,
+\[
+  W \;=\; \out{x}{\pr{p}{d}}\mid\rcv{y}{x}{(\drop{y}\mid\cdots\mid\drop{y})}.
+\]
+In $\Sem$, $W$ has one reduction, to $p^{\mid k}$, and any bisimulation
+containing $W$ needs one more pair to account for it. In $\Unq$, $W$ reduces
+to $(\unq{\qn{p}{d}})^{\mid k}$, and then through every subset of the $k$
+unquotes. A weak bisimulation relating $W$ to its $\Sem$ counterpart must
+contain a pair for each of the $2^k$ partial states, each related to
+$p^{\mid k}$ or to an intermediate of $p$'s own behaviour. These are the same
+$2^k$ states that burden the programmer in Example~\ref{ex:together}, now
+appearing as proof obligations. Up-to techniques can compress them, but
+they have to be developed and justified, whereas in $\Sem$ they are not
+needed.
+
+\subsection{Laws that fail outright}
+
+The extra steps of $\Unq$ can be absorbed by moving to weak equivalence. The
+name problem of Example~\ref{ex:name} cannot.
+
+\begin{proposition}\label{prop:namefail}
+Let
+\[
+  S_1 = \out{x}{\pr{p}{d}}\mid\rcv{y}{x}{\out{\qn{\drop{y}}{d_0}}{\pr{0}{e}}},
+  \]
+  \[
+  S_2 = \out{x}{\pr{p}{d}}\mid\rcv{y}{x}{\out{\qn{p}{d_0}}{\pr{0}{e}}},
+\]
+with $y\notin\fv(p)$, and $\drop{y}$ read as $\unq{y}$ in $\Unq$. Then $S_1$
+and $S_2$ are strongly barbed bisimilar in $\Sem$, and not even weakly barbed
+bisimilar in $\Unq$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+In $\Sem$ both have the barb $\barb{x}$ and a single reduction, to the same
+term $\out{\qn{p}{d_0}}{\pr{0}{e}}$. In $\Unq$ the reducts are
+$\out{\qn{\unq{\qn{p}{d}}}{d_0}}{\pr{0}{e}}$ and
+$\out{\qn{p}{d_0}}{\pr{0}{e}}$. Both are stuck, and their barbs are on
+distinct names, since $\unq{\qn{p}{d}}\not\scong p$. No sequence of internal
+steps reconciles them, because no step acts inside a quote.
+\end{proof}
+
+The bisimilarity in $\Sem$ is not a congruence: a context can send different
+code on $x$. The point is that in $\Unq$ the two terms are distinguished even
+without a context. The law ``receiving code and naming it is the same as
+naming the code'' holds in $\Sem$ and fails in $\Unq$, however weak the
+equivalence. Bisimulation proofs in $\Unq$ must keep track of the route by
+which each named piece of code arrived, which is Example~\ref{ex:name}
+restated as a proof obligation.
+
+\subsection{Substitutions in the state}
+
+Under the equational reading, $\ES$ reduces to $\Unq$ up to $\scong$, so
+bisimulation up to $\scong$ absorbs the substitution terms and the previous
+subsections apply unchanged. Under the interactional reading the substitution
+terms are genuine components of the state. A bisimulation must relate
+$\scope{y}{(P\mid\esub{N}{y})}$, and each of its partial resolutions, to
+$P\ssub{N}{y}$, and the number of internal steps a single COMM gives rise to
+depends on the number of occurrences of $y$, which is a syntactic accident.
+Names with a free variable, such as $\qn{\unq{y}}{d_0}$, mean different
+channels under different surrounding substitutions, so barbs must be read
+relative to their scope. This is why the fusion calculus works with
+hyperequivalence, bisimulation closed under substitutions \cite{PV98}. That is
+a heavier notion than anything $\Sem$ needs, since in $\Sem$ no state ever
+contains an unresolved received name.
+
+\subsection{Cost}
+
+In cost-accounted \rhoc{}, cost is charged to reductions. In $\Sem$ the cost
+of a run is a function of its communications. In $\Unq$ it also depends on how
+many drops the receiver happened to write, and under the interactional reading
+of $\ES$ on how many occurrences of the variable there are in any position. A
+cost-aware equivalence therefore distinguishes programs that differ only in how
+often they mention what they received. This is the cost-accounting version of
+the remark in Section~\ref{sec:where}: the alternatives charge for erasure at
+steps that interaction does not pay for.
+
+%=============================================================================
+\section{What the alternatives offer}\label{sec:fair}
+%=============================================================================
+
+The alternatives have real merits, and the argument does not depend on
+denying them.
+
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{Provenance.} In $\Unq$ a name built from received code records
+  the datum of the message the code arrived in. Sometimes that is wanted. In
+  $\Sem$ it is available on request rather than imposed: the binary drop keeps
+  the datum, so $\qn{\bdrop{y}{u}}{d_0}$, which is congruent to
+  $\qn{\out{u}{\pr{p}{d}}}{d_0}$ after the COMM, is a name that records
+  $d$. The programmer chooses whether a name records where the code came from.
+\item \textbf{Sharing.} Explicit substitution earns its place in
+  implementations, where it avoids copying large terms and lets a substitution
+  be shared \cite{ACCL91}. An implementation of $\Sem$ may well use explicit
+  substitutions internally. The argument here is about the calculus, which
+  fixes what is observable: whatever the machinery, the installation of
+  received code must look atomic with the communication that delivered it.
+\item \textbf{Uniform substitution.} $\Unq$ has a simpler substitution
+  operation, which is pleasant metatheoretically. The price is paid
+  elsewhere: in an extra reduction rule, in weak equivalences, and in the
+  failure of Proposition~\ref{prop:namefail}.
+\end{itemize}
+
+%=============================================================================
+\section{Open questions}\label{sec:open}
+%=============================================================================
+
+\begin{question}[Operational correspondence]
+Translate $\Sem$ into $\Unq$ by reading $\drop{y}$ as $\unq{y}$.
+Proposition~\ref{prop:namefail} shows the translation is not adequate in
+general. Is it adequate up to weak bisimilarity on the fragment in which no
+drop occurs under quotation? The examples in Section~\ref{sec:programmer}
+suggest it is, but this has not been proved.
+\end{question}
+
+\begin{question}[Relative pushouts with E2]
+With E2 in $\scong$, every output is congruent to a binary drop. Labels can
+then be taken in a normal form with binary drops on quoted names expanded.
+It remains to check that the reactive system for $\Sem$ has the relative
+pushouts that the congruence theorem of \cite{LM00} requires, and to state
+how semantic substitution interacts with the contexts involved.
+\end{question}
+
+\begin{question}[The explicit-substitution rules]
+The rules for $\ES$ here are a reconstruction. With the intended rules in
+hand, it should be checked which reading they fall under, and whether a
+middle reading exists that both keeps every resolution an interaction and
+restores atomicity.
+\end{question}
+
+\begin{question}[Structure on $D$]
+Nothing here uses structure on $D$. The quantum note \cite{UE} uses a group;
+other choices (costs, provenance tags, types) suggest themselves. The question
+is which properties of the core are stable under which choices, in particular
+whether erasure at the unary drop should be parametric in a map $D\to 1$ that
+the choice of $D$ can refine.
+\end{question}
+
+\paragraph{Acknowledgement.} The two alternatives, and the conversation that
+sharpened the argument, are due to Mike Stay. The note was drafted in dialogue
+with Claude (Anthropic).
+
+\begin{thebibliography}{99}
+\bibitem{ACCL91} M.~Abadi, L.~Cardelli, P.-L.~Curien and J.-J.~L\'evy.
+  Explicit substitutions. \emph{J. Funct. Program.} 1(4):375--416, 1991.
+\bibitem{GW00} P.~Gardner and L.~Wischik. Explicit fusions. \emph{MFCS 2000},
+  LNCS 1893, 2000.
+\bibitem{LM00} J.~J.~Leifer and R.~Milner. Deriving bisimulation congruences
+  for reactive systems. \emph{CONCUR 2000}, LNCS 1877, 2000.
+\bibitem{UE} L.~G.~Meredith. Unitary in the equations, measurement in the
+  reductions. Working note, F1R3FLY-io/publications, \texttt{fuzzyware/}, 2026.
+\bibitem{MR05} L.~G.~Meredith and M.~Radestock. A reflective higher-order
+  calculus. \emph{ENTCS} 141(5):49--67, 2005.
+\bibitem{PV98} J.~Parrow and B.~Victor. The fusion calculus: expressiveness and
+  symmetry in mobile processes. \emph{LICS 1998}.
+\end{thebibliography}
+
+\end{document}
