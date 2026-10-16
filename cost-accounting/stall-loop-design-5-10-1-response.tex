@@ -12,12 +12,18 @@
 \usepackage{enumitem}
 \usepackage{xcolor}
 \usepackage{listings}
+\usepackage{seqsplit}
+\usepackage{url}
+\urlstyle{tt}
 
 \hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black}
 
 \newcommand{\sigid}{\ensuremath{\sigma}}
 \newcommand{\lfbcur}{\ensuremath{\mathrm{LFB}_{\mathrm{cur}}}}
-\newcommand{\code}[1]{\texttt{#1}}
+% \code{} wraps short identifiers; \seqsplit lets long tokens like
+% CasperError::IncompatibleFinalizedFork break between characters rather
+% than overrun the right margin. Use \path{} (from url) for file paths.
+\newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
 
 \title{A Live-and-Safe Finalizer-Progress Design\\
        \large Response to Stall-Loop-Design §5.10.1 (Finalizer keeps progress)}
@@ -51,7 +57,7 @@ Issue \#24 reports a stall pathology in which validators eventually stop
 advancing the Last Finalized Block (LFB). The current implementation wraps
 \code{compute\_last\_finalized\_block} in a 15\,s
 \code{tokio::time::timeout}
-(\code{casper/src/rust/engine/multi\_parent\_casper/finalization\_runner.rs:278}).
+(\path{casper/src/rust/engine/multi_parent_casper/finalization_runner.rs:278}).
 On expiry it drops the entire future, discards every memo built in the run,
 and reschedules. If one derivation exceeds the budget, subsequent runs
 inherit no accumulated work and the node can stall indefinitely while
@@ -78,12 +84,12 @@ Collapsing them into one rule produces unsafety on (ii) and silence on
 $\theta \le 0$}
 \label{sec:cex-incompat}
 
-\code{FloorOfView} in \code{casper/src/rust/finality/floor.rs:405-440}
+\code{FloorOfView} in \path{casper/src/rust/finality/floor.rs:405-440}
 explicitly recognises that, when the fault-tolerance threshold is
 non-positive, two disjoint half-stake cliques can certify incompatible
 same-height blocks without equivocating. A complete derivation returns
 \code{IncompatibilityHold}; the surrounding \code{hold\_for}
-(\code{floor.rs:461}) explicitly converts
+(\path{floor.rs:461}) explicitly converts
 \code{CasperError::IncompatibleFinalizedFork} to a hold when
 $\theta_{\text{num}} \le 0$. Under $\theta > 0$, the same error remains a
 loud safety alarm.
@@ -102,7 +108,7 @@ not be bypassed by a deadline.
 \label{sec:cex-contain}
 
 Even under $\theta > 0$, an oracle certificate alone is insufficient.
-\code{floor\_of\_view\_metered} at \code{floor.rs:619-642} computes a
+\code{floor\_of\_view\_metered} at \path{floor.rs:619-642} computes a
 candidate floor and then verifies, via \code{state\_contains\_metered},
 that the derived floor contains every effect settled under the current
 LFB. On failure, it returns \code{ContainmentHold}, not \code{Advance}.
@@ -117,9 +123,9 @@ state. That is a monotonicity violation of exactly the kind
 A race already exists in the current code, independent of §5.10.1, which
 §5.10.1 would widen. Between
 \code{floor\_of\_view(\&dag, \ldots)} returning \code{Advance(F)} at
-\code{finalization\_runner.rs:504} and
+\path{finalization_runner.rs:504} and
 \code{record\_directly\_finalized} taking the metadata write lock inside
-\code{block-storage/src/rust/dag/block\_dag\_key\_value\_storage.rs:1575-1697},
+\path{block-storage/src/rust/dag/block_dag_key_value_storage.rs:1575-1697},
 new latest-messages can be admitted. The admitted state may invalidate
 $F$: a validator that previously carried $F$'s majority may advertise a
 different latest message, or a newly-held block may introduce effects
@@ -198,7 +204,7 @@ step-count budget is used in tests for determinism, wall-clock in
 production.
 
 Yield points coincide with phase boundaries already present in
-\code{floor\_of\_view\_metered} (\code{floor.rs:526-643}): after tips
+\code{floor\_of\_view\_metered} (\path{floor.rs:526-643}): after tips
 enumeration, between candidates in the oracle sweep (one
 \code{CliqueOracle::ft\_witnessed\_exact\_metered} call is one step),
 per parent in \code{parent\_frontier\_metered}, per \code{(cand, other)}
@@ -280,7 +286,7 @@ than tolerating them.
 
 \paragraph{One LMDB transaction.} The write uses
 \code{batched\_put} at
-\code{shared/src/rust/store/lmdb\_key\_value\_store.rs:183} across three
+\path{shared/src/rust/store/lmdb_key_value_store.rs:183} across three
 stores sharing one \code{Env}:
 \begin{itemize}
 \item \code{block\_metadata} -- updated \code{BlockMetadata} rows for
@@ -304,13 +310,13 @@ commits, under the same write guard. On crash before the swap, the next
 Events publish \emph{after} the LMDB commit returns \code{Ok}, in
 sorted $(\text{block\_number}, \text{block\_hash})$ order; today the
 code iterates a \code{HashSet} non-deterministically at
-\code{finalization\_runner.rs:402-466}.
+\path{finalization_runner.rs:402-466}.
 
 A new \code{BlockFinalisedV2} variant in
-\code{shared/src/rust/shared/f1r3fly\_event.rs:98-113} carries
+\path{shared/src/rust/shared/f1r3fly_event.rs:98-113} carries
 $\text{commit\_epoch}$. The marker is written in the commit batch; on
 startup \code{reconcile\_pending\_finalization}
-(\code{block\_metadata\_store.rs:104}) reads the marker:
+(\path{block_metadata_store.rs:104}) reads the marker:
 
 \begin{center}\small
 \begin{tabular}{@{}p{0.52\linewidth}p{0.42\linewidth}@{}}
@@ -511,10 +517,10 @@ Split \code{prepare\_finalized\_batch} from
 \emph{(new)} &
 Commit marker store + schema. \\
 
-\code{shared/\ldots/f1r3fly\_event.rs:98-113} &
+\path{shared/\ldots/f1r3fly_event.rs:98-113} &
 Add \code{BlockFinalisedV2 \{ commit\_epoch, \ldots \}} variant. \\
 
-\code{block-storage/\ldots/soak\_snapshot.rs:129, 869-957} &
+\path{block-storage/\ldots/soak_snapshot.rs:129, 869-957} &
 Include commit marker and LFB pointer in snapshot/restore. \\
 \bottomrule
 \end{tabular}
@@ -525,7 +531,7 @@ Pattern references already in-tree (reuse, don't reinvent):
 \code{imbl::OrdMap}/\code{HashSet} copy-on-write in
 \code{BlockMetadataStore} for the \code{DagState} swap;
 \code{batched\_put} at
-\code{shared/\ldots/lmdb\_key\_value\_store.rs:183} for cross-store
+\path{shared/\ldots/lmdb_key_value_store.rs:183} for cross-store
 atomicity; \code{FinalityProgress} struct at
 \code{casper/\ldots/block\_creator.rs} as a progress-tracking pattern.
 
@@ -541,7 +547,7 @@ during long derivations are observed.
 
 \item \textbf{\code{propagate\_ft\_to\_finalized\_blocks} boundary.}
 Today runs after persistence at
-\code{block\_dag\_key\_value\_storage.rs:1678}; raises a monotonic lower
+\path{block_dag_key_value_storage.rs:1678}; raises a monotonic lower
 bound, so partial crashes self-heal. Likely acceptable to leave outside
 the atomic commit; worth stating explicitly in the final design.
 
