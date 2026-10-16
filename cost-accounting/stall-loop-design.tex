@@ -45,7 +45,7 @@
 
 \title{\textbf{Breaking the Validator Stall Loop}\\[4pt]
 \large Cost-accounted order-then-execute for F1R3Node:\\ analysis, design, and development plan}
-\author{F1R3FLY.io --- design document, draft for discussion}
+\author{F1R3FLY.io --- design document, revision 2}
 \date{October 16, 2026}
 
 \begin{document}
@@ -53,19 +53,20 @@
 
 \begin{center}
 \small
-\begin{tabular}{@{}ll@{}}
+\begin{tabular}{@{}lP{10.6cm}@{}}
 \toprule
 Repository & \code{F1R3FLY-io/f1r3node-rust} \\
 Stall review basis & \code{master} at \code{7264c98} (Oct 15, 2026) \\
 Branch reviewed & \code{feature/cost-accounted-rho} at \code{ccbee928} (Oct 13, 2026) \\
 Integration target & \code{dev} at \code{555a5e44} (Oct 16, 2026) \\
+Revision 2 & Incorporates the Casper Working Group response to \S5.10.1 and the status of delivered work (Oct 16, 2026) \\
 Method & Code reading with line-level verification. No profiling was run for this document. \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \begin{abstract}
-\noindent Validators stall as they come under sustained load. A code review traces the stall to a set of feedback loops that all feed on one quantity: the finality lag, the distance between the tips of the block DAG and the last finalized block (LFB). Many per-block and per-proposal costs grow with that lag, which slows proposals and validation, which lengthens the lag. Two hard limits then turn the slowdown into a stop. The root of most of this cost is run-to-completion execution: because each deploy runs to completion against a committed state, concurrently produced blocks hold divergent post-states, and the node must merge them. The cost-accounting design removes the reason for the merge. Every potential conflict is marked by signature, so deploys can run at any time, and agreement reduces to two things: the state changes of each block, settled by one runner and checked by replay, and the order of conflicting blocks. This document reports the stall analysis, assesses how much of it the \code{feature/cost-accounted-rho} branch addresses today, gives a detailed design for cost-accounted order-then-execute on v6 shards, and lays out a development plan that lands it in \code{dev} with minimal change to the legacy path.
+\noindent Validators stall as they come under sustained load. A code review traces the stall to a set of feedback loops that all feed on one quantity: the finality lag, the distance between the tips of the block DAG and the last finalized block (LFB). Many per-block and per-proposal costs grow with that lag, which slows proposals and validation, which lengthens the lag. Two hard limits then turn the slowdown into a stop. The root of most of this cost is run-to-completion execution: because each deploy runs to completion against a committed state, concurrently produced blocks hold divergent post-states, and the node must merge them. The cost-accounting design removes the reason for the merge. Every potential conflict is marked by signature, so deploys can run at any time, and agreement reduces to two things: the state changes of each block, settled by one runner and checked by replay, and the order of conflicting blocks. This document reports the stall analysis, assesses how much of it the \code{feature/cost-accounted-rho} branch addresses today, gives a detailed design for cost-accounted order-then-execute on v6 shards, and lays out a development plan that lands it in \code{dev} with minimal change to the legacy path. Revision~2 replaces the finalizer-progress rule of revision~1, which was unsafe, with a design that separates a resumable computation, a validation under the commit-time snapshot, and an atomic commit (\S\ref{sec:finalizer}). It also records the work delivered so far.
 \end{abstract}
 
 \tableofcontents
@@ -82,7 +83,9 @@ Method & Code reading with line-level verification. No profiling was run for thi
 
 \textbf{The branch today.} \code{feature/cost-accounted-rho} implements the cost-accounting core and a funding gate, but its Casper pipeline is still execute-then-merge. Its interim v6 merge rule removes the exponential conflict search on v6 shards. Otherwise the stall loop is untouched, a v6 block carries at most one user deploy, and the reducer changes cost legacy shards 15--23\,\% more CPU on the branch's own profiles. The branch's own design proposal (its \S7) describes order-then-execute but keeps deploy-at-a-time execution and a single-order scheduler. This document corrects both.
 
-\textbf{The plan.} Two tracks run in parallel (Section~\ref{sec:plan}). Track~A fixes the stall on \code{dev} now, independent of cost accounting, and those fixes are prerequisites for v6 as well, because the finality half of the loop survives any execution model. Track~B lands cost accounting in \code{dev} in seven increments. The legacy path stays byte-identical to \code{dev}. The interim merge rule, the one-offer block lane and the scheduler are left behind. The v6 consensus seam enters through four hook points behind a genesis-policy switch.
+\textbf{Finality progress.} Revision~1 said that a finalizer run that reaches its deadline ``adopts the highest candidate proven so far''. The Casper Working Group showed that this rule is not safe and gives no progress argument (\S\ref{sec:finalizer}). An oracle verdict on one candidate is not a finality decision. Revision~2 adopts the group's replacement: a resumable \emph{Compute} phase, a \emph{Validate} phase under the snapshot at commit time, and an atomic \emph{Commit}. A deadline never cancels Validate or Commit, and no partial result is ever committed. The delivered fix A1a was already consistent with this. It keeps only facts about immutable blocks across runs and commits only complete derivations.
+
+\textbf{The plan.} Two tracks run in parallel (Section~\ref{sec:plan}). Track~A fixes the stall on \code{dev} now, independent of cost accounting, and those fixes are prerequisites for v6 as well, because the finality half of the loop survives any execution model. Track~B lands cost accounting in \code{dev} in seven increments. The legacy path stays byte-identical to \code{dev}. The interim merge rule, the one-offer block lane and the scheduler are left behind. The v6 consensus seam enters through four hook points behind a genesis-policy switch. Track~A items A1a, A2 and A3 and the first v6 tranche are delivered (\S\ref{sec:status}).
 
 \begin{keypoint}
 \textbf{Decisions recorded for this design (October 16, 2026).}
@@ -90,6 +93,7 @@ Method & Code reading with line-level verification. No profiling was run for thi
 \item The single-order reduction scheduler is superseded by an order-independent charge model. The scheduler-based decision records are superseded or amended accordingly (\S\ref{sec:charge}).
 \item Signature marking covers data-channel races between different signers. Two blocks conflict only if their signature footprints intersect (\S\ref{sec:footprint}).
 \item A first version uses a total order on finalized blocks; exploiting the partial order is a later refinement.
+\item The finalizer adopts a candidate only after a complete derivation and a re-validation under the commit-time snapshot. The commit is one atomic transaction. This supersedes \S5.10.1 of revision~1 (\S\ref{sec:finalizer}).
 \end{enumerate}
 \end{keypoint}
 
@@ -417,12 +421,84 @@ Blocks no longer have their own post-states, so bonds come from attested execute
 
 Removing execution from the consensus path makes blocks cheap to produce and validate. The DAG can then grow faster than finality, and the clique oracle's cost still grows with the unfinalized depth. The finality half of the loop survives in a consensus-only form unless it is fixed. The following are part of this design, not optional:
 \begin{enumerate}
-\item \textbf{The finalizer keeps progress.} A run that hits its deadline adopts the highest candidate proven so far. Oracle verdicts are memoized per (target, snapshot) and one run cache is shared across a frontier derivation.
+\item \textbf{Finalizer forward progress.} The finalizer derives the floor in resumable steps under a per-run budget. A budget that runs out keeps the cursor as a resumption token and decides nothing. A candidate is adopted only when the derivation is complete \emph{and} a re-validation under the commit-time snapshot passes. The adoption is one atomic transaction. Section~\ref{sec:finalizer} gives the design. (Revision~1 said that a run at its deadline adopts the highest candidate proven so far. That rule is withdrawn.)
 \item \textbf{Proposal pacing.} A validator proposes only when it has something new: envelopes, records to cite, or a liveness need. Deploy-triggered requests coalesce into one pending proposal. Above a floor-distance threshold (well below 256), proposers include no envelopes and propose only to advance finality.
 \item \textbf{Demand cap and execution-lag gate.} Each block's $\sum$ phlo limit is capped. If a node's executed root trails its LFB by more than a threshold, its proposals carry no envelopes until it catches up.
 \item \textbf{Admission cap.} The deploy pool rejects new envelopes with a retryable ``busy'' status above a size threshold.
 \item \textbf{Work off the async runtime.} Execution, replay and checkpointing run on a dedicated runtime or blocking pool, never on the workers serving gRPC and peer traffic.
 \end{enumerate}
+
+\subsection{Finalizer forward progress}\label{sec:finalizer}
+
+This section replaces item~1 of \S5.10 in revision~1. It follows the response of the F1R3node Casper Working Group, ``A Live-and-Safe Finalizer-Progress Design'' (October 16, 2026), and adds two points from the review of that response.
+
+\subsubsection*{Why the rule of revision~1 is withdrawn}
+
+The rule ``adopt the highest candidate proven so far'' treats an oracle verdict on one candidate as a finality decision. The response gives three counterexamples.
+\begin{enumerate}
+\item \textbf{Incompatibility under $\theta \le 0$.} Two disjoint half-stake cliques can certify incompatible blocks of the same height without equivocation. A complete derivation returns \code{IncompatibilityHold}. A run that certifies $A$ and stops before it examines $B$ finalizes $A$. A peer with the opposite order finalizes $B$.
+\item \textbf{State containment.} After the oracle verdict, \code{floor_of_view_metered} checks that the derived floor contains every effect settled under the current LFB. A run that stops between the two steps can adopt a floor that regresses settled state.
+\item \textbf{Race before commit.} Between \code{Advance(F)} and the metadata write lock in \code{record_directly_finalized}, new latest messages can arrive. Only the membership of $F$ in the DAG is checked again.
+\end{enumerate}
+The rule also has no progress argument. If every run stops before it certifies one candidate, there is nothing to adopt.
+
+\textbf{Review notes.} Counterexamples~1 and~2 refute the rule of revision~1. The delivered fix A1a does not use that rule. A timed-out run still discards its derivation, and only a complete derivation can advance the LFB. Counterexample~3 applies mainly under $\theta \le 0$. The finalizer is the only writer of the LFB in steady state, so the LFB cannot move between derivation and commit. Under $\theta > 0$, a new latest message cannot undo a valid certificate. The re-validation below costs little, so the design adopts it in all regimes. The review found one more defect in \code{dev}: the 15\,s timeout wraps the commit effect as well as the derivation (\code{finalization_runner.rs} on \code{dev}, lines 278 and 602). The effect has an await point between its snapshot and its metadata write, so a timeout can cancel a commit part of the way through. Fix A1b closes this before A1c lands.
+
+\subsubsection*{Three phases}
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+\item[Compute] A resumable state machine with a bounded budget. A step returns \code{Yielded(cursor)} or \code{Terminal(FloorOfView,}~$\sigma$\code{)}. Compute never commits. The cursor states follow the phases of \code{floor_of_view_metered}: tips, decidability, candidates, the oracle sweep (one oracle call is one step), parent floors, the compatibility pairs, and containment. The budget is checked only between steps. Tests use a step-count budget for determinism. Production uses wall-clock time.
+\item[Validate] Runs while it holds the metadata write lock, under the current snapshot $\sigma'$. It discharges the preconditions P1--P4 below.
+\item[Commit] One LMDB write transaction across the block metadata, a new finalization commit marker and a one-row LFB pointer. The transaction uses \code{batched_put} across stores that share one environment. The in-memory DAG state changes after the transaction commits, under the same guard.
+\end{description}
+A deadline fires between Compute steps only. It never cancels Validate or Commit.
+
+\subsubsection*{Snapshot identity and the change policy}
+
+The snapshot identity $\sigma$ is a 32-byte Blake2b hash of: the sorted pairs (validator, latest message hash), the current LFB hash and height, the threshold $\theta$, and a hash of the equivocation-tracker state. Bonds and epoch are functions of the LFB, so the LFB hash covers them.
+
+Memos are in two layers:
+\begin{itemize}
+\item \textbf{Facts about immutable blocks.} These survive a change of $\sigma$. Examples are self-justifications, justification maps keyed by message, main-chain membership keyed by (target, block), the frontier index, the fault-tolerance lower bound and the lineage memos. Fix A1a delivered the oracle part of this layer: one shared cache, capped at 200{,}000 entries per map.
+\item \textbf{Work that read the snapshot.} Tips, candidate selection and verdicts keyed by (target, $\sigma$). A change of $\sigma$ discards this layer and resets the cursor to the tips state.
+\end{itemize}
+\textbf{Anti-livelock.} If changes of $\sigma$ invalidate $N$ consecutive runs (default~4), the finalizer freezes to the last stable $\sigma$ for one run. The result is still safe, because Validate checks it under $\sigma'$.
+
+\subsubsection*{Preconditions at commit}
+
+\begin{description}[leftmargin=2.5em,labelwidth=2em]
+\item[P1] The candidate $F$ is in the DAG.
+\item[P2] The state of $F$ contains the state settled under the current LFB. This closes counterexample~3.
+\item[P3] Under $\theta > 0$, no \code{IncompatibleFinalizedFork} among the siblings of $F$ in the current snapshot. This is a loud alarm, not a hold. Under $\theta \le 0$, \code{IncompatibilityHold} halts the commit. This closes counterexample~1.
+\item[P4] A-LIN: $F$ is a main-parent-chain descendant of the current LFB. A violation halts with \code{ALinViolation}. Question Q-1 becomes an observable alarm.
+\end{description}
+If a precondition fails, the commit aborts with \code{StateChanged} and the next cycle derives again. One bounded retry is permitted. The 128-iteration reconcile loop in \code{record_directly_finalized} is removed.
+
+\subsubsection*{Events and crash recovery}
+
+Events publish after the transaction commits, in sorted (block number, block hash) order. Today they publish in \code{HashSet} order. A new event variant, \code{BlockFinalisedV2}, carries a \code{commit_epoch}. The variant is new because \code{bincode} does not accept trailing fields. At startup, \code{reconcile_pending_finalization} reads the marker. A marker with \code{events_published = false} causes the events to publish again with the same \code{commit_epoch}. A stale metadata flag without a marker is corruption and halts the node.
+
+\subsubsection*{Liveness}
+
+The response states the assumptions: eventual synchrony, an honest-stake supermajority suitable for the regime ($\ge 2/3$ under $\theta > 0$), fair block propagation, and a per-run budget large enough for one Compute step. Under these assumptions:
+\begin{enumerate}[label=L\arabic*.,leftmargin=2.5em]
+\item Facts about immutable blocks accumulate across runs and are never invalidated.
+\item After the global stabilization time, $\sigma$ stays stable for one cycle of work.
+\item Under a stable $\sigma$, the cursor reaches \code{Ready} in $O(|\text{frontier}|)$ steps.
+\item Validate is one cheap step. In the worst case the cursor restarts under $\sigma'$ and L1 keeps the per-block work.
+\item Commit is atomic with respect to crashes and to concurrent runs.
+\end{enumerate}
+
+\subsubsection*{Points added by the review}
+
+\begin{enumerate}
+\item \textbf{Asynchronous finalization effects.} Today \code{record_directly_finalized} runs an asynchronous effect outside the lock: deploy-store cleanup and runtime-manager work. That effect is the reason for the reconcile loop. The signature of \code{commit_lfb} does not include it. This design runs the effect after the commit, keyed to the commit marker, and requires it to be idempotent (Q-12).
+\item \textbf{The freeze is the main lever under load.} Under load, almost every block changes some latest message, so $\sigma$ changes in almost every run. Windows with a stable $\sigma$ are therefore rarest in the stall regime. \code{dev} already derives each run on a frozen snapshot. The design makes the freeze the default when the invalidation rate is high, not only after $N$ failures, and measures it with \code{finalizer_cursor_invalidations_total}.
+\end{enumerate}
+
+\subsubsection*{Effect on v6}
+
+P4 checks at commit the assumption that the v6 linearizer relies on. The linearizer hook (\S\ref{sec:hooks}) takes the newly finalized set from the post-commit publication. That set is in sorted order and is published again after a crash, so the linearizer sees each finalized set exactly once per \code{commit_epoch}.
 
 \subsection{Signature footprints and the partial-order refinement}\label{sec:footprint}
 
@@ -444,7 +520,7 @@ Both refinements depend on one property to be verified before they ship: that th
 Merge scope and rejection search & Gone. Blocks carry no post-state, so there is nothing to merge. \\
 Validation replay on the consensus path & Gone. Validity is structural; replay happens behind finality. \\
 Pool re-reads and lineage walks per deploy & The inclusion filter reads one attested root; the lifecycle register is replaced by the gate. Pool indexing and the admission cap remain required (Track A). \\
-Finality oracle growth and timeout trap & Not removed by execution changes. Fixed by \S\ref{sec:backpressure} items 1--3. \\
+Finality oracle growth and timeout trap & Not removed by execution changes. Fixed by \S\ref{sec:backpressure} items 1--3 and the finalizer design of \S\ref{sec:finalizer}. \\
 Hot-channel copies & Priced by host-work charges; representation fix in Track A. \\
 Runtime starvation & Execution and replay run off the async runtime. \\
 Floor-distance cliff & No merge, so no cliff; pacing keeps distance bounded. \\
@@ -467,13 +543,37 @@ ValidationNeverExecutes & safety & Structural validation runs no Rholang and rep
 FootprintCommutation & safety & Blocks with disjoint signature footprints commute (needed for R1). \\
 BoundedLag & liveness & Under the demand cap and pacing, every finalized block gets a canonical record within bounded distance of the LFB. \\
 BoundedReplayVerdict & liveness & Replay of any record, including a forged one, ends with a verdict. \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Finalizer (\S\ref{sec:finalizer}); the response requires these tests before A1c is accepted.}} \\
+NoConflictingFinality & safety & Two nodes with reversed candidate orders on an evenly split committee both reject with \code{IncompatibleFinalizedFork} under $\theta > 0$ and both hold under $\theta \le 0$. \\
+NoSettledRegression & safety & A certified candidate whose state omits a settled effect makes the commit abort with \code{StateChanged}. The cursor is kept. \\
+Incomplete\-Proof\-Never\-Commits & safety & A deadline injected at every cursor state never reaches \code{Ready} and never calls \code{commit_lfb}. \\
+CacheTransparency & safety & Cached and uncached derivations give the same \code{FloorOfView}. Fix A1a tests this across seven snapshots. \\
+CanonicalOrderSafety & safety & A candidate off the main-parent chain of the current LFB halts the commit with \code{ALinViolation}. \\
+CommitRevalidation & safety & A latest message injected between \code{Ready(Advance(F))} and the write lock makes the re-validation reject. The next cycle derives again. \\
+AtomicAdoption & safety & A fault between the marker write and event publication causes a replay with the same \code{commit_epoch}, and consumers see the event once. \\
+ResumableLiveness & liveness & A deterministic step budget forces at least 10 resumptions on a 50-validator network, and the cursor reaches \code{Terminal(Advance(_))}. \\
 \bottomrule
 \end{longtable}
+
+The 60\,h operational soak adds the metrics \code{finalizer_cursor_yields_total}, \code{finalizer_cursor_resumes_total}, \code{finalizer_cursor_invalidations_total} and \code{commit_lfb_toctou_rejections_total}. They must stay bounded while the LFB advances. The soak is operational evidence, not a substitute for the tests above.
 
 TLA+ models must include failing configurations that refute each safety property when its guard is removed (for example, a model where replay reads live sizes must refute OrderIndependentCharge).
 
 %======================================================================
 \section{Development plan}\label{sec:plan}
+
+\subsection{Status (October 16, 2026)}\label{sec:status}
+
+\begin{longtable}{@{}P{3.3cm}P{3.9cm}P{7.8cm}@{}}
+\toprule
+\textbf{Work} & \textbf{Branch} & \textbf{Content and state} \\
+\midrule
+\endhead
+A1a, A2, A3 & \code{fix/finality-stall-track-a} (three commits on \code{dev}) & A1a: the oracle cache keeps facts about immutable blocks across runs and snapshots; a timed-out run starts again at once, at most three times in a row. A2: deploy-triggered proposals coalesce and do not mint empty blocks. A3: proposals carry no user deploys when the floor distance exceeds 128; the pool refuses deploys above $64\times$ \code{max-user-deploys-per-block} with a retryable error (HTTP 503 with \code{Retry-After}). Pushed; pull request pending. \\
+v6 tranche~1 & \code{feature/cost-accounted-ote} (five commits on \code{dev}) & The v6 consensus seam of B4 behind the flag \code{v6-order-then-execute} (default \code{false}): proposal without execution, structural validity, the linearizer, records, attestation and evidence. All envelopes of a block run concurrently in one RSpace session, so cross-deploy races are real. Limits: one budget and one deploy-data cell per block until B1; funding gate and settlement are stubs; evidence is logged, not slashed; executor state is in memory. Pushed; pull request pending. \\
+\bottomrule
+\end{longtable}
 
 \subsection{Principles}
 
@@ -515,7 +615,7 @@ Offered recovery (DR-116), rejected-buffer changes & Leave & A gate rejection ha
 \endhead
 Propose without execution & \code{block_creator.rs}, block creation entry & If the shard is v6, call \code{v6::propose} (inclusion filter, attestation, records) and return. \\
 Structural validity & \code{validation_dispatcher.rs}, the call to \code{validate_block_checkpoint} (about line 145) & If v6, call \code{v6::validate} instead of the checkpoint replay. \\
-Linearizer & \code{finalization_runner.rs}, the new-LFB effect closure & Emit the newly finalized set to \code{v6::linearizer}. \\
+Linearizer & \code{finalization_runner.rs}, the new-LFB effect closure; after A1c, the post-commit publication & Emit the newly finalized set to \code{v6::linearizer}, in sorted order, once per \code{commit_epoch}. \\
 Block body & \code{CasperMessage.proto}, \code{BodyProto} & Additive \code{records} field. \\
 \bottomrule
 \end{longtable}
@@ -524,16 +624,18 @@ Each hook is a branch on one predicate, \code{is_v6_shard()}, read from the adop
 
 \subsection{Track A: stall fixes on dev}
 
-These fixes are independent of cost accounting and should start immediately. Items A1--A3 are also prerequisites for v6, because they address the finality half of the loop.
+These fixes are independent of cost accounting. Items A1--A3 are also prerequisites for v6, because they address the finality half of the loop. Revision~2 splits A1 into three parts, after \S\ref{sec:finalizer}.
 
 \begin{longtable}{@{}P{0.9cm}P{6.6cm}P{5.2cm}P{1.6cm}@{}}
 \toprule
 \textbf{ID} & \textbf{Change} & \textbf{Exit criterion} & \textbf{Size} \\
 \midrule
 \endhead
-A1 & Finalizer adopts partial progress at its deadline; one oracle run cache shared across a frontier derivation; verdicts memoized per snapshot. & \code{finalizer.run.timeouts} stays 0 in a 60\,h soak; LFB never stalls. & M \\
-A2 & Coalesce proposals (dirty flag plus notify); deploy-triggered proposals never mint empty blocks; debounce the heartbeat. & Proposer queue depth $\le 1$; empty-block rate falls. & S--M \\
-A3 & Floor-distance pacing below 256; admission cap on the pool with retryable ``busy''. & Floor distance bounded under burst load. & S \\
+A1a & \emph{Done.} One oracle cache of facts about immutable blocks, shared across runs and snapshots; a timed-out run starts again without a trigger, up to three times. No partial result is committed. & Frontiers equal with and without the cache across snapshots; timeout-rerun tests. & S \\
+A1b & Move the commit effect outside the 15\,s deadline. Only the derivation is timed. & Test: a timed-out run never commits; a commit is never cancelled. & S \\
+A1c & Compute / Validate / Commit (\S\ref{sec:finalizer}): \code{FloorCursor} and the step function; snapshot identity $\sigma$ and the change policy; \code{commit_lfb} with P1--P4 in one LMDB transaction; commit marker and startup reconciliation; \code{BlockFinalisedV2}; sorted event order; no reconcile loop. P4 can land first, alone. & The finalizer tests of the properties table pass; \code{finalizer.run.timeouts} need not be 0, but the LFB never stalls in a 60\,h soak. & L \\
+A2 & \emph{Done.} Coalesce proposals; deploy-triggered proposals never mint empty blocks. Debouncing the heartbeat remains. & Proposer queue depth $\le 1$; empty-block rate falls. & S--M \\
+A3 & \emph{Done.} Floor-distance pacing above 128 (half the cap of 256); admission cap on the pool with a retryable ``busy'' status. Thresholds are constants; moving them to configuration remains. & Floor distance bounded under burst load. & S \\
 A4 & Pool lock narrowed to snapshot-and-release; in-memory pool index; no signature re-verification on reads from the node's own store. & Prepare time flat in pool size. & M \\
 A5 & Lifecycle register batched per floor advance using cached \code{block_facts}. & Observe time flat in open signatures. & M \\
 A6 & Replay, merge and checkpoint moved to a dedicated runtime or blocking pool. & No consensus task on tokio workers. & M \\
@@ -555,7 +657,7 @@ Sizes: S is up to 1 engineer-week, M 1--3 engineer-weeks, L 3--8, XL more than 8
 
 \textbf{B3. Concurrent block executor (L).} Implement \code{v6::executor} as a library: gate phase, one concurrent session per block, settlement, record. Test it offline against the offered test corpus before any Casper wiring. \emph{Exit:} executor records replay to identical roots across hosts; GateBeforeExecute and AtMostOneOfCompeting hold under property tests with shared purses and shared data channels; throughput scales with envelopes per block.
 
-\textbf{B4. v6 consensus seam (XL).} Implement \code{v6::propose}, \code{v6::validate}, \code{v6::linearizer}, the record field, and the four hooks. Check A-LIN in the linearizer. \emph{Exit:} a three-validator v6 shard runs end to end; ValidationNeverExecutes holds; legacy corpus still byte-identical.
+\textbf{B4. v6 consensus seam (XL).} \emph{Tranche~1 delivered (\S\ref{sec:status}).} Implement \code{v6::propose}, \code{v6::validate}, \code{v6::linearizer}, the record field, and the four hooks. Check A-LIN in the linearizer, and at commit through P4 of A1c. \emph{Exit:} a three-validator v6 shard runs end to end; ValidationNeverExecutes holds; legacy corpus still byte-identical.
 
 \textbf{B5. Records, attestation and evidence (L).} Canonical-record selection, the runner convention and fallback, attestation checks, invalid-record and misattestation evidence, record retention. \emph{Exit:} ExecutedRootAgreement and ProvableEvidence model-checked with three validators and permuted arrival; fault-injection tests with forged records.
 
@@ -572,30 +674,31 @@ Sizes: S is up to 1 engineer-week, M 1--3 engineer-weeks, L 3--8, XL more than 8
 \begin{tikzpicture}[
   bar/.style={draw,rounded corners=1.5pt,fill=soft,font=\scriptsize,minimum height=0.5cm,anchor=west,inner sep=2pt},
   crit/.style={bar,fill=accent!18,draw=accent}]
-\foreach \m in {0,...,9} { \draw[gray!40] (\m*1.45+1.7,0.4) -- (\m*1.45+1.7,-7.7); \node[font=\scriptsize] at (\m*1.45+2.42,0.65) {M\the\numexpr\m+1\relax}; }
+\foreach \m in {0,...,9} { \draw[gray!40] (\m*1.45+1.7,0.4) -- (\m*1.45+1.7,-8.4); \node[font=\scriptsize] at (\m*1.45+2.42,0.65) {M\the\numexpr\m+1\relax}; }
 \node[font=\scriptsize\bfseries,anchor=east] at (1.6,0) {Track A};
-\node[crit,minimum width=2.9cm] at (1.7,-0.0) {A1--A3 finality, pacing};
-\node[bar,minimum width=4.35cm] at (1.7,-0.7) {A4--A9 pool, register, runtime, DAG};
-\node[font=\scriptsize\bfseries,anchor=east] at (1.6,-1.6) {Track B};
-\node[bar,minimum width=0.9cm] at (1.7,-1.6) {B0};
-\node[crit,minimum width=4.35cm] at (2.6,-2.3) {B1 core accounting into dev};
-\node[crit,minimum width=4.35cm] at (5.5,-3.0) {B2 charge model};
-\node[bar,minimum width=4.35cm] at (5.5,-3.7) {B3 concurrent executor};
-\node[crit,minimum width=5.8cm] at (8.4,-4.4) {B4 v6 consensus seam};
-\node[bar,minimum width=4.35cm] at (9.85,-5.1) {B5 records, attestation};
-\node[bar,minimum width=2.9cm] at (11.3,-5.8) {B6 epochs};
-\node[crit,minimum width=2.9cm] at (12.75,-6.5) {B7 soak, activation};
-\node[bar,minimum width=1.5cm,dashed] at (14.2,-7.2) {B8 $\rightarrow$};
+\node[bar,minimum width=2.9cm] at (1.7,-0.0) {A1a--A3 done; A1b};
+\node[crit,minimum width=4.35cm] at (1.7,-0.7) {A1c finalizer C/V/C};
+\node[bar,minimum width=4.35cm] at (1.7,-1.4) {A4--A9 pool, register, runtime, DAG};
+\node[font=\scriptsize\bfseries,anchor=east] at (1.6,-2.3) {Track B};
+\node[bar,minimum width=0.9cm] at (1.7,-2.3) {B0};
+\node[crit,minimum width=4.35cm] at (2.6,-3.0) {B1 core accounting into dev};
+\node[crit,minimum width=4.35cm] at (5.5,-3.7) {B2 charge model};
+\node[bar,minimum width=4.35cm] at (5.5,-4.4) {B3 concurrent executor};
+\node[crit,minimum width=5.8cm] at (8.4,-5.1) {B4 v6 consensus seam (tranche 1 done)};
+\node[bar,minimum width=4.35cm] at (9.85,-5.8) {B5 records, attestation};
+\node[bar,minimum width=2.9cm] at (11.3,-6.5) {B6 epochs};
+\node[crit,minimum width=2.9cm] at (12.75,-7.2) {B7 soak, activation};
+\node[bar,minimum width=1.5cm,dashed] at (14.2,-7.9) {B8 $\rightarrow$};
 \end{tikzpicture}
 \caption{Indicative sequencing in months, assuming three to four engineers on Track~B and the Casper team on Track~A. Shaded bars are on the critical path. Estimates, not commitments.}
 \end{figure}
 
-B2 and B3 can run in parallel once B1's core is in \code{dev}. B4 depends on B3's library interface and on A1--A3, because a v6 shard without the finality fixes would reproduce the consensus half of the loop. The overall estimate for B0--B7 is about ten calendar months with three to four engineers on Track~B. For comparison, the branch proposal estimates its order-then-execute phase alone at 4--9 engineer-months; this plan adds the core merge (B1), the charge model (B2) and the backpressure work.
+B2 and B3 can run in parallel once B1's core is in \code{dev}. B4 depends on B3's library interface and on A1--A3, because a v6 shard without the finality fixes would reproduce the consensus half of the loop. A1c is on the critical path: B7 activation needs it. Its precondition P4 should land early, because it checks A-LIN, which the v6 linearizer relies on. Tranche~1 of B4 ran ahead of B1--B3 by sharing one budget per block. The remaining B4 work picks up per-signature budgets when B1 lands. The overall estimate for B0--B7 is about ten calendar months with three to four engineers on Track~B. For comparison, the branch proposal estimates its order-then-execute phase alone at 4--9 engineer-months; this plan adds the core merge (B1), the charge model (B2) and the backpressure work.
 
 \subsection{Ownership}
 
 \begin{itemize}
-\item \textbf{Casper team:} Track A; the hook points of B4; B5 evidence classes; B6; answers to Q-1 to Q-7.
+\item \textbf{Casper team:} Track A, with the Casper Working Group owning A1c; the hook points of B4; B5 evidence classes; B6; answers to Q-1 to Q-7.
 \item \textbf{Cost-accounting lane:} B1, B2, B3, and the \code{v6} module of B4.
 \item \textbf{Formal methods:} the models and proofs listed with each exit criterion, and marking superseded scheduler-based models.
 \item \textbf{File-I/O team:} coordination on the scheduler port in \code{dev} (decision~1).
@@ -611,7 +714,10 @@ B2 and B3 can run in parallel once B1's core is in \code{dev}. B4 depends on B3'
 \textbf{Risk} & \textbf{Mitigation} \\
 \midrule
 \endhead
-A-LIN fails (an LFB off a later LFB's main chain) & Linearizer checks and holds; Casper team confirms A-LIN from the clique oracle's spine argument (Q-1). \\
+A-LIN fails (an LFB off a later LFB's main chain) & Linearizer checks and holds; the commit halts with \code{ALinViolation} (P4); Casper team confirms A-LIN from the clique oracle's spine argument, or documents the halt as the canonical response (Q-1). \\
+A deadline cancels a commit part of the way through (\code{dev} today) & A1b times only the derivation; A1c makes the commit one atomic transaction. \\
+Snapshot churn under load leaves no stable window & Freeze to the last stable snapshot, by default when the invalidation rate is high; Validate keeps the result safe; the invalidation metric is part of the soak gate. \\
+Atomic commit changes the storage schema and the event wire format & New marker store and LFB pointer, included in soak snapshots; \code{BlockFinalisedV2} as a new enum variant; startup reconciliation; consumers already deduplicate or forward \code{commit_epoch}. \\
 Host-work nondeterminism across hosts (bugs 10814, 10812) & Close in B2; cross-host replay in B3's exit criteria. \\
 Finality remains the bottleneck after execution leaves consensus & A1--A3 are prerequisites for B4; pacing and lag gates in the design. \\
 Core accounting cannot be separated from Casper plumbing & First task of B1; minimal plumbing behind \code{is_v6_shard()} if needed. \\
@@ -637,7 +743,11 @@ Q-4 & May fork choice and the clique oracle give an equivocator zero weight as s
 Q-5 & How much attesting stake makes a root acceptable for state sync? \\
 Q-6 & How long may a node hold a block whose \code{bonds} field it cannot yet check? \\
 Q-7 & Runner fallback distance $k$, per-block record cap, and record retention. \\
-Q-8 & Threshold values: floor distance for pacing, executed-root lag for the envelope gate, pool admission cap. \\
+Q-8 & Threshold values: floor distance for pacing, executed-root lag for the envelope gate, pool admission cap. A3 sets defaults of 128 blocks and $64\times$ the per-block deploy limit. \\
+Q-9 & Should the finalizer cursor survive a restart? The response proposes memory only for a first version. \\
+Q-10 & May \code{propagate_ft_to_finalized_blocks} stay outside the atomic commit? It raises a monotone lower bound, so a partial crash heals itself. \\
+Q-11 & Is \code{commit_epoch} counted per LFB or per boot? The response recommends per LFB. \\
+Q-12 & Where do the asynchronous finalization effects run once \code{commit_lfb} is atomic? This design proposes after the commit, keyed to the marker, and idempotent. \\
 \bottomrule
 \end{longtable}
 
@@ -683,6 +793,8 @@ Node & HTTP offload without an admission limit. & \code{shared_handlers.rs:626-6
 \item \code{docs/casper/theory/cost-accounting-consensus-proposal.md} on \code{feature/cost-accounted-rho} (amended October 13, 2026): Greg Meredith's four expectations, the paper quotations, the decision records DR-64 to DR-124, the soak and profile data, and the proposal's \S7.
 \item The cost-accounting papers in the F1R3FLY publications repository, as quoted in that proposal. This document did not read the papers directly; quotations are as the proposal gives them.
 \item \code{docs/soak-benchmarks.md} on \code{master}, for the soak lifecycle and gates.
+\item F1R3node Casper Working Group, ``A Live-and-Safe Finalizer-Progress Design: Response to Stall-Loop-Design \S5.10.1'', October 16, 2026, \code{F1R3FLY-io/publications}, \code{cost-accounting/stall-loop-design-5-10-1-response.tex}.
+\item Branches \code{fix/finality-stall-track-a} and \code{feature/cost-accounted-ote} on \code{F1R3FLY-io/f1r3node-rust}, as pushed on October 16, 2026.
 \end{itemize}
 
 \end{document}
