@@ -1,0 +1,584 @@
+% Response to stall-loop-design.pdf §5.10.1
+% Intended destination: F1R3FLY-io/publications/cost-accounting/
+% Suggested filename: stall-loop-design-5-10-1-response.tex
+% Dated 2026-10-16, same as the source document
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{seqsplit}
+\usepackage{url}
+\urlstyle{tt}
+
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black}
+
+\newcommand{\sigid}{\ensuremath{\sigma}}
+\newcommand{\lfbcur}{\ensuremath{\mathrm{LFB}_{\mathrm{cur}}}}
+% \code{} wraps short identifiers; \seqsplit lets long tokens like
+% CasperError::IncompatibleFinalizedFork break between characters rather
+% than overrun the right margin. Use \path{} (from url) for file paths.
+\newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
+
+\title{A Live-and-Safe Finalizer-Progress Design\\
+       \large Response to Stall-Loop-Design §5.10.1 (Finalizer keeps progress)}
+\author{F1R3node Casper Working Group}
+\date{October 16, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Stall-loop-design §5.10.1 proposes that, on a deadline, the finalizer
+``adopts the highest candidate proven so far.'' That rule is neither safe
+nor live. We identify three concrete safety counterexamples in the current
+Rust implementation and show that the proposal has no progress argument at
+all when the first full certification never completes. We then present a
+design that separates three concerns -- resumable \emph{Compute},
+pre-commit \emph{Validate}, and atomic \emph{Commit} -- preserving work
+across deadlines while discharging every safety condition under the
+snapshot observed at commit time. A verifiable replacement for §5.10.1
+and an implementation sketch against the existing codebase are included.
+Related work tracking: F1R3FLY-io/f1r3node-rust issue \#24.
+\end{abstract}
+
+\tableofcontents
+
+%------------------------------------------------------------------
+\section{Context}
+%------------------------------------------------------------------
+
+Issue \#24 reports a stall pathology in which validators eventually stop
+advancing the Last Finalized Block (LFB). The current implementation wraps
+\code{compute\_last\_finalized\_block} in a 15\,s
+\code{tokio::time::timeout}
+(\path{casper/src/rust/engine/multi_parent_casper/finalization_runner.rs:278}).
+On expiry it drops the entire future, discards every memo built in the run,
+and reschedules. If one derivation exceeds the budget, subsequent runs
+inherit no accumulated work and the node can stall indefinitely while
+remaining responsive on every other interface.
+
+§5.10.1 proposes to adopt the highest candidate ``proven so far'' on
+timeout and to memoize oracle verdicts per $(\text{target},
+\text{snapshot})$. The underlying insight is sound: discarding every
+cycle's work is wasteful. The specific rule, however, conflates three
+distinct concerns:
+\begin{enumerate}[label=(\roman*)]
+\item \emph{finding a certified candidate},
+\item \emph{computing a safe finality decision}, and
+\item \emph{guaranteeing eventual progress}.
+\end{enumerate}
+Collapsing them into one rule produces unsafety on (ii) and silence on
+(iii).
+
+%------------------------------------------------------------------
+\section{Why §5.10.1 is neither safe nor live as written}
+%------------------------------------------------------------------
+
+\subsection{Safety counterexample 1: incompatibility bypass under
+$\theta \le 0$}
+\label{sec:cex-incompat}
+
+\code{FloorOfView} in \path{casper/src/rust/finality/floor.rs:405-440}
+explicitly recognises that, when the fault-tolerance threshold is
+non-positive, two disjoint half-stake cliques can certify incompatible
+same-height blocks without equivocating. A complete derivation returns
+\code{IncompatibilityHold}; the surrounding \code{hold\_for}
+(\path{floor.rs:461}) explicitly converts
+\code{CasperError::IncompatibleFinalizedFork} to a hold when
+$\theta_{\text{num}} \le 0$. Under $\theta > 0$, the same error remains a
+loud safety alarm.
+
+Let $A$ and $B$ be conflicting blocks and let the committee split evenly.
+Suppose a validator evaluates $A$ first, witnesses the half-stake
+certificate, and hits the deadline before evaluating $B$. §5.10.1 would
+finalize $A$. A peer that evaluates $B$ first finalizes $B$. The full
+derivation would have detected the split and refused both.
+
+The lesson: a candidate-level oracle verdict is not a finality decision.
+Under $\theta \le 0$ the sibling scan is load-bearing for safety and must
+not be bypassed by a deadline.
+
+\subsection{Safety counterexample 2: state-containment bypass}
+\label{sec:cex-contain}
+
+Even under $\theta > 0$, an oracle certificate alone is insufficient.
+\code{floor\_of\_view\_metered} at \path{floor.rs:619-642} computes a
+candidate floor and then verifies, via \code{state\_contains\_metered},
+that the derived floor contains every effect settled under the current
+LFB. On failure, it returns \code{ContainmentHold}, not \code{Advance}.
+A truncated run that stops immediately after the oracle verdict but
+before the containment check would adopt a floor that regresses settled
+state. That is a monotonicity violation of exactly the kind
+\code{ContainmentHold} exists to prevent.
+
+\subsection{Safety counterexample 3: TOCTOU between Advance and commit}
+\label{sec:cex-toctou}
+
+A race already exists in the current code, independent of §5.10.1, which
+§5.10.1 would widen. Between
+\code{floor\_of\_view(\&dag, \ldots)} returning \code{Advance(F)} at
+\path{finalization_runner.rs:504} and
+\code{record\_directly\_finalized} taking the metadata write lock inside
+\path{block-storage/src/rust/dag/block_dag_key_value_storage.rs:1575-1697},
+new latest-messages can be admitted. The admitted state may invalidate
+$F$: a validator that previously carried $F$'s majority may advertise a
+different latest message, or a newly-held block may introduce effects
+that $F$'s state does not contain. The current code only checks
+\code{directly\_finalized\_hash}\,$\in$\,\code{dag\_set}; it does not
+re-check \code{state\_contains(F, \lfbcur)}.
+
+\subsection{Liveness insufficiency: no progress argument}
+
+§5.10.1 addresses only the case in which some candidate is already
+proven when the deadline fires. If every run truncates before producing
+one certified candidate, adopting ``the highest proven so far'' is
+vacuous. Within-run memoization does nothing when nothing was proved;
+across-run memoization is unsafe without a precise snapshot-change
+policy. The design document does not state the synchrony and fairness
+assumptions a progress argument would require, so no such argument can
+be constructed from the current text.
+
+%------------------------------------------------------------------
+\section{Design: resumable derivation with atomic validated commit}
+%------------------------------------------------------------------
+
+\subsection{Separation of three concerns}
+
+We separate the finalizer loop into three phases with disjoint
+invariants.
+
+\begin{description}[style=nextline]
+\item[Compute] A resumable derivation state machine with a bounded
+budget. Produces either \code{Yielded(cursor)} (budget exhausted
+mid-run) or \code{Terminal(FloorOfView, $\sigid$)} (derivation complete
+under some snapshot $\sigid$). Never commits.
+\item[Validate] Re-runs the safety checks that depend on the
+\emph{current} snapshot $\sigid'$ while holding the metadata write lock.
+Specifically re-checks state-containment, the ftt-regime
+incompatibility rule, and the canonical-order (A-LIN) invariant for
+candidate $F$ against $\lfbcur$ under $\sigid'$.
+\item[Commit] One atomic LMDB \code{write\_txn} across block metadata, a
+new finalization commit marker, and the LFB pointer register. On
+success, publishes events in deterministic order; on crash, startup
+reconciliation replays via the commit marker.
+\end{description}
+
+A deadline fires between Compute steps only. It never cancels Validate
+or Commit.
+
+\subsection{Resumable floor derivation}
+
+The derivation is explicit about its state. We add
+\code{FloorCursor} next to \code{FloorOfView}:
+
+\begin{lstlisting}[basicstyle=\small\ttfamily,columns=flexible]
+enum FloorCursor {
+  PendingTips          { sigma, live_snapshot },
+  PendingDecidable     { sigma, tips, live_snapshot, missing },
+  PendingCandidates    { sigma, tips_scope, pivot, live_snapshot },
+  PendingCertificate   { sigma, candidates, next_idx, ... },
+  PendingParentFloors  { sigma, candidates, parents, parent_idx,
+                         inherited_so_far },
+  PendingCompatibility { sigma, ordered, inherited, cand_idx,
+                         inh_idx, memo },
+  PendingContainment   { sigma, derived, current, memo },
+  Ready(FloorOfView, SnapshotId),
+}
+\end{lstlisting}
+
+The step function has signature
+\[
+  \code{step\_floor\_derivation}: (\code{FloorCursor},\ \code{Budget},\ \code{Ctx})
+     \to \code{StepOutcome}
+\]
+where \code{StepOutcome} is \code{Yielded(FloorCursor)} or
+\code{Terminal(FloorOfView, SnapshotId)}. The budget is checked only at
+step boundaries, never inside a sub-computation; a \code{WorkMeter}
+step-count budget is used in tests for determinism, wall-clock in
+production.
+
+Yield points coincide with phase boundaries already present in
+\code{floor\_of\_view\_metered} (\path{floor.rs:526-643}): after tips
+enumeration, between candidates in the oracle sweep (one
+\code{CliqueOracle::ft\_witnessed\_exact\_metered} call is one step),
+per parent in \code{parent\_frontier\_metered}, per \code{(cand, other)}
+pair in the compatibility loop, and \code{state\_contains\_metered} as
+one step. No helper requires sub-step surgery for a usable first
+version.
+
+\subsection{Snapshot identity $\sigid$}
+\label{sec:sigma}
+
+$\sigid$ is a 32-byte Blake2b hash whose preimage, in canonical order,
+is:
+\begin{enumerate}[label=\arabic*.]
+\item Sorted $(\text{validator\_id},\ \text{latest\_message\_hash})$
+pairs from \code{dag.latest\_message\_hashes()}.
+\item Current LFB $(\text{hash},\ \text{block\_number})$. Bonds and
+epoch are pure functions of the LFB, so folding the LFB hash captures
+them transitively without an explicit entry.
+\item The threshold scalar $\theta_{\text{num}}{:}\theta_{\text{den}}$.
+\item Blake2b of the equivocation-tracker state consulted by
+\code{dag.own\_testimony\_metered}.
+\end{enumerate}
+$\sigid$ is computed once at step entry and recorded in the cursor's
+state.
+
+\subsection{Snapshot-change policy}
+
+Not every memo depends on $\sigid$. The policy is explicit about which
+cached work survives a snapshot change and which does not.
+
+\begin{description}[style=nextline]
+\item[Survives $\sigid$ change] Per-block memos keyed on immutable
+block hashes: \code{frontier\_index} and \code{ft\_lower\_bound} on
+\code{BlockMetadata}; lineage \code{IntroducedSigsMemo} entries keyed
+on \code{(child\_hash, ancestor\_hash)}. These are pure functions of
+their keys.
+\item[Discarded on $\sigid$ change] Everything that read
+\code{live\_snapshot}, tips, or candidate selection: the entire cursor
+is reset to \code{PendingTips} under the new $\sigid$.
+\end{description}
+
+Per-block memos remain warm; the discarded work is bounded by
+$O(|\text{frontier}|)$ per $\sigid$ change, not $O(|\text{DAG}|)$.
+
+\paragraph{Anti-livelock.} If $\sigid$ invalidates $N$ consecutive runs
+(configurable, default 4), the finalizer freezes to the last stable
+$\sigid$ for one run. The resulting \code{Advance(F)} is still safe
+because Validate re-checks containment under current $\sigid'$ at
+commit time; a stale $F$ is rejected and the next cycle re-derives.
+
+\subsection{Atomic validated commit}
+\label{sec:commit}
+
+The commit path is hoisted into
+\[
+  \code{commit\_lfb}(\text{directly},\ \text{indirect\_sorted},\ \text{ft\_value})
+    \to \code{Result<CommitReceipt, KvStoreError>}
+\]
+with explicit preconditions discharged while holding
+\code{global\_lock.write}:
+\begin{enumerate}[label=\textbf{P\arabic*.}, leftmargin=2em]
+\item $\text{directly} \in \text{dag\_set}$.
+\item \code{state\_contains(directly, \lfbcur)} -- closes
+Counter\-example~\ref{sec:cex-toctou}.
+\item Under $\theta > 0$, no \code{IncompatibleFinalizedFork} on
+candidate's siblings in the current snapshot (loud alarm, not hold);
+under $\theta \le 0$, \code{IncompatibilityHold} is a terminal halt --
+closes Counter\-example~\ref{sec:cex-incompat}.
+\item A-LIN assertion: \code{directly} is a main-parent-chain
+descendant of \code{\lfbcur}. On violation, halt with
+\code{KvStoreError::ALinViolation}. (Converts an unproven assumption
+flagged as Q-1 in the design document into an observable safety alarm.)
+\end{enumerate}
+If any precondition fails, the commit aborts with
+\code{KvStoreError::StateChanged(hash)} and the runner re-derives in
+the next cycle. A single bounded retry is permitted; the historical
+128-retry outer loop is removed as it hides concurrency bugs rather
+than tolerating them.
+
+\paragraph{One LMDB transaction.} The write uses
+\code{batched\_put} at
+\path{shared/src/rust/store/lmdb_key_value_store.rs:183} across three
+stores sharing one \code{Env}:
+\begin{itemize}
+\item \code{block\_metadata} -- updated \code{BlockMetadata} rows for
+directly- and indirectly-finalized blocks.
+\item \code{finalization\_commit\_marker} -- new store, key =
+directly-finalized \code{BlockHash}, value = $\{\text{directly},
+\text{indirect\_sorted}, \text{ft\_value}, \text{height},
+\text{commit\_epoch}, \text{events\_published}\}$.
+\item \code{lfb\_pointer} -- new one-row register, overwrite with
+$(\text{hash}, \text{height}, \text{commit\_epoch})$.
+\end{itemize}
+LMDB serialises writers on one env-wide lock, so this is one atomic,
+durable transaction. The \code{DagState} in-memory swap uses
+\code{imbl}'s copy-on-write primitives \emph{after} the transaction
+commits, under the same write guard. On crash before the swap, the next
+\code{try\_new} reads from KV, which is authoritative.
+
+\subsection{Idempotent event publication}
+\label{sec:events}
+
+Events publish \emph{after} the LMDB commit returns \code{Ok}, in
+sorted $(\text{block\_number}, \text{block\_hash})$ order; today the
+code iterates a \code{HashSet} non-deterministically at
+\path{finalization_runner.rs:402-466}.
+
+A new \code{BlockFinalisedV2} variant in
+\path{shared/src/rust/shared/f1r3fly_event.rs:98-113} carries
+$\text{commit\_epoch}$. The marker is written in the commit batch; on
+startup \code{reconcile\_pending\_finalization}
+(\path{block_metadata_store.rs:104}) reads the marker:
+
+\begin{center}\small
+\begin{tabular}{@{}p{0.52\linewidth}p{0.42\linewidth}@{}}
+\toprule
+\textbf{Observed state} & \textbf{Action} \\
+\midrule
+marker present, \code{events\_published = true} & no-op \\
+marker present, \code{events\_published = false} & re-emit
+\code{BlockFinalisedV2} in sorted order; flip flag \\
+marker absent, no stale \code{directly\_finalized} flag & no-op \\
+marker absent, stale metadata flag present & \code{panic} (corruption:
+impossible under atomic path; assertion catches regressions) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Replays carry the same $\text{commit\_epoch}$, so dedup-aware consumers
+treat re-emits as the same logical event. Current consumers are either
+already idempotent (block-report prewarm) or forward the field for
+client dedup.
+
+Wire-compat note: \code{bincode} is not trailing-field tolerant.
+Adding a new enum variant is correct; extending the existing struct
+is not.
+
+\subsection{Liveness argument}
+\label{sec:liveness}
+
+Under the following assumptions:
+\begin{itemize}[nosep]
+\item eventual synchrony (bounded message delay post-GST),
+\item honest-stake supermajority appropriate to the ftt regime
+      ($\ge 2/3$ under $\theta > 0$),
+\item fair block propagation,
+\item a per-run budget sufficient to complete at least one derivation
+      step,
+\end{itemize}
+the design guarantees eventual commit:
+
+\begin{enumerate}[label=\textbf{L\arabic*.}, leftmargin=2em]
+\item Per-block immutable memos accumulate monotonically across runs
+and are never invalidated.
+\item Post-GST, $\sigid$ eventually stabilises for one cycle's worth of
+work (follows from eventual synchrony and bounded latest-message rate).
+\item Under stable $\sigid$, the cursor transitions
+\code{PendingTips} $\to$ \code{PendingDecidable} $\to$ \ldots $\to$
+\code{Ready} in $O(|\text{frontier}|)$ steps.
+\item Validate under current $\sigid'$ is a cheap single-step check;
+worst case, we restart under $\sigid'$ and L1 keeps all per-block work.
+\item Commit is atomic with respect to crash and concurrent runs.
+\end{enumerate}
+
+Progress is strictly monotone along $\sigid$-stable windows. The
+anti-livelock rule in \S3.4 ensures that pathological
+latest-message churn cannot forever prevent a stable window being
+offered to Compute; Validate still gates safety under $\sigid'$.
+
+%------------------------------------------------------------------
+\section{Replacement text for §5.10.1}
+%------------------------------------------------------------------
+
+\begin{quote}\itshape
+\textbf{5.10.1 Finalizer forward progress.} The finalizer performs
+incremental, resumable derivation of the live-view floor over a
+snapshot identity $\sigid$ computed from the latest-message set, the
+current LFB hash, the fault-tolerance threshold, and the
+equivocation-evidence hash. A per-run budget bounds the search; a
+derivation step either advances a cursor $k \to k{+}1$ atomically or
+yields its remaining budget without producing a decision. Expiration
+of the budget preserves the cursor as a resumption token. A change in
+$\sigid$ resets the cursor but preserves per-block immutable memos
+(frontier index, FT lower bound, lineage sig-introduction memos).
+
+A candidate $F$ is adopted iff the cursor reaches
+\emph{Ready}(\emph{FloorOfView}::\emph{Advance}($F$)) under some
+$\sigid$ \emph{and} a re-validation under the current $\sigid'$ --
+holding the metadata write lock -- confirms state-containment against
+the current LFB, candidate soundness against inherited parent floors,
+the ftt-regime incompatibility rule, and the canonical-order (A-LIN)
+invariant. Adoption writes block-metadata flags, a finalization
+commit marker, and the LFB pointer in a single atomic LMDB
+transaction. Event publication occurs after the transaction commits;
+the commit marker's \emph{events\_published} flag enables idempotent
+replay under crash recovery.
+
+Memoization uses two layers: per-block immutable resolutions (survive
+$\sigid$ changes) and $(\text{target},\ \sigid)$-keyed oracle verdicts
+(invalidated on $\sigid$ change). Under eventual synchrony,
+honest-stake assumptions appropriate to the ftt regime, fair
+propagation, and a budget sufficient for at least one derivation step
+per run, the cursor advances strictly monotonically along
+$\sigid$-stable windows and finalization completes in a bounded number
+of resumptions.
+\end{quote}
+
+%------------------------------------------------------------------
+\section{Verification requirements}
+%------------------------------------------------------------------
+
+We propose the following mandatory regression suite before accepting
+A1, in addition to the existing 60-hour soak (which is operational
+evidence, not a correctness substitute).
+
+\begin{center}\small
+\begin{tabular}{@{}p{0.33\linewidth}p{0.63\linewidth}@{}}
+\toprule
+\textbf{Property} & \textbf{Test} \\
+\midrule
+No conflicting finality &
+Two nodes with reversed candidate orderings on an evenly split
+committee; under $\theta > 0$ both reject with
+\code{IncompatibleFinalizedFork}; under $\theta \le 0$ both return
+\code{IncompatibilityHold}. \\
+
+No settled-state regression &
+Oracle-certified candidate whose state omits an LFB-settled effect
+$\Rightarrow$ commit aborts with \code{StateChanged}; cursor preserved. \\
+
+Incomplete-proof rejection &
+Injected deadline at every \code{FloorCursor} variant $\Rightarrow$
+\code{Ready} never reached from truncation; \code{commit\_lfb}
+never called. \\
+
+Cache correctness &
+Property-based: for fixed $\sigid$, cached and uncached derivations
+yield identical \code{FloorOfView}. \\
+
+Resumable liveness &
+Deterministic \code{WorkMeter} budget forces $\ge 10$ resumptions on
+a 50-validator net; cursor reaches \code{Terminal(Advance(\_))}. \\
+
+Atomic adoption &
+Fault-point between marker write and event publish; restart causes
+replay with same \code{commit\_epoch}; consumer dedup verifies
+exactly-once logical delivery. \\
+
+Canonical-order safety &
+Synthetic DAG where candidate is not on \code{\lfbcur}'s main-parent
+chain $\Rightarrow$ \code{commit\_lfb} halts with
+\code{ALinViolation}. \\
+
+TOCTOU re-validation &
+Inject new latest-message between \code{Ready(Advance(F))} and
+\code{commit\_lfb} write lock; re-validation rejects; next cycle
+re-derives. \\
+
+Operational soak &
+Instrumented 60-hour run with
+\code{finalizer\_cursor\_yields\_total},
+\code{\_resumes\_total},
+\code{\_invalidations\_total},
+\code{commit\_lfb\_toctou\_rejections\_total}
+monotonically bounded and LFB advancing. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%------------------------------------------------------------------
+\section{Implementation sketch}
+%------------------------------------------------------------------
+
+The design can land as a focused change set that avoids rewriting
+\code{floor.rs}:
+
+\begin{center}\small
+\begin{tabular}{@{}p{0.50\linewidth}p{0.46\linewidth}@{}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\code{casper/\ldots/finality/floor\_runner.rs} \emph{(new)} &
+\code{FloorCursor}, \code{StepOutcome}, \code{SnapshotId},
+\code{Budget}, \code{step\_floor\_derivation}. \\
+
+\code{casper/\ldots/finality/floor.rs}
+\code{:405-440, 526-643, 918-1051} &
+Expose helpers \code{pub(crate)}; extract
+\code{choose\_compatible\_step}; existing
+\code{floor\_of\_view\_metered} becomes thin wrapper of the runner. \\
+
+\code{casper/\ldots/multi\_parent\_casper/finalization\_runner.rs}
+\code{:255-295, 377-487, 570-614} &
+Drop \code{tokio::time::timeout}; drive cursor via
+\code{step\_floor\_derivation}; split commit from compute. \\
+
+\code{block-storage/\ldots/block\_dag\_key\_value\_storage.rs}
+\code{:1575-1697} &
+Rewrite \code{record\_directly\_finalized} as \code{commit\_lfb};
+move ancestry walk inside write lock; drop 128-retry loop; add
+pre-commit re-validation. \\
+
+\code{block-storage/\ldots/block\_metadata\_store.rs}
+\code{:104-119, 213-270} &
+Split \code{prepare\_finalized\_batch} from
+\code{apply\_finalized\_in\_memory}; add
+\code{reconcile\_pending\_finalization} on startup. \\
+
+\code{block-storage/\ldots/finalization\_commit\_marker.rs}
+\emph{(new)} &
+Commit marker store + schema. \\
+
+\path{shared/\ldots/f1r3fly_event.rs:98-113} &
+Add \code{BlockFinalisedV2 \{ commit\_epoch, \ldots \}} variant. \\
+
+\path{block-storage/\ldots/soak_snapshot.rs:129, 869-957} &
+Include commit marker and LFB pointer in snapshot/restore. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Pattern references already in-tree (reuse, don't reinvent):
+\code{WorkMeter} abstraction threaded through \code{floor.rs};
+\code{imbl::OrdMap}/\code{HashSet} copy-on-write in
+\code{BlockMetadataStore} for the \code{DagState} swap;
+\code{batched\_put} at
+\path{shared/\ldots/lmdb_key_value_store.rs:183} for cross-store
+atomicity; \code{FinalityProgress} struct at
+\code{casper/\ldots/block\_creator.rs} as a progress-tracking pattern.
+
+%------------------------------------------------------------------
+\section{Open questions}
+%------------------------------------------------------------------
+
+\begin{enumerate}[label=\textbf{Q\arabic*.}, leftmargin=2em]
+\item \textbf{Cursor durability across restarts.} We propose
+in-memory only for v1; fresh \code{PendingTips} is cheap and a
+persistence schema would need its own versioning. Revisit if restarts
+during long derivations are observed.
+
+\item \textbf{\code{propagate\_ft\_to\_finalized\_blocks} boundary.}
+Today runs after persistence at
+\path{block_dag_key_value_storage.rs:1678}; raises a monotonic lower
+bound, so partial crashes self-heal. Likely acceptable to leave outside
+the atomic commit; worth stating explicitly in the final design.
+
+\item \textbf{\code{commit\_epoch} semantics.} Per-LFB (incremented at
+every commit; marker overhead = one \code{u64}) gives tightest dedup;
+per-boot is coarser. We recommend per-LFB.
+
+\item \textbf{A-LIN assumption Q-1.} The design document flags A-LIN as
+open. The proposed explicit halt converts an unprovable assumption into
+an observable safety alarm, which is strictly better than silent
+reliance. A separate correctness obligation remains: either prove A-LIN
+under the v6 ordering rules, or document the halt as the canonical
+response.
+\end{enumerate}
+
+%------------------------------------------------------------------
+\section*{Summary}
+%------------------------------------------------------------------
+
+§5.10.1's performance intuition is correct and worth keeping: avoid
+discarding reusable work on every cycle. Its specific rule, however,
+promotes an incomplete oracle verdict to a finality decision, which
+violates both $\theta \le 0$ incompatibility handling and state
+containment, and widens an existing TOCTOU race at commit. The
+replacement separates \emph{Compute} (resumable, budgeted),
+\emph{Validate} (safety checks under current snapshot), and
+\emph{Commit} (atomic, idempotent), with a precise snapshot-identity
+and change policy that makes memoization safe. Liveness becomes a
+conditional claim under explicit synchrony and fairness assumptions,
+with per-block memos as the monotone progress carrier. The design maps
+directly onto the existing F1R3node implementation and can land as a
+focused change set backed by a mandatory regression suite.
+
+\end{document}
