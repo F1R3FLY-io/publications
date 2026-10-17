@@ -442,7 +442,7 @@ The rule ``adopt the highest candidate proven so far'' treats an oracle verdict 
 \end{enumerate}
 The rule also has no progress argument. If every run stops before it certifies one candidate, there is nothing to adopt.
 
-\textbf{Review notes.} Counterexamples~1 and~2 refute the rule of revision~1. The delivered fix A1a does not use that rule. A timed-out run still discards its derivation, and only a complete derivation can advance the LFB. Counterexample~3 applies mainly under $\theta \le 0$. The finalizer is the only writer of the LFB in steady state, so the LFB cannot move between derivation and commit. Under $\theta > 0$, a new latest message cannot undo a valid certificate. The re-validation below costs little, so the design adopts it in all regimes. The review found one more defect in \code{dev}: the 15\,s timeout wraps the commit effect as well as the derivation (\code{finalization_runner.rs} on \code{dev}, lines 278 and 602). The effect has an await point between its snapshot and its metadata write, so a timeout can cancel a commit part of the way through. Fix A1b closes this before A1c lands.
+\textbf{Review notes.} Counterexamples~1 and~2 refute the rule of revision~1. The delivered fix A1a does not use that rule. A timed-out run still discards its derivation, and only a complete derivation can advance the LFB. Counterexample~3 is real in \code{dev}: the API's \code{last_finalized_block} runs the same derivation and commit outside the single-runner guard (\code{dispatch.rs}), so two commits can race. Containment of $F$ against an LFB is a function of the two blocks only, so new blocks cannot change it, but a concurrent commit that moves the LFB can. Under $\theta > 0$, a new latest message cannot undo a valid certificate. Under $\theta \le 0$, a rival certificate can form. The re-validation below covers all three cases. The review found one more defect in \code{dev}: the 15\,s timeout wraps the commit effect as well as the derivation (\code{finalization_runner.rs} on \code{dev}, lines 278 and 602). The effect has an await point between its snapshot and its metadata write, so a timeout can cancel a commit part of the way through. Fix A1b closes this before A1c lands.
 
 \subsubsection*{Three phases}
 
@@ -470,7 +470,7 @@ Memos are in two layers:
 \item[P1] The candidate $F$ is in the DAG.
 \item[P2] The state of $F$ contains the state settled under the current LFB. This closes counterexample~3.
 \item[P3] Under $\theta > 0$, no \code{IncompatibleFinalizedFork} among the siblings of $F$ in the current snapshot. This is a loud alarm, not a hold. Under $\theta \le 0$, \code{IncompatibilityHold} halts the commit. This closes counterexample~1.
-\item[P4] A-LIN: $F$ is a main-parent-chain descendant of the current LFB. A violation halts with \code{ALinViolation}. Question Q-1 becomes an observable alarm.
+\item[P4] A-LIN: $F$ is a main-parent-chain descendant of the current LFB. On v6 shards a violation halts with \code{ALinViolation}. On legacy shards it is an alarm only, because A-LIN does not hold there (Q-1). Either way, question Q-1 becomes observable.
 \end{description}
 If a precondition fails, the commit aborts with \code{StateChanged} and the next cycle derives again. One bounded retry is permitted. The 128-iteration reconcile loop in \code{record_directly_finalized} is removed.
 
@@ -736,7 +736,7 @@ Client changes & Clients size phlo limits to the linear estimate; Embers and the
 \textbf{ID} & \textbf{Question} \\
 \midrule
 \endhead
-Q-1 & Does every LFB lie on the main chain of every later LFB (A-LIN)? \\
+Q-1 & Does every LFB lie on the main chain of every later LFB (A-LIN)? \emph{Measured October 16, 2026: not on legacy multi-parent shards.} The A1c integration run logged four commits whose candidate contains the previous LFB only through a secondary parent. P4 is therefore an alarm on legacy shards and a halt on v6 shards, where the state lineage is the main chain. \\
 Q-2 & Which evidence class and penalty apply to misattestation, invalid records and inclusion-rule violations? \\
 Q-3 & How many epochs of lag separate the attested bond state from the epoch that uses it? \\
 Q-4 & May fork choice and the clique oracle give an equivocator zero weight as soon as the view holds the equivocation? \\
