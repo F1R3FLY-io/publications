@@ -48,7 +48,7 @@
 \large Group-valued data, a chaos constant, and an equivariant COMM\\
 for the reflective higher-order calculus}
 \author{L.\,G.\ Meredith\\ \small F1R3FLY.io}
-\date{October 18, 2026 \quad\textendash\quad Draft 2}
+\date{October 18, 2026 \quad\textendash\quad Draft 3}
 
 \begin{document}
 \maketitle
@@ -79,7 +79,12 @@ declared; symmetric rings, including the dining philosophers, as orbit
 products; and \emph{twisted roots} of processes, which generalise the $n$-th
 roots of radical fault tolerance and replace its divisibility obstruction by a
 symmetry condition in which the stabiliser of a component plays the part of
-its replication factor.
+its replication factor. A final section lets decorations be words in
+received data, so that a process can undo a frame it has measured. This
+yields frame-fixing, which corrects drift without redundancy, and a
+drift-tolerant triple-redundancy decoder that also corrects one skew or
+erasure. The price is the word problem for $G$, which every congruence check
+must now solve.
 \end{abstract}
 
 \tableofcontents
@@ -132,6 +137,10 @@ communication is recovered.
   (Section~\ref{sec:roots}). The unique decomposition it needs holds up to
   structural congruence and is proved, not assumed
   (Lemma~\ref{lem:upd}).
+\item An extension with dynamic frames, and error correction built on it
+  (Section~\ref{sec:ecc}): frame-fixing, a worked triple-redundancy decoder
+  (Theorem~\ref{thm:tmr}), and an account of the cost of the word problem
+  that the extension imposes.
 \end{itemize}
 
 \paragraph{Scope.}
@@ -984,6 +993,299 @@ Corollary~\ref{cor:roots}(iii), a component with a number of free names
 coprime to $60$ is sharded, never replicated.
 
 % =====================================================================
+\section{Dynamic frames and error correction}\label{sec:ecc}
+
+The applications so far use the action from outside the calculus: a
+process is rotated, and we reason about what follows. Error correction asks
+for the opposite. A process must measure a frame at run time and undo it.
+Decorations as defined in Section~\ref{sec:calculus} are literal group
+elements fixed in the program text, so a process cannot rotate what it has
+received by an amount it has received. This section adds the one feature that
+allows it, shows that it costs nothing in the metatheory proved so far, and
+then uses it to build a decoder that corrects frame drift on every copy of a
+message, together with one further fault, by triple redundancy. The cost of
+the feature is not in the metatheory but in deciding equality, and
+Section~\ref{sec:wordcost} is devoted to it.
+
+\subsection{The extension}
+
+Replace the data of $\calc$ by \emph{words} over literals and data variables:
+\[
+w \;::=\; g \;\mid\; \delta \;\mid\; w\cdot w \;\mid\; w^{-1}
+\qquad (g\in G),
+\]
+and allow a word as the decoration of a process variable, $\fr{w}{X}$. The
+old forms are special cases: a literal datum is the word $g$, and the
+decorated data variable $\fr{g}{\delta}$ is the word $g\cdot\delta$. Two
+restrictions keep the extension conservative.
+
+\begin{itemize}[leftmargin=1.5em]
+\item \emph{Scope.} Every data variable occurring in a word is bound by an
+  enclosing pattern.
+\item \emph{Patterns are unchanged.} Within a pattern, decorations and data
+  are of the old forms $g$, $\fr{g}{X}$ and $g\cdot\delta$, with $g$ a literal.
+  Words that mention variables appear only in bodies.
+\end{itemize}
+
+The action multiplies words on the left, $\act{g}{w}=g\cdot w$ and
+$\act{g}{\fr{w}{X}}=\fr{g\cdot w}{X}$. A substitution evaluates words:
+$w\sigma$ is the element of $G$ obtained by replacing each $\delta$ by
+$\sigma(\delta)$ and multiplying out, and $(\fr{w}{X})\sigma =
+\act{(w\sigma)}{\sigma(X)}$. (FRAME) becomes the replacement of a bound data
+variable $\delta$ by $h\cdot\delta$ throughout its scope, including in its
+pattern, and of $\fr{w}{Z}$ by $\fr{w\cdot h}{Z}$ for a bound process
+variable $Z$.
+
+\begin{proposition}\label{prop:dyn}
+In the extended calculus:
+\begin{enumerate}[label=(\roman*)]
+\item if $P$ is closed and $P\red P'$ then $P'$ is closed;
+\item $\act{g}{(P\sigma)}=(\act{g}{P})\sigma$ and
+  $\match(\act{g}{\pi},\act{g}{n})=\match(\pi,n)$;
+\item Theorem~\ref{thm:equivariance}, Corollary~\ref{cor:labels} and
+  Theorem~\ref{thm:counting} hold verbatim.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) By scope, every variable of a word in the continuation of a receive is
+bound either by that receive, whose matcher instantiates it, or by an
+enclosing receive, which has already fired if the term is closed. (ii) At a
+decorated variable,
+$(\act{g}{\fr{w}{X}})\sigma=\act{(g\cdot w\sigma)}{\sigma(X)}
+=\act{g}{(\fr{w}{X})\sigma}$; patterns are unchanged, so the matching clause
+is Lemma~\ref{lem:subst}. (iii) The proofs use only (ii), the automorphism
+properties of Lemma~\ref{lem:auto}, which hold because left multiplication of
+words commutes with (FRAME)'s right multiplication, and freeness on atoms. For
+a variable atom the frame is now a word, $\phi(\fr{w}{X})=w$, and
+$g\cdot w=w$ forces $g=e$ in the free product of $G$ with the free group on
+the variables.
+\end{proof}
+
+Nothing unbound is ever sent. A message in a body, such as
+$\out{y}{\fr{\delta^{-1}}{X}}{e}$, exists only once its guard has fired, and
+by then the substitution has discharged the decoration.
+
+\subsection{Frame-fixing}
+
+The basic gadget re-expresses whatever arrives on $x$ in the identity frame
+and forwards it to $y$:
+\[
+N_{x,y} \;=\; \rcv{\qn{X}{\delta}}{x}{\out{y}{\fr{\delta^{-1}}{X}}{e}}.
+\]
+
+\begin{proposition}[Frame-fixing]\label{prop:framefix}
+For all closed $Q$ and all $g\in G$,
+\[
+N_{x,y}\mid\out{x}{\act{g}{Q}}{g\,d}\;\red\;\out{y}{\act{d^{-1}}{Q}}{e}.
+\]
+The output does not depend on $g$.
+\end{proposition}
+
+\begin{proof}
+The subjects are equal, so both coefficients are $e$ and the reduct is a
+single term by Proposition~\ref{prop:conservative}. The matcher is
+$\{\act{g}{Q}/X,\ g\,d/\delta\}$, and
+$(\fr{\delta^{-1}}{X})\sigma=\act{(d^{-1}g^{-1})}{\act{g}{Q}}=\act{d^{-1}}{Q}$.
+\end{proof}
+
+A message carries its own frame. If payload and datum are rotated together,
+by drift along a channel or by a sender working in the wrong coordinates,
+the datum records the rotation and $N$ undoes it. Such errors need no
+redundancy at all. A message sent as $\out{x}{Q}{e}$ and drifted by any $g$
+is delivered by $N_{x,y}$ as exactly $\out{y}{Q}{e}$.
+
+What frame-fixing cannot repair is \emph{skew}: an error that rotates the
+payload and the datum by different amounts. If $\out{x}{Q}{e}$ arrives as
+$\out{x}{\act{g}{Q}}{h}$, then $N_{x,y}$ delivers $\act{s}{Q}$ with skew
+$s=h^{-1}g$. By freeness, $\act{s}{Q}\scong Q$ exactly when $s\in\Stab(Q)$.
+The symmetries of the payload are therefore precisely the skews that are
+both undetectable and harmless. Every other skew changes the term, and
+detecting it needs a second opinion.
+
+\subsection{A worked example: drift-tolerant triple redundancy}
+
+Fix closed names $c_1,c_2,c_3$, $t_1,t_2,t_3$, $\ell$ and $y$, all with datum
+$e$ and pairwise non-congruent codes. Indices are taken mod $3$. Put
+\[
+\langle\!\langle j,P\rangle\!\rangle \;=\; \qn{\out{t_j}{P}{e}}{e},
+\]
+a name whose code is the payload $P$ tagged with $j$; two such names are
+equal exactly when their tags agree and their payloads are congruent.
+
+\paragraph{Encoder.}
+To transmit $Q$ on $y$, send three copies:
+$\mathit{Enc}(Q)=\out{c_1}{Q}{e}\mid\out{c_2}{Q}{e}\mid\out{c_3}{Q}{e}$.
+
+\paragraph{Fault model.}
+Each copy $\out{c_i}{Q}{e}$ may arrive as $\out{c_i}{\act{g_i}{Q}}{h_i}$ for
+arbitrary $g_i,h_i\in G$, or be \emph{erased}, that is, not arrive. Write
+$s_i=h_i^{-1}g_i$ for its skew. Copy $i$ is \emph{faulty} if it is erased or
+$s_i\notin\Stab(Q)$. Drift, the case $g_i=h_i$, is not a fault, and may
+affect every copy.
+
+\paragraph{Decoder.}
+Copy $i$ is fixed into the identity frame, announces the result under tag
+$i$, and listens for its predecessor's announcement under tag $i-1$, on a
+name it builds from its own fixed content:
+\begin{align*}
+D_i &= \rcv{\qn{X}{\delta}}{c_i}{\bigl(A_i\mid L_i\bigr)},\\
+A_i &= \out{\langle\!\langle i,\fr{\delta^{-1}}{X}\rangle\!\rangle}
+           {\fr{\delta^{-1}}{X}}{e},\\
+L_i &= \rcv{\qn{Z}{\varepsilon}}
+           {\langle\!\langle i-1,\fr{\delta^{-1}}{X}\rangle\!\rangle}
+           {\rcv{\qn{W}{\omega}}{\ell}{\out{y}{Z}{e}}},\\
+\mathit{Dec} &= D_1\mid D_2\mid D_3\mid\out{\ell}{\nil}{e}.
+\end{align*}
+The announcement of copy $i-1$ meets the listener of copy $i$ exactly when
+their fixed contents are congruent: the gate compares the two codes. The
+message on $\ell$ is a latch that lets one agreeing pair deliver.
+
+\begin{theorem}[Drift-tolerant triple redundancy]\label{thm:tmr}
+Let at most one copy be faulty. Then every maximal reduction sequence of
+$\mathit{Enc}'(Q)\mid\mathit{Dec}$, where $\mathit{Enc}'(Q)$ is the encoder
+after the faults and drift, terminates in a state containing exactly one
+message on $y$, and its payload is congruent to $Q$. No reachable state
+contains a message on $y$ with any other payload.
+\end{theorem}
+
+\begin{proof}
+Every subject in the system is one of the fixed names, an
+$\langle\!\langle j,P\rangle\!\rangle$, or $\ell$, all with datum $e$, so by
+Proposition~\ref{prop:conservative} every communication is ordinary and no
+sums arise. Each receive fires at most once and nothing is replicated, so
+every sequence terminates.
+
+\emph{Fixing.} By Proposition~\ref{prop:framefix}, each copy that arrives
+yields fixed content $q_i=\act{s_i}{Q}$, and $q_i\scong Q$ if and only if
+copy $i$ is not faulty.
+
+\emph{Tests.} The only listener on a name with tag $i$ is $L_{i+1}$, so the
+announcement $A_i$ can be consumed only by $L_{i+1}$, and it is consumed
+exactly when $q_i\scong q_{i+1}$. Call this the test $(i\to i+1)$. A test that
+fires involves two copies that arrived, at most one of which is faulty, so
+both have content congruent to $Q$, and the payload $Z$ it binds is
+$q_i\scong Q$. Hence no message on $y$ ever carries anything else.
+
+\emph{Delivery.} Let $b$ be the faulty copy, or any copy if none is faulty.
+The copies $b+1$ and $b+2$ both arrive with content congruent to $Q$, so in
+any maximal sequence the test $(b+1\to b+2)$ fires, because its announcement
+has no other consumer. Its continuation then waits on $\ell$. The single
+message on $\ell$ is consumed by exactly one waiting continuation, so exactly
+one message is sent on $y$.
+\end{proof}
+
+\paragraph{Reading the result.}
+\begin{itemize}[leftmargin=1.5em]
+\item \emph{Drift is free.} Ordinary triple redundancy compares raw copies,
+  so drift on every copy defeats it. Here each copy is fixed before
+  comparison, so arbitrary drift on all three copies is tolerated in
+  addition to the one fault.
+\item \emph{Erasures and skews are the same fault.} An erased copy never
+  announces or listens; a skewed copy fails both of its tests. Either way the
+  test between the other two goes through.
+\item \emph{The syndrome is the residue.} The final state retains the
+  announcements and listeners of the tests that did not fire. A faulty copy
+  $b$ leaves both $(b-1\to b)$ and $(b\to b+1)$ parked; a fault-free run
+  leaves two listeners parked on $\ell$. Reading the residue identifies the
+  faulty copy.
+\item \emph{The comparator is communication.} No equality test is added to
+  the calculus. The gate of (COMM) compares codes, and building a channel
+  name from content turns that comparison into a rendezvous.
+\item \emph{Benign skews are symmetries.} Skews in $\Stab(Q)$ are not faults.
+  By Theorem~\ref{thm:counting}, when $\FA(Q)$ is finite and non-empty this set
+  is a finite group of order dividing $|\FA(Q)|$, so for any infinite $G$
+  almost every skew is detected.
+\end{itemize}
+
+\subsection{The cost of the word problem}\label{sec:wordcost}
+
+The extension is free in the metatheory and not free in practice. Every
+communication evaluates the gate $\code(x)\scong\code(u)$, and every match
+against a literal compares data, so the calculus is effective only if
+equality of codes is decidable. With words, that equality acquires a
+group-theoretic core in two places.
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \emph{Closed words: arithmetic in $G$.} A substitution multiplies out a
+  closed word. Reduction therefore needs $G$ to be a \emph{computable} group:
+  elements with exact representations, and computable multiplication,
+  inversion and equality. For finite $G$ this is table lookup. For
+  $\mathbb{Z}^n$ it is integer arithmetic. For a continuous group such as
+  $SO(3)$ it is not directly available. Floating-point rotations make the gate
+  unsound, since two codes that should be equal may not compare equal. One must
+  instead work in a countable subgroup with exact representations, such as
+  rotations given by quaternions with rational or algebraic coefficients, and
+  then the size of the representation grows with the length of the words
+  multiplied.
+\item \emph{Open words: the word problem.} Codes are processes, and processes
+  contain binders. Comparing two codes up to $\scong$ descends under receives,
+  where words still mention bound variables: deciding
+  $\rcv{\qn{X}{\delta}}{x}{\out{y}{\fr{\delta^{-1}\delta}{X}}{e}}\scong
+  \rcv{\qn{X}{\delta}}{x}{\out{y}{X}{e}}$ requires knowing that
+  $\delta^{-1}\delta=e$ for every value of $\delta$. In general, equality of
+  open words is the word problem for the free product $G*F(V)$ of $G$ with the
+  free group on the bound data variables. That problem is decidable exactly
+  when the word problem for $G$ is, and its cost is essentially the cost for
+  $G$ together with free reduction.
+\end{enumerate}
+
+The second cost arises at run time, not only in the analysis. The decoder of
+Theorem~\ref{thm:tmr} compares fixed contents $q_i$, and when $Q$ itself
+contains receives with words in their bodies, the comparison is an instance of
+the word problem. The same holds for stabiliser computation
+(Proposition~\ref{prop:computable}), for orbit canonicalisation in
+Section~\ref{sec:reduction}, and for the normal forms behind
+Lemma~\ref{lem:upd}: each congruence check now carries a word problem.
+
+How much that costs depends entirely on $G$:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+group & word problem\\
+\midrule
+finite, e.g.\ $\mathbb{Z}/n$ or a finite rotation group & constant time per
+  letter\\
+finitely generated abelian & linear\\
+free & linear, by free reduction\\
+hyperbolic & linear, by Dehn's algorithm\\
+automatic & quadratic~\cite{epstein}\\
+finitely presented, in general & undecidable~\cite{novikov,boone}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For the groups used in the applications of this note, cyclic and finite
+rotation groups, the cost is negligible. But the extension is safe to adopt
+only for a group with an effective, ideally linear, word problem. For a
+finitely presented group with an unsolvable word problem, the gate is
+undecidable and the reduction relation is not effective.
+
+\paragraph{Why patterns stay as they are.}
+The restriction that patterns contain no words is what keeps matching at the
+level of the word problem. A pattern such as $\qn{\fr{\delta}{X}}{\delta}$
+would make matching a matter of solving equations over $G$, not merely
+evaluating words. That is a much harder problem: decidable for free groups
+only through Makanin's algorithm~\cite{makanin}, at very high cost, and
+undecidable in general. Keeping dynamic decorations in bodies means matching
+still only inverts literals.
+
+\paragraph{An intensional alternative.}
+If the word problem for $G$ is expensive, open words can be compared
+syntactically after free reduction, evaluating only closed words. Equality is
+then decidable for any computable $G$, at the price of a finer congruence:
+codes that differ only by a group identity, such as $\fr{\delta^{-1}\delta}{X}$
+against $X$, become different channels. The finer equality only ever
+separates codes that the intended one identifies, so it is safe where
+equality licenses an action. The decoder of Theorem~\ref{thm:tmr} never
+delivers a wrong payload under it, and still delivers on fault-free and
+drifted copies, whose fixed contents are $Q$ itself; at worst a non-identity
+benign skew is treated as a fault. Symmetry reduction misses some symmetries
+but never invents one. It is not the intended congruence, and choosing it
+should be stated as a choice.
+
+% =====================================================================
 \section{Further work}\label{sec:further}
 
 \begin{itemize}[leftmargin=1.5em]
@@ -1000,6 +1302,10 @@ coprime to $60$ is sharded, never replicated.
 \item \emph{Transport on isotropic channels.} The behaviour of isotropic
   rings under the coded gate and under $K$-gates, where communication moves
   agents along a Cayley graph.
+\item \emph{Symmetric decoders and longer codes.} Write the decoder of
+  Theorem~\ref{thm:tmr} itself as an orbit product, with the comparison done
+  in rotated frames, and generalise from three copies to repetition codes on
+  orbits with stabiliser $S$, correcting $\lfloor(|S|-1)/2\rfloor$ faults.
 \item \emph{Symmetry reduction in practice.} Implement stabiliser computation
   and orbit canonicalisation in the spatial logic model checker, and measure
   the reduction on rings and twisted roots.
@@ -1043,6 +1349,17 @@ E.~A. Emerson and A.~P. Sistla.
 \newblock Symmetry and model checking.
 \newblock \emph{Formal Methods in System Design}, 9(1/2):105--131, 1996.
 
+\bibitem{boone}
+W.~W. Boone.
+\newblock The word problem.
+\newblock \emph{Annals of Mathematics}, 70(2):207--265, 1959.
+
+\bibitem{epstein}
+D.~B.~A. Epstein, J.~W. Cannon, D.~F. Holt, S.~V.~F. Levy, M.~S. Paterson, and
+  W.~P. Thurston.
+\newblock \emph{Word Processing in Groups}.
+\newblock Jones and Bartlett, 1992.
+
 \bibitem{ip-dill}
 C.~N. Ip and D.~L. Dill.
 \newblock Better verification through symmetry.
@@ -1082,10 +1399,22 @@ F1R3FLY.io.
 \newblock Name-free combinators for the rho calculus, draft 3.
 \newblock F1R3FLY.io research note, 2026.
 
+\bibitem{makanin}
+G.~S. Makanin.
+\newblock Equations in a free group.
+\newblock \emph{Izvestiya Akademii Nauk SSSR, Seriya Matematicheskaya},
+  46:1199--1273, 1982.
+
 \bibitem{milner-moller}
 R.~Milner and F.~Moller.
 \newblock Unique decomposition of processes.
 \newblock \emph{Theoretical Computer Science}, 107(2):357--363, 1993.
+\bibitem{novikov}
+P.~S. Novikov.
+\newblock On the algorithmic unsolvability of the word problem in group
+  theory.
+\newblock \emph{Trudy Matematicheskogo Instituta imeni V.~A. Steklova},
+  44:1--143, 1955.
 \end{thebibliography}
 
 \end{document}
