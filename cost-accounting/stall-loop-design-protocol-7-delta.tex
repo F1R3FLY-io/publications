@@ -86,7 +86,7 @@ This yields three shard kinds, which revision~3 should name explicitly:
 \textbf{Shard kind} & \textbf{Execution} & \textbf{Merge rule} \\
 \midrule
 \endhead
-Existing (protocol~1) & Proposer executes, \code{dev} pipeline & \code{dev}'s merge, unchanged. Revision~2's ``legacy''. \\
+Existing (protocol~1) & Proposer executes, \code{dev} pipeline & \code{dev}'s merge. Revision~2's ``legacy''. Not frozen in practice (R3-10). \\
 Protocol~7, default profile & Proposer executes & D-08 additive multiset composition. \\
 Protocol~7, OTE profile & Order then execute (revision~2 \S5) & None on the consensus path: \code{mergeBase}, \code{rejectedDeploys} and \code{appliedFromScope} are empty. D-08 does not apply. \\
 \bottomrule
@@ -100,7 +100,7 @@ Revision~2 \S6.4 already reads the predicate from the adopted genesis resource p
 
 \subsection{R3-3. A-LIN by main-chain adoption}
 
-\paragraph{The rule.} On an OTE-profile shard the finalizer adopts a candidate $F$ only if $F$ is a main-parent-chain descendant of the current LFB. A candidate that contains the LFB only through a secondary parent is not adopted; the finalizer keeps its cursor and waits for a candidate on the main chain. Under this rule every LFB lies on the main chain of every later LFB, so A-LIN holds by construction rather than by assumption. Precondition P4 of revision~2 \S5.11 becomes an invariant assertion on this profile: a failure is an implementation bug and still halts with \code{ALinViolation}. The linearizer keeps its own check as a second line of defence. Existing protocol-1 shards keep P4 as an alarm, as implemented today (\code{ALIN_POLICY} set to \code{Alarm}, \path{finalization_runner.rs:390} on \code{fix/finalizer-forward-progress} at \code{8b1b10f2a}).
+\paragraph{The rule.} On an OTE-profile shard the finalizer adopts a candidate $F$ only if $F$ is a main-parent-chain descendant of the current LFB. A candidate that contains the LFB only through a secondary parent is not adopted; the finalizer keeps its cursor and waits for a candidate on the main chain. Under this rule every LFB lies on the main chain of every later LFB, so A-LIN holds by construction rather than by assumption. Precondition P4 of revision~2 \S5.11 becomes an invariant assertion on this profile: a failure is an implementation bug and still halts with \code{ALinViolation}. The linearizer keeps its own check as a second line of defence. Existing protocol-1 shards keep P4 as an alarm, as implemented today. On that branch the policy is a compile-time constant (\code{ALIN_POLICY} set to \code{Alarm}, \path{finalization_runner.rs:390} on \code{fix/finalizer-forward-progress} at \code{8b1b10f2a}), so the halt on the OTE profile needs a policy that the genesis profile selects.
 
 \paragraph{Why agreement needs it.} Revision~2 \S5.4 defines $\mathrm{epoch}(M_i) = \mathrm{past}(M_i) \setminus \mathrm{past}(M_{i-1})$ along the \emph{main chain} of the newest LFB and concatenates Kahn sorts of the epochs. A variant that indexes epochs by \emph{finality steps} instead (each step contributing $\mathrm{past}(\mathrm{LFB}_{j}) \setminus \mathrm{past}(\mathrm{LFB}_{j-1})$) was considered and is rejected: a node that steps from $M_0$ directly to $M_2$ sorts one set, $\mathrm{topo}(\mathrm{past}(M_2) \setminus \mathrm{past}(M_0))$, while a node that steps through $M_1$ concatenates two sorts. A Kahn sort of a union is in general not the concatenation of the sorts of its parts, so the two nodes disagree on the order. Only main-chain indexing is independent of the step sequence, and it is well defined across nodes exactly when all LFBs lie on one main chain.
 
@@ -130,7 +130,16 @@ The linearizer consumes the post-commit publication. D-05's atomic publication, 
 
 \subsection{R3-9. Approvers}
 
-Revision~3 should name, for each recorded decision, the ratifiers and the linked review comment, or mark it provisional. This applies to the four decisions in revision~2's keypoint box and to R3-1 to R3-8 above.
+Revision~3 should name, for each recorded decision, the ratifiers and the linked review comment, or mark it provisional. This applies to the four decisions in revision~2's keypoint box and to the other decisions of this section.
+
+\subsection{R3-10. Protocol 1 is not frozen}
+
+Revision~2 treats protocol-1 (legacy) shards as unchanged. Two changes in progress alter consensus results on protocol~1 without a version change:
+\begin{itemize}
+\item \textbf{A9.} The node configuration key \code{casper.rejection-search-cap-from-height} (\path{casper/src/rust/casper_conf.rs:139} on \code{fix/stall-track-a-rest} at \code{16c57af9c}, default none) sets a cap of 16 branches for each conflict group from that block height. Above the cap, \code{greedy_rejection} (\path{conflict_set_merger.rs:893}) replaces the exhaustive search. The value is used in \code{compute_parents_post_state} (\path{interpreter_util.rs:1880}). The change can select different rejected deploys, so it changes the merged post-state. D-08 permits merge-semantics changes only at protocol~7, after FIP approval and a fresh genesis. D-01 did not adopt option~C (height-activated upgrades).
+\item \textbf{PR~\#662} (open, issue~\#534) fails a deploy at execution when the deploy clears BitmaskOr channel bits. On \code{dev} today such a deploy succeeds, and the merge discards the cleared bits. Replay of the same block then gives a different result on old and new binaries.
+\end{itemize}
+Revision~3 should name this class of change and say how it is coordinated on protocol~1 without a version number: either a ledger entry on protocol~1 for each change, or a move to protocol~7. Revision~2 lists A9 as a legacy-only fix that is off by default (\S6.5, l.~646); that status does not make it consensus-neutral once a shard sets the height.
 
 %======================================================================
 \section{Factual updates}
@@ -141,6 +150,7 @@ Revision~3 should name, for each recorded decision, the ratifiers and the linked
 \item \textbf{DR-132} removed the deterministic scheduler (\code{97d020154}); evaluation races as on \code{dev}. Revision~2's ``the scheduler is not ported'' is now true of the branch itself.
 \item \textbf{DR-131} removed host-work metering (\code{75de2dc39}). Revision~2 still relies on host-work caps: the hot-channel row of \S4.1 (``v6 host-work caps bound them''), the determinism-gaps paragraph of \S5.6, and the B7 exit criterion ``host-work caps settled''. Revision~3 must either restore the caps as an OTE-profile requirement or state what bounds hot-channel copies without them (Q-15).
 \item \textbf{Tranche~1.} One shared budget per block, stub gate and settlement, \code{dev}'s charges (\path{docs/plans/v6-order-then-execute-tranche-1.md}, lines 58--66 on \code{e7469fd47}), and a node-flag activation (R3-2).
+\item \textbf{A1c status.} Revision~2 marks A1c ``Done'' (\S6.5, l.~638). The branch \code{fix/finalizer-forward-progress} at \code{8b1b10f2a} has 14 new finalizer tests, but not all tests that the \S5.10.1 response (\S5) and revision~2 \S5.14 (l.~547) require. The implementation side lists these as missing: the split-committee test with reversed orderings; a deadline injected at every cursor state; a property test for the shared oracle cache (only an example test exists; the \code{proptest} blocks in \path{floor.rs} test the floor base); a TOCTOU injection test; exactly-once delivery under fault injection; and the TLA+ models with failing configurations. Revision~3 should mark A1c ``implemented, test suite incomplete''.
 \item \textbf{Track~A tips.} \code{fix/finality-stall-track-a} \code{d1c3a970f}, \code{fix/finalizer-forward-progress} \code{8b1b10f2a}, \code{fix/stall-track-a-rest} \code{16c57af9c}.
 \item \textbf{Snapshot identity.} \code{snapshot_id} (\path{casper/src/rust/finality/floor_runner.rs:31} at \code{8b1b10f2a}) hashes latest messages, the invalid-block set and the LFB, but not the equivocation tracker that the \S5.10.1 response (\S3.3) names. Either the response or the code needs to change.
 \end{itemize}
@@ -169,13 +179,14 @@ Abstract (l.~69), \S1 summary (l.~84, 88) & ``v6 shards'' $\to$ ``OTE-profile sh
 \S5.11 P2 and P4 (l.~470--473) & P4 becomes an invariant on the OTE profile, an alarm on protocol~1; P2 by ancestry (Q-14). \\
 \S5.11 ``Effect on v6'' (l.~499--501) & Rename; cite D-05 (R3-8). \\
 \S6.1 status (l.~576) & Tranche~1 activation by node flag conflicts with D-01 (R3-2); update tips. \\
+\S6.5 Track~A (l.~638, 646) & A1c: ``implemented, test suite incomplete''. A9: a protocol-1 consensus change (R3-10). Add non-validator items (Q-16). \\
 \S6.3 left behind (l.~604) & DR-120: also excluded from the protocol-7 default profile. \\
 \S6.4 hooks (l.~618--625) & \code{v6::} $\to$ \code{ote::}; predicate \code{is_ote_profile()}; add the finalizer adoption filter and the main-parent rule of R3-3 as fifth and sixth hooks. \\
-\S6.6 B4, B5, B6, B7 (l.~662--668) & B4 exit adds the adoption filter; B5/B6 use D-09; B7 adds the protocol-7 and OTE FIPs and the host-work decision. \\
+\S6.6 B4, B5, B6, B7 (l.~662--668) & B4 exit adds the adoption filter; B5/B6 use D-09; B7 adds the protocol-7 and OTE FIPs (\S\ref{sec:fip}), the host-work decision and the elapsed-time bound for each envelope (Q-15). \\
 \S6.7 sequencing (l.~698) & P4 lands early as the adoption filter, not only as a check. \\
 \S6.8 ownership (l.~703) & Ledger ratifiers own R3-1 to R3-9. \\
 Risk table (l.~719) & Replace the A-LIN row with the liveness risk of R3-3: without the OTE fork-choice rule, the adoption filter can defer every candidate. \\
-Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement on protocol~1. Add Q-13 to Q-15. \\
+Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement on protocol~1. Add Q-13 to Q-16. \\
 \bottomrule
 \end{longtable}
 
@@ -190,7 +201,24 @@ Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement 
 \endhead
 Q-13 & Not today: \code{dev}'s fork choice is rooted at the fork-choice floor, and main parents need not descend from the LFB. Does the Casper team accept an OTE-profile rule that the main parent is a main-chain descendant of the LFB, as a ledger entry against D-03? \\
 Q-14 & On the OTE profile, does the D-04 containment gate follow from main-chain ancestry, as R3-3 claims? \\
-Q-15 & With host-work metering removed by DR-131, what bounds hot-channel copies and closes the determinism gaps of bugs 10814 and 10812 at a cap boundary? \\
+Q-15 & With host-work metering removed by DR-131, what bounds hot-channel copies and closes the determinism gaps of bugs 10814 and 10812 at a cap boundary? Also, what bounds the elapsed time of one envelope? In issue~\#541 one deploy played for 261 to 276\,s. The play budget is checked only between deploys (\path{casper/src/rust/rholang/runtime.rs:359} on \code{dev}), so it cannot stop one long deploy. Bridge-lock deploys took 25 to 75\,s, so phlogiston is a poor measure of time. The proposed soft phlo cap prices long plays but does not bound them. On the OTE profile all envelopes of a block run in one session, so one long envelope delays execution after finality and widens the executed-root lag. The OTE FIP must state this bound. \\
+Q-16 & The stall analysis of revision~2 covers validators only. Non-validators show other stall modes: the block pipeline is narrower than the blocks of one height (issue~\#691, \code{MAX_PARALLEL_BLOCKS = 2}, with repeated out-of-memory stops of the observer and bootstrap nodes); a buffer at its size limit stalls a lagging node (issue~\#690; PR~\#752 fixed one cause); and both processing slots stay held after the merge step (issue~\#744). Observers on the OTE profile still replay records. Should Track~A take these as items for non-validators? \\
+\bottomrule
+\end{longtable}
+
+%======================================================================
+\section{What each FIP must specify}\label{sec:fip}
+%======================================================================
+
+No FIP exists yet for protocol~7 or for the OTE profile.
+
+\begin{longtable}{@{}P{2.6cm}P{12.4cm}@{}}
+\toprule
+\textbf{FIP} & \textbf{Must specify} \\
+\midrule
+\endhead
+Protocol~7 & The activation row: fresh genesis after FIP approval (D-01). The D-08 additive merge with its activation conditions: FIP approval, fresh genesis, differential tests, compatibility analysis and conservation evidence. The D-10 envelope commitment. The D-09 wire forms (lifetime identity, pair evidence). Retention of \code{phloLimit} and \code{phloPrice} (D-12). The answer to Q-15. \\
+OTE profile & The profile as an extension of D-01, and its genesis predicate. The main-parent rule, as a ledger entry against D-03 (Q-13). A-LIN as an invariant, with a halt policy that the profile selects (R3-3). The elapsed-time bound for each envelope (Q-15). The evidence classes (R3-4). The B7 soak gates, with the committee sizes they cover: issue~\#477 found super-linear finalizer cost with about 19 validators. \\
 \bottomrule
 \end{longtable}
 
@@ -203,7 +231,7 @@ Q-15 & With host-work metering removed by DR-131, what bounds hot-channel copies
 \item F1R3node Casper Working Group, ``A Live-and-Safe Finalizer-Progress Design'', October 16, 2026, \path{cost-accounting/stall-loop-design-5-10-1-response.tex}.
 \item Casper decision ledger, f1r3node-rust \path{docs/casper/design/decision-ledger/}, entries D-01, D-02, D-04, D-05, D-07, D-08, D-09, D-10, D-12, and README \S2.1; ratification record PR~\#390 review 5227717933.
 \item Casper glossary, \path{docs/casper/GLOSSARY.md}, entry ``Protocol 7''.
-\item f1r3node-rust issue~\#764, section ``Protocol 6 and protocol 7''.
+\item f1r3node-rust issue~\#764, section ``Protocol 6 and protocol 7''; issues \#477, \#534, \#541, \#690, \#691, \#744; PRs \#662 and \#752.
 \end{itemize}
 
 \end{document}
