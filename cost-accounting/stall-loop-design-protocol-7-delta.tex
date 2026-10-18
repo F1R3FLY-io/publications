@@ -57,7 +57,7 @@ Protocol~7 is the ratified next Casper version (ledger entry D-01, ratified Sept
 \textbf{Entry} & \textbf{Position at protocol 7} \\
 \midrule
 \endhead
-D-01 & One version authority chain from ceremony through reception. Activation only through a fresh genesis after FIP approval; no node-local switch, A/B mode or block-height window. Accounting authority version~8 is independent of the protocol version. \\
+D-01 & One version authority chain from ceremony through reception: the running version comes from the approved block only (R-GENESIS-VERSION to R-VERSION-RECEPTION, option~B). The fresh-genesis rule is a dated deployment row for each version; its first row is protocol~7, a fresh genesis, after FIP approval. Accounting authority version~8 is independent of the protocol version. \\
 D-02 & Signed-floor commitments, certificate sidecars and certificate retrieval are not required. The \code{dev} committee and stake provenance stay authoritative. \\
 D-04 & The \code{dev} state containment gate stays; the threshold is inclusive, $\mathrm{FT} \ge \theta$. Exact accounting effect identity is an accounting fact at protocol~7, not a consensus rule. \\
 D-05 & Five finalization-publication invariants (atomic publication, stale-result refusal, restart atomicity, terminal-verdict eviction, FT identity labelling). Single-flight finalization stays the default. \\
@@ -77,7 +77,7 @@ Protocol~7 does not by itself contain OTE, offered envelopes or block records. R
 
 \subsection{R3-1. OTE is a protocol-7 genesis profile}
 
-OTE is an opt-in profile of protocol~7, selected by the adopted genesis resource policy of a fresh protocol-7 genesis. It needs its own FIP, because the ratified protocol-7 list does not include it. Revision~3 replaces ``v6 shard'' with ``OTE-profile shard'' and the predicate \code{is_v6_shard()} with \code{is_ote_profile()}. The alternative, a protocol~8, would push the design beyond the ratified version without a gain: D-01 already makes the genesis the sole activation authority, and a profile is a dated row of that authority.
+OTE is an opt-in profile of protocol~7, selected by the adopted genesis resource policy of a fresh protocol-7 genesis. It needs its own FIP, because the ratified protocol-7 list does not include it. Revision~3 replaces ``v6 shard'' with ``OTE-profile shard'' and the predicate \code{is_v6_shard()} with \code{is_ote_profile()}. The alternative, a protocol~8, would push the design beyond the ratified version without a gain: D-01 already makes the approved block the sole source of the running rules. D-01 gives one dated row per \emph{version}, not per profile, so a per-profile row is an extension of D-01 that the OTE FIP must ratify.
 
 This yields three shard kinds, which revision~3 should name explicitly:
 
@@ -96,7 +96,7 @@ DR-120, the interim v6 merge rule, is already left behind by revision~2 and has 
 
 \subsection{R3-2. Activation by genesis only}
 
-Revision~2 \S6.4 already reads the predicate from the adopted genesis resource policy, which agrees with D-01. Tranche~1 (\code{feature/cost-accounted-ote} at \code{e7469fd47}) instead activates from a node flag, \code{v6_order_then_execute} (\path{casper/src/rust/casper_conf.rs:122}, gate at \path{casper/src/rust/casper.rs:372}, \path{casper/src/rust/engine/casper_launch.rs:201}, default \code{false} at \path{node/src/rust/configuration/commandline/config_mapper.rs:847}). R-FRESH-GENESIS forbids a node-local switch. Revision~3 should require the flag to be replaced by a read of the genesis policy before tranche~1 merges into \code{dev}. Whether a test-only flag may remain in the harness is a decision for the ratifiers.
+Revision~2 \S6.4 already reads the predicate from the adopted genesis resource policy, which agrees with D-01. Tranche~1 (\code{feature/cost-accounted-ote} at \code{e7469fd47}) instead activates from a node flag, \code{v6_order_then_execute} (\path{casper/src/rust/casper_conf.rs:122}, gate at \path{casper/src/rust/casper.rs:372}, \path{casper/src/rust/engine/casper_launch.rs:201}, default \code{false} at \path{node/src/rust/configuration/commandline/config_mapper.rs:847}). A node flag is a second, local source of the protocol rules, so it conflicts with the D-01 authority chain (R-VERSION-RECEPTION: validation compares against the running version ``and no second source'') and with the protocol-7 activation row. Revision~3 should require the flag to be replaced by a read of the genesis policy before tranche~1 merges into \code{dev}. Whether a test-only flag may remain in the harness is a decision for the ratifiers.
 
 \subsection{R3-3. A-LIN by main-chain adoption}
 
@@ -104,13 +104,13 @@ Revision~2 \S6.4 already reads the predicate from the adopted genesis resource p
 
 \paragraph{Why agreement needs it.} Revision~2 \S5.4 defines $\mathrm{epoch}(M_i) = \mathrm{past}(M_i) \setminus \mathrm{past}(M_{i-1})$ along the \emph{main chain} of the newest LFB and concatenates Kahn sorts of the epochs. A variant that indexes epochs by \emph{finality steps} instead (each step contributing $\mathrm{past}(\mathrm{LFB}_{j}) \setminus \mathrm{past}(\mathrm{LFB}_{j-1})$) was considered and is rejected: a node that steps from $M_0$ directly to $M_2$ sorts one set, $\mathrm{topo}(\mathrm{past}(M_2) \setminus \mathrm{past}(M_0))$, while a node that steps through $M_1$ concatenates two sorts. A Kahn sort of a union is in general not the concatenation of the sorts of its parts, so the two nodes disagree on the order. Only main-chain indexing is independent of the step sequence, and it is well defined across nodes exactly when all LFBs lie on one main chain.
 
-\paragraph{The liveness obligation.} The rule is live only if main-chain descendants of the LFB keep appearing and become finalizable. The argument revision~3 should state, and the Casper team should confirm (new question Q-13): if fork choice is rooted at the LFB, every honest block's main parent descends from the LFB, so honest stake extends the LFB's main chain, and the clique oracle eventually finalizes some block on it under the liveness assumptions of revision~2 \S5.11. Whether \code{dev}'s fork choice is rooted at the LFB, or must become so on the OTE profile, is the open part. The October~16 A1c run that logged four secondary-parent commits is the test case: on the OTE profile those candidates would be deferred, and the soak must show the LFB still advances.
+\paragraph{The liveness obligation.} The rule is live only if main-chain descendants of the LFB keep appearing and become finalizable. \code{dev}'s fork choice does not provide this. It is rooted at the fork-choice floor, not at the LFB (\path{casper/src/rust/engine/multi_parent_casper/snapshot.rs:208-228}, \path{casper/src/rust/finality/floor.rs:645-652}), and the floors lie on one spine of \emph{ancestry}, not of main parents. The GHOST main parent is the top tip above the LCA, and no rule makes its main-parent chain pass through the LFB; the four secondary-parent commits of the October~16 A1c run agree with this. The OTE profile therefore needs a fork-choice rule as well: the main parent of a new block is a main-chain descendant of the LFB. Under that rule, honest stake extends the LFB's main chain, and the clique oracle eventually finalizes a block on it under the liveness assumptions of revision~2 \S5.11. D-03 preserves the \code{dev} GHOST estimator, so this rule needs its own ledger entry (Q-13). Without it, the adoption filter can defer every candidate and finality stalls; the soak must show the LFB still advances.
 
 \paragraph{Effect on containment.} Under main-chain adoption $\mathrm{Ord}(\mathrm{LFB})$ is a prefix of $\mathrm{Ord}(F)$, so $\mathrm{executed}(F)$ extends $\mathrm{executed}(\mathrm{LFB})$ along $\mathrm{Ord}$. The D-04 containment gate (P2) then follows from the ancestry check on this profile and needs no post-state comparison, which OTE blocks do not carry. Revision~3 should state this as a claim with a proof obligation, not as a removed check (Q-14).
 
 \subsection{R3-4. Evidence and slashing}
 
-The new evidence classes of revision~2 (misattestation, invalid record, inclusion-rule violation; Q-2) use the D-09 protocol-7 forms: $(\text{key}, \text{bond generation})$ lifetime identity and the pair-evidence wire form. D-09 keeps the \code{dev} truth table and recovery loop and keeps economic neglect slashing inactive; revision~3's B5 and B6 must not activate it. B6's ``immediate zero weight for equivocators'' (Q-4) is a change to the \code{dev} truth table and needs its own ledger entry.
+The new evidence classes of revision~2 (misattestation, invalid record, inclusion-rule violation; Q-2) use the D-09 protocol-7 forms: $(\text{key}, \text{bond generation})$ lifetime identity and the pair-evidence wire form. D-09 keeps the \code{dev} truth table and recovery loop and keeps economic neglect slashing inactive; revision~3's B5 and B6 must not activate it. B6's ``immediate zero weight for equivocators'' (Q-4) is not a slashing rule: it changes the weight that fork choice and the clique oracle count, which is the electorate and stake provenance that D-03 and D-02 preserve. It needs its own ledger entry against D-03 and D-02.
 
 \subsection{R3-5. Deploy identity}
 
@@ -137,7 +137,7 @@ Revision~3 should name, for each recorded decision, the ratifiers and the linked
 %======================================================================
 
 \begin{itemize}
-\item \textbf{PR~\#216 drift.} At \code{039c787fa} (October 17) the branch is 516 commits ahead of \code{origin/dev} (\code{5ff390e15}) and 550 behind. Revision~2 \S4 states 501 ahead and 470 behind, with 38 conflicting files; the current count reported by the implementation side is 41.
+\item \textbf{PR~\#216 drift.} At \code{039c787fa} (October 17) the branch is 516 commits ahead of \code{origin/dev} (\code{5ff390e15}) and 550 behind. Revision~2 \S4 states 501 ahead and 470 behind, with 38 conflicting files; a trial merge measured on October~18, 2026 (\code{git merge-tree} of \code{039c787fa} into \code{5ff390e15}) gives 41.
 \item \textbf{DR-132} removed the deterministic scheduler (\code{97d020154}); evaluation races as on \code{dev}. Revision~2's ``the scheduler is not ported'' is now true of the branch itself.
 \item \textbf{DR-131} removed host-work metering (\code{75de2dc39}). Revision~2 still relies on host-work caps: the hot-channel row of \S4.1 (``v6 host-work caps bound them''), the determinism-gaps paragraph of \S5.6, and the B7 exit criterion ``host-work caps settled''. Revision~3 must either restore the caps as an OTE-profile requirement or state what bounds hot-channel copies without them (Q-15).
 \item \textbf{Tranche~1.} One shared budget per block, stub gate and settlement, \code{dev}'s charges (\path{docs/plans/v6-order-then-execute-tranche-1.md}, lines 58--66 on \code{e7469fd47}), and a node-flag activation (R3-2).
@@ -170,11 +170,11 @@ Abstract (l.~69), \S1 summary (l.~84, 88) & ``v6 shards'' $\to$ ``OTE-profile sh
 \S5.11 ``Effect on v6'' (l.~499--501) & Rename; cite D-05 (R3-8). \\
 \S6.1 status (l.~576) & Tranche~1 activation by node flag conflicts with D-01 (R3-2); update tips. \\
 \S6.3 left behind (l.~604) & DR-120: also excluded from the protocol-7 default profile. \\
-\S6.4 hooks (l.~618--625) & \code{v6::} $\to$ \code{ote::}; predicate \code{is_ote_profile()}; add the finalizer adoption filter of R3-3 as a fifth hook. \\
+\S6.4 hooks (l.~618--625) & \code{v6::} $\to$ \code{ote::}; predicate \code{is_ote_profile()}; add the finalizer adoption filter and the main-parent rule of R3-3 as fifth and sixth hooks. \\
 \S6.6 B4, B5, B6, B7 (l.~662--668) & B4 exit adds the adoption filter; B5/B6 use D-09; B7 adds the protocol-7 and OTE FIPs and the host-work decision. \\
 \S6.7 sequencing (l.~698) & P4 lands early as the adoption filter, not only as a check. \\
 \S6.8 ownership (l.~703) & Ledger ratifiers own R3-1 to R3-9. \\
-Risk table (l.~719) & Replace the A-LIN row with the liveness risk of R3-3. \\
+Risk table (l.~719) & Replace the A-LIN row with the liveness risk of R3-3: without the OTE fork-choice rule, the adoption filter can defer every candidate. \\
 Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement on protocol~1. Add Q-13 to Q-15. \\
 \bottomrule
 \end{longtable}
@@ -188,7 +188,7 @@ Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement 
 \textbf{ID} & \textbf{Question} \\
 \midrule
 \endhead
-Q-13 & Is fork choice rooted at the LFB, so that honest blocks extend the LFB's main chain and main-chain adoption stays live? If not, must it be on the OTE profile? \\
+Q-13 & Not today: \code{dev}'s fork choice is rooted at the fork-choice floor, and main parents need not descend from the LFB. Does the Casper team accept an OTE-profile rule that the main parent is a main-chain descendant of the LFB, as a ledger entry against D-03? \\
 Q-14 & On the OTE profile, does the D-04 containment gate follow from main-chain ancestry, as R3-3 claims? \\
 Q-15 & With host-work metering removed by DR-131, what bounds hot-channel copies and closes the determinism gaps of bugs 10814 and 10812 at a cap boundary? \\
 \bottomrule
