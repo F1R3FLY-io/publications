@@ -1,0 +1,940 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage[expansion=false]{microtype}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
+
+\emergencystretch=2.5em
+
+% ---------------------------------------------------------------- theorems
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{hypothesis}[theorem]{Hypothesis}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% ---------------------------------------------------------------- notation
+\newcommand{\calc}{\rho_G}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\chaos}{\mathbf{1}}
+\newcommand{\rcv}[3]{\mathtt{for}(#1 \leftarrow #2)#3}
+\newcommand{\out}[3]{#1!(\langle #2, #3\rangle)}
+\newcommand{\qn}[2]{@\langle #1, #2\rangle}
+\newcommand{\act}[2]{#1\cdot #2}
+\newcommand{\red}{\rightsquigarrow}
+\newcommand{\scong}{\equiv}
+\newcommand{\FN}{\mathrm{FN}}
+\newcommand{\Stab}{\mathrm{Stab}}
+\newcommand{\code}{\mathrm{code}}
+\newcommand{\Names}{\mathcal{N}}
+\newcommand{\match}{\mathrm{match}}
+\newcommand{\nf}{\mathrm{nf}}
+\newcommand{\Proc}{\mathcal{P}}
+\newcommand{\ring}{\mathrm{Ring}}
+
+\title{\textbf{Oriented Processes}\\[0.4em]
+\large Group-valued data, a chaos constant, and an equivariant COMM\\
+for the reflective higher-order calculus}
+\author{L.\,G.\ Meredith\\ \small F1R3FLY.io}
+\date{October 18, 2026 \quad\textendash\quad Draft 1}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We take the pattern-matching variant of the rho calculus parametric in a type
+of data, and specialise the data to a group $G$. The group acts on processes
+freely: an element $g$ multiplies the datum of every name, descending
+recursively through quotation. To the calculus we add an annihilating constant
+$\chaos$, read as chaos or divergence, with $\chaos \mid P \scong \chaos$,
+and an idempotent summation. The communication rule is generalised so that
+a receive and a send on two orientations of the same channel produce a sum of
+the continuation transported by the relative orientation and by its inverse.
+We show that the action is an automorphism of the calculus, that chaos is
+forced to have every name free, and that reduction is $G$-equivariant for an
+arbitrary group exactly when the two coefficients are chosen as
+$\nu(x)\nu(u)^{-1}$ and $\nu(u)\nu(x)^{-1}$. The free action then yields an
+orbit-counting theorem: the symmetry group of a process with finitely many
+free names acts freely on them, so its order divides their number. For
+rotation groups this is a crystallographic restriction on processes. Three
+applications indicate the utility of the structure: symmetry reduction for
+state-space exploration, where the symmetry is read off the term rather than
+declared; symmetric rings, including the dining philosophers, as orbit
+products; and \emph{twisted roots} of processes, which generalise the $n$-th
+roots of radical fault tolerance and replace its divisibility obstruction by a
+symmetry condition in which the stabiliser of a component plays the part of
+its replication factor.
+\end{abstract}
+
+\tableofcontents
+
+% =====================================================================
+\section{Introduction}
+
+Earlier work treated the syntax of the rho calculus as a type constructor
+parametric in a type $D$ of data carried by names and messages, and settled on
+a pattern-matching binder that lets a receiver bind every component of what it
+receives, so that the datum on a message is no longer observationally
+inert~\cite{wsh}. That construction asks nothing of $D$. This note asks what
+the calculus gains when $D$ is a group.
+
+The answer begins with an action. A group acts on itself by left
+multiplication, and that action lifts to processes by multiplying the datum of
+every name a process mentions, at every depth of quotation. The lifted action
+is free on names: no non-identity element fixes a name. Freeness turns
+questions about the symmetry of a process into counting arguments, and the
+calculus acquires a notion of \emph{orientation}. The same channel code may
+occur at many orientations, and a rotation of a process moves all of them at
+once.
+
+Two further ingredients complete the setting. The first is a constant
+$\chaos$ for chaos: the process that may do anything, so that composing
+anything with it adds nothing. The second is a summation, which the
+communication rule needs because its reduct is a sum. The rule itself is the
+point of the construction. A receive on one orientation of a channel and a
+send on another communicate, and the continuation is delivered twice, once
+transported by the relative orientation of the two ends and once by its
+inverse. When the two ends agree, the transports cancel and the ordinary rho
+communication is recovered.
+
+\paragraph{Contributions.}
+\begin{itemize}[leftmargin=1.5em]
+\item The calculus $\calc$ (Section~\ref{sec:calculus}): syntax, the free
+  action, chaos, idempotent summation, matching, and the oriented COMM rule.
+\item Basic observations (Section~\ref{sec:obs}): the action is an
+  automorphism; chaos has every name free; matching and substitution commute
+  with the action; reduction is $G$-equivariant
+  (Theorem~\ref{thm:equivariance}); the calculus is conservative over the
+  original; and an orbit-counting theorem
+  (Theorem~\ref{thm:counting}) with a crystallographic corollary for rotation
+  groups (Corollary~\ref{cor:crystal}).
+\item Three applications: symmetry reduction with symmetry computed from the
+  term (Section~\ref{sec:reduction}); symmetric rings as orbit products
+  (Section~\ref{sec:rings}); and twisted roots of processes, with a
+  divisibility theorem that interpolates between replication and sharding
+  (Section~\ref{sec:roots}).
+\end{itemize}
+
+\paragraph{Scope.}
+Summation is taken idempotent throughout, and chaos absorbs it. Other readings
+of summation are possible and are not pursued here.
+
+% =====================================================================
+\section{The calculus}\label{sec:calculus}
+
+\subsection{Syntax}
+
+Fix a group $(G,\cdot,e,(-)^{-1})$ and a set $V$ of variables, divided into
+process variables $X,Y,\dots$ and data variables $\delta,\delta',\dots$. We
+write $e$ for the identity of $G$, reserving $\chaos$ for chaos. The terms of
+$\calc$ are
+\begin{align*}
+d &\;::=\; g \;\mid\; \delta
+  && g\in G \quad\text{(data)}\\
+x,u,\pi &\;::=\; \qn{P}{d}
+  && \text{(names; patterns)}\\
+P,Q &\;::=\; \nil \;\mid\; \chaos \;\mid\; X \;\mid\; \rcv{\pi}{x}{P}
+  \;\mid\; \out{x}{Q}{d} \;\mid\; P \mid Q \;\mid\; P + Q
+  && \text{(processes)}
+\end{align*}
+A name $\qn{P}{d}$ pairs a \emph{code} $P$ with a datum $d$; we write
+$\code(\qn{P}{d}) = P$ and $\nu(\qn{P}{d}) = d$. A message
+$\out{x}{Q}{d}$ ships the pair $\langle Q, d\rangle$ on $x$; at communication
+it is received as the name $\qn{Q}{d}$.
+
+In a receive $\rcv{\pi}{x}{P}$ the pattern $\pi$ is a name in which every
+variable occurring is bound by the receive, and each occurs exactly once. The
+canonical pattern $\qn{X}{\delta}$ binds both the code and the datum of what
+is received. As in~\cite{wsh}, process variables play the part the drop
+operator plays in the original calculus~\cite{rho}: a received code is used by
+writing its variable in process position. A name is \emph{closed} when it
+contains no variables, and a process is closed when every variable in it is
+bound. Reduction is defined on closed processes.
+
+\begin{remark}[Notation]
+The sketch that motivated this note wrote the action with $*$. Since $*$ is
+the drop operator in the rho calculus, we write the action as $\act{g}{P}$.
+For the same reason the identity of $G$ is $e$, leaving $\chaos$ free for
+chaos.
+\end{remark}
+
+\subsection{The free action}
+
+\begin{definition}[Action]\label{def:action}
+For $g\in G$ define $\act{g}{-}$ on data, names and processes by
+\begin{align*}
+\act{g}{h} &= gh \quad (h\in G) &
+\act{g}{\delta} &= \delta &
+\act{g}{X} &= X\\
+\act{g}{\nil} &= \nil &
+\act{g}{\chaos} &= \chaos &
+\act{g}{\qn{P}{d}} &= \qn{\act{g}{P}}{\act{g}{d}}
+\end{align*}
+\begin{align*}
+\act{g}{(P\mid Q)} &= \act{g}{P}\mid\act{g}{Q} &
+\act{g}{(P+Q)} &= \act{g}{P}+\act{g}{Q}\\
+\act{g}{\rcv{\pi}{x}{P}} &= \rcv{\act{g}{\pi}}{\act{g}{x}}{\act{g}{P}} &
+\act{g}{\out{x}{Q}{d}} &= \out{\act{g}{x}}{\act{g}{Q}}{\act{g}{d}}
+\end{align*}
+\end{definition}
+
+The action multiplies every literal datum on the left, at every depth of
+quotation, inside patterns as well as in names and messages, and leaves
+variables alone. Because variables form their own sort, the action never
+touches a binding occurrence and needs no side condition against capture.
+Equivalently, it is the image of left multiplication
+$L_g : G \to G$ under the functor that the parametric syntax defines; the
+``free names'' description and the functorial description coincide once the
+action descends into codes and patterns.
+
+\subsection{Structural congruence}
+
+Structural congruence $\scong$ is the least congruence, closed under every
+term former including quotation, that satisfies the axioms of
+Table~\ref{tab:scong}. Two names are equal when their codes are structurally
+congruent and their data are equal.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+(PAR) & $P\mid\nil \scong P$,\; $P\mid Q\scong Q\mid P$,\;
+        $(P\mid Q)\mid R\scong P\mid(Q\mid R)$ & monoid\\
+(SUM) & $P+Q\scong Q+P$,\; $(P+Q)+R\scong P+(Q+R)$,\; $P+P\scong P$
+      & semilattice\\
+(DIST) & $P\mid(Q+R)\scong P\mid Q + P\mid R$ & distributivity\\
+(CHAOS) & $\chaos\mid P\scong\chaos$,\; $\chaos + P \scong \chaos$ &
+  chaos absorbs both\\
+\bottomrule
+\end{tabular}
+\caption{Axioms of structural congruence.}
+\label{tab:scong}
+\end{table}
+
+The axiom $\chaos\mid P\scong\chaos$ is the defining property of chaos: it
+represents all possible behaviours, so composing it with any $P$ cannot
+enrich it. The same reasoning motivates $\chaos+P\scong\chaos$. The two are
+consistent with (DIST):
+$(\chaos+P)\mid Q\scong\chaos\mid Q + P\mid Q\scong\chaos$. Note that $\nil$ is
+not a unit for $+$; it is the inert configuration, one alternative among
+others.
+
+By (DIST), every process is congruent to a finite sum of sum-free
+\emph{configurations}, or to $\chaos$. Summation is therefore an ensemble of
+alternatives, and reduction (below) refines one member of the ensemble.
+
+\subsection{Matching}
+
+Matching is performed on normal forms. Orient (CHAOS) and (DIST) from left to
+right and remove duplicate summands; write $\nf(P)$ for a normal form of $P$
+modulo associativity and commutativity of $\mid$ and $+$ (AC). A substitution
+$\sigma$ maps process variables to closed processes and data variables to
+elements of $G$.
+
+\begin{definition}[Matching]\label{def:match}
+For a pattern $\pi$ and a closed name $n$,
+\[
+\match(\pi,n) \;=\; \{\,\sigma \;:\; \pi\sigma =_{AC} \nf(n)\,\}.
+\]
+\end{definition}
+
+Matching modulo AC can have several solutions, and a communication may use any
+of them. One convention in the definition is deliberate.
+
+\begin{remark}[Chaos in quotes]\label{rem:chaosmatch}
+Matching is \emph{not} performed modulo (CHAOS). Otherwise the pattern
+$\qn{X\mid Y}{\delta}$ would match $\qn{\chaos}{d}$ under every substitution
+$\{\chaos/X, Q/Y\}$, since $\chaos\mid Q\scong\chaos$ for all $Q$, and matching
+against quoted chaos would not be finitary. In normal form chaos is an atom:
+it matches a bare process variable and nothing composite.
+\end{remark}
+
+\subsection{Reduction}
+
+The \emph{relative orientation} of a receive on $x$ and a send on $u$ is
+$\nu(x)\nu(u)^{-1}$. The reduction relation $\red$ on closed processes is the
+least relation closed under the rules of Table~\ref{tab:red}.
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.6}
+\begin{tabular}{@{}ll@{}}
+\toprule
+(COMM) & $\dfrac{\code(x)\scong\code(u) \qquad \sigma\in\match(\pi,\qn{Q}{d})}
+  {\rcv{\pi}{x}{P}\mid\out{u}{Q}{d}\;\red\;
+   \act{(\nu(x)\nu(u)^{-1})}{P\sigma} \;+\;
+   \act{(\nu(u)\nu(x)^{-1})}{P\sigma}}$\\
+(PAR) & $\dfrac{P\red P'}{P\mid R\red P'\mid R}$
+\qquad (SUM) \; $\dfrac{P\red P'}{P+R\red P'+R}$\\
+(STRUCT) & $\dfrac{P\scong P' \qquad P'\red Q' \qquad Q'\scong Q}{P\red Q}$
+\qquad (DIV) \; $\chaos\red\chaos$\\
+\bottomrule
+\end{tabular}
+\caption{Reduction rules.}
+\label{tab:red}
+\end{table}
+
+The premise $\code(x)\scong\code(u)$ is the \emph{gate} of the rule. A receive
+and a send interact when they are on the same channel code, possibly at
+different orientations, and the relative orientation then acts on the
+continuation. The two coefficients are mutually inverse, so writing
+$h = \nu(x)\nu(u)^{-1}$ the reduct is $\act{h}{P\sigma}+\act{h^{-1}}{P\sigma}$.
+
+\begin{remark}[The gate]\label{rem:gate}
+Other gates are possible.
+\begin{itemize}[leftmargin=1.5em]
+\item The \emph{strict} gate $x = u$ makes every coefficient $e$, and the
+  calculus collapses to the original one extended by chaos and summation.
+\item The \emph{open} gate, always true, lets every receive meet every send
+  whose message matches its pattern. Pattern matching is then the only
+  selector of partners, and channel discipline is lost.
+\item A \emph{$K$-gate}, $\code(x)\scong\code(u)$ and
+  $\nu(x)\nu(u)^{-1}\in K$ for a subset $K\subseteq G$ that contains $e$,
+  is closed under inverses and is closed under conjugation, restricts
+  interaction between orientations of a channel to the Cayley graph of $G$
+  with connection set $K$.
+\end{itemize}
+All of the results below hold for each of these gates; we fix the coded gate
+as the default because it is the least change that lets orientation matter.
+\end{remark}
+
+\begin{remark}[Order of the second coefficient]\label{rem:order}
+The sketch that motivated this note used $\nu(x)^{-1}\nu(u)$ as the second
+coefficient. In an abelian group it coincides with $\nu(u)\nu(x)^{-1}$. In a
+non-abelian group it is the $\nu(x)$-conjugate of the inverse of the first
+coefficient, and with that choice reduction is equivariant only for elements
+commuting with $\nu(x)^{-1}\nu(u)$; see Remark~\ref{rem:nonabelian}. The choice
+$\nu(u)\nu(x)^{-1}$ is the one that makes reduction equivariant for every
+group, and in particular for non-abelian rotation groups such as $SO(3)$.
+\end{remark}
+
+% =====================================================================
+\section{Basic observations}\label{sec:obs}
+
+\subsection{The action is an automorphism}
+
+\begin{lemma}\label{lem:auto}
+\begin{enumerate}[label=(\roman*)]
+\item $\act{e}{P}=P$ and $\act{g}{(\act{h}{P})}=\act{(gh)}{P}$.
+\item $P\scong Q$ if and only if $\act{g}{P}\scong\act{g}{Q}$.
+\item $\nf(\act{g}{P}) =_{AC} \act{g}{\nf(P)}$.
+\end{enumerate}
+So each $\act{g}{-}$ is an automorphism of
+$(\Proc/{\scong},\mid,+,\nil,\chaos)$, and $G$ acts on processes up to
+structural congruence.
+\end{lemma}
+
+\begin{proof}
+(i) is by induction on terms, the only base case being a literal datum, where
+$g(hd)=(gh)d$. For (ii), the action maps every instance of an axiom in
+Table~\ref{tab:scong} to an instance of the same axiom, because it commutes
+with the term formers and fixes $\nil$ and $\chaos$. Hence it preserves
+$\scong$, and $\act{g^{-1}}{-}$ is its inverse by (i). (iii) holds because the
+oriented normalisation rules are themselves invariant under the action.
+\end{proof}
+
+\subsection{Chaos has every name}
+
+Free names collect the closed names that occur in subject position or in a
+payload. Writing $\Names$ for the set of closed names,
+\begin{align*}
+\FN(\nil)&=\FN(X)=\emptyset, &
+\FN(P\mid Q)&=\FN(P+Q)=\FN(P)\cup\FN(Q),\\
+\FN(\rcv{\pi}{x}{P})&=(\{x\}\cap\Names)\cup\FN(P), &
+\FN(\out{x}{Q}{d})&=(\{x\}\cap\Names)\cup\FN(Q),
+\end{align*}
+and $\FN(\chaos)$ is fixed by the following proposition.
+
+\begin{proposition}\label{prop:chaosnames}
+If $\FN$ respects $\scong$ and is a union over $\mid$, then
+$\FN(\chaos)=\Names$.
+\end{proposition}
+
+\begin{proof}
+For any closed name $x$, $\FN(\chaos)=\FN(\chaos\mid\out{x}{\nil}{e})
+=\FN(\chaos)\cup\{x\}$, so $x\in\FN(\chaos)$.
+\end{proof}
+
+Chaos has every name free because it is absorbing. Two consequences are worth
+recording at once. First, $\act{g}{\chaos}=\chaos$ is no longer an axiom about
+the action but an instance of its definition, since left multiplication
+permutes $\Names$. Second, no name is fresh for chaos: an argument that picks
+a channel not free in $P$ fails as soon as $P\scong\chaos$.
+
+\begin{lemma}\label{lem:fnaction}
+$\FN(\act{g}{P})=\act{g}{\FN(P)}$, and $\FN$ respects $\scong$.
+\end{lemma}
+
+\begin{proof}
+The first claim is by induction: the action preserves closedness of names and
+permutes $\Names$. The second is a check of the axioms; for (CHAOS),
+$\FN(\chaos\mid P)=\Names\cup\FN(P)=\Names=\FN(\chaos)$.
+\end{proof}
+
+\subsection{Matching and substitution commute with the action}
+
+For a substitution $\sigma$ write $\act{g}{\sigma}$ for the substitution
+$X\mapsto\act{g}{\sigma(X)}$, $\delta\mapsto g\,\sigma(\delta)$.
+
+\begin{lemma}\label{lem:subst}
+$\act{g}{(P\sigma)}=(\act{g}{P})(\act{g}{\sigma})$, and
+$\sigma\in\match(\pi,n)$ if and only if
+$\act{g}{\sigma}\in\match(\act{g}{\pi},\act{g}{n})$.
+\end{lemma}
+
+\begin{proof}
+The substitution identity is by induction on $P$. At a process variable both
+sides give $\act{g}{\sigma(X)}$. At a data variable in data position, the
+action fixes $\delta$ on the right, which the substitution then sends to
+$g\,\sigma(\delta)$, as on the left. At a literal datum both sides give $gh$.
+For matching, $\pi\sigma=_{AC}\nf(n)$ if and only if
+$\act{g}{(\pi\sigma)}=_{AC}\act{g}{\nf(n)}$, because the action is a bijection
+that respects AC; by the substitution identity and
+Lemma~\ref{lem:auto}(iii) this reads
+$(\act{g}{\pi})(\act{g}{\sigma})=_{AC}\nf(\act{g}{n})$.
+\end{proof}
+
+For example, a pattern with a literal datum, $\qn{X}{h}$, matches
+$\qn{Q}{d}$ exactly when $h=d$; after the action it is $\qn{X}{gh}$, which
+matches $\qn{\act{g}{Q}}{gd}$ exactly when $gh=gd$. Acting on patterns is what
+keeps a rotated redex a redex.
+
+\subsection{Equivariance}
+
+\begin{theorem}[Equivariance]\label{thm:equivariance}
+If $P\red P'$ then $\act{g}{P}\red\act{g}{P'}$, for every $g\in G$.
+\end{theorem}
+
+\begin{proof}
+By induction on the derivation. (PAR), (SUM) and (STRUCT) follow from
+Lemma~\ref{lem:auto}, and (DIV) from $\act{g}{\chaos}=\chaos$. For (COMM), let
+$a=\nu(x)$ and $b=\nu(u)$. The rotated redex is
+$\rcv{\act{g}{\pi}}{\act{g}{x}}{\act{g}{P}}\mid\out{\act{g}{u}}{\act{g}{Q}}{gd}$.
+Its gate holds because $\code(\act{g}{x})=\act{g}{\code(x)}$ and
+Lemma~\ref{lem:auto}(ii). By Lemma~\ref{lem:subst}, $\act{g}{\sigma}$ is a
+matcher, and the continuation becomes
+$(\act{g}{P})(\act{g}{\sigma})=\act{g}{(P\sigma)}$. The rotated data are $ga$
+and $gb$, so the coefficients are
+\[
+(ga)(gb)^{-1}=g\,ab^{-1}g^{-1},
+\qquad
+(gb)(ga)^{-1}=g\,ba^{-1}g^{-1}.
+\]
+By Lemma~\ref{lem:auto}(i) the reduct is
+\[
+\act{(g\,ab^{-1}g^{-1})}{\act{g}{(P\sigma)}}
++\act{(g\,ba^{-1}g^{-1})}{\act{g}{(P\sigma)}}
+=\act{g}{\bigl(\act{(ab^{-1})}{P\sigma}+\act{(ba^{-1})}{P\sigma}\bigr)},
+\]
+which is $g$ applied to the original reduct.
+\end{proof}
+
+\begin{remark}[The non-abelian case]\label{rem:nonabelian}
+With $a^{-1}b$ as the second coefficient, the rotated coefficient is
+$(ga)^{-1}(gb)=a^{-1}b$, unchanged, and the second summand becomes
+$\act{(a^{-1}b\,g)}{P\sigma}$ where equivariance needs
+$\act{(g\,a^{-1}b)}{P\sigma}$. These agree for all $P$ only when $g$ commutes
+with $a^{-1}b$. Equivariance is therefore what selects the coefficients.
+\end{remark}
+
+\subsection{Conservativity and frames}
+
+\begin{proposition}[Conservativity]\label{prop:conservative}
+If $\nu(x)=\nu(u)$, in particular if $x=u$, then
+$\rcv{\pi}{x}{P}\mid\out{u}{Q}{d}\red P\sigma$. Hence for the trivial group,
+and on any process whose communications occur between equal names, $\calc$
+reduces exactly as the pattern-matching calculus of~\cite{wsh}, extended by
+chaos and summation.
+\end{proposition}
+
+\begin{proof}
+Both coefficients are $e$, so the reduct is $P\sigma+P\sigma\scong P\sigma$ by
+idempotence.
+\end{proof}
+
+This is the cancellation in the rule. The relative orientation of matched ends
+is the identity, and the doubling of the continuation disappears into the
+idempotence of summation.
+
+\paragraph{Symmetry between the ends.}
+Exchanging the roles of $\nu(x)$ and $\nu(u)$ exchanges the two summands of the
+reduct, which is unchanged. The rule does not depend on whose frame the
+relative orientation is measured in.
+
+\paragraph{Frames.}
+Consider a name $n$ in the receiver's frame, $\nu(n)=\nu(x)$. The second summand
+moves it to $\nu(u)\nu(x)^{-1}\nu(x)=\nu(u)$: into the sender's frame. The first
+moves it to $\nu(x)\nu(u)^{-1}\nu(x)$, the reflection of the sender's frame
+through the receiver's; in an abelian group written additively, a receiver at
+$j$ hearing from $k$ lands at $k$ in one summand and at $2j-k$ in the other.
+
+\paragraph{Anisotropic and isotropic codes.}
+A code $c$ is \emph{isotropic} for $H\le G$ when $\act{h}{c}\scong c$ for all
+$h\in H$; nameless codes such as $\nil$ are isotropic for all of $G$. All
+orientations $\qn{c}{h}$ of an isotropic code share a code, so under the coded
+gate they communicate with one another, with non-trivial coefficients. A code
+with names is \emph{anisotropic}: rotating a name moves its code as well as
+its datum, and by Theorem~\ref{thm:counting} below only finitely many rotations
+can fix it. Anisotropic codes therefore produce genuinely distinct channels
+under rotation, and processes built from them reduce exactly as in the
+original calculus (Proposition~\ref{prop:conservative}). Rotation can thus be
+used either to \emph{place} copies of a process on distinct channels, or to
+\emph{orient} a single channel.
+
+\subsection{Stabilisers and orbit counting}
+
+\begin{definition}
+The \emph{symmetry group} of $P$ is
+$\Stab(P)=\{\,g\in G : \act{g}{P}\scong P\,\}$.
+\end{definition}
+
+By Lemma~\ref{lem:auto}, $\Stab(P)$ is a subgroup,
+$\Stab(\act{g}{P})=g\,\Stab(P)\,g^{-1}$,
+$\Stab(P\mid Q)\supseteq\Stab(P)\cap\Stab(Q)$, and
+$\Stab(\nil)=\Stab(\chaos)=G$.
+
+\begin{theorem}[Orbit counting]\label{thm:counting}
+$\Stab(P)$ acts freely on $\FN(P)$. Consequently, if $\FN(P)$ is finite, then
+either $\FN(P)=\emptyset$ and $\Stab(P)=G$, or $\Stab(P)$ is finite and
+$|\Stab(P)|$ divides $|\FN(P)|$.
+\end{theorem}
+
+\begin{proof}
+If $g\in\Stab(P)$, Lemma~\ref{lem:fnaction} gives
+$\act{g}{\FN(P)}=\FN(\act{g}{P})=\FN(P)$, so $\Stab(P)$ acts on $\FN(P)$. The
+action is free: $\act{g}{\qn{Q}{d}}=\qn{Q}{d}$ requires $gd=d$, hence $g=e$.
+If $\FN(P)$ is finite and non-empty, every orbit of $\Stab(P)$ on it has
+$|\Stab(P)|$ elements, so $\Stab(P)$ is finite and its order divides
+$|\FN(P)|$. If $\FN(P)=\emptyset$, then $P$ contains no receive, no send and no
+chaos outside quotation, so it is built from $\nil$ and the two operators and
+every $g$ fixes it.
+\end{proof}
+
+$\FN(P)$ is finite exactly when $\chaos$ does not occur in $P$ outside quotation.
+So the theorem covers every process that is not chaotic, and chaos is the one
+way for a process with names to be fixed by an infinite group.
+
+\begin{corollary}\label{cor:infinite}
+If $G$ is infinite and $\Stab(P)=G$, then $\FN(P)=\emptyset$ or
+$\FN(P)=\Names$. In words: the only processes invariant under an infinite
+group are those that mention no names and those that contain chaos.
+\end{corollary}
+
+\begin{proposition}[Symmetry is computable]\label{prop:computable}
+If $\FN(P)$ is finite and non-empty, fix $n_0\in\FN(P)$. Then
+\[
+\Stab(P)\subseteq\{\,\nu(n)\,\nu(n_0)^{-1} : n\in\FN(P)\,\},
+\]
+so $\Stab(P)$ is found by at most $|\FN(P)|$ congruence checks, for any group,
+finite or not.
+\end{proposition}
+
+\begin{proof}
+If $g\in\Stab(P)$ then $\act{g}{n_0}\in\FN(P)$, and
+$\nu(\act{g}{n_0})=g\,\nu(n_0)$ determines $g$.
+\end{proof}
+
+\subsection{Rotations}
+
+Take the data to be orientations. With $G=SO(2)$ a name is a channel code at a
+planar orientation, and with $G=SO(3)$ at an orientation in space.
+
+\begin{corollary}[Crystallographic restriction]\label{cor:crystal}
+Let $\FN(P)$ be finite and non-empty.
+\begin{enumerate}[label=(\roman*)]
+\item If $G=SO(2)$, then $\Stab(P)$ is cyclic of order dividing $|\FN(P)|$.
+\item If $G=SO(3)$, then $\Stab(P)$ is cyclic, dihedral, tetrahedral,
+  octahedral or icosahedral, of order dividing $|\FN(P)|$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+By Theorem~\ref{thm:counting} the stabiliser is a finite subgroup, and these
+are the finite subgroups of $SO(2)$ and $SO(3)$~\cite{armstrong}.
+\end{proof}
+
+A process can have the rotational symmetry of a polygon or a polyhedron, but
+never continuous rotational symmetry unless it mentions no names or is
+chaotic. An icosahedrally symmetric process mentions a multiple of $60$ names.
+
+\subsection{Orbit products and orbit sums}
+
+For a finite subgroup $H\le G$ and a process $R$ define
+\[
+\textstyle\prod_H R \;=\; \big|_{h\in H}\;\act{h}{R},
+\qquad
+\sum_H R \;=\; \sum_{h\in H}\;\act{h}{R}.
+\]
+Both are $H$-invariant: $\act{k}{\prod_H R}$ re-indexes the product by
+$h\mapsto kh$, and associativity and commutativity of $\mid$ do the rest; the
+same holds for $\sum_H R$. Orbit products are the standard way to impose a
+symmetry on a process, with $R$ playing the part of a fundamental domain. The
+reduct of (COMM) is a partial orbit sum, over the two-element set
+$\{h,h^{-1}\}$, and is invariant under the inversion that exchanges them.
+
+% =====================================================================
+\section{Application I: symmetry reduction}\label{sec:reduction}
+
+Explicit-state exploration of concurrent systems is limited by the size of the
+state space, and symmetry reduction is one of the standard
+remedies~\cite{emerson-sistla,ip-dill,clarke-sym}: when a group acts on the
+states by automorphisms of the transition relation, it suffices to explore one
+representative per orbit. In those treatments the symmetry is a property of
+a particular system and must be declared or detected. In $\calc$ it is a
+property of the calculus.
+
+\begin{theorem}[Orbit quotient]\label{thm:quotient}
+Let $H\le G$. Define $[P]=\{\act{h}{P'} : h\in H,\, P'\scong P\}$ and
+$[P]\red_H[Q]$ if $P\red Q'$ for some $Q'\in[Q]$. Then $\red_H$ is
+well-defined, and the quotient map $P\mapsto[P]$ is a functional
+bisimulation from $(\Proc,\red)$ to $(\Proc/H,\red_H)$. Consequently, for any
+set of states $\Phi$ closed under $\scong$ and under the action of $H$, a state
+in $\Phi$ is reachable from $P_0$ if and only if an orbit in $\Phi/H$ is
+reachable from $[P_0]$.
+\end{theorem}
+
+\begin{proof}
+Well-definedness: if $\act{h}{P}\red Q$ then $P\red\act{h^{-1}}{Q}$ by
+Theorem~\ref{thm:equivariance}, and $\act{h^{-1}}{Q}\in[Q]$. The bisimulation
+clauses are then immediate: every step of $P$ projects to a step of $[P]$, and
+every step of $[P]$ is the projection of a step of $P$ by the same argument.
+\end{proof}
+
+Three features distinguish this from the usual setting.
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \emph{Soundness for every subgroup.} Equivariance holds for the whole
+  calculus, not for a given system, so the quotient is sound for any $H$ and
+  any initial process. Barbs move under the action, $\act{h}{P}\downarrow
+  \act{h}{x}$ whenever $P\downarrow x$, so the invariant observations are
+  orbit barbs $P\downarrow H{\cdot}x$, and for a spatial logic whose formulae mention names, with the action extended
+  to formulae, satisfaction is equivariant: $\act{g}{P}\models\act{g}{\varphi}$
+  whenever $P\models\varphi$. Invariant formulae can be checked on the quotient.
+\item \emph{Effectiveness from the term.} The quotient pays when the
+  reachable set is closed under $H$, which holds when $H\le\Stab(P_0)$: then
+  $P_0\red^*P$ gives $P_0\scong\act{h}{P_0}\red^*\act{h}{P}$. By
+  Proposition~\ref{prop:computable} the largest such $H$ is computed from
+  $P_0$ with $|\FN(P_0)|$ checks; nothing is declared.
+\item \emph{A bound.} By Theorem~\ref{thm:counting}, $|\Stab(P_0)|$ divides
+  $|\FN(P_0)|$. The symmetry that can be extracted from the initial state is
+  bounded by its number of free names, and the reduction factor on any orbit
+  is at most $|H|$.
+\end{enumerate}
+
+Canonicalisation, the choice of a representative of $[P]$, costs at most
+$|H|$ congruence-class comparisons for finite $H$, by taking the least of
+$\{\act{h}{P}\}_{h\in H}$ in any total order on normal forms. A spatial logic
+model checker for the rho calculus, such as the port of SLMC~\cite{slmc}, is
+the natural home for this reduction, since spatial formulae already range over
+the structure that the action permutes.
+
+% =====================================================================
+\section{Application II: symmetric rings}\label{sec:rings}
+
+Rings of identical agents are the classical setting for symmetry in
+distributed computing. Orbit products give them a uniform syntax.
+
+\subsection{The construction}
+
+Let $r\in G$ have order $n$: a generator of $\mathbb{Z}/n$, or the rotation by
+$2\pi/n$ in $SO(2)$. Choose two anisotropic codes, for instance
+\[
+a_f=\out{\qn{\nil}{e}}{\nil}{e},
+\qquad
+a_t=\rcv{\qn{X}{\delta}}{\qn{\nil}{e}}{\nil},
+\]
+and base names $f=\qn{a_f}{e}$ (a fork) and $t=\qn{a_t}{e}$ (a table, on which
+eating is announced). Write $f_k=\act{r^k}{f}$ and $t_k=\act{r^k}{t}$; indices
+are taken mod $n$. Since $\act{r^k}{a_f}=\out{\qn{\nil}{r^k}}{\nil}{r^k}$, the
+codes of $f_0,\dots,f_{n-1}$ are pairwise distinct, so the forks are $n$
+distinct channels and, by Proposition~\ref{prop:conservative}, every
+communication below is an ordinary one. Let
+\begin{align*}
+\mathit{Phil} &= \rcv{\qn{X}{\delta}}{f_0}{\rcv{\qn{Y}{\delta'}}{f_1}{\bigl(
+  \out{t_0}{\nil}{e}\mid\out{f_0}{X}{\delta}\mid\out{f_1}{Y}{\delta'}\bigr)}},\\
+\mathit{Fork} &= \out{f_0}{\nil}{e},
+\qquad
+R=\mathit{Phil}\mid\mathit{Fork},
+\qquad
+\ring_n=\textstyle\prod_{\langle r\rangle}R.
+\end{align*}
+The copy $\act{r^k}{R}$ is the $k$-th philosopher, who takes fork $f_k$ and
+then fork $f_{k+1}$, announces on $t_k$, and returns both forks, together with
+fork $f_k$ itself, carrying the token $\langle\nil,r^k\rangle$. The pattern
+$\qn{X}{\delta}$ is fixed by the action, so every philosopher accepts every
+token.
+
+\begin{proposition}\label{prop:ring}
+\begin{enumerate}[label=(\roman*)]
+\item $\Stab(\ring_n)=\langle r\rangle\cong\mathbb{Z}/n$ when $G=\mathbb{Z}/n$
+  or $G=SO(2)$.
+\item $\ring_n$ reduces in $n$ steps to the deadlocked state
+  $D_n=\prod_{\langle r\rangle}W$, where
+  $W=\rcv{\qn{Y}{\delta'}}{f_1}{\bigl(\out{t_0}{\nil}{e}\mid
+  \out{f_0}{\nil}{e}\mid\out{f_1}{Y}{\delta'}\bigr)}$.
+  The state $D_n$ has no reduct, has no barb on any $t_k$, and
+  $\Stab(D_n)=\langle r\rangle$.
+\item For $n\ge2$, $\ring_n$ also reaches states with a barb on some $t_k$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) The product is $\langle r\rangle$-invariant. Conversely
+$\FN(\ring_n)=\{f_k,t_k\}_{k}$ has $2n$ elements. A symmetry maps fork names
+to fork names, since a send code is never congruent to a receive code, so
+by Proposition~\ref{prop:computable} it is $\nu(f_k)\nu(f_0)^{-1}=r^k$.
+(ii) For each $k$ in turn, philosopher $k$ receives the token of fork $k$; the
+coefficients are $e$, $\sigma=\{\nil/X,\,r^k/\delta\}$, and the continuation is
+$\act{r^k}{W}$. After $n$ such steps no send on any $f_k$ remains, so no
+(COMM) applies. Its symmetry group is computed as in (i). (iii) Let
+philosopher $0$ take $f_0$ and then $f_1$ before philosopher $1$ moves.
+\end{proof}
+
+The $n$ steps to $D_n$ are a single step and its $n-1$ rotations: the $k$-th is
+$\act{r^k}{}$ of the $0$-th, placed in context. Equivariance is exactly the
+property that the adversary of Lehmann and Rabin exploits~\cite{lehmann-rabin}:
+from a symmetric state, a scheduler that lets every copy take the
+corresponding step returns the system to a symmetric state, and a deterministic
+symmetric protocol cannot leave the symmetric states without help. Their
+theorem, that no deterministic, fully distributed and symmetric solution to the
+dining philosophers exists, can therefore be stated inside $\calc$ with
+$\langle r\rangle$-invariance as the formal notion of symmetry. Its proof in
+the calculus is left to further work, together with the question of which
+ingredient of $\calc$ is the symmetry breaker that their randomised solution
+requires. With summation read as an idempotent ensemble, as here,
+$\mathit{Phil}_{L}+\mathit{Phil}_{R}$ is demonic choice rather than a coin, and
+the deadlocked configuration remains in the ensemble.
+
+\begin{remark}[Isotropic rings]
+If the anisotropic code $a_f$ is replaced by the isotropic code $\nil$, the
+names $\qn{\nil}{r^k}$ all share a code. Under the coded gate every orientation
+then communicates with every other, and a receive at $r^j$ from a send at
+$r^k$ transports the names of its own frame to $r^k$ in one summand and to
+$r^{2j-k}$ in the other. Under the $K$-gate with $K=\{e,r,r^{-1}\}$ only neighbours
+communicate, and the interaction topology is the Cayley graph of
+$\mathbb{Z}/n$. Rings of isotropic channels are therefore not rings of fixed
+agents but of agents that move as they communicate.
+\end{remark}
+
+% =====================================================================
+\section{Application III: twisted roots}\label{sec:roots}
+
+The note on radical fault tolerance~\cite{rft} studies $n$-th roots of
+processes, $R$ with $R^n\approx P$, where $R^n$ is the $n$-fold parallel
+composition. Under a unique-decomposition hypothesis the existence of roots is
+governed by divisibility: every prime component of $P$ must occur with
+multiplicity divisible by $n$, so that a component occurring once has no
+root. The group action offers a second way to divide a process into $n$ equal
+parts: into $n$ copies of one process at different orientations.
+
+\begin{definition}
+Let $H\le G$ be finite. A process $R$ is an \emph{$H$-twisted root} of $P$ if
+$\prod_H R\scong P$.
+\end{definition}
+
+If $H\le\Stab(R)$ the twist is trivial, $\prod_H R\scong R^{|H|}$, and an
+untwisted root is recovered. At the other extreme, if $f_k=\act{r^k}{f}$ as in
+Section~\ref{sec:rings}, the process
+\[
+P=\out{f_0}{\nil}{e}\mid\out{f_1}{\nil}{r}\mid\cdots\mid
+\out{f_{n-1}}{\nil}{r^{n-1}}
+\]
+has every prime component with multiplicity one and so no $n$-th root, yet
+$\out{f_0}{\nil}{e}$ is a $\mathbb{Z}/n$-twisted root of it. To say exactly when
+twisted roots exist we adopt the hypothesis of~\cite{rft}.
+
+\begin{hypothesis}[Unique decomposition]\label{hyp:upd}
+Every closed process that is free of chaos and summation is structurally
+congruent to a parallel composition of primes, unique up to $\scong$ and
+permutation, where a prime is a process not congruent to $\nil$ and not
+congruent to a composition of two processes neither of which is $\nil$.
+\end{hypothesis}
+
+Unique decomposition is known for several process calculi~\cite{milner-moller};
+for the rho calculus it is assumed, as in~\cite{rft}. Write $M_P$ for the
+multiset of primes of $P$. By Lemma~\ref{lem:auto} the action maps primes to
+primes, so $H$ acts on primes and on such multisets, and each prime $q$ has a
+stabiliser $\Stab_H(q)=\Stab(q)\cap H$.
+
+\begin{theorem}[Twisted divisibility]\label{thm:twisted}
+Assume Hypothesis~\ref{hyp:upd}, and let $H\le G$ be finite and $P$ free of
+chaos and summation. Then $P$ has an $H$-twisted root if and only if
+\begin{enumerate}[label=(\alph*)]
+\item $M_P$ is $H$-invariant, and
+\item for every prime $q$, $|\Stab_H(q)|$ divides the multiplicity $M_P(q)$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+($\Rightarrow$) If $\prod_H R\scong P$ then, by uniqueness,
+$M_P=\sum_{h\in H}\act{h}{M_R}$, which is invariant. For a prime $q$,
+\[
+M_P(q)=\sum_{h\in H}M_R(\act{h^{-1}}{q})
+=|\Stab_H(q)|\sum_{q'\in H\cdot q}M_R(q'),
+\]
+because each $q'$ in the orbit of $q$ equals $\act{h^{-1}}{q}$ for exactly
+$|\Stab_H(q)|$ elements $h$.
+($\Leftarrow$) Choose one prime $q$ from each $H$-orbit in $M_P$ and let $R$
+be the composition of the chosen primes, each with multiplicity
+$M_P(q)/|\Stab_H(q)|$. By the same count, $\prod_H R$ gives each $q'$ in the
+orbit of a chosen $q$ multiplicity
+$|\Stab_H(q')|\cdot M_P(q)/|\Stab_H(q)|=M_P(q)=M_P(q')$, using that stabilisers
+along an orbit are conjugate and that $M_P$ is invariant.
+\end{proof}
+
+\begin{corollary}\label{cor:roots}
+Under the hypotheses of Theorem~\ref{thm:twisted}:
+\begin{enumerate}[label=(\roman*)]
+\item If $H$ fixes every prime of $P$, then $P$ has an $H$-twisted root if and
+  only if $|H|$ divides every multiplicity. This is the root criterion
+  of~\cite{rft} with $n=|H|$.
+\item If $H$ acts freely on the primes of $P$, then $P$ has an $H$-twisted root
+  if and only if $M_P$ is $H$-invariant: symmetry replaces divisibility.
+\item By Theorem~\ref{thm:counting}, $|\Stab_H(q)|$ divides
+  $\gcd(|H|,|\FN(q)|)$. A prime whose number of free names is coprime to $|H|$
+  imposes no divisibility condition.
+\item Chaos is its own twisted root for every $H$: $\prod_H\chaos\scong\chaos$.
+\end{enumerate}
+\end{corollary}
+
+\subsection{The stabiliser is the replication factor}
+
+Theorem~\ref{thm:twisted} interpolates between two familiar ways of spreading
+a system over $n$ sites. Take an orbit $O$ of primes with stabiliser $S$. In
+$\prod_H R$, each prime of $O$ is contributed by exactly $|S|$ of the copies.
+\begin{itemize}[leftmargin=1.5em]
+\item When $S=H$ every copy contributes the same component: this is
+  \emph{replication}, and the copies are those of an ordinary root.
+\item When $S$ is trivial each component comes from exactly one copy, and the
+  copies partition the system among themselves: this is \emph{sharding}, in
+  which every site runs the same program in its own frame.
+\end{itemize}
+In general the replication factor of a component is the order of its
+stabiliser, and by Corollary~\ref{cor:roots}(iii) it divides both $|H|$ and its
+number of free names.
+
+This bears directly on the arbitration problem of~\cite{rft}. There, copies of
+a root contend for the same linear messages, and an arbiter must be installed
+at every contention site, at a cost of $\Theta(n)$ rendezvous per site. In a
+twisted root, identical primes, and hence identical channels, are shared only
+among the $|S|$ copies that replicate them. The contention that requires
+arbitration is confined to orbits with non-trivial stabiliser, and its width
+is $|S|$ rather than $|H|$.
+
+\paragraph{Coupling.}
+Copies with trivial stabilisers can still interact, through channels they
+share. Let
+\[
+C(R)=\{\,h\in H\setminus\{e\} : \code(m)\scong\act{h}{\code(n)}
+\text{ for some } m,n\in\FN(R)\,\}.
+\]
+In the initial configuration, copies $\act{k}{R}$ and $\act{k'}{R}$ have a
+redex between them only if $k^{-1}k'\in C(R)$, so the static coupling between
+copies is the Cayley graph of $H$ with connection set $C(R)$. For the ring of
+Section~\ref{sec:rings}, $C(R)=\{r,r^{-1}\}$, since philosopher $k$ shares fork
+$f_{k+1}$ with philosopher $k+1$; $R$ is a twisted root of $\ring_n$ with trivial
+stabilisers, and its coupling graph is the cycle. When $C(R)=\emptyset$
+the copies are disjoint in the initial configuration. Whether they stay
+disjoint depends on the names they can construct at run time, which is the
+namespace question that rho always raises and that the action does not settle.
+
+\paragraph{Rotations again.}
+With $G=SO(3)$ and $H$ the icosahedral group, a twisted root spreads a system
+over $60$ sites at the orientations of the icosahedron. By
+Corollary~\ref{cor:roots}(iii), a component with a number of free names
+coprime to $60$ is sharded, never replicated.
+
+% =====================================================================
+\section{Further work}\label{sec:further}
+
+\begin{itemize}[leftmargin=1.5em]
+\item \emph{Behavioural twisted roots.} The structural theorem above should be
+  lifted to $\prod_H R\approx P$ for an equivariant behavioural equivalence,
+  relative to an observer as in~\cite{rft}, with orbit barbs as observations.
+\item \emph{Arbitration in twisted roots.} The claim that arbitration is
+  confined to orbits with non-trivial stabiliser should be made precise by
+  combining the arbiter of~\cite{rft} with the coupling graph.
+\item \emph{Lehmann--Rabin in $\calc$.} State and prove the impossibility of
+  deterministic symmetric solutions with $\langle r\rangle$-invariance as the
+  notion of symmetry, and identify the symmetry breaker that a randomised
+  solution needs. A probabilistic reading of summation is one candidate.
+\item \emph{Transport on isotropic channels.} The behaviour of isotropic
+  rings under the coded gate and under $K$-gates, where communication moves
+  agents along a Cayley graph.
+\item \emph{Symmetry reduction in practice.} Implement stabiliser computation
+  and orbit canonicalisation in the spatial logic model checker, and measure
+  the reduction on rings and twisted roots.
+\item \emph{Unique decomposition.} Hypothesis~\ref{hyp:upd} is inherited
+  from~\cite{rft} and remains open for the rho calculus.
+\end{itemize}
+
+\section*{Acknowledgements}
+This note was drafted in collaboration with Claude (Anthropic).
+
+\begin{thebibliography}{99}
+\bibitem{armstrong}
+M.~A. Armstrong.
+\newblock \emph{Groups and Symmetry}.
+\newblock Undergraduate Texts in Mathematics. Springer, 1988.
+
+\bibitem{slmc}
+L.~Caires and L.~Cardelli.
+\newblock A spatial logic for concurrency (part {I}).
+\newblock \emph{Information and Computation}, 186(2):194--235, 2003.
+
+\bibitem{clarke-sym}
+E.~M. Clarke, E.~A. Emerson, S.~Jha, and A.~P. Sistla.
+\newblock Symmetry reductions in model checking.
+\newblock In \emph{CAV}, LNCS 1427, pages 147--158. Springer, 1998.
+
+\bibitem{emerson-sistla}
+E.~A. Emerson and A.~P. Sistla.
+\newblock Symmetry and model checking.
+\newblock \emph{Formal Methods in System Design}, 9(1/2):105--131, 1996.
+
+\bibitem{ip-dill}
+C.~N. Ip and D.~L. Dill.
+\newblock Better verification through symmetry.
+\newblock \emph{Formal Methods in System Design}, 9(1/2):41--75, 1996.
+
+\bibitem{lehmann-rabin}
+D.~Lehmann and M.~O. Rabin.
+\newblock On the advantages of free choice: a symmetric and fully distributed
+  solution to the dining philosophers problem.
+\newblock In \emph{POPL}, pages 133--138. ACM, 1981.
+
+\bibitem{rho}
+L.~G. Meredith and M.~Radestock.
+\newblock A reflective higher-order calculus.
+\newblock \emph{Electronic Notes in Theoretical Computer Science},
+  141(5):49--67, 2005.
+
+\bibitem{rft}
+L.~G. Meredith.
+\newblock Radical fault tolerance: roots of processes, arbitration, and the
+  resolver that consensus supplies.
+\newblock F1R3FLY.io research note, 2026.
+
+\bibitem{wsh}
+L.~G. Meredith.
+\newblock Where substitution happens.
+\newblock F1R3FLY.io research note, 2026.
+
+\bibitem{milner-moller}
+R.~Milner and F.~Moller.
+\newblock Unique decomposition of processes.
+\newblock \emph{Theoretical Computer Science}, 107(2):357--363, 1993.
+\end{thebibliography}
+
+\end{document}
