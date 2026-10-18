@@ -141,6 +141,30 @@ Revision~2 treats protocol-1 (legacy) shards as unchanged. Two changes in progre
 \end{itemize}
 Revision~3 should name this class of change and say how it is coordinated on protocol~1 without a version number: either a ledger entry on protocol~1 for each change, or a move to protocol~7. Revision~2 lists A9 as a legacy-only fix that is off by default (\S6.5, l.~646); that status does not make it consensus-neutral once a shard sets the height.
 
+\subsection{R3-11. Protocol rules and node-local controls}
+
+The adaptive-execution design of f1r3node-rust PR~\#714 (\path{docs/designs/adaptive-execution.md} at \code{21b6c643c}) separates node-local controls from validity rules. Its decision~A2 and invariant~I1 state that no control changes the result of block or commit validation. Revision~2 does not mention PR~\#714. Applied to the five items of revision~2 \S5.10 (l.~423--430):
+
+\begin{longtable}{@{}P{5.2cm}P{2.8cm}P{7.0cm}@{}}
+\toprule
+\textbf{Item} & \textbf{Kind} & \textbf{Where it belongs} \\
+\midrule
+\endhead
+2 Proposal pacing (floor distance 128 on the A3 branch) & Node-local & PR~\#714 controller, bounded by tier \\
+3 Per-block demand cap ($\sum \mathtt{phloLimit}$) & Validity rule & OTE FIP; \code{validate_v6} checks it \\
+3 Execution-lag gate & Node-local & Controller. Other validators do not check it. \\
+4 Admission cap ($64\times$ \code{max-user-deploys-per-block}) & Node-local & Controller \\
+5 Work off the async runtime & Node-local & Implementation; PR~\#714 reads the scheduler delay as a signal only \\
+A1 constants (at most 3 timeout reruns, freeze after 4 invalidations, 200{,}000 cache entries) & Node-local & Controller or configuration \\
+\bottomrule
+\end{longtable}
+
+Revision~3 should state that the FIPs fix only the validity rules, and that the node-local thresholds stay out of the FIPs. PR~\#714 \S10.1 already classes A9 as a validity rule, in agreement with R3-10. Its open question Q9 asks whether the OTE profile gets its own adaptation descriptor; its recommended answer keeps every admission ceiling at or below the protocol demand cap, and \S10.2 replaces the block replay time with the executed-root lag as a signal on that profile. The descriptor is node-local and not part of a FIP.
+
+\subsection{R3-12. Refusal contract and expired envelopes}
+
+PR~\#714 level~L2 (\S8) uses one typed, retryable overload error for a full deploy pool (revision~2 item~4, ``retryable busy''), a queue that the inclusion rate cannot clear (issue~\#710), and a node whose validator is not bonded (issue~\#427, PR~\#718). The A3 branch already returns HTTP~503 \code{deploy_pool_full} with \code{Retry-After: 5} (\path{node/src/rust/web/shared_handlers.rs:104-160} at \code{d1c3a970f}). Its invariant~I4 requires a recorded terminal state for an expired deploy; on \code{dev} the expiry pass removes a deploy without a record, so its status reads Pending (issue~\#710). Revision~3 should require the same refusal contract for envelopes on the OTE profile, and a recorded terminal state for an expired envelope.
+
 %======================================================================
 \section{Factual updates}
 %======================================================================
@@ -150,6 +174,7 @@ Revision~3 should name this class of change and say how it is coordinated on pro
 \item \textbf{DR-132} removed the deterministic scheduler (\code{97d020154}); evaluation races as on \code{dev}. Revision~2's ``the scheduler is not ported'' is now true of the branch itself.
 \item \textbf{DR-131} removed host-work metering (\code{75de2dc39}). Revision~2 still relies on host-work caps: the hot-channel row of \S4.1 (``v6 host-work caps bound them''), the determinism-gaps paragraph of \S5.6, and the B7 exit criterion ``host-work caps settled''. Revision~3 must either restore the caps as an OTE-profile requirement or state what bounds hot-channel copies without them (Q-15).
 \item \textbf{Tranche~1.} One shared budget per block, stub gate and settlement, \code{dev}'s charges (\path{docs/plans/v6-order-then-execute-tranche-1.md}, lines 58--66 on \code{e7469fd47}), and a node-flag activation (R3-2).
+\item \textbf{Soak evidence.} Revision~2 \S2.5 (l.~186) cites the August soak and an AUC of at most 0.70. A later soak qualifies its premises. Soak 38995239992 (master \code{ecb16dbca}, with the jemalloc fix) had 0 \code{test_load} failures in 91 sessions (46 Docker, 45 subprocess). Sustained-phase finalizer runs averaged 20\,ms (Docker) and 25\,ms (subprocess), with a highest phase mean of 70\,ms, and \code{finalizer.run.timeouts} was 0. The soak is partial: it stopped at 16.7\,h of 57.5\,h on a harness defect (issue~\#24 plan comment 6220936428). Under \code{test_load} on current code, the 15\,s finalizer trap of revision~2 was not observed. The host class matters: without jemalloc, the subprocess provider failed 28 of 42 iterations (soak 38300649650), and the subprocess replay checkpoint still takes 449\,ms against 87\,ms on Docker. The full baseline soak (step~0 of the issue~\#24 plan, TASK-021-16) and the Track~A soak (TASK-021-24) give the cost of each Track~A item before and after the fixes.
 \item \textbf{A1c status.} Revision~2 marks A1c ``Done'' (\S6.5, l.~638). The branch \code{fix/finalizer-forward-progress} at \code{8b1b10f2a} has 14 new finalizer tests, but not all tests that the \S5.10.1 response (\S5) and revision~2 \S5.14 (l.~547) require. The implementation side lists these as missing: the split-committee test with reversed orderings; a deadline injected at every cursor state; a property test for the shared oracle cache (only an example test exists; the \code{proptest} blocks in \path{floor.rs} test the floor base); a TOCTOU injection test; exactly-once delivery under fault injection; and the TLA+ models with failing configurations. Revision~3 should mark A1c ``implemented, test suite incomplete''.
 \item \textbf{Track~A tips.} \code{fix/finality-stall-track-a} \code{d1c3a970f}, \code{fix/finalizer-forward-progress} \code{8b1b10f2a}, \code{fix/stall-track-a-rest} \code{16c57af9c}.
 \item \textbf{Snapshot identity.} \code{snapshot_id} (\path{casper/src/rust/finality/floor_runner.rs:31} at \code{8b1b10f2a}) hashes latest messages, the invalid-block set and the LFB, but not the equivocation tracker that the \S5.10.1 response (\S3.3) names. Either the response or the code needs to change.
@@ -168,6 +193,7 @@ Line numbers refer to \path{stall-loop-design.tex} at \code{0b3255fc8}.
 \endhead
 Abstract (l.~69), \S1 summary (l.~84, 88) & ``v6 shards'' $\to$ ``OTE-profile shards of protocol~7''; cite D-01. \\
 \S1 keypoint (l.~92--99) & Add R3-1 and R3-3 as decisions; mark all as provisional pending ratifiers (R3-9). \\
+\S2.5 soak evidence (l.~186) & Add soak 38995239992 and the host-class effects; mark the 15\,s finalizer trap as not observed under \code{test_load}. \\
 \S4 intro and \S4.1 (l.~246, 256--266) & Update drift numbers; record DR-131 and DR-132; resolve the host-work row (Q-15). \\
 \S5.1 scope (l.~284) & Replace ``v6 only'' with the three shard kinds of R3-1; add R3-7. \\
 \S5.2 block content (l.~294--307) & ``Additive protocol-6 field'' $\to$ field of the OTE profile under the protocol-7 FIP; note \code{phloLimit}/\code{phloPrice} (R3-6). \\
@@ -176,17 +202,18 @@ Abstract (l.~69), \S1 summary (l.~84, 88) & ``v6 shards'' $\to$ ``OTE-profile sh
 \S5.7 records (l.~406) & ``They agree on Ord (A-LIN)'' $\to$ ``\ldots{} because the finalizer adopts only main-chain descendants (R3-3)''. \\
 \S5.6 charge model (l.~393) & Determinism gaps: restate without host-work caps or restore them (Q-15). \\
 \S5.9 epochs (l.~418) & D-09 wire forms; Q-4 needs a ledger entry (R3-4). \\
+\S5.10 backpressure (l.~423--430) & Mark items 2, 4, 5 and the execution-lag gate as node-local; keep the demand cap as the validity rule (R3-11). \\
 \S5.11 P2 and P4 (l.~470--473) & P4 becomes an invariant on the OTE profile, an alarm on protocol~1; P2 by ancestry (Q-14). \\
 \S5.11 ``Effect on v6'' (l.~499--501) & Rename; cite D-05 (R3-8). \\
 \S6.1 status (l.~576) & Tranche~1 activation by node flag conflicts with D-01 (R3-2); update tips. \\
 \S6.5 Track~A (l.~638, 646) & A1c: ``implemented, test suite incomplete''. A9: a protocol-1 consensus change (R3-10). Add non-validator items (Q-16). \\
 \S6.3 left behind (l.~604) & DR-120: also excluded from the protocol-7 default profile. \\
 \S6.4 hooks (l.~618--625) & \code{v6::} $\to$ \code{ote::}; predicate \code{is_ote_profile()}; add the finalizer adoption filter and the main-parent rule of R3-3 as fifth and sixth hooks. \\
-\S6.6 B4, B5, B6, B7 (l.~662--668) & B4 exit adds the adoption filter; B5/B6 use D-09; B7 adds the protocol-7 and OTE FIPs (\S\ref{sec:fip}), the host-work decision and the elapsed-time bound for each envelope (Q-15). \\
+\S6.6 B4, B5, B6, B7 (l.~662--668) & B4 exit adds the adoption filter; B5/B6 use D-09; B7 adds the protocol-7 and OTE FIPs (\S\ref{sec:fip}), the host-work decision and the elapsed-time bound for each envelope (Q-15). B7 soak gates follow PR~\#714 \S14.1: the gate for each host class (Docker and subprocess), a constrained tier with cgroup CPU and memory limits, and no out-of-memory, watchdog or guardian stop. B4: the seam location (Q-17). \\
 \S6.7 sequencing (l.~698) & P4 lands early as the adoption filter, not only as a check. \\
 \S6.8 ownership (l.~703) & Ledger ratifiers own R3-1 to R3-9. \\
 Risk table (l.~719) & Replace the A-LIN row with the liveness risk of R3-3: without the OTE fork-choice rule, the adoption filter can defer every candidate. \\
-Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement on protocol~1. Add Q-13 to Q-16. \\
+Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement on protocol~1. Add Q-13 to Q-17. \\
 \bottomrule
 \end{longtable}
 
@@ -201,8 +228,9 @@ Q-1 (l.~741) & Answered on the OTE profile by R3-3; stays open as a measurement 
 \endhead
 Q-13 & Not today: \code{dev}'s fork choice is rooted at the fork-choice floor, and main parents need not descend from the LFB. Does the Casper team accept an OTE-profile rule that the main parent is a main-chain descendant of the LFB, as a ledger entry against D-03? \\
 Q-14 & On the OTE profile, does the D-04 containment gate follow from main-chain ancestry, as R3-3 claims? \\
-Q-15 & With host-work metering removed by DR-131, what bounds hot-channel copies and closes the determinism gaps of bugs 10814 and 10812 at a cap boundary? Also, what bounds the elapsed time of one envelope? In issue~\#541 one deploy played for 261 to 276\,s. The play budget is checked only between deploys (\path{casper/src/rust/rholang/runtime.rs:359} on \code{dev}), so it cannot stop one long deploy. Bridge-lock deploys took 25 to 75\,s, so phlogiston is a poor measure of time. The proposed soft phlo cap prices long plays but does not bound them. On the OTE profile all envelopes of a block run in one session, so one long envelope delays execution after finality and widens the executed-root lag. The OTE FIP must state this bound. \\
+Q-15 & With host-work metering removed by DR-131, what bounds hot-channel copies and closes the determinism gaps of bugs 10814 and 10812 at a cap boundary? Also, what bounds the elapsed time of one envelope? In issue~\#541 one deploy played for 261 to 276\,s. The play budget is checked only between deploys (\path{casper/src/rust/rholang/runtime.rs:359} on \code{dev}), so it cannot stop one long deploy. Bridge-lock deploys took 25 to 75\,s, so phlogiston is a poor measure of time. The proposed soft phlo cap prices long plays but does not bound them. On the OTE profile all envelopes of a block run in one session, so one long envelope delays execution after finality and widens the executed-root lag. The OTE FIP must state this bound. A bound that stops an envelope during its play changes the recorded result, so it is a validity rule and not a node-local control (PR~\#714 \S10.1); it must give the same result on replay. Elapsed time therefore cannot be the replayed bound: the FIP states the bound in a deterministic unit, or the executor records the stopping point in the canonical record and replay follows the record (issue~\#541, option~A: replay uses the lower of the user limit and the recorded effective limit). Elapsed time can still trigger the stop on the recording executor. Option~A also needs a rule that stops the executor from cutting an envelope short without cause. \\
 Q-16 & The stall analysis of revision~2 covers validators only. Non-validators show other stall modes: the block pipeline is narrower than the blocks of one height (issue~\#691, \code{MAX_PARALLEL_BLOCKS = 2}, with repeated out-of-memory stops of the observer and bootstrap nodes); a buffer at its size limit stalls a lagging node (issue~\#690; PR~\#752 fixed one cause); and both processing slots stay held after the merge step (issue~\#744). Observers on the OTE profile still replay records. Should Track~A take these as items for non-validators? \\
+Q-17 & Does the B4 seam target the \code{ConsensusRuntime} adapter of PR~\#651 (issue~\#624) and the consensus-neutral boundary of PR~\#627, instead of the Casper internals? Tranche~1 (\code{e7469fd47}) changes ten Casper source files outside \path{casper/src/rust/v6/}, among them \path{casper_launch.rs}, which PR~\#651 also changes. Tranche~1 conflicts with \code{fix/stall-track-a-rest} in \path{casper.rs}, \path{casper_launch.rs} and \path{finalization_runner.rs}. PR~\#714 starts its implementation after PR~\#651 merges (decision~A7). A seam on the shared runtime would not be written twice. \\
 \bottomrule
 \end{longtable}
 
@@ -210,7 +238,7 @@ Q-16 & The stall analysis of revision~2 covers validators only. Non-validators s
 \section{What each FIP must specify}\label{sec:fip}
 %======================================================================
 
-No FIP exists yet for protocol~7 or for the OTE profile.
+No FIP exists yet for protocol~7 or for the OTE profile. Node-local thresholds stay out of both FIPs (R3-11).
 
 \begin{longtable}{@{}P{2.6cm}P{12.4cm}@{}}
 \toprule
@@ -218,7 +246,7 @@ No FIP exists yet for protocol~7 or for the OTE profile.
 \midrule
 \endhead
 Protocol~7 & The activation row: fresh genesis after FIP approval (D-01). The D-08 additive merge with its activation conditions: FIP approval, fresh genesis, differential tests, compatibility analysis and conservation evidence. The D-10 envelope commitment. The D-09 wire forms (lifetime identity, pair evidence). Retention of \code{phloLimit} and \code{phloPrice} (D-12). The answer to Q-15. \\
-OTE profile & The profile as an extension of D-01, and its genesis predicate. The main-parent rule, as a ledger entry against D-03 (Q-13). A-LIN as an invariant, with a halt policy that the profile selects (R3-3). The elapsed-time bound for each envelope (Q-15). The evidence classes (R3-4). The B7 soak gates, with the committee sizes they cover: issue~\#477 found super-linear finalizer cost with about 19 validators. \\
+OTE profile & The profile as an extension of D-01, and its genesis predicate. The main-parent rule, as a ledger entry against D-03 (Q-13). A-LIN as an invariant, with a halt policy that the profile selects (R3-3). The elapsed-time bound for each envelope (Q-15). The evidence classes (R3-4). The demand cap as the upper bound for every node-local admission ceiling, and the executed-root lag as the published signal (R3-11). The refusal contract and the terminal state of an expired envelope (R3-12). The B7 soak gates, with the committee sizes they cover: issue~\#477 found super-linear finalizer cost with about 19 validators. \\
 \bottomrule
 \end{longtable}
 
@@ -231,7 +259,7 @@ OTE profile & The profile as an extension of D-01, and its genesis predicate. Th
 \item F1R3node Casper Working Group, ``A Live-and-Safe Finalizer-Progress Design'', October 16, 2026, \path{cost-accounting/stall-loop-design-5-10-1-response.tex}.
 \item Casper decision ledger, f1r3node-rust \path{docs/casper/design/decision-ledger/}, entries D-01, D-02, D-04, D-05, D-07, D-08, D-09, D-10, D-12, and README \S2.1; ratification record PR~\#390 review 5227717933.
 \item Casper glossary, \path{docs/casper/GLOSSARY.md}, entry ``Protocol 7''.
-\item f1r3node-rust issue~\#764, section ``Protocol 6 and protocol 7''; issues \#477, \#534, \#541, \#690, \#691, \#744; PRs \#662 and \#752.
+\item f1r3node-rust issue~\#764, section ``Protocol 6 and protocol 7''; issues \#477, \#534, \#541, \#690, \#691, \#744; PRs \#627, \#651, \#662, \#714, \#718 and \#752; issues \#24 (plan comment 6220936428), \#427, \#624 and \#710; soak runs 38300649650 and 38995239992.
 \end{itemize}
 
 \end{document}
