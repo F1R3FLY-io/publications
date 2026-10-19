@@ -55,7 +55,7 @@
 \large Justifications as quotation, equivocation as a join,\\
 and the hypothesis the clique oracle needs}
 \author{L.\,G.\ Meredith\\ \small F1R3FLY.io}
-\date{October 18, 2026 \quad\textendash\quad Draft 1}
+\date{October 19, 2026 \quad\textendash\quad Draft 2}
 
 \begin{document}
 \maketitle
@@ -86,7 +86,14 @@ LMD-GHOST. The clique theorem has a hypothesis that the oracle in
 \texttt{f1r3node-rust} does not check: that $a$'s view of $b$ itself supports
 the target. We exhibit an asynchronous schedule, with no equivocation and under
 the default configuration, in which that oracle certifies two sibling blocks,
-and we give the one-line repair.
+and we give the one-line repair. Finally we add a fast path. Following the
+coding view of agreement due to Mostefaoui, Rajsbaum and Raynal, and the
+one-step scheme of Bosco, a validator finalizes in one message delay when the
+round-one votes decode, within a radius whose margin is $3f$ for Byzantine
+stake $f$. The margin is exactly $f$ errors at each of two observers and $f$
+erasures, and the erasure term is the synchrony constraint: each round waits
+for all but $f$ of the stake. The fast path never conflicts with the clique
+oracle.
 \end{abstract}
 
 \tableofcontents
@@ -122,7 +129,9 @@ validators constrained only by unforgeability of signatures.
 
 \paragraph{What is abstracted.}
 Deploys, execution, state hashes, merging of post-states, bonding, slashing
-economics, epochs and the synchrony constraint. Local computation inside a
+economics and epochs. The synchrony constraint is abstracted in
+Sections~\ref{sec:blocks}--\ref{sec:impl} and returns in
+Section~\ref{sec:fast} as a round constraint. Local computation inside a
 validator (merging a view, evaluating the estimator, running the oracle) is a
 deterministic terminating function of quoted data, implementable as a rho
 process, and taken as one atomic step. The interest of the model is the
@@ -153,6 +162,12 @@ concurrency \emph{between} validators.
 \item The implementation (Section~\ref{sec:impl}): a crosswalk to
   \texttt{f1r3node-rust}, and a counterexample showing that its clique oracle
   omits a hypothesis of Theorem~\ref{thm:clique}, with a repair.
+\item Fast finality (Section~\ref{sec:fast}): a one-step fast path in the style
+  of Bosco, with a weighted round constraint as the synchrony constraint,
+  agreement, persistence and compatibility with the clique oracle
+  (Theorem~\ref{thm:fast}), the resilience thresholds $3f$, $5f$ and $7f$
+  (Proposition~\ref{prop:resil}), and the reading of the threshold as a
+  decoding radius.
 \end{itemize}
 
 % =====================================================================
@@ -928,6 +943,289 @@ constraint threshold forces such refreshes and shortens the wait; it does not
 replace the check, since it is a configuration choice and its default is $0$.
 
 % =====================================================================
+\section{Fast finality from a code}\label{sec:fast}
+
+The clique oracle certifies a block only after validators have cited one
+another's support for it, which takes several rounds of messages after the
+block is proposed. This section adds a fast path that decides in one message
+delay, and derives the synchrony constraint that it needs from an error bound.
+
+\subsection{Choosing the protocol}
+
+The connection between agreement and coding is due to Mostefaoui, Rajsbaum and
+Raynal. A \emph{condition} restricts the vectors of inputs that the processes
+may propose. A condition is \emph{$x$-legal} when there is a decision function
+$h$ on it such that $h(I)$ occurs more than $x$ times in $I$ and any two input
+vectors with different decisions are at Hamming distance more than
+$x$~\cite{mrr-jacm,mrrt}. With $t$ crash failures, consensus is solvable
+asynchronously for inputs in the condition exactly when it is $t$-legal. In the
+synchronous model, conditions that are only $(t-d)$-legal place consensus at
+level $d$ of a hierarchy, where $d+1$ rounds are necessary and sufficient in
+the worst case~\cite{mrr-sync}. A smaller distance is paid for in rounds of
+synchrony. Friedman, Mostefaoui, Rajsbaum and Raynal develop the coding reading
+in general~\cite{fmrr}.
+
+Those results are for crash failures. For Casper we need Byzantine failures,
+weighted validators, and the shortest possible time to finality. The candidates
+are the following.
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+protocol & faults & fast-path latency & fast-path resilience\\
+\midrule
+condition-based~\cite{mrr-jacm} & crash & input in condition & $t$-legal\\
+synchronous hierarchy~\cite{mrr-sync} & crash & $d+1$ rounds & lockstep rounds\\
+FaB Paxos~\cite{fab} & Byzantine & 2 message delays, leader & $n\ge5f+1$\\
+Kuznetsov et al.~\cite{ktz} & Byzantine & 2 message delays, leader & $n\ge5f-1$\\
+Bosco~\cite{bosco} & Byzantine & 1 message delay, leaderless & $n\ge7f+1$\\
+\bottomrule
+\end{tabular}
+\end{center}
+We choose Bosco's one-step scheme. Its latency is the least possible, since a
+decision is taken on receipt of the votes. It is leaderless, like Casper. Its
+slow path is any consensus protocol whose inputs are adjusted by the first
+step, so Casper itself can be the slow path. Its decision rule is a condition in
+the sense above, with the margin of a decoding radius. The price is resilience:
+the fast path needs a smaller Byzantine fraction than Casper does. Outside that
+range Casper is still safe; only the fast path is lost.
+
+\subsection{Rounds and the synchrony constraint}
+
+Read the height of a block as its \emph{round}: the first block of a validator
+is its round-1 \emph{vote}, and its estimate is the value voted for. Fix a
+\emph{fault budget} $f$, a genesis parameter, with $w(B)\le f$. Let
+$R_k(\sigma)$ be the set of validators with a block of height $k$ in $\sigma$.
+
+\begin{definition}[Round constraint]\label{def:round}
+A valid block $m$ satisfies \emph{(R)} if $\hgt(m)\ge2$ implies
+$w\bigl(R_{\hgt(m)-1}(\Jst(m))\bigr)\ge W-f$.
+\end{definition}
+
+(R) is a check on the block alone, so it keeps validity independent of
+admission order. It says that a validator moves to round $k$ only after it has
+seen round $k-1$ from all but at most $f$ of the stake. It is the weighted,
+per-round form of the synchrony constraint of the node, which counts the stake
+seen since a validator's previous block. The amount it waits for,
+$W-f$, is the most that can be waited for without letting $f$ silent
+validators block progress. In coding terms, $f$ is an erasure budget.
+
+\subsection{The terms}
+
+The honest validator with input $x$ is the program of
+Section~\ref{sec:honest} with three changes.
+\begin{align*}
+H^{R}_x &\;=\; \snd{\mathit{st}}{A,\alpha_e}\;\mid\;\mathit{Dec}\;\mid\;
+  \mathit{Vote}_x\;\mid\;\mathit{Prop}^R\;\mid\;\mathit{Fast}\;\mid\;\mathit{Fin}\\
+\mathit{Vote}_x &\;=\; \mathtt{for}(S,\ell \leftarrow \mathit{st}
+  \ \mathtt{where}\ \ell=\alpha_e)\,
+  \mathtt{let}\ m=\blk{e}{\alpha_e}{x}{\emptyset}\ \mathtt{in}\\
+  &\qquad\bigl(\snd{\mathit{st}}{S\cup\{m\},m}\mid\textstyle\prod_{g\in V}
+  \snd{\mathit{in}_g}{m}\mid\mathit{Watch}(m)\bigr)\\
+\mathit{Prop}^R &\;=\; \mathtt{for}(S,\ell \Leftarrow \mathit{st}
+  \ \mathtt{where}\ \ell\ne\alpha_e \wedge
+  w(R_{\hgt(\ell)}(S))\ge W-f)\,\\
+  &\qquad\mathtt{let}\ m=\blk{e}{\ell}{\Est^{\circ}(S)}{\tips(S)}\ \mathtt{in}\
+  \bigl(\snd{\mathit{st}}{S\cup\{m\},m}\mid\textstyle\prod_{g\in V}
+  \snd{\mathit{in}_g}{m}\mid\mathit{Watch}(m)\bigr)\\
+\mathit{Fast} &\;=\; \mathtt{for}(S,\ell \leftarrow \mathit{st}
+  \ \mathtt{where}\ \mathrm{fast}(S)\ne\bot)\,
+  \bigl(\snd{\mathit{st}}{S,\ell}\mid\snd{\mathit{dec}}{\mathrm{fast}(S)}\bigr)
+\end{align*}
+The guards are the \texttt{where} clauses of rholang 1.4: a receive fires only
+when its condition holds of what it would bind. Here each condition is a
+decidable predicate of the quoted view, computed locally like $\merge$ and
+$\Est$. Without the clause a guard would have to receive the state, test it,
+and put it back, which is busy waiting; with it the guard is part of the
+communication. $\mathit{Vote}_x$ is linear, so each honest validator votes
+once, with no justifications, so that $\Est(A)$ allows any value. The decision
+function is
+\[
+\mathrm{fast}(S)=v
+\quad\text{if}\quad
+2\,w\{u : u \text{ has a height-1 block } n\in S \text{ with } \est(n)=v\}
+\;>\;W+3f,
+\]
+and $\bot$ when there is no such $v$. $\mathit{Fast}$ is linear, so it decides
+once, and it may decide on any view, without waiting. Every block that
+$\mathit{Prop}^R$ makes satisfies (R), because $\Jst(m)\cup A=S$. The estimator
+is weighted plurality of latest messages of non-equivocators, which is
+majoritarian for every value $v$, with supporting messages those that estimate
+$v$ and opposing messages all others.
+
+\subsection{Theorems}
+
+Fix a run of $\prod_{v\notin B}H^R_{x_v}\mid\prod_{b\in B}Z_b$ with
+disciplined $Z_b$ and $w(B)\le f$. Let $K_v$ be the honest validators whose
+vote is $v$.
+
+\begin{lemma}[Adoption]\label{lem:adopt}
+Suppose $W>4f$ and some honest observer executes
+$\snd{\mathit{dec}}{v}$. Then every block of height at least $2$ by an honest
+validator has estimate $v$.
+\end{lemma}
+
+\begin{proof}
+The observer saw votes for $v$ of weight $c$ with $2c>W+3f$. At most $f$ of
+that weight is Byzantine, and honest validators vote once, so
+$w(K_v)\ge c-f$.
+
+Suppose the lemma fails, and take a counterexample $m$ by an honest $q$, minimal
+for $\le$, with $k=\hgt(m)\ge2$. Let $\tau=\Jst(m)\cup A$; by (V),
+$\est(m)\in\Est(\tau)$. Every block of height at least $2$ by an honest
+validator in $\tau$ has estimate $v$, by minimality.
+
+\emph{Case $k=2$.} Let $U=R_1(\tau)$. Every validator with a block in $\tau$ is
+in $U$, since its chain reaches down to its vote. Let $x=W-w(U)$; by (R),
+$x\le f$. An honest validator of $K_v\cap U$ has as its latest message in
+$\tau$ either its vote or a later block, and either way the estimate is $v$.
+So supporting weight is at least $w(K_v)-x\ge c-f-x$, and opposing weight is at
+most $w(U)$ minus that, which is at most $W-c+f$. Supporting exceeds opposing
+when $2c>W+2f+x$, and this holds because $x\le f$ and $2c>W+3f$.
+
+\emph{Case $k\ge3$.} Let $U=R_{k-1}(\tau)$, so $w(U)\ge W-f$ by (R). The
+honest members of $U$ have latest messages of height at least $k-1\ge2$, and
+these estimate $v$. Their weight is at least $W-2f$. Everyone else has weight
+at most $2f$. Since $W>4f$, supporting exceeds opposing.
+
+In both cases $\Est(\tau)=\{v\}$, because the estimator is majoritarian and
+equivocators, all Byzantine, only leave the count. So $\est(m)=v$, a
+contradiction.
+\end{proof}
+
+\begin{theorem}[Fast finality]\label{thm:fast}
+Suppose $W>4f$.
+\begin{enumerate}[label=(\roman*)]
+\item \emph{Agreement.} Any two fast decisions by honest observers, at any
+  views and times, are equal.
+\item \emph{Persistence.} After an honest fast decision for $v$, every honest
+  estimate from round $2$ on is $v$.
+\item \emph{Compatibility with the slow path.} If an honest observer
+  fast-decides $v$, no honest observer certifies a different value by a clique
+  of positive weight margin, $2q>W$. In particular the clique oracle certifies
+  nothing incompatible at any threshold $\theta\ge0$.
+\item \emph{Latency.} A fast decision needs only round-1 votes, so it is taken
+  one message delay after they are sent.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+(i) Decisions for $v$ and $v'$ give $w(K_v)\ge c-f$ and $w(K_{v'})\ge c'-f$.
+These sets are disjoint, so $W\ge c+c'-2f>W+f$, which is impossible.
+(ii) is Lemma~\ref{lem:adopt}.
+(iii) A clique for $v'\ne v$ consists of non-equivocators whose latest
+messages estimate $v'$. By (ii), an honest member's latest message is its
+vote, so the member is in $K_{v'}$, which is disjoint from $K_v$. The clique's
+weight is at most $w(B)+(W-w(B)-w(K_v))\le W-c+f$, and this is less than
+$(W-f)/2$. So $2q<W$.
+(iv) The guard of $\mathit{Fast}$ mentions only votes.
+\end{proof}
+
+\begin{proposition}[Resilience of the fast path]\label{prop:resil}
+\begin{enumerate}[label=(\roman*)]
+\item If $W\le3f$, no fast decision is ever possible.
+\item If every validator votes $v$ and every vote is delivered, an observer
+  fast-decides when $W>3f$. The guarantees of Theorem~\ref{thm:fast} need
+  $W>4f$.
+\item If every honest validator votes $v$ and Byzantine validators are silent,
+  an observer fast-decides on every view that (R) allows exactly when
+  $W>5f$.
+\item If every honest validator votes $v$ and Byzantine validators vote
+  against it, an observer fast-decides on every view that (R) allows exactly
+  when $W>7f$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The weight $c$ for $v$ on the view is at most $W$ in (i), equal to $W$ in (ii),
+at least $W-f$ in (iii), and at least $W-2f$ in (iv), with these worst cases
+reached on views of weight $W-f$. Compare each with $(W+3f)/2$.
+\end{proof}
+
+Parts (iii) and (iv) reproduce in weighted form the resilience bounds of Bosco's
+weakly and strongly one-step decisions. Part (ii) is the good case. An
+observer that is patient can therefore decide faster than one that is not,
+because $\mathit{Fast}$ may fire on any view, while $\mathit{Prop}^R$ needs
+only $W-f$.
+
+\begin{proposition}[Rounds progress]
+Suppose every message sent to an honest validator is eventually delivered, and
+every honest validator eventually takes each of its enabled steps. Then every
+honest validator produces a block of every height.
+\end{proposition}
+
+\begin{proof}
+By induction on the height. Honest weight is at least $W-f$, so once every
+honest block of height $k$ has been delivered, every honest guard for height
+$k+1$ is enabled.
+\end{proof}
+
+Round progress is not termination of consensus. If no fast decision is taken,
+the decision falls to the clique oracle, and its liveness in an asynchronous
+network meets the impossibility of Fischer, Lynch and Paterson. Bosco takes
+termination from its underlying protocol, and Casper inherits it only under
+partial synchrony.
+
+\subsection{The code}
+
+Write the honest votes as a word $I$ that assigns a value to each validator,
+and measure distance by weight: $d(I,J)=w\{u:I_u\ne J_u\}$. An observer
+receives this word with \emph{erasures}, the validators it has not heard from,
+and \emph{errors}, the Byzantine validators, who may show each observer a
+different vote. Then:
+\begin{itemize}[leftmargin=1.5em]
+\item The guard of $\mathrm{fast}$ is bounded-distance decoding of the
+  repetition code $\{\bar v\}$, whose words are constant. Counting erasures
+  as disagreements, a received word decodes to $v$ when it lies within
+  distance $(W-3f)/2$ of $\bar v$.
+\item The estimator in round 2 is unbounded decoding of the same code:
+  plurality on the positions received.
+\item For $v\ne v'$, any word that fast-decodes to $v$ and any word that
+  fast-decodes to $v'$ are at distance more than $3f$. Positions agreeing with
+  $v$ in the first, plus positions agreeing with $v'$ in the second, total more
+  than $W+3f$.
+\end{itemize}
+The margin $3f$ is the classical budget: a code of distance $\delta$ corrects
+$e$ errors and $s$ erasures exactly when $\delta>2e+s$, and here $e=f$ and
+$s=f$. The proof of Lemma~\ref{lem:adopt} spends it on three items:
+\begin{enumerate}[label=(\alph*)]
+\item $f$ errors at the fast decider, from Byzantine votes for $v$;
+\item $f$ errors at the adopter, from Byzantine votes against $v$;
+\item $f$ erasures at the adopter, the stake that (R) lets it proceed without.
+\end{enumerate}
+This is the sense in which an error bound determines a synchrony constraint.
+The erasure term of the decoding radius is exactly what (R) waits for. If (R)
+waited for less stake, the adopter's erasures would grow. If the fast threshold
+were lowered to $(W+2f)/2$, the margin would no longer cover all three items. A
+randomised check of the two thresholds, \texttt{fastpath\_check.py}, finds
+no violation of Lemma~\ref{lem:adopt} or Theorem~\ref{thm:fast}(i) in
+$2\times10^5$ trials at $(W+3f)/2$. At $(W+2f)/2$ it finds violations in about
+4\% of the instances that decide.
+
+In the hierarchy of~\cite{mrr-sync}, crash conditions with smaller distance
+are paid for in synchronous rounds. Our fast path sits at the Byzantine level
+where one step suffices, with margin $3f$. The natural conjecture is that a
+margin between $2f$ and $3f$ buys a decision in two rounds of (R). The two-step
+protocols of~\cite{fab,ktz} suggest this, since they need $n\ge5f-1$ to
+$5f+1$ rather than $7f+1$. We have not proved it.
+
+\subsection{From one decision to a chain}
+
+The protocol above decides one value. In a chain, every height is a round of
+every instance at once: a validator's block of height $k$ is its vote in the
+instance that starts at round $k$, and its adoption step in the instance that
+started at round $k-1$. This is the pipelining of DAG-based protocols, and
+(R) is already the round discipline they use. The estimate of a block is then a
+block of the main-parent tree rather than a value. Lemma~\ref{lem:ghost} makes
+LMD-GHOST majoritarian for each property $p_T$, so the proof of
+Lemma~\ref{lem:adopt} applies one fork at a time, with neutral messages,
+which are the latest messages lying strictly below the fork, counted as neither
+supporting nor opposing. Two points remain to be checked before this is a
+theorem. The neutral weight enters the case $k=2$ count. And votes in one
+instance are adoptions in another, so the minimality argument must be carried
+out across instances.
+
+% =====================================================================
 \section{What the group contributes}\label{sec:group}
 
 The group action earns its place in three ways, and it is worth being plain
@@ -967,9 +1265,15 @@ What it would lose is the statement that the validators are one program.
   $\fr{\delta^{-1}}{X}$ in the notation of~\cite[\S6]{oriented}, would read
   every frame with one receive, at the price of the word problem for $G$,
   which is trivial for finite $G$.
-\item \emph{Liveness.} Nothing here is about liveness, which in an
-  asynchronous setting requires the synchrony assumptions that the model
-  deliberately leaves out.
+\item \emph{Liveness.} Section~\ref{sec:fast} gives round progress and a
+  one-step decision in good cases, not termination. Termination of the slow
+  path needs partial synchrony, and the question is what the clique oracle
+  needs from it.
+\item \emph{The Byzantine hierarchy.} Prove or refute that a fast-path margin
+  of $3f-j$ buys a decision within $j+1$ rounds of (R), as the crash
+  hierarchy of~\cite{mrr-sync} and the two-step protocols of~\cite{fab,ktz}
+  suggest. Then carry the chained form of Section~\ref{sec:fast} through to a
+  theorem.
 \item \emph{Hash pointers.} Replace quoted closures by names that refer to
   blocks without containing them, with a persistent \emph{seen} fact per block
   and dependency waits as joins. Proposition~\ref{prop:futures} then needs a
@@ -983,6 +1287,44 @@ What it would lose is the statement that the validators are one program.
 This note was drafted in collaboration with Claude (Anthropic).
 
 \begin{thebibliography}{99}
+\bibitem{fmrr}
+R.~Friedman, A.~Mostefaoui, S.~Rajsbaum, and M.~Raynal.
+\newblock Distributed agreement problems and their connection with
+  error-correcting codes.
+\newblock \emph{IEEE Transactions on Computers}, 2007.
+
+\bibitem{ktz}
+P.~Kuznetsov, A.~Tonkikh, and Y.~X. Zhang.
+\newblock Revisiting optimal resilience of fast Byzantine consensus.
+\newblock In \emph{PODC}. ACM, 2021.
+
+\bibitem{fab}
+J.-P. Martin and L.~Alvisi.
+\newblock Fast Byzantine consensus.
+\newblock In \emph{DSN}. IEEE, 2005.
+
+\bibitem{mrr-jacm}
+A.~Mostefaoui, S.~Rajsbaum, and M.~Raynal.
+\newblock Conditions on input vectors for consensus solvability in
+  asynchronous distributed systems.
+\newblock \emph{Journal of the ACM}, 50(6):922--954, 2003.
+
+\bibitem{mrr-sync}
+A.~Mostefaoui, S.~Rajsbaum, and M.~Raynal.
+\newblock Synchronous condition-based consensus.
+\newblock \emph{Distributed Computing}, 18:325--343, 2006.
+
+\bibitem{mrrt}
+A.~Mostefaoui, S.~Rajsbaum, M.~Raynal, and C.~Travers.
+\newblock The combined power of conditions and information on failures to
+  solve asynchronous set agreement.
+\newblock \emph{SIAM Journal on Computing}, 38(4):1574--1601, 2008.
+
+\bibitem{bosco}
+Y.~J. Song and R.~van Renesse.
+\newblock Bosco: one-step Byzantine asynchronous consensus.
+\newblock In \emph{DISC}, LNCS. Springer, 2008.
+
 \bibitem{lehmann-rabin}
 D.~Lehmann and M.~O. Rabin.
 \newblock On the advantages of free choice: a symmetric and fully distributed
