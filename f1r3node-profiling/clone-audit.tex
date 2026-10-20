@@ -1,0 +1,584 @@
+\documentclass[11pt]{article}
+\PassOptionsToPackage{obeyspaces}{url}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{charter}
+\usepackage[scaled=0.9]{helvet}
+\usepackage{courier}
+
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{codebg}{gray}{0.96}
+\definecolor{lo}{RGB}{30,120,60}
+\definecolor{med}{RGB}{190,120,0}
+\definecolor{hi}{RGB}{180,30,30}
+\newcommand{\low}{\textcolor{lo}{\textbf{low}}}
+\newcommand{\medium}{\textcolor{med}{\textbf{medium}}}
+\newcommand{\high}{\textcolor{hi}{\textbf{high}}}
+\usepackage{url}
+\usepackage{array}
+\usepackage{float}
+\def\UrlBreaks{\do\/\do\_\do\.\do\-\do\:}
+\DeclareUrlCommand\f{\urlstyle{tt}}
+\DeclareUrlCommand\cd{\urlstyle{tt}\def\UrlBreaks{\do\.\do\(\do\)\do\,\do\_\do\:\do\<\do\>\do\|\do\/}}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=none, columns=fullflexible, keepspaces=true,
+  breaklines=true, xleftmargin=1em, aboveskip=0.6em, belowskip=0.6em,
+  keywordstyle=\bfseries, language=C, morekeywords={fn,let,mut,impl,pub,match,Some,None,Ok,self,Self,move,async}
+}
+\setlist{itemsep=0.2em, topsep=0.3em}
+
+\title{Clone and Copy Discipline in \texttt{f1r3node-rust}\\[0.3em]
+\large Where the copies are, which ones matter, and how to remove them without moving consensus}
+\author{F1R3FLY.io Research Note\\[0.2em]\small Prepared with Claude for Meredith}
+\date{20 October 2026 \quad\textbullet\quad \texttt{dev} @ \texttt{e8008c3}}
+
+\setlength{\emergencystretch}{3em}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This note audits the \texttt{dev} branch of \texttt{f1r3node-rust} for unnecessary
+\texttt{clone()}, \texttt{to\_vec()}, \texttt{cloned()} and \texttt{to\_owned()} calls, with the
+aim of finding the largest performance gains that leave consensus behaviour untouched.
+Production code (tests and scripts excluded) contains about 3{,}800 explicit clones in roughly
+268{,}000 lines. The raw count is a poor guide: block hashes, state hashes and validator keys are
+already reference-counted \texttt{Bytes}, so most casper clones are pointer bumps. The expensive
+copies cluster in a small number of places where a value with deep structure --- the
+protobuf \texttt{Par} tree, an \texttt{Env}, a block body, a deploy-chain index, a stream buffer ---
+is copied because the code transliterates a Scala idiom (persistent, structurally shared
+collections) into Rust collections that copy deeply. Seven of these sites are
+\emph{asymptotic} defects (quadratic in block size, binding count, COMM count or chain length).
+Microbenchmarks of the exact patterns show 17--270$\times$ slowdowns at realistic sizes, and
+126$\times$ (5.6\,s versus 44\,ms) for reassembling a 64\,MiB stream. The note ranks the findings
+into four tiers, separates the clones that are \emph{semantically required} (random-number
+splitting, cost order, canonical sorting, hash bytes) from those that are not, and proposes a
+sequence of small pull requests, each with a determinism guard.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=====================================================================
+\section{Scope and method}
+
+\paragraph{Object of study.} The \texttt{dev} branch of \texttt{F1R3FLY-io/f1r3node-rust} at
+commit \texttt{e8008c3} (merge of PR \#781, 20 October 2026). The workspace has eleven crates;
+the audit covers \texttt{rholang}, \texttt{rho-pure-eval}, \texttt{rspace++}, \texttt{casper},
+\texttt{block-storage}, \texttt{models}, \texttt{comm}, \texttt{shared} and \texttt{node}.
+
+\paragraph{Census.} A script counts the clone family of calls per crate, and separates production
+from test code. A file counts as test code when its path is under \texttt{tests/},
+\texttt{benches/}, \texttt{scripts/}, \texttt{fuzz/}, or a test-utility module. Inline
+\cd{#[cfg(test)]} items are removed by brace matching before the count.
+
+\paragraph{Deep reading.} The four highest-traffic subsystems --- the Rholang reducer and
+substitution, the tuple space (RSpace), casper validation and merging, and the model,
+transport and storage layers --- were read in full along their hot paths. Each finding records
+its location, the type that is copied, a cost class, whether it lies on a hot path, a proposed
+change, and a risk grade. Every line reference in this note was checked against the source at
+\texttt{e8008c3}.
+
+\paragraph{Cost classes.}
+\begin{description}[leftmargin=1.5em]
+\item[Deep tree] a recursive structure (for example \texttt{Par}); one heap allocation per node.
+\item[Large buffer] a \texttt{Vec<u8>} or \texttt{Vec<T>} whose size grows with the input.
+\item[Small allocation] a 32-byte \texttt{Vec<u8>} hash, a short \texttt{String}.
+\item[Pointer bump] \texttt{Arc}, \texttt{Bytes}, or an \texttt{imbl} persistent collection.
+\end{description}
+
+\paragraph{Risk grades.} A change is \low{} risk if it only changes ownership (move instead of
+copy, borrow instead of copy) and no observable output can change. It is \medium{} risk if it
+changes a type or signature shared across crates, or touches code on which determinism depends
+without changing the computation. It is \high{} risk if it touches hash bytes, serialisation
+formats, canonical sort order, or replay semantics.
+
+\paragraph{Limitations.} The node was not built or profiled for this note. The gains below are
+static estimates, supported by standalone microbenchmarks of the exact code patterns
+(Section~\ref{sec:bench}). Section~\ref{sec:measure} proposes how to confirm them with the
+repository's own soak and latency tooling before and after each change.
+
+%=====================================================================
+\section{Census}
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lrrrrr}
+\toprule
+Crate & Prod.\ lines & \texttt{clone()} & \texttt{to\_vec()} & \texttt{cloned()} & per kLoC\\
+\midrule
+casper          & 83{,}707 & 1{,}372 & 70 & 125 & 16.4\\
+rholang         & 83{,}750 &   880 & 54 &  12 & 10.5\\
+rspace++        & 18{,}892 &   482 & 69 &  61 & 25.5\\
+node            & 32{,}198 &   432 & 14 &   7 & 13.4\\
+models          & 12{,}605 &   231 & 11 &   7 & 18.3\\
+block-storage   &  9{,}745 &   184 & 38 &  36 & 18.9\\
+comm            & 13{,}342 &   174 & 13 &  10 & 13.0\\
+shared, crypto, graphz, rho-pure-eval & 11{,}908 & 62 & 34 & 4 & 5.2\\
+\midrule
+\textbf{Total production} & \textbf{266{,}147} & \textbf{3{,}817} & \textbf{303} & \textbf{262} & \textbf{14.3}\\
+Test code & & 7{,}045 & & & \\
+\bottomrule
+\end{tabular}
+\caption{Clone-family calls in production code at \texttt{e8008c3}.}
+\end{table}
+
+The densest files are \f{rholang/.../interpreter/reduce.rs} (230), \f{casper/.../engine/casper_launch.rs} (125),
+\f{node/.../runtime/setup.rs} (116), \f{rholang/.../rho_runtime.rs} (114) and
+\f{rspace++/.../replay_rspace.rs} (78). Two of these five (\texttt{casper\_launch.rs} and
+\texttt{setup.rs}) run once at start-up and copy \texttt{Arc} handles; they are irrelevant to
+throughput. The count therefore tells where to look, not what to fix.
+
+%=====================================================================
+\section{What a clone costs here}
+\label{sec:cost}
+
+The cost of a clone depends on the type, and the types in this codebase fall into two clear
+groups.
+
+\paragraph{Already cheap.}
+\begin{itemize}
+\item \texttt{BlockHash}, \texttt{StateHash}, \texttt{Validator} and casper \texttt{ByteString}
+are \cd{prost::bytes::Bytes}: \f{models/build.rs} lines 55--56 configure
+\cd{.bytes(".casper")} and \cd{.bytes(".routing")}. Most of the 1{,}372 casper clones are
+of these types.
+\item \texttt{KeyValueDagRepresentation} and \texttt{DagState} are built on \texttt{imbl}
+persistent maps; cloning them is $O(1)$.
+\item \texttt{DebruijnInterpreter} (\f{reduce.rs}:231--257) is about fourteen \texttt{Arc}
+fields; one clone is fourteen atomic increments and no heap work.
+\item The hot store's continuations are already \cd{Vec<Arc<WaitingContinuation>>}. A comment
+at \f{hot_store.rs}:408--412 records that an earlier change removed a deep clone of
+persistent contract bodies on every produce. That change is the precedent this note extends.
+\end{itemize}
+
+\paragraph{Expensive.}
+\begin{itemize}
+\item \texttt{Par} and every Rholang AST node. The \texttt{rhoapi} package has no
+\cd{.bytes(...)} setting, and \texttt{Par} is nine \texttt{repeated} message vectors that
+recurse with no \texttt{Box}, \texttt{Arc} or \texttt{Rc}. Every clone is a full deep copy.
+\item \texttt{Env<Par>} (\f{rho-pure-eval/src/env.rs}:12) is a \cd{HashMap<i32, Par>}. A clone
+deep-copies every bound process.
+\item \texttt{BlockMessage}. The hash fields are \texttt{Bytes}, but the body holds
+\cd{Vec<ProcessedDeploy>}, each with a \texttt{String} term and a \cd{Vec<Event>} deploy
+log. A clone costs on the order of the number of event-log entries.
+\item \texttt{DeployChainIndex} carries three \texttt{EventLogIndex} values of eleven hash sets
+each, plus a \texttt{StateChange} of three \texttt{DashMap}s.
+\item \texttt{Blake2b256Hash} is \cd{pub struct Blake2b256Hash(pub Vec<u8>)}
+(\f{rspace++/.../blake2b256_hash.rs}:17). It is not \texttt{Copy}; each clone is an allocation.
+It keys the RSpace event log and the merge channel maps.
+\end{itemize}
+
+\paragraph{Diagnosis.} The repository was extracted from a Scala code base. In Scala,
+\texttt{env.put(x)} on an immutable map returns a new map that shares almost all of its
+structure with the old one, and passing a value ``by copy'' is free. Several of the most
+expensive Rust sites reproduce that interface literally: they mutate in place \emph{and} return
+a full clone, or they clone a collection, append one element, and store the result.
+\texttt{Env::put}, \texttt{SortedParMap::insert}, the stream reassembly buffer and
+\texttt{EventLogIndex::combine} all follow this pattern. The general remedy has two forms.
+Where the old value is dead after the call, move it. Where the old value is genuinely shared,
+use a persistent structure (\texttt{imbl} is already a workspace dependency) or \texttt{Arc}.
+The repository's own guideline in \texttt{CLAUDE.md} asks for ``zero-cost abstractions, proper
+ownership''; the findings below are the places where the port has not yet met it.
+
+%=====================================================================
+\section{Findings}
+
+The findings are in four tiers. Tier~0 holds asymptotic defects, where a fix changes the growth
+rate. Tier~1 holds hot-path, low-risk, mechanical changes. Tier~2 holds structural changes of
+medium risk with large gains. Tier~3 holds changes that are not recommended now.
+
+\subsection{Tier 0: asymptotic defects}
+
+\paragraph{0.1 Stream reassembly is quadratic in message size.}
+\f{comm/src/rust/transport/stream_handler.rs}:482--491. For each incoming 256\,KiB chunk, the
+whole buffer received so far is copied out of the cache, extended, and written back.
+\begin{lstlisting}
+let received_bytes = content_data.to_vec();
+let mut existing_data = cache.get(&streamed.key)
+    .map(|entry| entry.value().clone()).unwrap_or_default();
+existing_data.extend_from_slice(&received_bytes);
+cache.insert(streamed.key.clone(), existing_data);
+\end{lstlisting}
+A 10\,MiB block arrives in 40 chunks and causes about 200\,MiB of copying; a 64\,MiB stream
+causes about 8\,GiB. \texttt{restore} (line~393) then clones the completed buffer again before it
+deletes the entry. \emph{Fix:}
+\cd{cache.entry(key).or_default().extend_from_slice(&content_data)}, and take the buffer at
+restore with \texttt{cache.remove}. Path: every received block and approved block.
+Risk: \low{}; internal only, wire bytes unchanged.
+
+\paragraph{0.2 Replay scans its COMM list with a clone per step.}
+\f{rspace++/src/rspace/replay_rspace.rs}:1126--1153, \texttt{get\_comm\_or\_candidate}. Each
+loop iteration runs \cd{go(cs.clone())} on the remaining \cd{Vec<COMM>}, and the miss branch
+returns \cd{rem.to_vec()}. A scan over $n$ COMMs therefore copies $O(n^2)$ COMMs. In
+addition, \texttt{matches} and \texttt{was\_repeated\_enough\_times} (lines 966, 973) take
+\texttt{COMM} and \texttt{Datum} by value, so callers clone both for every datum, every channel
+and every candidate COMM (lines 808, 959). \emph{Fix:} iterate \cd{comms.iter()} and return the
+first match; make both predicates take references. Visiting order is unchanged.
+Path: every replayed produce and consume, that is, every block validation.
+Risk: \low{}.
+
+\paragraph{0.3 \texttt{Env::put} copies the whole environment on every binding.}
+\f{rho-pure-eval/src/env.rs}:31--40.
+\begin{lstlisting}
+pub fn put(&mut self, a: A) -> Env<A> {
+    Env { env_map: { self.env_map.insert(self.level, a);
+                     self.env_map.clone() },
+          level: self.level + 1, shift: self.shift }
+}
+\end{lstlisting}
+Every caller folds \texttt{put} over a sequence, so binding $k$ values deep-copies
+$k(k+1)/2$ \texttt{Par}s. Callers include \texttt{build\_env} on every COMM
+(\f{dispatch.rs}:17--19), \texttt{eval\_new} (\f{reduce.rs}:1601--1607), match-case binding
+(\f{reduce.rs}:1424--1426) and guard evaluation (\f{matcher/match.rs}:96--98).
+\texttt{Env::shift} (line 48) clones the whole map as well, once per receive and once per
+substitution under a binder. The signature also has an aliasing hazard: it mutates
+\texttt{self} \emph{and} returns a copy, so the caller's environment changes even if the caller
+uses only the return value. \emph{Fix, first step:} add \cd{put_owned(mut self, a) -> Self}
+and switch the fold sites, which own their accumulator. \emph{Second step:} store the map as
+\texttt{Arc<HashMap>} with \texttt{Arc::make\_mut}, or as an \texttt{imbl::HashMap}; then
+\texttt{shift} and every per-branch \texttt{env.clone()} become pointer bumps (see 2.1).
+Risk: \low{} for the first step (behaviour identical at the fold sites), \medium{} for the
+second (type crosses crates).
+
+\paragraph{0.4 \texttt{EventLogIndex::combine} in folds is quadratic in chain length.}
+\f{rspace++/.../merger/event_log_index.rs}:443ff. \texttt{combine(x: \&Self, y: \&Self)}
+builds the union of all eleven sets with \cd{.union(..).cloned().collect()}. Casper folds
+with it (\f{deploy_chain_index.rs}:87, 91; \f{dag_merger.rs}:1408--1435), so an accumulator over
+$n$ deploys is re-copied $n$ times. \emph{Fix:} add \cd{combine_into(&mut self, &other)} that
+extends in place; keep \texttt{combine} for other callers. Set semantics do not depend on
+insertion order. Risk: \low{}--\medium{}.
+
+\paragraph{0.5 \texttt{eval\_match} copies the remaining cases on every failed case.}
+\f{reduce.rs}:1513 passes \cd{mat.cases.clone()}; each failed case then does
+\cd{state = (_target, case_rem.to_vec())} (lines 1453, 1479). A match with $n$ cases that
+falls through to the last one copies $O(n^2)$ case bodies. \emph{Fix:} loop over an index into
+\cd{&mat.cases}. Risk: \low{}.
+
+\paragraph{0.6 \texttt{SortedParMap::extend} re-sorts the whole map once per element.}
+\f{models/src/rust/sorted_par_map.rs}:43--53. \texttt{insert} clones the map and rebuilds the
+sorted form; \texttt{extend} calls \texttt{insert} in a loop, discarding each result, then
+rebuilds once more. \texttt{SortedParHashSet} has the same shape. The reducer uses these for the
+Rholang \texttt{++}, \texttt{+}, \texttt{-} operations on maps and sets. \emph{Fix:} insert all
+pairs, then build the sorted form once. Risk: \medium{}; this is canonical-form code, and the
+fix needs a differential test that compares sorted outputs (Section~\ref{sec:guard}).
+
+\paragraph{0.7 Light-finalised-state sync state is copied per block.}
+\f{casper/.../engine/lfs_block_requester.rs}:136--148, 339--360. The requester's
+\texttt{HashMap} and \texttt{HashSet} state is cloned on every \texttt{add} and \texttt{done},
+so sync of $n$ blocks costs $O(n^2)$. This affects only initial sync, so it is recorded here for
+completeness and scheduled last. Risk: \low{}.
+
+\subsection{Tier 1: hot path, low risk, mechanical}
+
+Each item below changes ownership only. None changes a value that is hashed, charged, sorted or
+logged.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.05\linewidth}>{\raggedright\arraybackslash}p{0.33\linewidth}>{\raggedright\arraybackslash}p{0.52\linewidth}}
+\toprule
+\# & Location & Change\\
+\midrule\endhead
+1.1 & \f{reduce.rs}:401--408 (\texttt{eval\_inner} fan-out) &
+\cd{terms} is owned and dead after the map; use \cd{into_iter()} instead of
+\cd{term.clone()}. Make \texttt{split} take \cd{&Blake2b512Random}: the split is
+\emph{required}, the copy of the parent generator is not. Applies to every \texttt{Par} with two or
+more terms.\\
+1.2 & \f{substitute.rs}:205 & \cd{expr.clone().expr_instance} deep-copies every \texttt{Expr} of
+every substituted \texttt{Par} to inspect its variant. Use \cd{match &expr.expr_instance}.
+Same pattern at lines 165, 184, 407, 630, 975.\\
+1.3 & \f{substitute.rs}:63, 90 & \texttt{substitute\_and\_charge} clones its input only so that
+the error path can read \texttt{encoded\_len()}. Add a by-value variant; compute the length
+before the move. Charge values and order unchanged.\\
+1.4 & \f{reduce.rs}:1725 & \texttt{eval\_expr\_to\_par} deep-copies each expression to match on it.
+Match by reference.\\
+1.5 & \f{reduce.rs}:1740, 7485 & \texttt{method\_table()} builds a \texttt{HashMap} of about
+60 \texttt{String} keys and boxed closures on \emph{every} method call. Replace with a
+\texttt{match} on the name (an allocation fix rather than a clone fix).\\
+1.6 & \f{reduce.rs}:2038--2916 (32 sites) & \cd{&p1.clone().unwrap()} deep-copies an operand to
+borrow it. Use \cd{p1.as_ref().unwrap()}. Similar at 1283, 1442, 1694, 2679.\\
+1.7 & \f{reduce.rs}:563, 648--652 & \texttt{produce\_inner} and \texttt{consume\_inner} clone
+channel, data, sources, patterns, the whole continuation body and the guard; the originals are
+used again only in the \texttt{persistent} branch. Clone only when persistent.\\
+1.8 & \f{charging_rspace.rs}:89, 113 & The full RSpace result (continuation body and every matched
+datum) is cloned so that \texttt{handle\_result} can read it. Pass by reference.\\
+1.9 & \f{dispatch.rs}:53 & \cd{build_env(data_list.clone())}; build the random-state vector first,
+then move. The \emph{required} random-state merge order is unchanged.\\
+1.10 & \f{space_matcher.rs}:94 & \cd{rollback.push((channel.clone(), original.clone()))} copies
+the whole indexed data vector per matched channel. Use \cd{std::mem::replace}.\\
+1.11 & \f{space_matcher.rs}:136--140 & Channel and pattern \texttt{Par}s are cloned into pairs for
+every candidate continuation probed. Pair references.\\
+1.12 & \f{hot_store.rs}:414, 471--474 & Installed (system) continuations are stored by value and
+deep-cloned into a fresh \texttt{Arc} on every produce on an installed channel. Store them as
+\texttt{Arc}, as the ordinary continuations already are.\\
+1.13 & \f{shared/.../key_value_store.rs}:49--52 & \texttt{get\_one} clones the first value
+instead of moving it: a second full copy of every value read, including every stored block and
+every trie node. Use \cd{values.into_iter().next().flatten()}. Same at
+\f{key_value_typed_store_impl.rs}:76.\\
+1.14 & \f{interpreter_util.rs}:518--519, 609--610; \f{proto_util.rs}:339 & Replay clones the
+full deploy and system-deploy lists once to extract them and again per replay attempt. The
+consumer only iterates. Take \cd{&[ProcessedDeploy]}.\\
+1.15 & \f{interpreter_util.rs}:386; \f{block_creator.rs}:3482 & \cd{parents.clone()} of
+\cd{Vec<BlockMessage>} into \texttt{compute\_parents\_post\_state}; at 386 the original is
+dead, and in the proposer it is copied on every retry. Pass a slice.\\
+1.16 & \f{block_processor.rs}:542 & \cd{block.to_proto().encode_to_vec().len()} clones the body
+twice and encodes it only to record a size metric. Use \texttt{encoded\_len()}, as
+\f{block_creator.rs}:3648 already does.\\
+1.17 & \f{block_processor.rs}:470, 499, 1097; \f{casper_launch.rs}:302, 322 & Whole blocks cloned
+into \texttt{PrettyPrinter::build\_string} for logging. Use the borrowing
+\texttt{build\_string\_block\_message(\&block, \ldots)}. No risk.\\
+1.18 & \f{conflict_set_merger.rs}:1194 & \texttt{fold\_rejection} clones the balance map for
+every branch. Take \cd{&HashMap} and return a new map only on success. Fold order unchanged.\\
+1.19 & \f{replay_rspace.rs}:649--653 & \texttt{locked\_consume} deep-copies all data on the
+channels only to collect produce hashes, then fetches the same data again. Reuse it.\\
+\bottomrule
+\end{longtable}
+
+\subsection{Tier 2: structural changes, medium risk, large gains}
+
+\paragraph{2.1 Persistent \texttt{Env}.} After 0.3, every spawned branch in \texttt{eval\_inner},
+every \texttt{shift}, and every substitution under a binder still deep-copies the environment.
+An \texttt{imbl::HashMap} or \texttt{Arc}-backed map turns all of these into pointer bumps. This
+is the largest single structural win in the interpreter. The type is public in
+\texttt{rho-pure-eval}, so the change crosses crates.
+
+\paragraph{2.2 \texttt{Arc<Datum>} in the hot store.} \texttt{get\_data}
+(\f{hot_store.rs}:631--641) returns the whole \cd{Vec<Datum<A>>} for a channel on every
+produce and consume, because \texttt{ShardedMap::get} returns \texttt{.cloned()}
+(lines 107--112). On a busy channel this is the largest per-operation copy in RSpace. Add
+\texttt{get\_data\_arc} returning \cd{Vec<Arc<Datum<A>>>}, mirroring the existing
+\texttt{get\_continuations\_arc}; keep \texttt{get\_data} for other callers. There is a second,
+probable effect: after each soft checkpoint the \texttt{imbl} shards are shared with the
+snapshot, so the next \texttt{get\_mut} copies a map node, which copies every sibling value in
+it. With \texttt{Arc} values those copies become pointer bumps. This second effect should be
+confirmed against the \texttt{imbl} source before it is claimed.
+
+\paragraph{2.3 \texttt{Arc<DeployChainIndex>} and \texttt{Arc<BlockIndex>}.} The block-index
+cache returns deep copies (\f{interpreter_util.rs}:1317, \cd{(*cached.value()).clone()}), so
+every merge deep-copies the index of every block in scope, event logs included. The merger then
+clones chains again (\f{dag_merger.rs}:433, 459, 468, 734--737). \texttt{DeployChainIndex} has
+hand-written \texttt{Eq}, \texttt{Hash} and \texttt{Ord} over \texttt{deploys\_with\_cost} only,
+so \texttt{Arc} wrapping keeps merge order identical by construction. The one mutation,
+\texttt{stamp\_prior\_rejections} (\f{dag_merger.rs}:602--604), becomes \texttt{Arc::make\_mut}.
+
+\paragraph{2.4 Borrowing merge accessors.} \f{dag_merger.rs}:1504--1507 defines
+\cd{|chain| Ok(chain.state_changes.clone())} and a similar accessor for mergeable channels.
+The merger calls them repeatedly per item, branch and rejection option
+(\f{conflict_set_merger.rs}:217, 553, 908, 1105). Returning references needs a
+\texttt{combine\_ref} on \texttt{StateChange} and a change to the generic \texttt{merge} signature.
+\f{dag_merger.rs}:212--213 also clones two growing datum maps per chain; an undo log would
+remove that.
+
+\paragraph{2.5 Encode once, send many.} \texttt{stream\_mult}
+(\f{grpc_transport_client.rs}:590) streams to each peer separately. Each stream encodes the packet
+into the cache, decodes it, clones it, LZ4-compresses the whole block and copies each chunk
+(\f{stream_observable.rs}:147, \f{chunker.rs}:22--24). Compress and chunk once, and share the
+chunks as \texttt{Bytes} slices. Wire bytes are identical.
+
+\paragraph{2.6 Borrowing protobuf conversion.} \cd{BlockMessage::to_proto(&self)} and
+\cd{Body::to_proto} clone every deploy and justification before converting
+(\f{casper_message.rs}:834, 956--968, 1508--1514). This runs at store, gossip, hashing and the
+size metric. Add \texttt{to\_proto\_ref} methods that map over references. Output bytes are
+identical, but because \texttt{hash\_block} uses this path, the change needs a golden-hash test.
+
+\paragraph{2.7 DAG representation without LMDB scans.} Not a clone, but the same kind of waste:
+\texttt{get\_representation\_internal}
+(\f{block_dag_key_value_storage.rs}:1199--1207) rebuilds \texttt{latest\_messages} and
+\texttt{invalid\_blocks} by scanning and decoding LMDB on every call, and
+\texttt{admit\_dag\_contains} builds a whole representation to answer one membership query. A
+\texttt{contains} method that reads \texttt{dag\_state} is \low{} risk; caching the two
+collections in \texttt{DagState} is \medium{} (restart recovery must rebuild them).
+
+\paragraph{2.8 Sorter ownership.} The sort matchers clone whole scored vectors to separate terms
+from scores (for example \f{send_sort_matcher.rs}:26,
+\cd{sorted_data.clone().into_iter().map(|p| p.term)}), and several clone an
+unsorted node only to overwrite the field they just copied. Each recursion level copies
+everything below it, which is quadratic in depth. The unzip helper \texttt{split\_scored\_terms}
+already exists in \f{par_sort_matcher.rs}. Comparisons and order are untouched, but the code is
+the canonical form of every term, so this is graded \medium{} and placed behind the
+differential test.
+
+\subsection{Tier 3: not recommended now}
+
+\begin{itemize}
+\item \textbf{\texttt{Blake2b256Hash} as \texttt{[u8;32]}.} Removes an allocation per clone across
+RSpace, but its derived serde writes a length-prefixed vector. Cold-store keys, history-trie keys
+and event-log hashing would change unless a byte-identical custom serialiser is written. \high{}.
+\item \textbf{\texttt{Bytes} or \texttt{Arc} inside \texttt{rhoapi}.} Would make \texttt{Par}
+clones cheap at the root, but touches the serde and schema derives and the
+\texttt{locally\_free} handling in \f{models/build.rs}. \high{}.
+\item \textbf{Removing the second sort of maps and sets.} Depends on sort idempotence and on
+identical deduplication semantics. \high{} without a proof.
+\item \textbf{\texttt{continuation\_identity}} (\f{hot_store.rs}:1012). It formats a
+\cd{{:?}} string of every continuation on a channel at each \texttt{put\_continuation}. Not a
+clone, but expensive; it decides store contents and therefore the state hash, so a replacement
+needs an equivalence argument. \medium{}--\high{}.
+\item \textbf{Zero-copy LMDB reads.} Would change the on-disk format. \high{}.
+\end{itemize}
+
+\subsection{Dismissed}
+Start-up wiring in \f{node/.../setup.rs}, \f{node_runtime.rs} and \f{casper_launch.rs};
+\texttt{Arc} handle bumps for spawned tasks; clones of \texttt{BlockHash}, \texttt{StateHash} and
+\texttt{Validator}; per-request clones in \f{web_api.rs} (small strings and hashes); and clique
+oracle map clones (small validator sets). These account for well over a third of the census and
+for a negligible part of the cost.
+
+%=====================================================================
+\section{Microbenchmarks of the patterns}
+\label{sec:bench}
+
+Four patterns were reproduced in a standalone Rust program with the same shape as the
+repository code, and timed against the proposed fix (release build, stable toolchain, single
+thread). A synthetic \texttt{Tree} with nested \texttt{Vec}s stands in for \texttt{Par}. The
+numbers measure the pattern, not the node; they show growth rates, not production latency.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{llrrr}
+\toprule
+Pattern & Size & Current & Fixed & Ratio\\
+\midrule
+Stream reassembly (0.1) & 1 MiB  & 1.63 ms & 0.035 ms & 46$\times$\\
+                        & 10 MiB & 84.5 ms & 0.82 ms & 103$\times$\\
+                        & 64 MiB & 5{,}562 ms & 43.9 ms & 127$\times$\\
+\midrule
+\texttt{Env::put} fold (0.3), 85-node terms & 2 bindings & 14.0\,\textmu s & 5.1\,\textmu s & 2.7$\times$\\
+                       & 8 bindings & 126.7\,\textmu s & 23.1\,\textmu s & 5.5$\times$\\
+                       & 32 bindings & 2{,}160\,\textmu s & 128\,\textmu s & 16.9$\times$\\
+\midrule
+Replay COMM scan (0.2), match last & 8 COMMs & 5.3\,\textmu s & 0.6\,\textmu s & 9.5$\times$\\
+                       & 64 COMMs & 542\,\textmu s & 8.1\,\textmu s & 67$\times$\\
+                       & 256 COMMs & 7{,}831\,\textmu s & 28.7\,\textmu s & 273$\times$\\
+\midrule
+Fan-out, 16 subterms (1.1) & 121-node terms & 134.7\,\textmu s & 62.6\,\textmu s & 2.2$\times$\\
+\bottomrule
+\end{tabular}
+\caption{Pattern microbenchmarks. ``Fixed'' is the change proposed in this note.}
+\end{table}
+
+The first three rows grow with input size, as the analysis predicts; the last is a constant
+factor, as expected for a single redundant copy. The stream result deserves emphasis: at 64\,MiB
+the current pattern spends more than five seconds copying buffers that the fixed pattern
+appends in place.
+
+%=====================================================================
+\section{Invariants that must not move}
+\label{sec:guard}
+
+Some clones in the hot paths are \emph{required}, and the plan must leave them alone.
+
+\begin{enumerate}
+\item \textbf{Random-number splitting.} Each parallel branch receives a generator split from its
+parent by index (\f{reduce.rs}:408). The split determines every unforgeable name and must stay.
+Only the extra copy of the parent before splitting goes.
+\item \textbf{Cost accounting.} The amount and order of every charge must stay identical. Items
+1.3, 1.8 and the cost helpers that take a whole value to read its length change only how a length
+is obtained.
+\item \textbf{Canonical form.} Sorting defines term equality and hashes. Changes to the sorter
+(0.6, 2.8) must produce byte-identical output.
+\item \textbf{Hash and serialisation bytes.} \texttt{hash\_block}, event-log hashes, trie keys and
+LMDB values must not change.
+\item \textbf{Replay semantics.} COMM matching order in replay must be preserved; 0.2 keeps the
+iteration order.
+\end{enumerate}
+
+\paragraph{Guards.} Three tests make the medium-risk work safe.
+\begin{itemize}
+\item \emph{Golden state hashes.} Run a fixed corpus of Rholang deploys (the existing test
+contracts, \texttt{PoS.rhox}, and the registry) from genesis and record the post-state hash and
+event-log hash of each. Every pull request in Tiers 1 and 2 must reproduce them exactly.
+\item \emph{Proto round trip.} For a corpus of blocks, assert that new and old
+\texttt{to\_proto} produce identical encoded bytes and identical block hashes.
+\item \emph{Sorter differential.} For random \texttt{Par}s (the \texttt{fuzz/} crate already has
+generators), assert that old and new sort matchers produce identical terms and score trees.
+\end{itemize}
+
+%=====================================================================
+\section{Proposed sequence}
+\label{sec:measure}
+
+Each step is one small pull request to \texttt{dev}, with the \texttt{ci-heavy} label, so the
+integration pipeline runs before the merge queue.
+
+\begin{enumerate}
+\item \textbf{Guards first.} Land the golden-hash and proto round-trip tests, and record a
+baseline with \f{scripts/bench/casper-soak.sh} and \f{latency-benchmark.sh}: block validation
+time, replay time, propose time, peak resident memory, and the
+\cd{hot-store.get_data.calls} and \cd{hot-store.get_data.history_fill} metrics.
+\item \textbf{Asymptotic, low risk:} 0.1 (stream), 0.2 (replay scan), 0.3 first step
+(\texttt{put\_owned}), 0.5 (match cases). Four independent PRs.
+\item \textbf{Interpreter mechanical:} 1.1--1.9. Mostly within \f{reduce.rs},
+\f{substitute.rs}, \f{dispatch.rs}, \f{charging_rspace.rs}.
+\item \textbf{RSpace and storage mechanical:} 1.10--1.13, 1.19.
+\item \textbf{Casper mechanical:} 1.14--1.18. Together with 0.1, these remove about six of the
+roughly eight full body copies an incoming block undergoes between receipt and storage.
+\item \textbf{Structural:} 0.4, 2.1, 2.2, 2.3, 2.4 --- one at a time, each with a fresh soak
+comparison.
+\item \textbf{Transport and model:} 2.5, 2.6, 2.7, then 0.6 and 2.8 behind the sorter
+differential.
+\item \textbf{Prevention.} Add an advisory CI job that runs Clippy with
+\cd{-W clippy::redundant_clone} and \cd{-W clippy::needless_pass_by_value} on the interpreter, RSpace and
+merge modules. The current \texttt{cargo clippy} step uses default lints, and
+\texttt{redundant\_clone} is a nursery lint, so it does not run today. Keep the job
+non-blocking at first; the pedantic lint produces noise on cold code.
+\end{enumerate}
+
+\paragraph{Expected effect.} Without profiles, an honest estimate is qualitative. Steps 2--5 are
+mechanical and should remove most of the avoidable deep copies on the evaluation, replay and
+block-intake paths. The largest wall-clock gains are expected where growth rates change: large
+block transfer (0.1), replay of blocks with many COMMs on a channel (0.2), contracts that bind
+many names or match on many cases (0.3, 0.5), and merges over long deploy chains (0.4, 2.3). A
+soak comparison after step 5 will show whether Tier~2 is needed for current workloads or can wait.
+
+%=====================================================================
+\section{Summary}
+
+The clone count is high, but most clones are cheap: the consensus hash types are already
+reference-counted, and the DAG representation is already persistent. The cost is concentrated
+where the Scala port copies deep values to imitate immutable-collection semantics. Seven sites
+are asymptotic defects, and four of them are low-risk, few-line fixes. About twenty further hot-path
+sites need only a change of ownership. The structural changes --- a persistent \texttt{Env},
+\texttt{Arc}-shared data in the hot store and in the merge indices --- extend a pattern the
+code base has already applied successfully to continuations. All of this can proceed without
+touching random-number splitting, cost order, canonical sorting, hash bytes or replay order,
+provided the golden-hash, round-trip and sorter-differential guards land first.
+
+\appendix
+\section{Reference table of cited locations}
+\small
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.08\linewidth}>{\raggedright\arraybackslash}p{0.55\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}>{\raggedright\arraybackslash}p{0.15\linewidth}}
+\toprule
+Item & File : line & Path & Risk\\
+\midrule\endhead
+0.1 & \f{comm/src/rust/transport/stream_handler.rs}:482--491, 393 & per block & \low\\
+0.2 & \f{rspace++/src/rspace/replay_rspace.rs}:1126--1153, 966, 973 & per replay op & \low\\
+0.3 & \f{rho-pure-eval/src/env.rs}:31--51 & per COMM & \low/\medium\\
+0.4 & \f{rspace++/src/rspace/merger/event_log_index.rs}:443ff & per merge & \low/\medium\\
+0.5 & \f{rholang/src/rust/interpreter/reduce.rs}:1453, 1479, 1513 & per match & \low\\
+0.6 & \f{models/src/rust/sorted_par_map.rs}:43--69 & map/set ops & \medium\\
+0.7 & \f{casper/src/rust/engine/lfs_block_requester.rs}:136--148 & sync only & \low\\
+1.1--1.9 & \f{reduce.rs}, \f{substitute.rs}, \f{dispatch.rs}, \f{charging_rspace.rs} & per eval / COMM & \low\\
+1.10--1.13 & \f{space_matcher.rs}, \f{hot_store.rs}, \f{key_value_store.rs} & per op / read & \low\\
+1.14--1.18 & \f{interpreter_util.rs}, \f{block_creator.rs}, \f{block_processor.rs}, \f{conflict_set_merger.rs} & per block & \low\\
+2.1 & \f{rho-pure-eval/src/env.rs} & per eval & \medium\\
+2.2 & \f{rspace++/src/rspace/hot_store.rs}:107--112, 631--641 & per op & \medium\\
+2.3 & \f{interpreter_util.rs}:1317; \f{dag_merger.rs}:433--737 & per merge & \medium\\
+2.4 & \f{dag_merger.rs}:212, 1504--1507 & per merge & \medium\\
+2.5 & \f{grpc_transport_client.rs}:590; \f{chunker.rs}:22 & per broadcast & \low/\medium\\
+2.6 & \f{models/src/rust/casper/protocol/casper_message.rs}:834--1514 & per block & \medium\\
+2.7 & \f{block_dag_key_value_storage.rs}:1199--1207 & per block & \low/\medium\\
+2.8 & \f{models/src/rust/rholang/sorter/*} & per substitution & \medium\\
+\bottomrule
+\end{longtable}
+
+\end{document}
