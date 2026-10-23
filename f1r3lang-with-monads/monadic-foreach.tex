@@ -47,6 +47,8 @@
 \newcommand{\hist}{\mathsf{H}}
 \newcommand{\hyp}{\mathsf{Hyp}}
 \newcommand{\lax}{\bigcirc}
+\newcommand{\Stab}{\mathrm{Stab}}
+\newcommand{\chaos}{\mathbf{1}}
 \newcommand{\signed}[2]{\{#1\}_{#2}}
 \newcommand{\fe}{\texttt{foreach}}
 \newcommand{\gate}[2]{\texttt{\{\%}\,#1\,\texttt{\%\}[}#2\texttt{]}}
@@ -140,6 +142,12 @@ the outer funding every \emph{binding} and the inner funding every
 comprehension into an estimation problem: a linear funding proof needs a bound
 on the measure of the monadic instance, and the note sets out where such
 bounds come from.
+
+A worked example shows the parametric \rhoc{} calculus --- the syntax of the
+calculus as a type constructor in its data and its variables --- declared as a
+data monad whose bind is semantic substitution, with the group action of
+oriented processes as a distributive law, and with symmetry reducing the
+precharge of a comprehension over a symmetric template.
 
 Because \fe{} is a conservative extension of the core, it need not be
 implemented by translation into \texttt{for}. The translation is retained as
@@ -253,7 +261,11 @@ proofs (\S\ref{sec:cost}).
 as specification, graded bisimulation as the correctness criterion --- and a
 map of what changes in the node (\S\ref{sec:impl}).
 \item An account of the interaction with every other feature of \flang{}
-(\S\ref{sec:interactions}), and a first tranche (\S\ref{sec:tranche}).
+(\S\ref{sec:interactions}).
+\item A worked example: the parametric \rhoc{} calculus as a syntax monad,
+oriented processes as a composite through a distributive law, and
+symmetry-reduced precharge (\S\ref{sec:rho}); then a first tranche
+(\S\ref{sec:tranche}).
 \end{enumerate}
 
 %=============================================================================
@@ -389,7 +401,10 @@ Types { Tree(A); }
 \end{lstlisting}
 where \texttt{A} ranges over categories. This is the real feature, and it is
 independently useful: the Hypercube construction currently generates type
-systems over unparameterised sorts~\cite{Hypercube}.
+systems over unparameterised sorts~\cite{Hypercube}. Its motivating instance is
+the calculus itself, whose syntax is already treated in the working notes as a
+type constructor in its data and its variables; \S\ref{sec:rho} works it
+through.
 
 \paragraph{A rejected alternative.} A theory parameter can stand in for a type
 parameter --- \texttt{Theory List(e: EmptySet)} is a list of whatever
@@ -1210,6 +1225,370 @@ Order-then-execute & no conflicts; replay-deterministic given confluence \\
 \end{center}
 
 %=============================================================================
+\section{A worked example: the parametric \texorpdfstring{\rhoc{}}{rho} calculus}
+\label{sec:rho}
+
+The prelude monads of \S\ref{sec:ddl} are collections. The example that
+motivates Step~2 is of a different kind, and it is the calculus itself. Two
+working notes treat the syntax of \rhoc{} as a type constructor: \emph{Where
+Substitution Happens} parameterises it by a set \(D\) of data carried on names
+and messages and a set \(V\) of variables~\cite{WSH}, and \emph{Oriented
+Processes} specialises \(D\) to a group \(G\) and lets \(G\) act on
+processes~\cite{Oriented}. This section expresses that construction in the
+extensions proposed here. It is a monad, and the group action is a
+distributive law.
+
+\subsection{The construction}
+
+In the paired-message calculus of~\cite{WSH}, messages are pairs
+\(\langle P, d\rangle\) of a code and a datum \(d\in D\), names are quoted
+messages, and variables form their own syntactic category, occurring directly
+only under the unary drop \(\ast v\). Communication substitutes a received name
+for a bound variable, and substitution is \emph{semantic}: it commutes with
+every constructor, quotation included, and its one non-trivial case is
+\[
+(\ast v)\{@\langle p, d\rangle / v\} \;=\; p .
+\]
+Separating variables from names is what makes \(V\) a parameter: the binding
+discipline lives in one place and can be chosen independently of the name
+theory~\cite{WSH}.
+
+\emph{Oriented Processes} works with the pattern-matching variant, in which a
+receipt binds both the code and the datum of what it receives, and fixes
+\(D=G\). Variables occur \emph{decorated}, \([g]X\) and \([g]\delta\),
+carrying the action pending on them until they are instantiated. The action
+\(g\cdot-\) multiplies every literal datum on the left at every depth of
+quotation and is recorded, not applied, at variables:
+\(g\cdot[k]X=[gk]X\). Substitution discharges the record,
+\(([g]X)\sigma = g\cdot\sigma(X)\). On closed terms the action is the image of
+left multiplication \(L_g\) under the functor that the parametric syntax
+defines~\cite{Oriented}.
+
+\subsection{The syntax monad}
+
+Write \(\mathsf{Rho}_D(V)\) for the processes over data \(D\) whose free
+variables lie in \(V\). This is a monad in \(V\) for each fixed \(D\), and it is
+the standard monad of syntax with variables and binding: the term is a tree
+whose leaves are variables, and the monad's bind is substitution at the
+leaves~\cite{BirdPaterson99, AltenkirchReus99, FiorePlotkinTuri99}.
+\begin{itemize}[nosep]
+\item \(\unit(v) = \ast v\): a variable, as the process that runs it.
+\item \(\bind(P, \sigma)\), for \(\sigma : V \to \mathsf{Rho}_D(W)\), replaces
+every \(\ast v\) in \(P\) by \(\sigma(v)\), under quotation and avoiding
+capture. A receipt's body lives in \(\mathsf{Rho}_D(V+1)\), and bind extends
+\(\sigma\) by the identity on the bound variable as it passes the binder.
+\end{itemize}
+The left unit law is the base case of the definition, the right unit law says
+that substituting each variable for itself is the identity, and associativity is
+the substitution lemma. All three are properties of capture-avoiding
+substitution, not of any particular theory.
+
+That last observation shapes the surface. For a syntax monad, the
+\texttt{Monads} builder does not need the interpretation written out by cases.
+The toolchain already generates capture-avoiding substitution from the binders
+declared in \texttt{Terms}~\cite{F1R3Dev}, so it suffices to say which
+constructor is the variable former:
+\begin{lstlisting}[language=mettail]
+Theory ParamRho() {
+  Types {
+    Proc(D, V);   Name(D, V);   Msg(D, V);
+  }
+  Terms {
+    PZero  . |- "0" : Proc(D,V);
+    PDrop  . v:V |- "*" v : Proc(D,V);
+    POut   . x:Name(D,V), m:Msg(D,V) |- x "!" "(" m ")" : Proc(D,V);
+    PIn    . x:Name(D,V), ^v.p:[V -> Proc(D,V)]
+           |- "for" "(" v "<-" x ")" p : Proc(D,V);
+    PPar   . ps:HashBag(Proc(D,V)) |- "{" ps.*sep("|") "}" : Proc(D,V);
+    PBDrop . x:Name(D,V), u:Name(D,V) |- "*" "(" x "," u ")" : Proc(D,V);
+    MPair  . p:Proc(D,V), d:D |- "<" p "," d ">" : Msg(D,V);
+    NQuote . m:Msg(D,V) |- "@" m : Name(D,V);
+  }
+  Equations {
+    (PBDrop (NQuote m) u) == (POut u m);        // E2: the binary drop
+  }
+  Rewrites {
+    RComm : (PPar {(PIn x ^v.p), (POut x m), ...rest})
+              ~> (PPar {(subst ^v.p (MCode m)), ...rest});
+    RPar  : if S ~> T then (PPar {S, ...rest}) ~> (PPar {T, ...rest});
+  }
+  Monads {
+    Rho over Proc(D, _) by substitution at PDrop;
+    zero : PZero;   measure : Occurrences;   algebra : Proc by join;
+    laws : generated;
+  }
+}
+\end{lstlisting}
+Three features of the declaration are new, and each is a small, definite
+addition to the proposal.
+
+\paragraph{\texttt{over Proc(D, \_)}.} The monad is in one parameter; the other
+is fixed. This is the general shape of a parametric type constructor in the
+DDL, and the hole marks the monadic position.
+
+\paragraph{\texttt{by substitution at PDrop}.} A syntax monad is declared by
+naming its variable former. \(\bind\) is the generated substitution, specialised
+so that the variable former is the leaf: a substitution
+\(\sigma : V\to\mathsf{Rho}_D(W)\) replaces each \texttt{(PDrop v)} by
+\(\sigma(v)\). This is exactly semantic substitution, because variables occur
+directly only under the drop.
+
+\paragraph{\texttt{laws : generated}.} The laws of a syntax monad follow from
+the generated substitution's own correctness, so they are discharged once, for
+the toolchain, and not once per theory. This is a better position than the
+prelude collections are in, whose laws are discharged monad by monad.
+
+\begin{remark}[The communication rule is a bind]
+\label{rem:commbind}
+In \texttt{RComm} the reduct \texttt{(subst \^{}v.p (MCode m))} is
+\(\bind(p, \sigma)\) for the Kleisli arrow that sends the bound variable to the
+code of the received message --- \texttt{MCode} is the projection taking
+\texttt{(MPair p d)} to \texttt{p} --- and every other variable to itself. So every
+communication performs one bind in the syntax monad: the space monad of
+\S\ref{sec:intro} delivers its datum by binding the continuation in the data
+monad of the calculus's own syntax. The two comprehensions meet exactly at the
+witness. The envelope erasure of~\cite{WSH} --- a receiver can never record the
+datum of the message it receives --- has a one-line reading: the Kleisli arrow
+of \texttt{RComm} factors through the projection
+\(\mathsf{Msg}_D(V)\to\mathsf{Rho}_D(V)\) that forgets \(D\). The
+pattern-matching binder of~\cite{Oriented}, which binds code and datum
+together, replaces that arrow with one into a two-sorted substitution that
+forgets nothing.
+\end{remark}
+
+\begin{remark}[Cost]
+The per-binding charge of \S\ref{sec:cost} applies to a user-level \fe{} over
+the syntax monad. It is not proposed for the bind inside \texttt{RComm}, which
+remains part of a single witnessed communication and is charged as one, as it
+is today. Charging that substitution per occurrence would change the cost model
+of the core, which this note does not do.
+\end{remark}
+
+\subsection{The functor in \texorpdfstring{\(D\)}{D}}
+
+\(D\) occurs only covariantly, in the datum of a message, so
+\(\mathsf{Rho}_{(-)}(V)\) is a functor in \(D\) for each \(V\): a map
+\(f : D\to D'\) acts on every datum, at every depth of quotation. Step~2 should
+generate \(\fmap\) for every covariant sort parameter, in the manner of a
+derived functor instance; no declaration is needed. With \(D=G\), the action
+of~\cite{Oriented} on closed terms is this generated map at left
+multiplication:
+\[
+g\cdot P \;=\; \fmap_D(L_g)(P) \qquad (P \text{ closed}).
+\]
+On open terms the generated map is not enough. It moves the literal data but
+leaves variables alone, and a variable that is later instantiated would then
+escape the action. That is the problem deferral solves, and its solution is a
+second monad.
+
+\subsection{Orientation is a distributive law}
+
+Let \(\mathsf{Frame}_G(X) = G\times X\), the writer monad of the group \(G\)
+viewed as a monoid. For a group it is the free \(G\)-set monad: \(\unit(x) =
+(e, x)\), and binding multiplies frames. Its elements are exactly the decorated
+variables of~\cite{Oriented}: \([g]X\) is the pair \((g, X)\), and \(X\) is
+\([e]X\). Data are decorated the same way, with a literal datum \(g\) read as
+\(g\) applied to the origin, so the data of the oriented calculus are
+\(\mathsf{Frame}_G(\Delta + 1)\) for data variables \(\Delta\).
+
+The oriented calculus is the composite
+\[
+\mathsf{Orient}_G \;=\; \mathsf{Rho}_{\mathsf{Frame}_G(\Delta+1)} \circ \mathsf{Frame}_G ,
+\]
+processes whose variables carry frames, and the action is the distributive
+law that makes the composite a monad~\cite{Beck69}:
+\[
+\lambda : \mathsf{Frame}_G\circ\mathsf{Rho} \Rightarrow
+\mathsf{Rho}\circ\mathsf{Frame}_G,
+\qquad
+\lambda(g, P) = g\cdot P .
+\]
+It takes a frame sitting outside a process and pushes it to the leaves:
+multiplying data by the generated map, and recording at each variable. The
+composite's bind is substitution that discharges the record,
+\(([g]X)\sigma = g\cdot\sigma(X)\), which is the substitution
+of~\cite{Oriented} verbatim.
+
+\begin{proposition}[The action is a distributive law]
+\label{prop:beck}
+\(\lambda\) satisfies the four laws of a distributive law of
+\(\mathsf{Frame}_G\) over \(\mathsf{Rho}\), and each is a result already proved
+in~\cite{Oriented}.
+\end{proposition}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.22\textwidth}L{0.30\textwidth}L{0.38\textwidth}@{}}
+\toprule
+\textbf{Law} & \textbf{In the oriented calculus} & \textbf{Where it is proved} \\
+\midrule
+unit of \(\mathsf{Rho}\) & \(g\cdot[e]X = [g]X\) &
+the definition of the action, at a variable \\[3pt]
+unit of \(\mathsf{Frame}_G\) & \(e\cdot P = P\) &
+the automorphism lemma, part (i) \\[3pt]
+multiplication of \(\mathsf{Frame}_G\) & \(g\cdot(h\cdot P) = (gh)\cdot P\) &
+the automorphism lemma, part (i) \\[3pt]
+multiplication of \(\mathsf{Rho}\) & \(g\cdot(P\sigma) = (g\cdot P)\sigma\) &
+the lemma on substitution and matching \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{proof}[Sketch]
+The first two laws are the clauses of the definition and the identity case of
+the automorphism lemma. The third is its composition case. For the fourth,
+both sides agree at a decorated variable, where
+\((g\cdot[k]X)\sigma = (gk)\cdot\sigma(X) = g\cdot(([k]X)\sigma)\), and at every
+other constructor by induction; this is the calculation of the substitution
+lemma, and deferral is what makes \(\sigma\) the same on both sides.
+\end{proof}
+
+The proposition also says why deferral was the right design in~\cite{Oriented}.
+Without it, the action would be the generated map in \(D\) alone, which commutes
+with nothing at the variables, and the composite would not be a monad. With it,
+\(\mathsf{Orient}_G\) is a monad, and everything the extensions of this note
+offer a monad becomes available to oriented processes.
+
+In the proposed surface the construction is one theory, parameterised by a
+group:
+\begin{lstlisting}[language=mettail]
+Theory OrientedRho(grp: u.Group) {
+  ParamRho() \/ grp
+    Monads {
+      Frame  over Writer(Elem);                  // prelude: X |-> Elem x X
+      Orient =  Rho after Frame by generated action;
+      zero : PZero;   measure : Occurrences;   algebra : Proc by join;
+      laws : generated;
+    }
+}
+\end{lstlisting}
+\texttt{Writer} is a prelude monad parameterised by a monoid, here the group's
+carrier; it is the first instance of a monad transformer as a theory parameter
+(\S\ref{sec:modules}). \texttt{after \dots{} by} composes two declared monads
+through a distributive law, and \texttt{generated action} names the law the
+toolchain can build: the generated map in \(D\) for data, and the record at the
+variable former for variables. Its four obligations are the rows of the table
+above, and for \texttt{OrientedRho} they are already discharged. The chaos
+constant, idempotent summation and the oriented communication rule
+of~\cite{Oriented} are added as further \texttt{Terms}, \texttt{Equations} and
+\texttt{Rewrites} in the ordinary way; none of them touches the monad, because
+none of them is a variable former.
+
+\subsection{The capabilities}
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.16\textwidth}L{0.36\textwidth}L{0.38\textwidth}@{}}
+\toprule
+\textbf{Capability} & \(\mathsf{Rho}\) and \(\mathsf{Orient}_G\) &
+\textbf{Consequence for \fe{}} \\
+\midrule
+\texttt{zero} & \texttt{0}, with \texttt{|} as the sum:
+\(\bind(\texttt{0},k)=\texttt{0}\) and \(\bind\) distributes over \texttt{|} &
+crisp \texttt{where} is allowed; a rejected binding is filled with
+\texttt{0} \\[3pt]
+\texttt{commutative} & no; syntax monads are not commutative, and the
+commutativity of \texttt{|} does not make them so &
+\texttt{\&} is refused \\[3pt]
+\texttt{measure} & the number of variable occurrences &
+precharge counts holes; see below on canonical forms \\[3pt]
+\texttt{algebra} & the monad's own multiplication, at closed processes &
+a \fe{} over a process yielding processes \emph{is} substitution \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{The measure needs canonical forms.} Obligation~\ref{obl:measure}
+asks that \(\bind(P,k)\) invoke \(k\) exactly \(\meas(P)\) times. For
+\(\mathsf{Rho}\) the count of variable occurrences is invariant under
+structural congruence: the monoid laws and E2 neither duplicate nor erase
+variables. For \(\mathsf{Orient}_G\) it is not. Distributivity,
+\(P\mid(Q+R)\equiv P\mid Q + P\mid R\), duplicates the occurrences of \(P\), and
+chaos, \(\chaos\mid P\equiv\chaos\), erases them. Two congruent terms then cost
+different amounts to bind, and since matching is modulo the equations, a
+receiver cannot choose which representative it is sent. The measure must be
+taken on a canonical form, which the node already computes as the section of
+the structural quotient used for hashing~\cite{f1r3nodeOTE}, and for
+\(\mathsf{Orient}_G\) that form is the distributed one: the precharge must
+estimate the size of the expanded term, which can be exponentially larger than
+the source.
+
+\subsection{\texttt{foreach} over a process}
+
+At run time, \rhoc{} reduces closed processes, and a quoted process received on
+a channel has no free variables. A \fe{} over its object variables would have
+measure zero. The useful instance is the one in which \(V\) is a data sort of
+\emph{holes}: \(\mathsf{Rho}_D(\mathsf{HoleId})\) is the sort of process
+templates, closed as far as the calculus is concerned, whose leaves are holes
+to be filled, in the manner of the typed holes of the plausible-fiction
+marketplace~\cite{PF}.
+\begin{lstlisting}
+for( @tmpl <- templates where tmpl.holes() <= 32 ) {
+  {% foreach( h <- tmpl where Fillable(h) ) yield {% Fill(h) %}[t] %}[s]
+}
+\end{lstlisting}
+The comprehension fills every hole that passes the guard with the process
+\texttt{Fill(h)}, fills the others with \texttt{0}, and, because the algebra is
+the monad's multiplication, releases the instantiated template as a running
+process. The outer gate draws one token per hole occurrence, the inner one per
+filled hole, and the guard on the receipt is the bound the precharge proof
+reads (\S\ref{sec:precharge}). Over \(\mathsf{Orient}_G\) each hole carries a
+frame, and \texttt{Fill(h)} is written in the hole's own coordinates and
+transported by the bind: the local frames of~\cite{Oriented}, delivered by the
+comprehension.
+
+\subsection{Symmetry reduces the precharge}
+
+The orbit-counting theorem of~\cite{Oriented} has a direct consequence for cost.
+
+\begin{proposition}[Symmetry-reduced precharge]
+\label{prop:symprecharge}
+Let \(P\) be an oriented template with finitely many hole occurrences, let
+\(H=\Stab(P)\), and suppose the body and guard of a \fe{} over \(P\) are
+\(H\)-equivariant: \(k([h]x) = h\cdot k(x)\) and the guard holds at \([h]x\)
+exactly when it holds at \(x\). Then the comprehension needs only one body
+evaluation per \(H\)-orbit of hole occurrences, the number of orbits is
+\(\meas(P)/|H|\), and that number is an integer.
+\end{proposition}
+
+\begin{proof}[Sketch]
+Hole occurrences are atoms in the sense of~\cite{Oriented}, and the action maps
+them to hole occurrences, so they form an \(H\)-invariant subset of the free
+atoms. The stabiliser acts freely on the free atoms by the orbit-counting
+theorem, hence freely on this subset, so every orbit has exactly \(|H|\)
+members and \(|H|\) divides their number. By equivariance, the body at
+\([h]x\) is the action of \(h\) on the body at \(x\), which the composite
+monad's bind applies as a recorded frame rather than as a fresh evaluation.
+\end{proof}
+
+When the hypotheses hold, the evaluation lane's precharge is divided by
+\(|H|\), and the divisibility theorem is what makes the reduced figure exact
+rather than a rounded estimate. The structural work of installing each result
+at its occurrence is still proportional to \(\meas(P)\), so the reduction applies
+to the cost of evaluating bodies and guards, not to the bind's traversal. This
+is the symmetry reduction of~\cite{Oriented} applied to a comprehension instead
+of to a state space: the symmetry is read off the template, not declared.
+
+\subsection{Dynamic frames, and where the word problem lands}
+
+The final extension of~\cite{Oriented} lets decorations be words in received
+data, \([w]X\) with \(w\) in the free product of \(G\) with the free group on
+the data variables. In the terms of this note, the frame monad changes from
+the writer \(G\times(-)\) to the free-group-over-\(G\) monad
+\(\Delta\mapsto G * F(\Delta)\), whose bind evaluates words by substituting
+words for variables. The composite is formed the same way.
+
+What changes is equality. Matching in \flang{} is modulo the equations of the
+theory, and the frame sort is now the carrier of \texttt{u.Group} with variables.
+Deciding that two decorations are equal is matching modulo the group axioms in
+the \texttt{Equations} block of \texttt{Group}, which is to say the word problem
+for \(G * F(\Delta)\). The cost that~\cite{Oriented} identifies is therefore
+not a new mechanism. It is the second rung of the DDL --- matching up to
+equations --- meeting a theory whose equational problem is as hard as the group's
+word problem, and it is paid wherever such terms are matched, including in the
+guards of a \fe{}.
+
+%=============================================================================
 \section{A first tranche}
 \label{sec:tranche}
 
@@ -1230,8 +1609,10 @@ the prelude monads.
 \end{enumerate}
 
 \noindent
-Deferred: sort parameters and user-declared monads (Step~2); the value form;
-graded \texttt{where} in \fe{}; the lax modality.
+Deferred: sort parameters and user-declared monads (Step~2), with the
+parametric \rhoc{} calculus of \S\ref{sec:rho} as its acceptance example;
+syntax monads declared by substitution; composition through distributive laws;
+the value form; graded \texttt{where} in \fe{}; the lax modality.
 
 %=============================================================================
 \section{Open questions}
@@ -1263,6 +1644,21 @@ Whatever is decided for arity-changing replacements of \texttt{PPar} must be
 decided for monad interpretations. Which resolution is preferred?
 \end{question}
 
+\begin{question}[Syntax monads]
+Should every theory with a variable former get its syntax monad, declared
+\texttt{by substitution at} that former, with laws discharged once for the
+toolchain? And should the measure of such a monad always be taken on the
+node's canonical form, given that equations such as distributivity and chaos
+change occurrence counts?
+\end{question}
+
+\begin{question}[Generated distributive laws]
+For which group actions on a theory can the toolchain generate the
+distributive law, as it can for the deferred action of oriented processes, and
+how should a law that cannot be generated be supplied and its four obligations
+stated?
+\end{question}
+
 \begin{question}[Default monad]
 Should a sort with exactly one declared monad allow the qualifier to be omitted,
 as proposed, or should the qualifier always be required for readability?
@@ -1285,6 +1681,30 @@ S.~Eilenberg and J.~C.~Moore.
 M.~Fairtlough and M.~Mendler.
 \newblock Propositional lax logic.
 \newblock \emph{Information and Computation}, 137(1):1--33, 1997.
+
+\bibitem{AltenkirchReus99}
+T.~Altenkirch and B.~Reus.
+\newblock Monadic presentations of lambda terms using generalized inductive
+types.
+\newblock In \emph{Computer Science Logic (CSL)}, LNCS 1683, pages 453--468,
+1999.
+
+\bibitem{Beck69}
+J.~Beck.
+\newblock Distributive laws.
+\newblock In \emph{Seminar on Triples and Categorical Homology Theory}, Lecture
+Notes in Mathematics 80, pages 119--140. Springer, 1969.
+
+\bibitem{BirdPaterson99}
+R.~S.~Bird and R.~Paterson.
+\newblock De Bruijn notation as a nested datatype.
+\newblock \emph{Journal of Functional Programming}, 9(1):77--91, 1999.
+
+\bibitem{FiorePlotkinTuri99}
+M.~Fiore, G.~Plotkin, and D.~Turi.
+\newblock Abstract syntax and variable binding.
+\newblock In \emph{Proceedings of the 14th IEEE Symposium on Logic in Computer
+Science (LICS)}, pages 193--202, 1999.
 
 \bibitem{Kock70}
 A.~Kock.
@@ -1357,6 +1777,24 @@ L.~G.~Meredith.
 \newblock Two erasures and two laxities: internalising the cost and history
 monads over continued interactive GSLTs.
 \newblock F1R3FLY.io working note, 2026. \texttt{history-and-cost/}.
+
+\bibitem{Oriented}
+L.~G.~Meredith.
+\newblock Oriented processes: group-valued data, a chaos constant, and an
+equivariant COMM for the reflective higher-order calculus.
+\newblock F1R3FLY.io working note, draft~3, 2026. \texttt{process-rotations/}.
+
+\bibitem{PF}
+L.~G.~Meredith.
+\newblock Plausible fiction on \flang{}: a requirements and design document for
+a typed marketplace of programmatic intentions.
+\newblock F1R3FLY.io working note, 2026. \texttt{plausible-fiction/}.
+
+\bibitem{WSH}
+L.~G.~Meredith.
+\newblock Where substitution happens: semantic substitution, deferred unquote
+and explicit substitution in a paired-message rho calculus.
+\newblock F1R3FLY.io working note, 2026. \texttt{OnSemanticSubstitution/}.
 
 \bibitem{Hypercube}
 M.~Stay, L.~G.~Meredith, and J.~B.~Wells.
