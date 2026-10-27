@@ -48,6 +48,9 @@
 \newcommand{\hyp}{\mathsf{Hyp}}
 \newcommand{\lax}{\bigcirc}
 \newcommand{\Stab}{\mathrm{Stab}}
+\newcommand{\red}{\rightsquigarrow}
+\newcommand{\nf}{\mathrm{nf}}
+\newcommand{\match}{\mathrm{match}}
 \newcommand{\chaos}{\mathbf{1}}
 \newcommand{\signed}[2]{\{#1\}_{#2}}
 \newcommand{\fe}{\texttt{foreach}}
@@ -78,14 +81,14 @@
 }
 
 \lstdefinelanguage{rholang}{
-  morekeywords={new,in,for,foreach,yield,match,contract,where,if,then,else},
+  morekeywords={new,in,for,foreach,yield,by,match,contract,where,if,then,else,import},
   morecomment=[l]{//},
   morestring=[b]",
 }
 
 \lstdefinelanguage{mettail}{
   morekeywords={Module,Theory,theory,import,from,as,Types,Exports,Replacements,
-    Terms,Equations,Rewrites,Monads,over,unit,flatMap,map,zero,measure,algebra,
+    Terms,Equations,Rewrites,Monads,over,unit,flatMap,map,toBag,ordered,
     commutative,laws,Empty,free,let,in,if,then,subst},
   sensitive=true,
   morecomment=[l]{//},
@@ -93,7 +96,7 @@
 }
 
 \lstdefinelanguage{bnf}{
-  morekeywords={foreach,yield,where},
+  morekeywords={foreach,yield,where,by},
   sensitive=true,
   morecomment=[l]{--},
   morestring=[b]",
@@ -103,10 +106,10 @@
 
 \title{\bf Monadic Types and the \texttt{foreach} Comprehension\\ in \flangbf{}\\[2mm]
 \large A synchronous comprehension over declared data monads,\\
-\large with explicit cost}
+\large with programmable aggregation and explicit cost}
 
 \author{L.G. Meredith\\ \small F1R3FLY.io}
-\date{October 2026 --- draft}
+\date{26 October 2026 --- draft 2}
 
 \begin{document}
 \maketitle
@@ -117,42 +120,46 @@
 has one comprehension, \texttt{for}, and it binds in the \emph{space}: its
 sources are channels, its data are shared with concurrent writers, and when
 several candidate matchings are available it resolves them by choosing one.
-This note adds a second comprehension, \fe{}, which binds in a \emph{declared
-data monad}: its sources are terms of a monadic sort, it meets no writer, and when
-a nondeterministic monad presents several candidates it resolves them by
-summing over all of them. The two comprehensions share a surface and a
-vocabulary --- patterns, per-group \texttt{where} clauses, \texttt{;} for
-sequence --- and differ in exactly the place where binding happens.
+This note adds a second comprehension,
+\begin{center}
+\texttt{foreach( ptrn <- mndInst where cond ) yield( rslt ) P}
+\end{center}
+which binds in a \emph{declared data monad}: its source is a term of a monadic
+sort, it meets no writer, and it resolves its candidates by aggregating all of
+them. Every surviving binding contributes the normal form of its body, the
+contributions are combined, and the result is published once, on the channel
+\texttt{rslt}, for any process holding that channel to consume.
 
-The design has three parts. In the data definition sublanguage, a
-\texttt{Monads} builder declares that a sort is a monad and gives the
-interpretation of \(\unit\), \(\bind\) and optionally \(\fmap\) as rewrites,
-together with four optional capabilities --- a zero, commutativity, a measure,
-and an algebra on processes --- each of which licenses a specific feature of
-the comprehension. The monad laws are recorded as proof obligations, not as
-equations, so that matching modulo a theory never meets higher-order
-unification. In the control flow sublanguage, \fe{} is synchronous in a precise
-sense: its binding skeleton is a burst of internal steps that no other
-process can observe, so it may be treated as a single step and sequenced with
-\texttt{;} exactly as the synchronous send of rholang~1.1 is. In the
-cost-accounted surface, the comprehension carries two gates,
-\gate{\texttt{foreach( p <- m ) yield} \gate{P}{t}}{s},
-the outer funding every \emph{binding} and the inner funding every
-\emph{body}. Per-binding charging turns the data-dependent cost of the
-comprehension into an estimation problem: a linear funding proof needs a bound
-on the measure of the monadic instance, and the note sets out where such
-bounds come from.
+The design has four parts. In the data definition sublanguage, a
+\texttt{Monads} builder declares that a sort is a monad, gives \(\unit\) and
+\(\bind\) as rewrites, and supplies a monad morphism \(\mathsf{toBag}\) into
+finite bags, whose size is the \emph{measure} that every cost bound in the note
+rests on. The monad laws are proof obligations, not equations, so matching
+modulo a theory never meets higher-order unification. In the control flow
+sublanguage, bodies are evaluated by \emph{lookahead}: each is reduced to normal
+form, in isolation, within a terminating fragment picked out by typing. The
+comprehension is then a single rewrite whose reduct is one output, which is
+the precise sense in which it is synchronous, and which is what entitles it to
+stand on the left of \texttt{;}. Aggregation is \emph{programmable}: a
+\texttt{by} clause names a theory instance descending from
+\texttt{CommutativeMonoid}, checked by origin, and the default is the
+\texttt{ParMonoid} of parallel composition. Because parallel composition is the
+free commutative monoid, every other aggregator is defined by the universal
+property, and accumulation can be tree-shaped without changing the meaning.
+In the cost-accounted surface the comprehension carries two gates, an outer
+one charged per binding and an inner one funding each body's lookahead, and a
+linear funding proof needs a bound on the measure of the instance.
 
-A worked example shows the parametric \rhoc{} calculus --- the syntax of the
-calculus as a type constructor in its data and its variables --- declared as a
-data monad whose bind is semantic substitution, with the group action of
-oriented processes as a distributive law, and with symmetry reducing the
+A worked example declares the parametric \rhoc{} calculus --- the syntax of
+the calculus as a type constructor in its data and its variables --- as a
+syntax monad whose bind is semantic substitution, with the group action of
+oriented processes as a distributive law and with symmetry reducing the
 precharge of a comprehension over a symmetric template.
 
-Because \fe{} is a conservative extension of the core, it need not be
-implemented by translation into \texttt{for}. The translation is retained as
-the reference semantics, and a native implementation is correct when it is
-\emph{gradedly} bisimilar to it --- the same behaviour and the same bill.
+\fe{} is a conservative extension of the core, so it need not be implemented by
+translation into \texttt{for}. The translation is retained as the reference
+semantics, and a native implementation is correct when it is \emph{gradedly}
+bisimilar to it --- the same behaviour and the same bill.
 \end{abstract}
 
 \tableofcontents
@@ -181,17 +188,24 @@ communication rule substitutes the datum into the continuation and thereby
 asynchronous, it is shared, and it is nondeterministic in the strong sense that
 competing readers race.
 
-Developers also need the other kind of comprehension --- the one LINQ and
-Scala's \texttt{for} provide over a collection already in hand. A term
-received on a channel may itself be a list, a bag, a tree of findings, a
+Developers also need the other kind of comprehension: the one that LINQ, and
+Scala's \texttt{for} with \texttt{yield}, provide over a collection already in hand. A
+term received on a channel may itself be a list, a bag, a tree of findings, a
 distribution. Walking it with \texttt{for} is possible only by first spilling
 it onto a channel, which is both expensive and wrong: it exposes a private
 traversal to every other reader of that channel, and it turns a deterministic
 computation over a value into a race.
 
-\fe{} is the missing comprehension. It binds in a \emph{data monad} declared
-in the data definition sublanguage (DDL), and it is synchronous: the traversal
-is invisible from outside, so the comprehension may be treated as one step.
+\fe{} is the missing comprehension. It binds in a \emph{data monad} declared in
+the data definition sublanguage (DDL), evaluates a body for every surviving
+binding, combines the results, and publishes the combination once:
+\begin{lstlisting}
+foreach( i <- { 1, 3, 5, 7, 9 } where i > 4 ) yield( rslt ) i
+  ~>  rslt!( 5 | 7 | 9 )
+\end{lstlisting}
+The result is on a channel because a result is something other processes
+consume, and in \flang{} that is what channels are for. A consumer may take it,
+persist on it, or peek at it with the three arrows of \texttt{for}.
 
 \paragraph{Choose versus sum.} The cleanest way to see the difference is through
 the word the developer document uses for the thread running through
@@ -200,8 +214,9 @@ of assigning data to the patterns of a comprehension.
 \begin{itemize}[nosep]
 \item In \texttt{for}, candidates are resolved by \emph{choice}. One fires; the
 others do not.
-\item In \fe{} over a nondeterministic monad, candidates are resolved by
-\emph{aggregation}. All of them fire, and \(\bind\) sums their contributions.
+\item In \fe{}, candidates are resolved by \emph{aggregation}. Every candidate
+contributes --- a rejected one contributes the aggregator's unit --- and the
+contributions are combined.
 \end{itemize}
 Figure~\ref{fig:choosesum} draws the distinction. Section~\ref{sec:graded}
 shows that it is exactly the distinction the graded \texttt{where} clause needs.
@@ -233,39 +248,40 @@ shows that it is exactly the distinction the graded \texttt{where} clause needs.
   \node[box, right=of m] (d2) {c2};
   \node[box, below right=of m] (d3) {c3};
   \foreach \d in {d1,d2,d3} \draw[->, thick] (m) -- (\d);
-  \node[box, right=of d2, minimum width=22mm] (k2) {P\{c1\}|P\{c2\}|P\{c3\}};
+  \node[box, right=of d2, minimum width=34mm] (k2) {rslt!(nf(P\{c1\}) | ... )};
   \foreach \d in {d1,d2,d3} \draw[->, thick] (\d) -- (k2);
   \node[lab, below=12mm of m] {\fe{}: every candidate contributes};
   \end{scope}
 \end{tikzpicture}}
-\caption{The two resolution disciplines for candidates. Over a bag, the
-aggregate on the right is literally a parallel composition, because
-\texttt{PPar} is a bag (\S\ref{sec:algebra}).}
+\caption{The two resolution disciplines for candidates. Under the default
+aggregator the published result is a parallel composition, because
+\texttt{PPar} is a bag (\S\ref{sec:free}).}
 \label{fig:choosesum}
 \end{figure}
 
 \paragraph{Contributions.}
 \begin{enumerate}[nosep]
-\item A \texttt{Monads} builder for the DDL, with the laws as obligations and
-four capabilities (zero, commutativity, measure, algebra on processes) each
-tied to one feature of the comprehension (\S\ref{sec:ddl}).
-\item The \fe{} comprehension: its syntax, static discipline, reference
-semantics and a precise criterion for synchrony (\S\ref{sec:cfl}).
-\item Sequencing with \texttt{;}, extending rholang~1.1's synchronous send
-sugar, together with a sequenceable fragment of bodies that recovers a genuine
-completion barrier where one is meaningful (\S\ref{sec:seq}).
+\item A \texttt{Monads} builder for the DDL, with the laws as obligations and a
+monad morphism into finite bags that both drives the comprehension and measures
+it (\S\ref{sec:ddl}).
+\item The \fe{} comprehension: its syntax, its meaning as a single rewrite,
+evaluation of bodies by lookahead in a terminating fragment, and a reference
+translation into the core (\S\ref{sec:cfl}).
+\item Programmable aggregation: aggregators as theory instances descending
+from the universal-algebra theory of commutative monoids, defined by the universal property of parallel
+composition, accumulated as a tree, and extended in three further stages
+(\S\ref{sec:agg}).
+\item Sequencing with \texttt{;}, on the strength of termination
+(\S\ref{sec:seq}).
 \item An explicit cost-accounted surface with two gates, per-binding charging,
-an atomic $n$-ary outer gate, and a precharge discipline for linear funding
-proofs (\S\ref{sec:cost}).
+an atomic outer gate, and a precharge discipline for linear funding proofs
+(\S\ref{sec:cost}).
 \item An implementation stance --- native evaluation, the translation retained
 as specification, graded bisimulation as the correctness criterion --- and a
 map of what changes in the node (\S\ref{sec:impl}).
-\item An account of the interaction with every other feature of \flang{}
-(\S\ref{sec:interactions}).
-\item A worked example: the parametric \rhoc{} calculus as a syntax monad,
-oriented processes as a composite through a distributive law, and
-symmetry-reduced precharge (\S\ref{sec:rho}); then a first tranche
-(\S\ref{sec:tranche}).
+\item An account of the interaction with the rest of \flang{}
+(\S\ref{sec:interactions}), a worked example on the parametric \rhoc{} calculus
+(\S\ref{sec:rho}), and a first tranche (\S\ref{sec:tranche}).
 \end{enumerate}
 
 %=============================================================================
@@ -274,10 +290,9 @@ symmetry-reduced precharge (\S\ref{sec:rho}); then a first tranche
 
 This section fixes the parts of \flang{} the feature touches. Fuller
 treatments are in the developer document~\cite{F1R3Dev} and the GSLT
-reference~\cite{GSLTintro}.
-
-\flang{} is built on the reflective higher-order \rhoc{}
-calculus~\cite{MR05}, presented in its own DDL as one theory among others.
+reference~\cite{GSLTintro}. \flang{} is built on the reflective higher-order
+\rhoc{} calculus~\cite{MR05}, presented in its own DDL as one theory among
+others.
 
 \subsection{The data definition sublanguage}
 
@@ -288,7 +303,8 @@ theory, and theories combine by join, meet and difference over shared ancestors
 \cite{modulesyntax}. Every element introduced by a builder carries an origin
 token, and two elements are identified exactly when their origins agree; this is
 what makes a join a pushout rather than a union, and what produces the
-\texttt{[join-collision]} and \texttt{[unshared-name]} diagnostics.
+\texttt{[join-collision]} and \texttt{[unshared-name]} diagnostics. A
+replacement renames an element and keeps its origin.
 
 Term constructors are written in judgement form,
 \begin{lstlisting}[language=mettail]
@@ -300,6 +316,22 @@ collection sorts \texttt{HashBag}, \texttt{Set} and \texttt{List} over a
 category. There are no user-declared sort constructors: in the reference
 elaborator a sort is either a category or a built-in collection of one. That
 fact governs the first tranche of this design.
+
+The reference corpus includes a universal-algebra module whose tower of
+theories, from \texttt{EmptySet} and \texttt{Monoid} through
+\texttt{CommutativeMonoid} and \texttt{Group} to \texttt{Rig} and
+\texttt{Ring}, is built
+by parameters and replacements, and the \rhoc{} calculus's own parallel
+composition is defined as an instance of it:
+\begin{lstlisting}[language=mettail]
+Theory ParMonoid(cm: u.CommutativeMonoid) {
+  cm
+    Exports      { Elem => Proc; }
+    Replacements { Zero => PZero . |- "0" : Proc;
+                   Plus => PPar  . ps:HashBag(Proc) |- "{" ps.*sep("|") "}" : Proc; }
+}
+\end{lstlisting}
+That definition is the hinge of \S\ref{sec:agg}.
 
 \subsection{The control flow sublanguage}
 
@@ -323,7 +355,8 @@ new r in { x!(*r, Q) | for( _ <- r ){ K } }
 \end{lstlisting}
 so that \texttt{K} runs once the receiver on \texttt{x} acknowledges on the
 fresh name \texttt{r}~\cite{f1r3nodeOTE}. Chains
-\verb|x1!?(Q1); ...; xn!?(Qn); K| are nested instances.
+\verb|x1!?(Q1); ...; xn!?(Qn); K| are nested instances. The continuation runs
+only if the receiver chooses to reply.
 
 \subsection{The cost-accounted surface}
 
@@ -337,10 +370,13 @@ number of operations it funds. Signatures are ground names, sections
 {% for( {% y1 <- x1 %}[s1] & {% y2 <- x2 %}[s2] ) P %}[ s0 ]
 \end{lstlisting}
 in which each rendezvous surface is funded independently, and in the native
-four-sort grammar the continuation slots of \texttt{for} and send have the
-signed-term sort \(\T\). That sorting --- \emph{wrapping by construction} ---
-is what makes subject reduction coincide with the absence of unmetered
-execution~\cite{CostMonad}.
+four-sort grammar the continuation and payload slots of \texttt{for} and send
+have the signed-term sort \(\T\). That sorting --- \emph{wrapping by
+construction} --- is what makes subject reduction coincide with the absence of
+unmetered execution~\cite{CostMonad}. Funded runs are bounded: strong
+normalisation holds conditionally on funding, and the development records
+uniqueness of normal forms on the funded fragment~\cite{f1r3nodeOTE}. Both facts
+are used in \S\ref{sec:lookahead}.
 
 \subsection{Monads one level up}
 
@@ -418,9 +454,9 @@ correct, and the alternative is rejected.
 
 A new postfix builder declares one or more data monads. Its entries name the
 monad, the sort it is a monad on, the interpretation of the operations, and
-the capabilities it claims. The following is the prelude declaration of the
-list monad, written with a sort variable \texttt{A} that Step~2 makes
-available to users and that the prelude is permitted to use from the start.
+the structure it offers to the comprehension. The prelude declarations of the
+list and multiset monads are written with a sort variable \texttt{A} that
+Step~2 makes available to users and that the prelude may use from the start.
 
 \begin{lstlisting}[language=mettail]
 Monads {
@@ -428,20 +464,17 @@ Monads {
     unit    : (a)                    ~> [a];
     flatMap : ([], ^x.k)             ~> [];
     flatMap : ([a, ...r], ^x.k)      ~> (Concat (subst ^x.k a) (flatMap r ^x.k));
-    zero    : [];
-    measure : Length;
-    algebra : Proc by seq;
-    laws    : LeftUnit, RightUnit, Assoc;
+    toBag   : ([a, ...r])            ~> {a, ...(toBag r)};
+    ordered;
+    laws    : LeftUnit, RightUnit, Assoc, ToBagMorphism;
   }
   Bag over HashBag {
     unit    : (a)                    ~> {a};
     flatMap : ({}, ^x.k)             ~> {};
     flatMap : ({a, ...r}, ^x.k)      ~> (Union (subst ^x.k a) (flatMap r ^x.k));
-    zero    : {};
+    toBag   : identity;
     commutative;
-    measure : Size;
-    algebra : Proc by PPar;
-    laws    : LeftUnit, RightUnit, Assoc, Comm;
+    laws    : LeftUnit, RightUnit, Assoc, Comm, ToBagMorphism;
   }
 }
 \end{lstlisting}
@@ -473,40 +506,68 @@ laws hold up to the equations of the theory.
 
 \begin{obligation}[Confluence with the host theory]
 \label{obl:confluence}
-The \(\bind\) rewrites have no critical pair with the other rewrites of the
-theory, modulo its equations, that fails to join.
+The \(\bind\) and \(\mathsf{toBag}\) rewrites have no critical pair with the
+other rewrites of the theory, modulo its equations, that fails to join.
 \end{obligation}
 
-Obligation~\ref{obl:confluence} is the one that makes \fe{} deterministic, and
-\S\ref{sec:sync} explains why that is essential.
+\paragraph{\(\mathsf{toBag}\) is what the comprehension uses.} A comprehension
+visits the elements of its source with their multiplicities. That is a natural
+transformation \(\mathsf{toBag} : \M \Rightarrow \mathsf{HashBag}\), the
+support with multiplicity, and it is the one piece of structure every monad
+used with \fe{} must supply. For dependent groups (\S\ref{sec:groups}) to agree
+with the monad's own sequencing it must be a monad morphism:
+\[
+\mathsf{toBag}(\unit(a)) = \{a\},
+\qquad
+\mathsf{toBag}(\bind(m, k)) = \textstyle\biguplus_{x \in \mathsf{toBag}(m)} \mathsf{toBag}(k\,x).
+\]
+It is one for \texttt{Seq} (forget order) and \texttt{Bag} (identity). It is
+not one for the finite powerset, whose flatten removes duplicates; for
+\texttt{Set} the comprehension therefore visits \emph{binding instances}, and
+deduplication of results is a choice of aggregator, not of source
+(\S\ref{sec:stages}).
 
-\paragraph{Capabilities are claims, and each one licenses a feature.} The four
-optional entries are not decoration. Each corresponds to one feature of the
-comprehension, and the elaborator refuses the feature where the capability is
-absent.
+\begin{obligation}[Bag morphism]
+\label{obl:tobag}
+\(\mathsf{toBag}\) is a monad morphism \(\M\Rightarrow\mathsf{HashBag}\).
+\end{obligation}
+
+The \emph{measure} of an instance is the size of its bag,
+\[
+\meas(m) \;=\; |\mathsf{toBag}(m)|,
+\]
+and it is the quantity on which the completion of the reference translation
+(\S\ref{sec:refsem}) and every cost bound of \S\ref{sec:cost} rest. Defining it
+this way, rather than declaring it separately, makes the earlier ``exact
+measure'' obligation a consequence of Obligation~\ref{obl:tobag}: \(\bind(m,
+k)\) invokes \(k\) once per element of \(\mathsf{toBag}(m)\).
+
+\paragraph{Capabilities are claims, and each one licenses a feature.} Beyond
+\(\mathsf{toBag}\), two optional entries matter, and each is checked where it is
+used.
 
 \begin{center}
 \small
 \begin{tabular}{@{}L{0.17\textwidth}L{0.33\textwidth}L{0.40\textwidth}@{}}
 \toprule
-\textbf{Capability} & \textbf{Meaning} & \textbf{Licenses} \\
+\textbf{Entry} & \textbf{Meaning} & \textbf{Licenses} \\
 \midrule
-\texttt{zero} & a unit for the monad's sum (MonadPlus) &
-a crisp \texttt{where} clause inside \fe{} (\S\ref{sec:where}) \\[3pt]
+\texttt{toBag} (required) & elements with multiplicity; a monad morphism &
+\fe{} over the monad at all; its measure \\[3pt]
+\texttt{ordered} & a canonical enumeration order on \(\mathsf{toBag}(m)\) &
+non-commutative (ordered) aggregators (\S\ref{sec:stages}) \\[3pt]
 \texttt{commutative} & order of independent binds is immaterial~\cite{Kock70} &
-the join \texttt{\&} inside \fe{} (\S\ref{sec:groups}) \\[3pt]
-\texttt{measure} & the number of times \(\bind(m,k)\) invokes \(k\) &
-precharge for a linear funding proof (\S\ref{sec:precharge}) \\[3pt]
-\texttt{algebra} & a map \(\M(\Proc) \to \Proc\) &
-a \texttt{yield} whose body is a process (\S\ref{sec:algebra}) \\
+the join \texttt{\&} under an ordered aggregator (\S\ref{sec:groups}) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \noindent
-Each capability carries its own obligation: commutativity is a law; the
-measure must be exact (\S\ref{sec:precharge}); the algebra must satisfy the
-Eilenberg--Moore laws~\cite{EilenbergMoore65}.
+Two capabilities the earlier draft required have gone. A \(\zero\) is no longer
+needed for filtering, because a rejected candidate contributes the
+\emph{aggregator's} unit (\S\ref{sec:where}); and an algebra on processes is no
+longer needed, because the result is data published on a channel, and
+aggregation is the job of the aggregator (\S\ref{sec:agg}).
 
 \paragraph{One sort may carry several monads.} The monads are named
 (\texttt{Seq}, \texttt{Bag}) because a sort can legitimately carry more than
@@ -551,279 +612,509 @@ it was built for.
 
 \begin{lstlisting}[language=bnf]
 Proc     ::= ... | Foreach | Foreach ";" Proc
-Foreach  ::= "foreach" Qual? "(" Groups ")" "yield" Body
+Foreach  ::= "foreach" Qual? "(" Groups ")" "yield" "(" Name ")" By? Proc
 Qual     ::= "[" MonadName "]"
 Groups   ::= Group ( ";" Group )*
 Group    ::= Bind ( "&" Bind )* ( "where" Cond )?
 Bind     ::= Pattern "<-" Term          -- Term of a monadic sort
-Body     ::= "{" Proc "}"
+By       ::= "by" TheoryInstance        -- default: ParMonoid
 \end{lstlisting}
 
-The surface is chosen to coincide with \texttt{for} wherever the meanings
-coincide, and to diverge visibly where they do not. Its cost-accounted form is
-the subject of \S\ref{sec:cost}; until then, gates are elided.
+The surface coincides with \texttt{for} wherever the meanings coincide and
+diverges visibly where they do not. The channel named by \texttt{yield} is free
+in the comprehension and is where the result appears. The body \texttt{P} is in
+the scope of the pattern variables. Its cost-accounted form is the subject of
+\S\ref{sec:cost}; until then, gates are elided.
+
+\subsection{Meaning in one rule}
+\label{sec:rule}
+
+For a single group,
+\begin{align*}
+&\texttt{foreach( }p \leftarrow m\texttt{ where }c\texttt{ ) yield( }r\texttt{ ) by }A\ P\\
+&\qquad\red\;
+r!\Big(\,\textstyle\bigoplus_{A}\ \big\{\, \mathsf{contrib}(x) \;:\; x \in \mathsf{toBag}(m) \,\big\}\Big)
+\end{align*}
+where \(\bigoplus_A\) is the operation of the aggregator \(A\) (empty sum: its
+unit \(\varepsilon_A\)), and
+\[
+\mathsf{contrib}(x) \;=\;
+\begin{cases}
+\nf(P\sigma) & \text{if } \sigma = \match(p, x) \text{ exists and } \nf(c\sigma) = \texttt{true},\\
+\varepsilon_A & \text{otherwise.}
+\end{cases}
+\]
+\(\nf\) is the normal form computed by lookahead (\S\ref{sec:lookahead}). Under
+the default aggregator \(A = \texttt{ParMonoid}\), \(\bigoplus\) is \texttt{|}
+and \(\varepsilon\) is \texttt{0}:
+\begin{lstlisting}
+foreach( i <- { 1, 3, 5, 7, 9 } where i > 4 ) yield( rslt ) i         ~>  rslt!( 5 | 7 | 9 )
+foreach( i <- { 1, 3, 5, 7, 9 } where i > 4 ) yield( rslt ) i * i     ~>  rslt!( 25 | 49 | 81 )
+foreach( i <- { 1, 3 }          where i > 4 ) yield( rslt ) i         ~>  rslt!( 0 )
+\end{lstlisting}
+Three readings of the rule are worth stating at once.
+\begin{itemize}[nosep]
+\item \emph{Bodies run.} Each surviving body is reduced to normal form, so its
+internal computation happens. What it cannot do during the comprehension is
+meet a process outside itself; a send or receipt on an outside channel remains,
+unreduced, in its normal form and so in the published result.
+\item \emph{The result is data.} The publication is a send, so its payload is
+quoted, as every send's is. A consumer that wants the contributions to run says
+so: \verb|for( @ps <- rslt ){ ps }|.
+\item \emph{One step.} From outside, the comprehension is a single reduction
+whose reduct is a single output. This is the strongest reading of
+``synchronous'' available, and \S\ref{sec:sync} shows that the reference
+translation realises it.
+\end{itemize}
+Dependent groups compose the rule through \(\bind\) (\S\ref{sec:groups}).
 
 \subsection{Static discipline}
 \label{sec:static}
 
 \paragraph{Sources are terms of a monadic sort.} In \texttt{for}, a source is a
 channel. In \fe{}, a source is a term whose sort carries a declared monad. A
-channel may not appear as a \fe{} source, because a receipt can block forever
-and would break synchrony; a monadic term may not appear as a \texttt{for}
-source except by being quoted into a name, in which case it is a channel and
-nothing more. The two comprehensions nest freely in each other's bodies.
-
-This places a requirement on the CFL that it has not had before: the sort of
-the source expression must be known. Today \flang{} patterns match untyped.
-\fe{} needs either sort inference for the source --- from the pattern that
-bound it, from the theory that types the channel it arrived on --- or an
-explicit qualifier.
+channel may not appear as a \fe{} source; a monadic term may not appear as a
+\texttt{for} source except by being quoted into a name, in which case it is a
+channel and nothing more. The two comprehensions nest freely in each other's
+bodies. This requires something of the CFL it has not needed before: the sort
+of the source expression must be known, by inference from the pattern or the
+channel type that bound it, or from an explicit qualifier.
 
 \paragraph{One arrow.} Only \texttt{<-} is meaningful. Persistence \texttt{<=}
 has no meaning over a value, and a peek \texttt{<<-} is moot because a term
 source is never consumed. Both are refused rather than reinterpreted.
 
-\paragraph{Typing.} Writing \(\Gamma\) for the bindings in scope,
+\paragraph{One matcher per element.} Matching in \flang{} is modulo the
+equations of the theory, and a pattern can have several matchers against one
+element (a remainder pattern over a bag, say). The rule uses the matcher the
+\texttt{match} construct selects, so each element contributes exactly once. A
+pattern with several matchers modulo the equations makes that selection
+nondeterministic and places the comprehension outside the deterministic
+fragment of \S\ref{sec:lookahead}.
+
+\paragraph{Typing.} Write \(\mathcal{T}\) for the terminating fragment of
+\S\ref{sec:lookahead} and \(|A|\) for the carrier sort of the aggregator.
 \[
 \frac{
-\Gamma \vdash m : \M(A) \qquad
-p : A \leadsto \Delta \qquad
-\Gamma,\Delta \vdash c\ \textsf{cond} \qquad
-\Gamma,\Delta \vdash P : \Proc
+\Gamma \vdash m : \M(B) \quad
+p : B \leadsto \Delta \quad
+\Gamma,\Delta \vdash_{\mathcal{T}} c : \textsf{Bool} \quad
+\Gamma,\Delta \vdash_{\mathcal{T}} P : |A| \quad
+\Gamma \vdash r : \textsf{chan}(|A|)
 }{
-\Gamma \vdash \texttt{foreach[}\M\texttt{]( } p \leftarrow m \texttt{ where } c \texttt{ ) yield \{ } P \texttt{ \}} : \Proc
+\Gamma \vdash \texttt{foreach[}\M\texttt{]( } p \leftarrow m \texttt{ where } c \texttt{ ) yield( } r \texttt{ ) by } A\ P : \Proc
 }
-\quad
-\begin{array}{l}
-\M\ \text{has an algebra on}\ \Proc\\
-c \neq \texttt{true} \Rightarrow \M\ \text{has}\ \zero
-\end{array}
 \]
-with the evident extension to several groups (each group's \(\Delta\) is in
-scope for every later group) and to \texttt{\&} (which additionally requires
-\(\M\) commutative).
+with \(\M\) supplying \(\mathsf{toBag}\) and \(A\) a commutative-monoid
+instance (\S\ref{sec:agg}). Under the default aggregator \(|A| = \Proc\), so
+every body in \(\mathcal{T}\) is well typed. Since a channel's type is a
+theory, \(\textsf{chan}(|A|)\) means a channel typed by a theory that exports
+the aggregator's carrier.
 
 \subsection{Groups: \texttt{;} and \texttt{\&}}
 \label{sec:groups}
 
 Between groups, \texttt{;} is dependent bind: in
 \begin{lstlisting}
-foreach( x <- m ; y <- n(x) ) yield { P }
+foreach( x <- m ; y <- n(x) ) yield( r ) P
 \end{lstlisting}
-the source of the second group may mention \texttt{x}, and the comprehension
-means
+the source of the second group may mention \texttt{x}, and the candidates are
+the elements of
 \[
-\bind\big(m,\ \lambda x.\,\bind(n(x),\ \lambda y.\,\unit(P))\big).
+\mathsf{toBag}\big(\bind(m,\ \lambda x.\,\fmap(n(x),\ \lambda y.\,(x,y)))\big)
+\;=\;
+\textstyle\biguplus_{x \in \mathsf{toBag}(m)}\ \{\, (x,y) : y \in \mathsf{toBag}(n(x)) \,\},
 \]
-The per-group scoping of \texttt{where} carries over unchanged.
+the equality being Obligation~\ref{obl:tobag}. The per-group scoping of
+\texttt{where} carries over unchanged.
 
 Within a group, \texttt{\&} means \emph{independent} binds: neither source
-mentions the other's variables. Its meaning is order-independent only if the
-monad is commutative,
-\[
-\bind\big(m,\ \lambda x.\,\bind(n,\ \lambda y.\,k)\big) \;=\;
-\bind\big(n,\ \lambda y.\,\bind(m,\ \lambda x.\,k)\big),
-\]
-and so \texttt{\&} is permitted
-only on monads that claim \texttt{commutative}: \texttt{Bag} and the finite
-powerset yes, \texttt{Seq} no. Without the restriction, \texttt{\&} over a list
-would silently mean ``left, then right,'' and the symbol would mean
-simultaneity in \texttt{for} and sequence in \fe{}.
+mentions the other's variables. Under a commutative aggregator --- every
+aggregator of Stage~1 --- the order in which independent binds are taken cannot
+show in the result, so \texttt{\&} is always permitted. Under an ordered
+aggregator (\S\ref{sec:stages}) the order would show, and \texttt{\&} is then
+permitted only on monads that claim \texttt{commutative}. The restriction has
+moved from the monad to the aggregator.
 
 \subsection{\texttt{where} in \texttt{foreach}}
 \label{sec:where}
 
-A crisp \texttt{where} clause inside \fe{} is a filter, and a filter needs
-somewhere to send the candidates it rejects: the monad's zero. For a monad
-without \texttt{zero}, a \texttt{where} clause in \fe{} is an elaboration error,
-\texttt{[monad-no-zero]}.
+A rejected candidate contributes the aggregator's unit. Filtering therefore
+needs nothing of the monad: no zero, no MonadPlus structure. The diagnostic the
+earlier draft proposed for monads without a zero is withdrawn.
 
-The same keyword now has two operational readings, and the developer
-document should state both:
+The same keyword now has two operational readings, and the developer document
+should state both:
 \begin{itemize}[nosep]
 \item in \texttt{for}, a failed guard \emph{leaves the datum in the space};
-\item in \fe{}, a failed guard \emph{drops the binding}.
+\item in \fe{}, a failed guard \emph{contributes the unit}.
 \end{itemize}
 What reconciles them is that in both cases the rejected candidate is a
-non-event. Nothing is consumed, nothing is undone, and nothing downstream sees
-it.
+non-event: nothing is consumed, nothing is undone, and nothing downstream can
+distinguish it from its absence.
 
-\subsection{\texttt{yield}, and the algebra on processes}
-\label{sec:algebra}
+\subsection{Lookahead and the terminating fragment}
+\label{sec:lookahead}
 
-The body of a \fe{} is a process, so the comprehension produces a value of sort
-\(\M(\Proc)\): a monadic collection of instantiated bodies. Something must turn
-that value into a running process. Categorically, that something is an
-Eilenberg--Moore algebra \(\alg : \M(\Proc) \to \Proc\)~\cite{EilenbergMoore65}.
+The rule needs \(\nf(P\sigma)\) and \(\nf(c\sigma)\) to exist and to be unique.
+Bodies and guards are therefore evaluated by \emph{lookahead}: each is reduced
+to normal form by itself, in isolation from the rest of the configuration, and
+the normal form is what is contributed. Two properties make this well defined.
 
-\begin{itemize}[nosep]
-\item For \texttt{Bag}, the algebra is free. \texttt{PPar} \emph{is} a
-\texttt{HashBag(Proc)}, so yielding over a bag produces a parallel composition,
-and the right-hand panel of Figure~\ref{fig:choosesum} is literal.
-\item For \texttt{Seq}, there are two algebras. One forgets the order and
-composes in parallel. The other composes in sequence, and exists only when the
-bodies are sequenceable (\S\ref{sec:seq}). The prelude declares the
-sequential one, and falls back to the parallel one with a warning when the
-bodies are not sequenceable.
-\item For a user-declared monad, a process-valued \texttt{yield} requires an
-\texttt{algebra} entry; without one the elaborator reports
-\texttt{[monad-no-algebra]}. A value-valued \texttt{yield}, producing an
-\(\M(B)\) term rather than a process, does not need one, and is discussed with
-sequencing.
-\end{itemize}
+\paragraph{Termination.} Lookahead must finish. A type system picks out a
+terminating fragment \(\mathcal{T}\) of \flang{}, and the comprehension demands
+that its guards and bodies be well typed in it. The cost-accounted calculus
+already supplies one candidate: funded runs are bounded, so a body wrapped as
+\verb|{% P %}[t]| with a finite budget terminates, and the depth of the budget
+bounds the work. The type system and the precharge of \S\ref{sec:precharge} are
+then the same discipline. Syntactic fragments --- no replication, no recursion
+through the space --- are another candidate, and cheaper to check.
+
+\paragraph{Uniqueness.} Termination is not enough. The commutativity of the
+aggregator makes the \emph{order} in which contributions arrive undetectable;
+it does not hide \emph{choices} made inside a body. A body with an internal race
+has several normal forms, and the published result is then nondeterministic in
+a way a consumer can observe. So \(\mathcal{T}\) must also guarantee unique
+normal forms. The development records uniqueness of normal forms on the funded
+fragment~\cite{f1r3nodeOTE}; since unrestricted \rhoc{} is not confluent, the
+hypotheses of that result must be checked against the bodies the fragment is
+meant to admit.
+
+\begin{obligation}[Terminating, deterministic fragment]
+\label{obl:fragment}
+Every term typed in \(\mathcal{T}\) has a normal form, reached in a number of
+steps bounded by its type, and any two normal forms are equal up to the
+equations of the theory.
+\end{obligation}
+
+Lookahead is what makes bodies \emph{run} without making the comprehension
+wait on the world: a body cannot block on an outside writer, because during
+lookahead there is no outside.
 
 \subsection{Reference semantics}
 \label{sec:refsem}
 
-The semantics of \fe{} is given by a translation into the core, which serves as
-the specification against which any implementation is judged
-(\S\ref{sec:impl}). For a single group over a built-in collection, the
-translation walks the collection with a private recursive process. Each step
-consumes one element, matches it, evaluates the guard, and either adds the
-instantiated body to the accumulator or does not:
+The rule is specified by a translation into the core, which is the standard
+against which any implementation is judged (\S\ref{sec:impl}). The source is
+spilled onto a private channel via \(\mathsf{toBag}\), every element is
+visited by a persistent receipt and contributes either the lookahead of its
+body or the unit, and contributions are folded into a private accumulator that
+publishes once, when a count reaches the measure:
 \begin{lstlisting}
-new walk, done in {
-  walk!( m, Empty ) |
-  contract walk( @rest, @acc ) = {
-    match rest {
-      []         => done!( acc )
-      [a, ...r]  => match a {
-                      p where c => walk!( r, Add(acc, P) )
-                      _         => walk!( r, acc )
-                    }
+[[ foreach( ptrn <- m where cond ) yield( rslt ) P ]] =
+  new src, acc, ans in {
+    [[ m ]]_src                                    // src!(x1) | ... | src!(xn),  n = measure(m)
+  | acc!( 0, Nil )
+  | if ( n == 0 ) { rslt!( Nil ) }                 // empty source: publish the unit
+  | for( @x <= src ){
+      match x {
+        ptrn where cond => ans!( [[ P ]] )[*]       // [*]: lookahead to normal form
+        _               => ans!( Nil )
+      }
     }
-  } |
-  for( @acc <- done ){ Alg(acc) }
-}
+  | for( @(k, a) <= acc & @e <= ans ){
+      if ( k + 1 == n ) { rslt!( a | e ) } else { acc!( k + 1, a | e ) }
+    }
+  }
 \end{lstlisting}
-\texttt{walk} and \texttt{done} are fresh, \texttt{Add} and \texttt{Empty} are
-the monad's sum and zero, and \texttt{Alg} releases the accumulated bodies via
-the algebra. For a user-declared monad the walk is replaced by the monad's own
-\(\bind\) rules, with the continuation invoking the same match-and-guard step.
-Dependent groups nest the walk.
+Three features of the translation carry its correctness.
+\begin{itemize}[nosep]
+\item \textbf{Initialisation.} The accumulator starts at the unit,
+\texttt{acc!( 0, Nil )}; without it no join fires.
+\item \textbf{Completion.} The accumulator is private, and \texttt{rslt} is
+written exactly once, when the count reaches \(n\). A process holding
+\texttt{rslt} can never observe or steal a partial sum, and the remaining folds
+can never be stranded.
+\item \textbf{Every element counts.} The pattern sits in a \texttt{match} with a
+catch-all rather than on the receipt, so an element that fails the pattern or
+the guard still contributes, and the count reaches \(n =\meas(m)\) exactly.
+\end{itemize}
+The measure therefore enters the \emph{semantics}, not only the cost: it is the
+completion condition. For dependent groups the total is not known at entry, and
+the count becomes a deficit in \(\mathbb{Z}\): it starts at \(\meas(m)\), each
+first-group binding \(x\) adds \(\meas(n(x)) - 1\) as it is expanded, each leaf
+contribution subtracts one, and publication happens at zero. Integers under
+addition are a commutative monoid, so the deficit is one more aggregator
+running alongside the first (\S\ref{sec:tree}).
 
-The translation was designed so that \emph{each binding costs exactly one
-communication on a private name}: one send on \texttt{walk} per element.
-Entry and exit --- the first send on \texttt{walk} and the send on
-\texttt{done} --- cost two more, a constant per comprehension. The reference
-translation treats those two as administrative, funded by the cost-free unit
-in the way the internalisation retraction of the cost monad treats its
-administrative step~\cite{CostMonad}, so its metered count is exactly one per
-binding. That choice is deliberate and is what makes per-binding charging
-(\S\ref{sec:cost}) coincide with the reference translation's own count.
+The translation exhibits what the monad must supply: \(\mathsf{toBag}\), and
+nothing else, for a single group; \(\bind\), through Obligation~\ref{obl:tobag},
+for dependent ones.
 
 \subsection{Synchrony}
 \label{sec:sync}
 
-``Synchronous'' admits three readings, and only one is both meaningful and
-achievable.
+\begin{proposition}[Synchrony]
+\label{prop:sync}
+Suppose the guards and bodies of a \fe{} are typed in \(\mathcal{T}\). Then its
+reference translation is weakly bisimilar to the single output
+\(r!(\bigoplus_A\{\mathsf{contrib}(x)\})\) of \S\ref{sec:rule}.
+\end{proposition}
+
+\begin{proof}[Sketch]
+Every communication of the translation other than the final send is on
+\texttt{src}, \texttt{acc} or \texttt{ans}, which the translation restricts;
+these are internal steps. Lookahead is internal by definition. By
+Obligation~\ref{obl:fragment} each contribution exists and is unique; by
+commutativity and associativity of the aggregator, the value accumulated is
+independent of the order of the folds; the count guarantees exactly one
+publication. A finite burst of internal steps with a unique end-point followed
+by one visible output is weakly bisimilar to that output.
+\end{proof}
+
+So \fe{} is synchronous in the strongest available sense: it \emph{is} one step
+up to weak bisimulation. Termination comes from \(\mathcal{T}\) (and from
+funding, \S\ref{sec:cost}); determinism from \(\mathcal{T}\), from
+Obligation~\ref{obl:confluence} for the monad's rewrites, and from the
+aggregator's laws. The slogan --- concurrent internally, sequential externally
+--- is the content of the proposition.
+
+%=============================================================================
+\section{Aggregation}
+\label{sec:agg}
+
+\subsection{Parallel composition is the free commutative monoid}
+\label{sec:free}
+
+\texttt{PPar} \emph{is} \texttt{HashBag(Proc)}, and a finite bag is the free
+commutative monoid on its elements. So for every commutative monoid
+\((A, \oplus, \varepsilon)\) and every assignment \(h : \Proc \to |A|\) there is
+exactly one monoid homomorphism \(\hat h\) from parallel composition to \(A\),
+\[
+\hat h(P \mid Q) = \hat h(P) \oplus \hat h(Q),
+\qquad
+\hat h(\texttt{0}) = \varepsilon .
+\]
+Programmable aggregation is \emph{defined} by this universal property. The
+default rule of \S\ref{sec:rule} is the meaning of \fe{}, and every other
+aggregator is post-composition with a homomorphism out of it:
+\[
+\texttt{foreach(\dots) yield( }r\texttt{ ) by }A\ P
+\quad\text{means}\quad
+r!\big(\hat h\,(\Pi\,\mathsf{contrib})\big).
+\]
+The assignment \(h\) needs no syntax. The body is typed in the carrier, so the
+body \emph{is} \(h\): it maps each binding to an element of \(|A|\).
+
+Three consequences follow, and they are the reason to choose this path.
+\begin{itemize}[nosep]
+\item \textbf{No new semantics.} Parallel composition stays the reference
+meaning; aggregators add structure on the output side only.
+\item \textbf{Fusion is a theorem.} An implementation folds each contribution
+into the accumulator as it arrives instead of building the parallel composition
+and then folding it. That is correct exactly because \(\hat h\) is a
+homomorphism, and the specification never has to mention it.
+\item \textbf{Order stays invisible.} The argument that reordering by the
+concurrency is undetectable --- made first for parallel composition --- holds for
+every commutative aggregator, for the same reason.
+\end{itemize}
+
+\subsection{Aggregators are theory instances}
+\label{sec:instances}
+
+The \texttt{by} clause names a \emph{theory instance}: an elaborated theory
+expression --- an application or a \texttt{let}-bound name, of the grammar
+theory bodies already use --- whose presentation descends from
+\texttt{CommutativeMonoid}. Integer summation is one replacement away from the
+universal-algebra module:
+\begin{lstlisting}[language=mettail]
+Module Arith {
+  import "UnivAlg.module" as u
+  Theory IntSum() {
+    let s  = u.EmptySet() in (
+    let m  = u.Monoid(s) in (
+    let cm = u.CommutativeMonoid(m) in (
+    cm
+      Exports      { Elem => Int; }
+      Replacements { Zero => IZero . |- "0" : Int;
+                     Plus => IAdd  . x:Int, y:Int |- x "+" y : Int; }
+      Rewrites     { IAddEval : (IAdd n k) ~> [n + k];   // host integer primitive
+    })))
+  }
+}
+\end{lstlisting}
+and in a program,
+\begin{lstlisting}
+import "Arith.module" as a
+
+foreach( i <- { 1, 3, 5, 7, 9 } where i > 4 ) yield( rslt ) by a.IntSum() i
+  ~>  rslt!( 21 )
+\end{lstlisting}
+
+\paragraph{The default is an instance too.} Without a \texttt{by} clause, the
+aggregator is the \texttt{ParMonoid} instance of the theory that defines
+\texttt{PPar} in the program's own language. Nothing about the default is
+special-cased; it is the instance that happens to be free.
+
+\paragraph{Commutativity is checked by origin, not by name.} Instances were
+chosen over named operations because of what the elaborator can then decide.
+Every element of an elaborated presentation carries its origin token, and a
+replacement keeps the origin of what it renames. So the elaborator can check
+that the instance's operation \emph{is} the \texttt{Plus} introduced by
+\texttt{u.CommutativeMonoid}, carrying that theory's associativity, unit and
+commutativity equations by origin, and not merely an operation called
+\texttt{Plus}. This is the mechanism that already distinguishes a shared
+\texttt{Name} from two categories that happen to share a spelling. Two
+diagnostics follow.
+\begin{itemize}[nosep]
+\item \texttt{[aggregator-not-commutative]}: the instance's operation does not
+descend from \texttt{CommutativeMonoid}'s \texttt{Plus}. An operation that is
+associative but not known to be commutative is an ordered aggregator
+(\S\ref{sec:stages}) or nothing.
+\item \texttt{[aggregator-ambiguous]}: the instance carries more than one
+commutative-monoid structure on its carrier --- a rig carries two, by
+construction. The clause must then select one by the parameter that supplied it,
+\texttt{by r.add}.
+\end{itemize}
+
+\paragraph{Elaboration is compile time.} Instances are elaborated by the client
+toolchain, as all theory expressions are. An aggregator is therefore fixed by
+the program text; it cannot be chosen by data received at run time. That is the
+right default for a construct whose cost must be bounded before admission.
+
+\paragraph{What remains an obligation.} Origins establish that the operation is
+\emph{declared} associative, commutative and unital. That the rewrites which
+\emph{compute} it respect those equations --- that \texttt{IAddEval} agrees with
+commutativity, say --- is a confluence obligation on the instance, of the same
+kind as Obligation~\ref{obl:confluence}, and the operation's own evaluation must
+lie in \(\mathcal{T}\).
+
+\subsection{Tree-shaped accumulation}
+\label{sec:tree}
+
+With a commutative monoid, the accumulator need not be a single serial
+channel. Let every contribution be a singleton partial result, paired with a
+count, and let partial results combine wherever they meet:
+\begin{lstlisting}
+new src, acc in {
+  [[ m ]]_src
+| for( @x <= src ){
+    match x {
+      ptrn where cond => acc!( 1, [[ P ]] )[*]
+      _               => acc!( 1, eps )
+    }
+  }
+| for( @(k1, a1) <= acc & @(k2, a2) <= acc where k1 + k2 <  n ){ acc!(  k1 + k2, a1 (+) a2 )[*] }
+| for( @(k1, a1) <- acc & @(k2, a2) <- acc where k1 + k2 == n ){ rslt!( a1 (+) a2 )[*] }
+}
+\end{lstlisting}
+with \texttt{(+)} and \texttt{eps} the aggregator's operation and unit, and
+two further rules for \(n \le 1\): an empty source publishes \texttt{eps}, and a
+single contribution is published as it stands. Three observations.
+\begin{itemize}[nosep]
+\item The pair of a count and a value lives in the product
+\((\mathbb{N},+,0)\times(A,\oplus,\varepsilon)\), itself a commutative monoid.
+The completion test is a second aggregator running beside the first, and the
+deficit of \S\ref{sec:refsem} for dependent groups is the same construction over
+\(\mathbb{Z}\).
+\item Combination is no longer a chain of length \(n\); partial results merge
+pairwise wherever they meet, so the depth can be logarithmic. This is the
+combiner of MapReduce~\cite{DeanGhemawat04}, and it is the shape of parallelism
+the GPU deployment of the node wants.
+\item Accumulation is itself a rewrite system on a bag of partial results, in
+the style of the communication rule, and it publishes exactly once.
+\end{itemize}
+The serial translation of \S\ref{sec:refsem} and this one are weakly bisimilar
+by commutativity and associativity, and either may serve as the reference.
+
+\subsection{The staged path}
+\label{sec:stages}
+
+Each further stage adds one algebraic requirement on the aggregator, checked by
+origin in the same way, and costed by the same per-combine rule.
 
 \begin{center}
 \small
-\begin{tabular}{@{}L{0.22\textwidth}L{0.38\textwidth}L{0.30\textwidth}@{}}
+\begin{tabular}{@{}L{0.12\textwidth}L{0.24\textwidth}L{0.28\textwidth}L{0.28\textwidth}@{}}
 \toprule
-\textbf{Reading} & \textbf{Meaning} & \textbf{Assessment} \\
+\textbf{Stage} & \textbf{Aggregator descends from} & \textbf{Examples} &
+\textbf{Requirement on the source} \\
 \midrule
-Data dependency & bindings precede the body &
-too weak; \texttt{for} already has it \\[3pt]
-Completion barrier & a continuation waits for every body to finish &
-impossible in general; bodies spawn arbitrary processes \\[3pt]
-Atomic skeleton & the binding skeleton resolves without observable
-interleaving, then the bodies are released together &
-adopted \\
+1 & \texttt{CommutativeMonoid} & parallel composition, sums, counts, products &
+\texttt{toBag} \\[3pt]
+2 & a \texttt{Semilattice}: commutative, idempotent & union, maximum, boolean
+or & \texttt{toBag} \\[3pt]
+3 & \texttt{Monoid} only & lists, strings, function composition &
+\texttt{toBag} and \texttt{ordered}; \texttt{\&} needs \texttt{commutative} \\[3pt]
+4 & a \(\mathcal V\)-\texttt{Semimodule} & weighted bags, expectations,
+amplitudes & \texttt{toBag}; a graded \texttt{where} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-The atomic-skeleton reading has a precise formulation. In the reference
-translation, every communication of the skeleton is on a name bound by the
-translation's own \texttt{new}. Such communications are internal steps:
-nothing outside the comprehension can participate in them.
+\paragraph{Stage 2: idempotent aggregators.} A semilattice is a commutative
+monoid with \(a \oplus a = a\). It needs a theory that the universal-algebra
+module does not yet contain: a \texttt{Semilattice}, taking a commutative
+monoid as its parameter and adding the idempotence equation. Its first use settles a question the earlier draft left
+open: whether a \texttt{Set} source should deduplicate. It need not. The
+comprehension visits binding instances (\S\ref{sec:ddl}), and
+\begin{lstlisting}
+foreach( x <- { 1, 2 } ; y <- { 3 } ) yield( r ) y                 ~>  r!( 3 | 3 )
+foreach( x <- { 1, 2 } ; y <- { 3 } ) yield( r ) by u.SetUnion() y  ~>  r!( Set(3) )
+\end{lstlisting}
+Deduplication is the choice of an idempotent aggregator. Semilattices are also
+the coalition-logic container of the generated logics~\cite{F1R3Dev}, so this
+stage is where aggregation and observation meet.
 
-\begin{proposition}[Synchrony]
-\label{prop:sync}
-Suppose the internal reduction of a \fe{} skeleton is confluent and
-terminating. Then the translation of
-\verb|foreach( p <- m where c ) yield { P }| is weakly bisimilar to a process
-that performs no visible action until it becomes \(\alg\) applied to the
-instantiated bodies.
-\end{proposition}
+\paragraph{Stage 3: ordered aggregators.} A monoid that is not commutative ---
+list concatenation, string building, composition of functions --- breaks the
+argument that order is invisible. Contributions are then tagged with their
+position in the source's \texttt{ordered} enumeration and collected in the
+monoid of finite maps from positions under disjoint union, which \emph{is}
+commutative; the non-commutative fold is applied once, in index order, at
+publication. Tree-shaped accumulation is preserved. The source must declare
+\texttt{ordered}: \texttt{Seq} does, and \texttt{Bag} and \texttt{Set} have no
+canonical order, so an ordered aggregator over them is refused with
+\texttt{[aggregator-needs-order]}. This stage is also where Scala's
+\texttt{for}/\texttt{yield} lives: yielding into the source monad itself, with
+\(\unit\) and concatenation, preserves its order.
 
-\begin{proof}[Sketch]
-All skeleton steps are communications on names restricted by the translation,
-hence internal. Termination bounds the burst; confluence makes its end-point
-unique up to structural congruence. A sequence of internal steps with a unique
-end-point is absorbed by weak bisimulation.
-\end{proof}
-
-So \fe{} is synchronous exactly when its skeleton is a deterministic,
-terminating burst of internal steps. The two hypotheses have different sources.
-Termination is supplied by cost accounting: a funded skeleton is a bounded one
-(\S\ref{sec:cost}). Confluence is Obligation~\ref{obl:confluence}, which is why
-that obligation is not optional. The slogan --- concurrent internally,
-sequential externally --- is the content of the proposition.
-
-There is one interaction with the outside that the proposition does not cover:
-token consumption. A skeleton that draws its tokens one binding at a time
-from a purse shared with other processes is observable through that purse.
-\S\ref{sec:atomicgate} closes the gap.
+\paragraph{Stage 4: semimodules.} A graded \texttt{where} clause takes values in
+a resolution algebra \(\mathcal V\)~\cite{GradedWhere}. Its weight cannot be
+applied to a contribution unless the aggregator admits scalars: a
+\(\mathcal V\)-semimodule, a commutative monoid with an action of \(\mathcal V\)
+distributing over \(\oplus\). The graded contribution is \(w \cdot
+\nf(P\sigma)\). The free \(\mathcal V\)-semimodule on processes is the weighted
+bag, in exactly the sense that parallel composition is the free commutative
+monoid, so Stage~4 is the universal-property construction of
+\S\ref{sec:free} one level up. Section~\ref{sec:graded} returns to it.
 
 %=============================================================================
 \section{Sequencing}
 \label{sec:seq}
 
-Rholang~1.1's synchronous send sequences on an acknowledgement. \fe{} has a
-natural acknowledgement of its own --- the end of the skeleton --- so it can be
-sequenced the same way:
+Rholang~1.1's synchronous send sequences on an acknowledgement that the
+receiver may or may not send. \fe{} has an acknowledgement it always sends: its
+result. So it can stand on the left of \texttt{;}, and the continuation waits on
+the result channel:
 \begin{lstlisting}
-foreach( p <- m ) yield { P } ; K
-  ==  new r in { [[ foreach( p <- m ) yield { P } ]]_r | for( _ <- r ){ K } }
+foreach( p <- m where c ) yield( r ) P ; K
+  ==  new r in { [[ foreach( p <- m where c ) yield( r ) P ]] | for( @_ <- r ){ K } }
 \end{lstlisting}
-where \(\sem{-}_r\), written \verb|[[-]]_r| above, is the reference translation extended to signal on
-\texttt{r} when the skeleton completes and the bodies have been released.
-
-Two differences from \verb|!?| are worth stating.
-\begin{itemize}[nosep]
-\item \verb|x!?(Q); K| depends on a convention: the receiver on \texttt{x}
-must treat its first argument as a return channel and reply. A receiver that
-does not leaves \texttt{K} parked. \fe{}'s acknowledgement is sent by the
-comprehension itself, so if the skeleton is funded and terminates, \texttt{K}
-runs. Sequencing after a \fe{} is more reliable than sequencing after a send.
-\item Mixed chains need no further machinery. The chain
+A continuation that needs the value binds it instead,
 \begin{lstlisting}
-x!?(Q); foreach( y <- m ) yield { P }; z!?(R); K
+foreach( p <- m where c ) yield( r ) P | for( @ys <- r ){ K }
+\end{lstlisting}
+so no separate value form of the comprehension is needed: the acknowledgement
+and the result are the same datum. In the first form \texttt{r} is bound by the
+sugar, and is private to the comprehension and its continuation.
+
+\paragraph{Why \fe{} has the right.} A process may appear on the left of
+\texttt{;} only if the continuation is guaranteed to be released. The
+synchronous send cannot offer that guarantee: it depends on a convention
+honoured by the receiver. \fe{} can. Its guards and bodies terminate by
+Obligation~\ref{obl:fragment}, its count reaches the measure, and so its
+publication is certain whenever it is funded. Termination is what earns the
+place on the left of \texttt{;}, and it is the type system that grants it.
+
+\paragraph{Chains.} Mixed chains need no further machinery. The chain
+\begin{lstlisting}
+x!?(Q); foreach( y <- m ) yield( r ) P; z!?(R); K
 \end{lstlisting}
 is nested \texttt{new}/\texttt{for} pairs, and \texttt{;} means ``then''
 throughout: between receipt groups, after a synchronous send, and after a
-\fe{}.
-\end{itemize}
-
-\paragraph{The sequenceable fragment.} The default acknowledgement fires on
-skeleton completion, because bodies may spawn arbitrary processes and their
-completion is not defined. But some bodies do have a completion event: those
-built only from synchronous sends, sequenced \fe{}s, and a final tail.
-\begin{lstlisting}[language=bnf]
-SeqBody ::= Tail | x "!?" "(" Proc ")" ";" SeqBody | Foreach ";" SeqBody
-\end{lstlisting}
-For a sequenceable body, completion can mean body completion. Over a
-non-commutative monad such as \texttt{Seq}, the body for element \(i{+}1\)
-starts after the body for element \(i\) completes: a genuinely sequential fold.
-Over a commutative monad, bodies run in parallel and the acknowledgement fires
-on a counted join of their completions. The class is syntactic and checked at
-elaboration, so a developer never guesses which guarantee applies: \fe{} is
-sequential exactly when its body is sequenceable, and otherwise its guarantee is
-the skeleton.
-
-\paragraph{The value form.} The synchronous send discards its
-acknowledgement. If \fe{}'s acknowledgement instead carried the result of a
-value-valued \texttt{yield}, the continuation could bind it,
-\begin{lstlisting}
-foreach( x <- m where c ) yield f(x) ; (@ys) K
-\end{lstlisting}
-which gives the value form of the comprehension --- Scala's
-\texttt{for}/\texttt{yield}, LINQ's \texttt{select} --- without a separate
-construct. This note leaves the value form to a second tranche
-(Question~\ref{q:value}), but the translation leaves room for it.
+\fe{}. The earlier draft's sequenceable fragment of bodies is no longer needed:
+completion is defined by publication, for every comprehension.
 
 %=============================================================================
 \section{Cost}
@@ -833,117 +1124,118 @@ construct. This note leaves the value form to a second tranche
 
 The cost-accounted form of the comprehension is
 \begin{lstlisting}
-{% foreach( ptrn <- mndInst ) yield {% P %}[t] %}[s]
+{% foreach( ptrn <- mndInst where cond ) yield( rslt ) by A {% P %}[t] %}[s]
 \end{lstlisting}
-and its two gates mean different things.
-
-\paragraph{The inner gate is ordinary.} \verb|{% P %}[t]| is core syntax with
-core meaning: each instantiated body runs once a \texttt{t}-token is available,
-and a body whose gate is unfunded parks, independently of every other body.
-The body slot is already a cost-accounted term, and needs no new semantics.
+and its two gates fund different things.
 
 \paragraph{The outer gate is per binding.} In the core, a gate funds one event,
 the communication. In \fe{}, the event the comprehension witnesses is each
-\emph{binding}, so \texttt{[s]} funds one token per candidate. The principle
-is the one the developer document states --- the witness is where cost
-attaches --- with a different multiplicity, and the documentation should say
-so. Under the stack reading of budgets, the stack under \texttt{s} must be at
-least as deep as the number of candidates.
+\emph{binding}, so \texttt{[s]} funds one token per candidate --- every element
+of \(\mathsf{toBag}(m)\), whether or not its pattern and guard succeed --- plus
+the combinations of the accumulator and the one publication. The principle is
+the one the developer document states, the witness is where cost attaches, with
+a different multiplicity.
+
+\paragraph{The inner gate funds lookahead.} \verb|{% P %}[t]| funds the
+reduction of a surviving body to normal form. Because lookahead runs in
+isolation, the inner gate is spent during the comprehension, not by a later
+consumer, and its budget depth bounds the work: it is the terminating fragment
+of \S\ref{sec:lookahead} made concrete. Lookahead of the guard and of the
+aggregator's operation is charged in the same way, on the lane the program
+assigns.
 
 \paragraph{Per-group gates.} The per-clause signed binds of the core carry over:
 \begin{lstlisting}
-{% foreach( {% x <- m %}[s1] ; {% y <- n(x) %}[s2] ) yield {% P %}[t] %}[s0]
+{% foreach( {% x <- m %}[s1] ; {% y <- n(x) %}[s2] ) yield( r ) {% P %}[t] %}[s0]
 \end{lstlisting}
 funds the bindings of each group from its own lane. This matters for dependent
-groups, whose second-group candidates may be supplied by a different party
-from the first.
+groups, whose second-group candidates may be supplied by a different party.
 
-\paragraph{The syntax is forced.} In the native four-sort grammar, the
-continuation slots of \texttt{for} and send have the signed-term sort \(\T\).
-Giving \fe{} the same treatment --- the comprehension in \(\T\), the
-\texttt{yield} slot in \(\T\) --- produces exactly the surface above. An
-unwrapped \fe{} is not merely discouraged; it cannot be written in the
+\paragraph{The syntax is forced.} In the native four-sort grammar, continuation
+and payload slots have the signed-term sort \(\T\). Giving \fe{} the same
+treatment --- the comprehension in \(\T\), the body in \(\T\) --- produces
+exactly the surface above. An unwrapped \fe{} cannot be written in the
 cost-accounted surface, and wrapping by construction continues to hold. The
-same reasoning governs sequencing. The continuation after \texttt{;} is
-signed too, exactly as the continuation inside a desugared \verb|!?| is:
+continuation after \texttt{;} is signed too, exactly as the continuation inside
+a desugared \verb|!?| is:
 \begin{lstlisting}
-{% foreach( ptrn <- mndInst ) yield {% P %}[t] %}[s] ; {% K %}[u]
+{% foreach( ptrn <- mndInst ) yield( r ) {% P %}[t] %}[s] ; {% K %}[u]
 \end{lstlisting}
 
 \begin{proposition}[The outer cost does not depend on the filter]
 \label{prop:filterindep}
-The number of tokens a \fe{} draws on its outer gate equals the number of
-candidates its skeleton evaluates, whether or not their guards hold. The number
-it draws on its inner gate is the number of survivors, and is bounded by the
-same count.
+The number of tokens a \fe{} draws on its outer gate for bindings equals
+\(\meas(m)\), whether or not patterns and guards succeed. The number of body
+lookaheads it funds on its inner gate is the number of survivors, and is bounded
+by the same count.
 \end{proposition}
 
 \begin{proof}
-Every candidate is matched and guarded before the skeleton decides whether to
-instantiate a body; the outer charge attaches to that evaluation. Only
-survivors instantiate bodies, and survivors are a subset of candidates.
+Every element of \(\mathsf{toBag}(m)\) is matched and guarded, and contributes
+--- its body's normal form or the unit --- so every element passes the outer
+gate. Only survivors are looked ahead, and survivors are a subset of elements.
 \end{proof}
 
 The proposition closes a hole that would otherwise exist. If only the inner
 gate charged, a \fe{} over a very large collection with a guard that is always
-false would cost nothing but a single token: the skeleton's work would be free.
-Per-binding charging prices the evaluation of every candidate, and
-Proposition~\ref{prop:filterindep} means a single estimate bounds both lanes.
+false would cost almost nothing, and the traversal would be free. Per-binding
+charging prices every candidate, and a single estimate bounds both lanes.
 
 \subsection{The atomic outer gate}
 \label{sec:atomicgate}
 
-Proposition~\ref{prop:sync} leaves one interaction uncovered: drawing tokens
-one binding at a time from a shared purse is observable, and a skeleton that
-runs out mid-traversal has consumed something while producing nothing.
-
-For a single group over a monad with a measure, the gap closes completely. The
-number of candidates is \(n = \meas(m)\), computable when the gate opens, so the
-outer gate can be an \(n\)-ary join on the purse: one communication that takes
-\(n\) tokens or takes none.
+The number of candidates \(n = \meas(m)\) is computable when the gate opens, so
+for a single group the outer gate can be an \(n\)-ary join on the purse: one
+communication that takes everything the binding lane needs or takes nothing.
 \begin{itemize}[nosep]
-\item If the purse holds \(n\) tokens, the join fires, the skeleton runs as a
-burst of internal steps, and the comprehension is atomic in the strong sense: one
-external event.
-\item If it does not, the join does not fire, nothing is consumed, and the
-comprehension is a non-event --- exactly as an unfunded communication is in the
-core.
+\item If the purse holds enough, the join fires, the comprehension runs as a
+burst of internal steps, and it ends in its one publication.
+\item If it does not, nothing is consumed, and the comprehension is a non-event
+--- exactly as an unfunded communication is in the core.
 \end{itemize}
-There is no partial state and nothing burned. The design question this note
-earlier left open --- reserve the whole depth up front, or burn tokens spent on
-an unfinished skeleton --- is answered for this case by the \(n\)-ary gate.
+Because bodies run in isolation, the comprehension has no effects other than
+its publication, so on the outer lane it is all-or-nothing in the strongest
+sense.
 
-Dependent groups reopen it. The number of second-group candidates,
-\(\sum_x \meas(n(x))\), is known only after the first group has bound. A
-dependent \fe{} can take its gates group by group, in which case a later group
-may find its lane empty after earlier groups have paid; or it can take a
-declared upper bound at entry, in which case it overpays whenever the bound is
-loose. Question~\ref{q:dependent} records the choice.
+The inner lane is different. A body whose lookahead exhausts its \texttt{t}
+budget has no normal form within budget, so it never contributes, the count
+never reaches \(n\), and nothing is published. To consumers that is a
+non-event, but the outer tokens are spent. A funding proof that promises a
+result must therefore fund the inner lane in full, and the two-lane atomicity
+question --- reserve the inner depth for every candidate at entry, or let a
+failed lookahead burn what the outer gate drew --- is recorded as
+Question~\ref{q:inner}. Dependent groups reopen the outer question too, since
+their total is known only as the first group expands
+(Question~\ref{q:dependent}).
 
 \subsection{Precharge and linear funding proofs}
 \label{sec:precharge}
 
 Per-binding charging moves the variability of \fe{}'s cost out of the semantics
-and into estimation. A linear funding proof for a deploy must show that every
-gate it will meet is funded, so for a \fe{} it needs an upper bound on the
-measure of the monadic instance: the depth of the budget the outer gate will
-draw, and, by Proposition~\ref{prop:filterindep}, a bound on the number of
-bodies the inner gate will fund.
+and into estimation. A linear funding proof must show that every gate a deploy
+will meet is funded, so for a \fe{} it needs an upper bound on \(\meas(m)\).
 
 \begin{remark}[Two uses of ``precharge'']
 In the node, \emph{precharge} also names the escrow mechanism --- precharge,
 run, refund --- that the cost-accounting work removed in favour of
 gate-funded execution. That mechanism is not being reintroduced. Here
 \emph{precharge} means the bound that a static funding proof assumes, and
-nothing is escrowed: the \(n\)-ary gate takes exactly \(n\) tokens when it
+nothing is escrowed: the \(n\)-ary gate takes exactly what it needs when it
 fires.
 \end{remark}
 
-\paragraph{What is estimated.} For a single group, the count is
-\(\meas(m)\). For dependent groups, \(\meas(m) + \sum_x \meas(n(x))\). Nesting a
-\fe{} inside the \texttt{yield} body multiplies: the body's own outer gate is
-funded from the inner lane, so the inner lane's bound is the number of survivors
-times the body's demand. In general the precharge is a bound, not a number.
+\paragraph{What is estimated.} For a single group with \(n = \meas(m)\), an
+aggregator whose operation costs at most \(c_\oplus\) to look ahead, and a body
+budget of depth \(d_t\),
+\[
+\text{outer} \;\le\; n \;+\; (n-1)\,(1 + c_\oplus) \;+\; 1,
+\qquad
+\text{inner} \;\le\; n \cdot d_t ,
+\]
+counting one token per binding, one per combination plus its operation, and
+one for the publication. For dependent groups, \(n\) is
+\(\meas(m) + \sum_x \meas(n(x))\). A \fe{} nested inside a body is funded from
+the inner lane and contributes its own bound to \(d_t\).
 
 \paragraph{Where bounds come from.} In decreasing order of precision:
 \begin{enumerate}[nosep]
@@ -954,7 +1246,7 @@ nothing about size, and a pattern such as \verb|[a, b, ...rest]| supplies only
 a lower bound. The guard on that binding supplies the upper bound:
 \begin{lstlisting}
 for( @m <- ch where m.size() <= 64 ) {
-  {% foreach( x <- m ) yield {% P %}[t] %}[s]
+  {% foreach( x <- m ) yield( r ) {% P %}[t] %}[s]
 }
 \end{lstlisting}
 Here the \texttt{where} clause does double duty: it is the developer's filter,
@@ -962,38 +1254,20 @@ and it is the premise the estimator reads to discharge the precharge
 obligation. The honest default is to require such a guard, or a declared bound,
 before a \fe{} over received data may appear in a deploy that must be proven
 funded.
-\item \emph{At the gate.} For any measured monad, the exact measure is
-available when the outer gate opens, and the \(n\)-ary gate of
-\S\ref{sec:atomicgate} uses it. This complements the static proof rather than
-replacing it: admission still needs the bound.
+\item \emph{At the gate.} The exact measure is available when the outer gate
+opens, and the \(n\)-ary gate uses it. This complements the static proof rather
+than replacing it: admission still needs the bound.
 \end{enumerate}
 
-\paragraph{The measure obligation.} For the built-in collections, the measure
-is size. For a user-declared monad, size is not intrinsic --- for a tree, the
-relevant count may be the number of leaves --- so the \texttt{measure} entry
-names it, and carries an obligation.
-
-\begin{obligation}[Exact measure]
-\label{obl:measure}
-For every instance \(m\) and every continuation \(k\), the reduction of
-\(\bind(m, k)\) invokes the continuation \(k\) exactly \(\meas(m)\) times.
-\end{obligation}
-
-This is a linearity condition on the continuation, and it sits naturally beside
-the linear proofs it serves.
-
-\paragraph{Two admissibility classes.} Monads without a measure --- lazy
-streams, state threads, continuations --- remain safe under per-binding
-charging: they draw a token per binding and park when the purse is empty, which
-is a non-event. But they cannot be precharged, and so can never pass a linear
-funding proof. The split should be explicit:
-\begin{itemize}[nosep]
-\item \emph{precharge-admissible}: the monad declares a measure and the instance
-has a bound;
-\item \emph{exhaustion-only}: everything else.
-\end{itemize}
-A deploy that must be proven funded may use only the first class; the
-elaborator reports \texttt{[monad-unmeasured]} otherwise.
+\paragraph{Two admissibility classes.} A monad whose \(\mathsf{toBag}\) is not
+finite on its instances --- lazy streams, say --- cannot be measured, and so can
+never be precharged, and its comprehension can never complete. Since the
+completion condition of \S\ref{sec:refsem} is the measure, such monads are not
+merely unprovable but unusable with \fe{}; the elaborator reports
+\texttt{[monad-unmeasured]}. Among finite monads the split is between instances
+with a bound available to the funding proof, which are
+\emph{precharge-admissible}, and the rest, which run only under a gate that
+happens to be funded.
 
 \paragraph{Lanes.} The \texttt{s} and \texttt{t} gates draw on different
 per-signature purses, so the proof splits by signature, and the node's disjoint
@@ -1010,8 +1284,6 @@ proof must quantify over the elements' signatures rather than over a fixed lane
 
 \subsection{The translation is the specification, not the strategy}
 
-\fe{} is a conservative extension of the core.
-
 \begin{proposition}[Conservativity]
 \label{prop:conservative}
 A program that does not use \fe{} has the same reductions, the same costs and
@@ -1024,10 +1296,10 @@ rule produces one. The \texttt{Monads} builder adds rules only to theories that
 declare it. The cost rule attaches only to the new gate.
 \end{proof}
 
-It follows that nothing obliges an implementation to compile \fe{} into
-\texttt{for}. The translation of \S\ref{sec:refsem} is retained as the
-reference semantics, and an implementation may evaluate \fe{} natively. The
-correctness criterion has to account for cost.
+Nothing therefore obliges an implementation to compile \fe{} into
+\texttt{for}. The translations of \S\ref{sec:refsem} and \S\ref{sec:tree} are
+retained as the reference semantics, and an implementation may evaluate \fe{}
+natively, as the single rule of \S\ref{sec:rule}.
 
 \begin{obligation}[Graded refinement]
 \label{obl:graded}
@@ -1035,75 +1307,73 @@ The native evaluation of every \fe{} is weakly bisimilar to its reference
 translation under the graded, signature-labelled transition relation.
 \end{obligation}
 
-Because the reference translation performs exactly one metered private
-communication per binding (\S\ref{sec:refsem}), and the native charge is one token per binding,
-graded bisimilarity states both requirements at once: the same behaviour, and
-the same bill. The relation already exists in the node's Rocq development, as
-the graded transition system and its Hennessy--Milner adequacy
-results~\cite{f1r3nodeOTE}.
-
-Conservativity itself still needs checking against the reducer, since the new
-constructor must not change how existing terms reduce or are billed; that is
-an ordinary compatibility review.
+The native charge is designed to equal the reference translation's metered
+communications: one per element on \texttt{src}, one per combination on
+\texttt{acc}, and one for the publication. Graded bisimilarity then states both
+requirements at once, the same behaviour and the same bill. The relation
+already exists in the node's Rocq development, as the graded transition system
+and its Hennessy--Milner adequacy results~\cite{f1r3nodeOTE}. Conservativity
+itself still needs checking against the reducer, an ordinary compatibility
+review.
 
 \subsection{What native evaluation reuses}
 
-Evaluating the skeleton natively is a structural reduction over a term --- the
-same class of work as the reducer's \texttt{match}. Over a built-in collection,
-\fe{} is an iterated match. The spatial matcher, the binders, and the
-\texttt{where} guards on match cases with fall-through, which are already
-implemented, supply the per-binding pattern-and-guard step. What is new is the
-iteration, the accumulation into the algebra, and the release.
+Over a built-in collection, the native rule is an iterated match: the spatial
+matcher, the binders, and the \texttt{where} guards on match cases with
+fall-through, which are already implemented, supply the per-element
+pattern-and-guard step. What is new is lookahead --- evaluating a body to normal
+form in a private sub-configuration that shares nothing with the tuple space ---
+and the fold into the aggregator, which is the instance's own rewrite engine
+applied to its operation.
 
 \subsection{What native evaluation must not inherit}
 
 \paragraph{The free-reduction default.} The node's consensus ledger counts
-only communication events. Non-communication structural reductions ---
+only communication events; non-communication structural reductions ---
 \texttt{new}, \texttt{match}, \texttt{if} --- emit diagnostic events that are
-not charged. A natively evaluated skeleton, being match-class work, would by
-default cost nothing however large the instance, and with host work unmetered by
-design, that would be free unbounded work. The per-binding charge of
-\S\ref{sec:cost} is therefore mandatory, and it is a charge on a
-language-level event, not on host work, so it remains consistent with the
-decision to cap rather than meter host work. A hard protocol cap on skeleton
-size sits beside it.
+not charged. A natively evaluated \fe{}, being match-class work plus lookahead,
+would by default cost nothing however large the instance, and with host work
+unmetered by design, that would be free unbounded work. The per-binding charge
+and the lookahead budget of \S\ref{sec:cost} are therefore mandatory. Both are
+charges on language-level events, not on host work, so they remain consistent
+with the decision to cap rather than meter host work. A hard protocol cap on
+measure sits beside them.
 
 \paragraph{The static demand analysis.} The funding analysis counts the
-communication nodes reachable in a normalised term and relies on receiving a
-term already desugared; it keeps an explicit seam for a front-end that delivers
+communication nodes reachable in a normalised term, relies on receiving a term
+already desugared, and keeps an explicit seam for a front-end that delivers
 something else. A native \fe{} is that something else: it is not a
 communication node, and its contribution is data-dependent. The analysis gains
-a \fe{} rule --- the bound of \S\ref{sec:precharge} on the outer lane, the
-bound times the body's demand on the inner lane.
+a \fe{} rule, the bounds of \S\ref{sec:precharge}.
 
 \subsection{What changes in the representation}
 
 The built-in collection methods (\texttt{nth}, \texttt{union},
 \texttt{toList}, and so on) are first-order, and the method-call node cannot
-carry a binder. A native \fe{} therefore needs a new process node carrying
-binders, most naturally reusing the receipt's bind-and-pattern encoding. That is
-a change to the protobuf model, and so it is consensus-visible. It should be
-gated on the protocol version, as the new cost-record fields are, and it must
-pass the compatibility review the frontend admission contract requires, since
-that contract freezes the model and protobuf files~\cite{f1r3nodeOTE}.
+carry a binder. A native \fe{} needs a new process node carrying the groups'
+binders --- most naturally reusing the receipt's bind-and-pattern encoding ---
+the result channel, the body, and a reference to the aggregator instance by the
+digest of its elaborated presentation. That is a change to the protobuf model,
+and so it is consensus-visible. It should be gated on the protocol version, as
+the new cost-record fields are, and it must pass the compatibility review the
+frontend admission contract requires, since that contract freezes the model and
+protobuf files~\cite{f1r3nodeOTE}.
 
 \subsection{What gets simpler}
 
 \begin{itemize}[nosep]
-\item \textbf{Replay.} A native skeleton never touches the tuple space. There
-are no fresh names, no produce or communication events, and nothing in the
-event log. Replay only has to recompute, and recomputation is deterministic by
-Obligation~\ref{obl:confluence}; that obligation becomes the whole replay story.
-\item \textbf{Sequencing.} \verb|foreach(...) yield {...}; K| releases
-\texttt{K} directly when the skeleton completes, without the two
-acknowledgement communications the synchronous send pays. Waiting on the
-acknowledgements of sequenceable bodies is still real communication; natively,
-it is a counted join on the node.
-\item \textbf{Order-then-execute.} The skeleton's internal steps race with
-nothing, across deploys or within one, so a \fe{} introduces no conflicts to
-mark by signature. Under the order-independent charge model this makes \fe{}
-unusually friendly to the concurrent executor: it is order-independent and
-replay-deterministic by construction, given confluence.
+\item \textbf{Replay.} A native \fe{} touches the tuple space once, to publish.
+Lookahead and accumulation leave nothing in the event log, so replay
+recomputes them, and recomputation is deterministic by
+Obligation~\ref{obl:fragment}, Obligation~\ref{obl:confluence} and the
+aggregator's laws.
+\item \textbf{Sequencing.} \texttt{K} after \texttt{;} is released by the
+publication. Natively, the sugar's private receipt can be fused away
+altogether.
+\item \textbf{Order-then-execute.} The internal steps race with nothing, across
+deploys or within one, so a \fe{} introduces no conflicts to mark by signature
+other than its publication, which is an ordinary send. It is order-independent
+and replay-deterministic by construction.
 \end{itemize}
 
 \subsection{Built-in and declared monads}
@@ -1111,12 +1381,14 @@ replay-deterministic by construction, given confluence.
 Two evaluation paths coexist.
 \begin{itemize}[nosep]
 \item \emph{Built-in collections} get a fast path in the reducer.
-\item \emph{Monads declared in a theory} run their \(\bind\) rules through the
-installed language's rewrite engine --- the semantic-kernel service through
-which installed languages reduce terms. That work sits today under host-side
-semantic-work limits rather than the token ledger. The per-binding charge must
-cover this path too, or user-declared monads become the free route the built-ins
-were closed against.
+\item \emph{Monads declared in a theory} run their \(\mathsf{toBag}\) and
+\(\bind\) rules through the installed language's rewrite engine --- the
+semantic-kernel service through which installed languages reduce terms. That
+work sits today under host-side semantic-work limits rather than the token
+ledger. The per-binding charge and the lookahead budget must cover this path
+too, or user-declared monads become the free route the built-ins were closed
+against. The same holds for aggregator operations defined by a theory's
+rewrites.
 \end{itemize}
 
 \subsection{Where the frontend stands}
@@ -1124,10 +1396,12 @@ were closed against.
 On the integration branch, \texttt{Module} and \texttt{Theory} declarations are
 parsed structurally, the existing lowerer emits the node's process
 representation directly, and public activation is off~\cite{f1r3nodeOTE}. The
-work this note adds lands in three places: the elaborator (the
-\texttt{Monads} builder, its obligations and capability flags, and the new
-diagnostics), the sort checker (inferring source sorts), and the reducer and
-its funding analysis (the native node, its charge and its demand rule).
+work this note adds lands in four places: the elaborator (the \texttt{Monads}
+builder, \texttt{toBag}, its obligations, and the origin check on aggregator
+instances with its diagnostics); the type checker (source sorts, the carrier of
+the aggregator, membership in \(\mathcal{T}\)); the reducer (the native node,
+lookahead in isolation, and the charge); and the funding analysis (the demand
+rule).
 
 %=============================================================================
 \section{Interactions with the rest of \flang{}}
@@ -1136,62 +1410,65 @@ its funding analysis (the native node, its charge and its demand rule).
 \subsection{Channel types}
 
 A channel's type is an elaborated theory, so a \texttt{Monads} declaration
-travels with it. A receiver may \fe{} over a received term only when the
-channel's theory carries a monad on the term's sort. Nothing further is needed,
-and this is the right behaviour: two agents sharing a language definition share
-its iteration structure as well as its grammar.
+travels with it: a receiver may \fe{} over a received term only when the
+channel's theory carries a monad on the term's sort. Symmetrically, the result
+channel's type must export the aggregator's carrier, so a consumer of
+\texttt{rslt} knows what it receives --- parallel compositions under the default,
+integers under \texttt{IntSum}. Two agents sharing a language definition share
+its iteration and aggregation structure as well as its grammar.
 
 \subsection{Generated logics}
 \label{sec:logic}
 
 The new constructors and rules are visible to the logic generated from the
-theory: \(\unit\) and \(\bind\) to the spatial connectives, their rewrites to
-the behavioural modality. That needs no special treatment.
+theory: \(\unit\), \(\bind\) and \(\mathsf{toBag}\) to the spatial connectives,
+their rewrites to the behavioural modality. The aggregator's carrier is a sort
+like any other, so a consumer's guard on the result is an ordinary formula over
+it.
 
 There is a richer option. The logical counterpart of a monad is a \emph{lax
 modality}~\cite{FairtloughMendler97, BentonBiermanDePaiva98}, written
 \(\lax\varphi\): ``after binding in \(\M\), \(\varphi\).'' A \texttt{Monads}
 declaration could generate \(\lax_\M\) in the generated logic, giving
 \texttt{where} clauses a way to speak about what a monadic value will deliver
-without enumerating it. The lax modality is a type-system-flavoured connective,
-and it raises no new adequacy question: it is consistent with the established
+without enumerating it. The lax modality is a type-system-flavoured connective
+and raises no new adequacy question: it is consistent with the established
 position that Hypercube-generated logics are type systems and are not expected
 to be adequate.
 
 \subsection{Graded \texttt{where} clauses}
 \label{sec:graded}
 
-Here the choose-versus-sum distinction of \S\ref{sec:intro} does its work. A
-graded \texttt{where} clause takes values in a resolution algebra \(\mathcal V\)
-rather than in the Booleans~\cite{GradedWhere}.
+Here the choose-versus-sum distinction of \S\ref{sec:intro} does its work.
 \begin{itemize}[nosep]
 \item In \texttt{for}, a graded guard \emph{weights candidates in a race}: the
 weight changes which candidate is chosen.
 \item In \fe{}, there is no race. A graded guard must \emph{scale
-contributions}: the weight multiplies what a candidate adds to the sum.
+contributions}: the weight multiplies what a candidate adds to the aggregate.
 \end{itemize}
-Scaling contributions requires \(\M\) to be a semimodule over \(\mathcal V\)
---- concretely, to be or embed in the finitely supported \(\mathcal V\)-weighted
-distribution monad. The declaration must therefore say which value algebras a
-monad supports, and a graded \texttt{where} on a \fe{} over a plain
-\texttt{Seq} is refused.
+Scaling contributions requires the aggregator to be a semimodule over the value
+algebra --- Stage~4 of \S\ref{sec:stages}. Parallel composition has no scalars,
+so a graded \texttt{where} under the default aggregator is refused, and the
+requirement falls on the aggregator, where it belongs, rather than on the
+monad.
 
 \subsection{Simulation}
 
-A \fe{} over a weighted distribution monad is a stochastic simulation step:
-programming in the large, written with the same surface as programming in the
-small~\cite{WeightedGSLT}. The ``sum of all possible futures'' of the equational
-route to a quantum reading of \rhoc{} is what a \fe{} over a weighted bag
-computes.
+A \fe{} whose aggregator is the weighted bag, and whose guard is graded, is a
+stochastic simulation step: programming in the large, written with the same
+surface as programming in the small~\cite{WeightedGSLT}. The ``sum of all
+possible futures'' of the equational route to a quantum reading of \rhoc{} is
+what such a comprehension publishes.
 
 \subsection{The quantum fence}
 
-Kleisli composition in the vector-space monad is matrix multiplication, which is
-why the rho--linear-algebra correspondence and the comprehension meet. But a
-body that uses its bound variable twice is not linear, and the quantum reading
-of graded \texttt{where} clauses is restricted to the linear fragment of
-\rhoc{}. The linearity check of that fragment applies to \fe{} bodies
-unchanged; a non-linear body is outside the quantum reading.
+With amplitudes as the value algebra, aggregation is a sum of weighted vectors,
+and Kleisli composition in the vector-space monad is matrix multiplication ---
+which is why the rho--linear-algebra correspondence and the comprehension meet.
+But a body that uses its bound variable twice is not linear, and the quantum
+reading of graded \texttt{where} clauses is restricted to the linear fragment of
+\rhoc{}. The linearity check of that fragment applies to \fe{} bodies unchanged,
+and it is a further restriction on \(\mathcal{T}\) for this reading.
 
 \subsection{Summary}
 
@@ -1204,22 +1481,27 @@ unchanged; a non-linear body is outside the quantum reading.
 Theory-level monads & laws hold modulo erasure in \(\cost(T)\), \(\hist(T)\)
 (Prop.~\ref{prop:modulo-erasure}) \\[2pt]
 Equations & laws are obligations, never equations; no higher-order matching \\[2pt]
-Rewrites & interpretation is rewrites; confluence obligation \\[2pt]
+Rewrites & interpretation and \texttt{toBag} are rewrites; confluence
+obligation \\[2pt]
 Algebra of theories & origin tokens; \texttt{[join-collision]},
 \texttt{[dangling-monad]}; arity drift shared with \texttt{PPar} \\[2pt]
-Arrows & only \texttt{<-} \\[2pt]
-\texttt{;} and \texttt{\&} & dependent bind; \texttt{\&} only on commutative
-monads \\[2pt]
-\texttt{where} & needs \texttt{zero}; drops rather than leaves \\[2pt]
-Synchronous send & \texttt{;} sequences \fe{}, more reliably than
-\verb|!?| \\[2pt]
-Cost & two gates; per-binding outer charge; \(n\)-ary atomic gate;
-precharge by measure \\[2pt]
-Channel types & declaration travels with the theory \\[2pt]
+Universal-algebra tower & aggregators are \texttt{CommutativeMonoid}
+instances, checked by origin; default \texttt{ParMonoid} \\[2pt]
+Arrows & only \texttt{<-} on sources; consumers use all three on the
+result \\[2pt]
+\texttt{;} and \texttt{\&} & dependent bind via \texttt{toBag}; \texttt{\&}
+free under commutative aggregators \\[2pt]
+\texttt{where} & rejected candidates contribute the aggregator's unit \\[2pt]
+Synchronous send & \fe{} sequences unconditionally; \verb|!?| by
+convention \\[2pt]
+Cost & two gates; per-binding outer charge; lookahead budget; precharge by
+measure \\[2pt]
+Channel types & monad travels with the source's theory; result typed by the
+carrier \\[2pt]
 Generated logics & new constructors visible; optional lax modality \\[2pt]
-Graded \texttt{where} & scales contributions; needs a \(\mathcal V\)-semimodule \\[2pt]
+Graded \texttt{where} & needs a semimodule aggregator (Stage~4) \\[2pt]
 Quantum reading & linear bodies only \\[2pt]
-Order-then-execute & no conflicts; replay-deterministic given confluence \\
+Order-then-execute & one publication; replay-deterministic \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -1314,7 +1596,7 @@ Theory ParamRho() {
   }
   Monads {
     Rho over Proc(D, _) by substitution at PDrop;
-    zero : PZero;   measure : Occurrences;   algebra : Proc by join;
+    toBag : Occurrences;   ordered : Positions;
     laws : generated;
   }
 }
@@ -1457,7 +1739,7 @@ Theory OrientedRho(grp: u.Group) {
     Monads {
       Frame  over Writer(Elem);                  // prelude: X |-> Elem x X
       Orient =  Rho after Frame by generated action;
-      zero : PZero;   measure : Occurrences;   algebra : Proc by join;
+      toBag : Occurrences;   ordered : Positions;
       laws : generated;
     }
 }
@@ -1480,38 +1762,38 @@ none of them is a variable former.
 \small
 \begin{tabular}{@{}L{0.16\textwidth}L{0.36\textwidth}L{0.38\textwidth}@{}}
 \toprule
-\textbf{Capability} & \(\mathsf{Rho}\) and \(\mathsf{Orient}_G\) &
+\textbf{Entry} & \(\mathsf{Rho}\) and \(\mathsf{Orient}_G\) &
 \textbf{Consequence for \fe{}} \\
 \midrule
-\texttt{zero} & \texttt{0}, with \texttt{|} as the sum:
-\(\bind(\texttt{0},k)=\texttt{0}\) and \(\bind\) distributes over \texttt{|} &
-crisp \texttt{where} is allowed; a rejected binding is filled with
-\texttt{0} \\[3pt]
+\texttt{toBag} & the multiset of variable occurrences; a monad morphism, since
+the occurrences of \(\bind(P,\sigma)\) are the union, over the occurrences
+\(v\) of \(P\), of the occurrences of \(\sigma(v)\) &
+\fe{} visits occurrences; the measure counts them, on canonical forms (below) \\[3pt]
+\texttt{ordered} & yes: positions in the canonical form enumerate the
+occurrences &
+ordered aggregators are allowed (Stage~3) \\[3pt]
 \texttt{commutative} & no; syntax monads are not commutative, and the
 commutativity of \texttt{|} does not make them so &
-\texttt{\&} is refused \\[3pt]
-\texttt{measure} & the number of variable occurrences &
-precharge counts holes; see below on canonical forms \\[3pt]
-\texttt{algebra} & the monad's own multiplication, at closed processes &
-a \fe{} over a process yielding processes \emph{is} substitution \\
+\texttt{\&} is free under commutative aggregators and refused under ordered
+ones \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\paragraph{The measure needs canonical forms.} Obligation~\ref{obl:measure}
-asks that \(\bind(P,k)\) invoke \(k\) exactly \(\meas(P)\) times. For
-\(\mathsf{Rho}\) the count of variable occurrences is invariant under
-structural congruence: the monoid laws and E2 neither duplicate nor erase
-variables. For \(\mathsf{Orient}_G\) it is not. Distributivity,
-\(P\mid(Q+R)\equiv P\mid Q + P\mid R\), duplicates the occurrences of \(P\), and
-chaos, \(\chaos\mid P\equiv\chaos\), erases them. Two congruent terms then cost
-different amounts to bind, and since matching is modulo the equations, a
-receiver cannot choose which representative it is sent. The measure must be
-taken on a canonical form, which the node already computes as the section of
-the structural quotient used for hashing~\cite{f1r3nodeOTE}, and for
-\(\mathsf{Orient}_G\) that form is the distributed one: the precharge must
-estimate the size of the expanded term, which can be exponentially larger than
-the source.
+\paragraph{The measure needs canonical forms.} Obligation~\ref{obl:tobag}
+requires \(\mathsf{toBag}\) to be well defined on the theory's quotient:
+congruent terms must have the same bag. For \(\mathsf{Rho}\) the count of
+variable occurrences is invariant under structural congruence: the monoid laws
+and E2 neither duplicate nor erase variables. For \(\mathsf{Orient}_G\) it is
+not. Distributivity, \(P\mid(Q+R)\equiv P\mid Q + P\mid R\), duplicates the
+occurrences of \(P\), and chaos, \(\chaos\mid P\equiv\chaos\), erases them. Two
+congruent terms then have different bags, and since matching is modulo the
+equations, a receiver cannot choose which representative it is sent.
+\(\mathsf{toBag}\) must be taken on a canonical form, which the node already
+computes as the section of the structural quotient used for
+hashing~\cite{f1r3nodeOTE}, and for \(\mathsf{Orient}_G\) that form is the
+distributed one: the measure, and so the precharge, is the size of the expanded
+term, which can be exponentially larger than the source.
 
 \subsection{\texttt{foreach} over a process}
 
@@ -1522,20 +1804,31 @@ measure zero. The useful instance is the one in which \(V\) is a data sort of
 templates, closed as far as the calculus is concerned, whose leaves are holes
 to be filled, in the manner of the typed holes of the plausible-fiction
 marketplace~\cite{PF}.
+
+Filling a template is the monad's bind, and the bind is not a commutative
+monoid on contributions, so it is not an aggregator. It is reached in two
+steps that keep the comprehension pure. The aggregator collects a
+\emph{substitution} --- finite maps from hole occurrences to processes, under
+union, a commutative monoid because each occurrence is visited once and every
+union is therefore disjoint --- and the consumer applies it:
 \begin{lstlisting}
 for( @tmpl <- templates where tmpl.holes() <= 32 ) {
-  {% foreach( h <- tmpl where Fillable(h) ) yield {% Fill(h) %}[t] %}[s]
+  {% foreach( h <- tmpl where Fillable(h) ) yield( fills ) by Subst()
+       {% { h : Fill(h) } %}[t] %}[s]
+| for( @sub <- fills ){ filled!( tmpl.subst( sub ) ) }
 }
 \end{lstlisting}
-The comprehension fills every hole that passes the guard with the process
-\texttt{Fill(h)}, fills the others with \texttt{0}, and, because the algebra is
-the monad's multiplication, releases the instantiated template as a running
-process. The outer gate draws one token per hole occurrence, the inner one per
-filled hole, and the guard on the receipt is the bound the precharge proof
-reads (\S\ref{sec:precharge}). Over \(\mathsf{Orient}_G\) each hole carries a
-frame, and \texttt{Fill(h)} is written in the hole's own coordinates and
-transported by the bind: the local frames of~\cite{Oriented}, delivered by the
-comprehension.
+Each surviving occurrence contributes a singleton map whose value is the
+lookahead of \texttt{Fill(h)}; a rejected occurrence contributes the empty map,
+and its hole stays a hole. The outer gate draws one token per hole occurrence,
+the inner one per filled hole, and the guard on the receipt is the bound the
+precharge proof reads (\S\ref{sec:precharge}). Under the default aggregator the
+same comprehension would publish \texttt{Fill(h1) | Fill(h2) | \dots}: the fills
+side by side and detached from the template, which is meaningful, and
+different. Over \(\mathsf{Orient}_G\) each hole carries a frame, and
+\texttt{Fill(h)} is written in the hole's own coordinates and transported when
+the consumer applies the bind: the local frames of~\cite{Oriented}, delivered
+through the comprehension.
 
 \subsection{Symmetry reduces the precharge}
 
@@ -1547,7 +1840,7 @@ Let \(P\) be an oriented template with finitely many hole occurrences, let
 \(H=\Stab(P)\), and suppose the body and guard of a \fe{} over \(P\) are
 \(H\)-equivariant: \(k([h]x) = h\cdot k(x)\) and the guard holds at \([h]x\)
 exactly when it holds at \(x\). Then the comprehension needs only one body
-evaluation per \(H\)-orbit of hole occurrences, the number of orbits is
+lookahead per \(H\)-orbit of hole occurrences, the number of orbits is
 \(\meas(P)/|H|\), and that number is an integer.
 \end{proposition}
 
@@ -1556,16 +1849,16 @@ Hole occurrences are atoms in the sense of~\cite{Oriented}, and the action maps
 them to hole occurrences, so they form an \(H\)-invariant subset of the free
 atoms. The stabiliser acts freely on the free atoms by the orbit-counting
 theorem, hence freely on this subset, so every orbit has exactly \(|H|\)
-members and \(|H|\) divides their number. By equivariance, the body at
-\([h]x\) is the action of \(h\) on the body at \(x\), which the composite
-monad's bind applies as a recorded frame rather than as a fresh evaluation.
+members and \(|H|\) divides their number. By equivariance, the normal form of
+the body at \([h]x\) is the action of \(h\) on the normal form at \(x\), which is
+applied as a recorded frame rather than computed by a fresh lookahead.
 \end{proof}
 
-When the hypotheses hold, the evaluation lane's precharge is divided by
-\(|H|\), and the divisibility theorem is what makes the reduced figure exact
-rather than a rounded estimate. The structural work of installing each result
-at its occurrence is still proportional to \(\meas(P)\), so the reduction applies
-to the cost of evaluating bodies and guards, not to the bind's traversal. This
+When the hypotheses hold, the inner lane's precharge is divided by \(|H|\),
+and the divisibility theorem is what makes the reduced figure exact rather than
+a rounded estimate. The outer lane is unchanged: every occurrence is still a
+binding and still contributes, so the reduction applies to the cost of looking
+ahead at bodies and guards, not to the traversal or the accumulation. This
 is the symmetry reduction of~\cite{Oriented} applied to a comprehension instead
 of to a state space: the symmetry is read off the template, not declared.
 
@@ -1593,37 +1886,68 @@ guards of a \fe{}.
 \label{sec:tranche}
 
 \begin{enumerate}[nosep]
-\item The prelude declares \texttt{Seq}, \texttt{Bag} and the finite powerset
-on the three built-in collections, with \texttt{zero}, \texttt{measure} and
-\texttt{algebra}, and with \texttt{commutative} on the latter two.
-\item \fe{} with \texttt{<-}, \texttt{;} and crisp \texttt{where}; \texttt{\&}
-only on commutative monads; a process-valued \texttt{yield}.
+\item The prelude declares \texttt{Seq}, \texttt{Bag} and the finite powerset on
+the three built-in collections, each with \texttt{toBag}, with
+\texttt{ordered} on \texttt{Seq} and \texttt{commutative} on the other two.
+\item \fe{} with \texttt{<-}, \texttt{;} between groups, \texttt{\&} within
+them, crisp \texttt{where}, and \texttt{yield( rslt )}.
+\item Lookahead for guards and bodies, with the terminating fragment
+\(\mathcal{T}\) given by funding: a body is admitted when it is wrapped in a
+finite inner budget.
+\item Stage~1 aggregation: \texttt{by} a theory instance descending from
+\texttt{CommutativeMonoid}, checked by origin, defaulting to
+\texttt{ParMonoid}; the diagnostics \texttt{[aggregator-not-commutative]} and
+\texttt{[aggregator-ambiguous]}.
 \item The cost-accounted surface with both gates, per-binding outer charge, and
 the \(n\)-ary outer gate for single-group comprehensions.
-\item Sequencing with \texttt{;} after a \fe{}, acknowledging on skeleton
-completion; the sequenceable fragment.
+\item \fe{} on the left of \texttt{;}.
 \item Native evaluation in the reducer, the new process node gated on protocol
 version, and the demand rule in the funding analysis.
-\item The laws, confluence and measure recorded as obligations, discharged for
-the prelude monads.
+\item The laws, the bag morphism, confluence, the fragment obligation and the
+aggregator obligations recorded, and discharged for the prelude monads and for
+\texttt{ParMonoid}.
 \end{enumerate}
 
 \noindent
 Deferred: sort parameters and user-declared monads (Step~2), with the
-parametric \rhoc{} calculus of \S\ref{sec:rho} as its acceptance example;
+parametric \rhoc{} calculus of \S\ref{sec:rho} as their acceptance example;
 syntax monads declared by substitution; composition through distributive laws;
-the value form; graded \texttt{where} in \fe{}; the lax modality.
+aggregation Stages~2--4; graded \texttt{where} in \fe{}; the lax modality.
 
 %=============================================================================
 \section{Open questions}
 \label{sec:questions}
 
+\begin{question}[The terminating fragment]
+\label{q:fragment}
+Is funding the right definition of \(\mathcal{T}\) for the first tranche, or
+should a cheaper syntactic fragment be admitted alongside it? And does the
+recorded uniqueness of normal forms on the funded fragment cover the bodies
+developers will write, or must \(\mathcal{T}\) exclude internal races
+explicitly?
+\end{question}
+
+\begin{question}[Nondeterministic bodies]
+Should a body outside the deterministic fragment be admitted with its result
+declared nondeterministic, or refused? Admitting it keeps \fe{} total over
+\(\mathcal{T}\)'s terminating part; refusing it keeps every published result a
+function of the source.
+\end{question}
+
+\begin{question}[The inner lane]
+\label{q:inner}
+When a body's lookahead exhausts its budget, nothing is published and the outer
+tokens are spent. Should the inner budget for every candidate be reserved
+atomically at entry, alongside the outer gate, or is the burn acceptable given
+that the funding proof must cover the inner lane anyway?
+\end{question}
+
 \begin{question}[Dependent groups]
 \label{q:dependent}
 For a \fe{} with dependent groups, should the outer gates be taken group by
-group, accepting that a later group may find its lane empty after earlier
-groups have paid, or should a declared upper bound be taken at entry, accepting
-overpayment when the bound is loose?
+group as the deficit of \S\ref{sec:refsem} unfolds, accepting that a later group
+may find its lane empty after earlier groups have paid, or should a declared
+upper bound be taken at entry, accepting overpayment when the bound is loose?
 \end{question}
 
 \begin{question}[Per-element funding]
@@ -1633,23 +1957,23 @@ May the inner signature mention variables bound by the pattern,
 data-dependent lanes in the funding proof.
 \end{question}
 
-\begin{question}[The value form]
-\label{q:value}
-Should the value form be introduced through the acknowledgement,
-\verb|foreach(...) yield e ; (@ys) K|, or as a separate expression form?
+\begin{question}[Semilattice in the tower]
+Stage~2 needs a \texttt{Semilattice} theory, and Stage~4 a \texttt{Semimodule}
+over a rig. Should both join the universal-algebra module now, so that the
+origin checks of later stages have something to descend from?
 \end{question}
 
 \begin{question}[Arity drift]
 Whatever is decided for arity-changing replacements of \texttt{PPar} must be
-decided for monad interpretations. Which resolution is preferred?
+decided for monad interpretations and for aggregator operations. Which
+resolution is preferred?
 \end{question}
 
 \begin{question}[Syntax monads]
 Should every theory with a variable former get its syntax monad, declared
 \texttt{by substitution at} that former, with laws discharged once for the
-toolchain? And should the measure of such a monad always be taken on the
-node's canonical form, given that equations such as distributivity and chaos
-change occurrence counts?
+toolchain, and with \(\mathsf{toBag}\) always taken on the node's canonical
+form?
 \end{question}
 
 \begin{question}[Generated distributive laws]
@@ -1664,7 +1988,6 @@ Should a sort with exactly one declared monad allow the qualifier to be omitted,
 as proposed, or should the qualifier always be required for readability?
 \end{question}
 
-%=============================================================================
 \begin{thebibliography}{99}\small\raggedright
 
 \bibitem{BentonBiermanDePaiva98}
@@ -1672,10 +1995,11 @@ P.~N.~Benton, G.~M.~Bierman, and V.~C.~V.~de~Paiva.
 \newblock Computational types from a logical perspective.
 \newblock \emph{Journal of Functional Programming}, 8(2):177--193, 1998.
 
-\bibitem{EilenbergMoore65}
-S.~Eilenberg and J.~C.~Moore.
-\newblock Adjoint functors and triples.
-\newblock \emph{Illinois Journal of Mathematics}, 9(3):381--398, 1965.
+\bibitem{DeanGhemawat04}
+J.~Dean and S.~Ghemawat.
+\newblock MapReduce: simplified data processing on large clusters.
+\newblock In \emph{Proceedings of the 6th USENIX Symposium on Operating Systems
+Design and Implementation (OSDI)}, pages 137--150, 2004.
 
 \bibitem{FairtloughMendler97}
 M.~Fairtlough and M.~Mendler.
