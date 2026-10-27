@@ -109,7 +109,7 @@
 \large with programmable aggregation and explicit cost}
 
 \author{L.G. Meredith\\ \small F1R3FLY.io}
-\date{26 October 2026 --- draft 2}
+\date{26 October 2026 --- draft 3}
 
 \begin{document}
 \maketitle
@@ -137,7 +137,10 @@ finite bags, whose size is the \emph{measure} that every cost bound in the note
 rests on. The monad laws are proof obligations, not equations, so matching
 modulo a theory never meets higher-order unification. In the control flow
 sublanguage, bodies are evaluated by \emph{lookahead}: each is reduced to normal
-form, in isolation, within a terminating fragment picked out by typing. The
+form, in isolation, within a terminating fragment picked out by typing --- first
+System F, then Abramsky's computational interpretation of linear logic, each
+translated into \flang{} with its types translated into spatial-behavioural
+formulae. The
 comprehension is then a single rewrite whose reduct is one output, which is
 the precise sense in which it is synchronous, and which is what entitles it to
 stand on the left of \texttt{;}. Aggregation is \emph{programmable}: a
@@ -147,8 +150,9 @@ stand on the left of \texttt{;}. Aggregation is \emph{programmable}: a
 free commutative monoid, every other aggregator is defined by the universal
 property, and accumulation can be tree-shaped without changing the meaning.
 In the cost-accounted surface the comprehension carries two gates, an outer
-one charged per binding and an inner one funding each body's lookahead, and a
-linear funding proof needs a bound on the measure of the instance.
+one charged per binding and an inner one funding each body's lookahead. Typing
+guarantees termination, not a bound: a comprehension that is not sufficiently
+funded does not complete, and its deployer is notified.
 
 A worked example declares the parametric \rhoc{} calculus --- the syntax of
 the calculus as a type constructor in its data and its variables --- as a
@@ -265,8 +269,9 @@ aggregator the published result is a parallel composition, because
 monad morphism into finite bags that both drives the comprehension and measures
 it (\S\ref{sec:ddl}).
 \item The \fe{} comprehension: its syntax, its meaning as a single rewrite,
-evaluation of bodies by lookahead in a terminating fragment, and a reference
-translation into the core (\S\ref{sec:cfl}).
+evaluation of bodies by lookahead in a terminating fragment given by System F
+and then by Abramsky's proof expressions, and a reference translation into the
+core (\S\ref{sec:cfl}).
 \item Programmable aggregation: aggregators as theory instances descending
 from the universal-algebra theory of commutative monoids, defined by the universal property of parallel
 composition, accumulated as a tree, and extended in three further stages
@@ -274,7 +279,8 @@ composition, accumulated as a tree, and extended in three further stages
 \item Sequencing with \texttt{;}, on the strength of termination
 (\S\ref{sec:seq}).
 \item An explicit cost-accounted surface with two gates, per-binding charging,
-an atomic outer gate, and a precharge discipline for linear funding proofs
+an atomic outer gate, and precharge estimates, with non-completion and
+notification as the policy for underfunded runs
 (\S\ref{sec:cost}).
 \item An implementation stance --- native evaluation, the translation retained
 as specification, graded bisimulation as the correctness criterion --- and a
@@ -374,9 +380,9 @@ four-sort grammar the continuation and payload slots of \texttt{for} and send
 have the signed-term sort \(\T\). That sorting --- \emph{wrapping by
 construction} --- is what makes subject reduction coincide with the absence of
 unmetered execution~\cite{CostMonad}. Funded runs are bounded: strong
-normalisation holds conditionally on funding, and the development records
-uniqueness of normal forms on the funded fragment~\cite{f1r3nodeOTE}. Both facts
-are used in \S\ref{sec:lookahead}.
+normalisation holds conditionally on funding~\cite{f1r3nodeOTE}. That is a
+statement about budgets, not types, and \S\ref{sec:lookahead} keeps the two
+apart.
 
 \subsection{Monads one level up}
 
@@ -694,6 +700,10 @@ fragment of \S\ref{sec:lookahead}.
 
 \paragraph{Typing.} Write \(\mathcal{T}\) for the terminating fragment of
 \S\ref{sec:lookahead} and \(|A|\) for the carrier sort of the aggregator.
+\(\Gamma \vdash_{\mathcal{T}} P : S\) means that \(P\) is \(\sem{M}\) for a
+source term \(M\) well typed at a type whose ground translation is \(S\); the
+element sort of the monad, bound into \(\Delta\), must likewise be the
+translation of a source type.
 \[
 \frac{
 \Gamma \vdash m : \M(B) \quad
@@ -759,33 +769,97 @@ distinguish it from its absence.
 The rule needs \(\nf(P\sigma)\) and \(\nf(c\sigma)\) to exist and to be unique.
 Bodies and guards are therefore evaluated by \emph{lookahead}: each is reduced
 to normal form by itself, in isolation from the rest of the configuration, and
-the normal form is what is contributed. Two properties make this well defined.
+the normal form is what is contributed. Existence and uniqueness come from a
+type system.
 
-\paragraph{Termination.} Lookahead must finish. A type system picks out a
-terminating fragment \(\mathcal{T}\) of \flang{}, and the comprehension demands
-that its guards and bodies be well typed in it. The cost-accounted calculus
-already supplies one candidate: funded runs are bounded, so a body wrapped as
-\verb|{% P %}[t]| with a finite budget terminates, and the depth of the budget
-bounds the work. The type system and the precharge of \S\ref{sec:precharge} are
-then the same discipline. Syntactic fragments --- no replication, no recursion
-through the space --- are another candidate, and cheaper to check.
+\paragraph{Termination comes from a typed source calculus.} Several type
+systems guarantee termination, and they are used the same way. Take a source
+calculus \(L\) whose well-typed terms are strongly normalising, together with
+two translations: of terms, \(M \mapsto \sem{M}\), into \flang{}; and of types,
+\(\tau \mapsto \varphi_\tau\), into spatial-behavioural formulae. The
+terminating fragment is the image of the well-typed terms,
+\[
+\mathcal{T}_L \;=\; \{\, \sem{M} \;:\; \vdash_L M : \tau \,\}.
+\]
+The division of labour is the point of the construction. The formula
+\(\varphi_\tau\) is the \emph{specification} of the fragment: it implies
+termination, which in a logic with least fixed points is \(\mu X.\,\Box X\).
+The type derivation in \(L\) is a \emph{decidable certificate} for it. Checking
+\(\mu X.\,\Box X\) directly against an arbitrary process is undecidable over a
+Turing-complete theory; checking a derivation is not.
 
-\paragraph{Uniqueness.} Termination is not enough. The commutativity of the
-aggregator makes the \emph{order} in which contributions arrive undetectable;
-it does not hide \emph{choices} made inside a body. A body with an internal race
-has several normal forms, and the published result is then nondeterministic in
-a way a consumer can observe. So \(\mathcal{T}\) must also guarantee unique
-normal forms. The development records uniqueness of normal forms on the funded
-fragment~\cite{f1r3nodeOTE}; since unrestricted \rhoc{} is not confluent, the
-hypotheses of that result must be checked against the bodies the fragment is
-meant to admit.
+\paragraph{First fragment: System F.} Well-typed terms of System
+F~\cite{GirardLafontTaylor89, Reynolds74} are strongly normalising, by Girard's
+reducibility candidates, and the calculus is Church--Rosser. System F is
+declared as a \texttt{Theory} in the DDL --- types as a sort, terms with type
+abstraction and application, and the two \(\beta\)-rules as rewrites --- and in
+the first tranche the guards and bodies of a \fe{} are terms of that theory.
+They are type-checked at compile time and compiled by \(\sem{-}\). Annotations
+are explicit, since type inference for System F is
+undecidable~\cite{Wells99}. Polymorphism is what makes the fragment worth
+having: one body can be generic in the element sort of the monad, and an
+aggregator's operation can be written once for every carrier it serves.
+\begin{lstlisting}
+foreach( i <- { 1, 3, 5, 7, 9 } where F( i > 4 ) ) yield( rslt ) by a.IntSum()
+  F( (/\a. \f:a->a. \x:a. f (f x)) [Int] (\n:Int. n * n) i )
+  ~>  rslt!( 9587 )                       // 5^4 + 7^4 + 9^4
+\end{lstlisting}
+The body applies a polymorphic \emph{twice} at \texttt{Int}; its normal form at
+each survivor is \(i^4\), and the aggregator sums them.
 
-\begin{obligation}[Terminating, deterministic fragment]
+\paragraph{Second fragment: Abramsky's proof expressions.} Well-typed proof
+expressions of Abramsky's computational interpretation of linear
+logic~\cite{Abramsky94} are terminating as well, and its descendants in the
+session-typed tradition are confluent and deadlock-free~\cite{CairesPfenning10,
+Wadler12}. Its types land in a different logic from System F's: the linear
+connectives are the connectives of the logic generated with quantales as the
+container of witnesses~\cite{F1R3Dev}. What it adds is \emph{internal
+communication}: a body may consist of processes that talk to one another on
+linear channels, and still terminate with a unique normal form --- concurrency
+inside a single contribution, not only between contributions. It is also the
+natural home of the linear bodies the quantum reading requires
+(\S\ref{sec:interactions}). The rho side of the translation is partly worked
+out already, since the repair of the \(\pi\)-into-\rhoc{} encoding realises half
+of Abramsky's construction~\cite{Namespaces}.
+
+\begin{obligation}[Faithful translation]
 \label{obl:fragment}
-Every term typed in \(\mathcal{T}\) has a normal form, reached in a number of
-steps bounded by its type, and any two normal forms are equal up to the
+For each source calculus \(L\) admitted as a fragment:
+\begin{enumerate}[nosep,label=(\roman*)]
+\item \emph{Divergence is reflected.} Every reduction of \(\sem{M}\) corresponds
+to zero or more reductions of \(M\), with finitely many administrative steps
+between them, so termination transfers. Lookahead helps: the correspondence is
+needed only for a closed term reduced by itself, never under an arbitrary
+context.
+\item \emph{Confluence transfers.} The translation fixes one reduction strategy,
+so the image of a confluent calculus has normal forms unique up to the
 equations of the theory.
+\item \emph{The formula map is sound.} \(\vdash_L M : \tau\) implies
+\(\sem{M} \models \varphi_\tau\), and \(\varphi_\tau\) implies
+\(\mu X.\,\Box X\).
+\item \emph{Ground values read back.} At base types the translation is the
+identity on \flang{}'s ground values, so a body typed \texttt{Int} normalises to
+an integer the aggregator can combine.
+\end{enumerate}
 \end{obligation}
+
+\noindent
+Part (iii) asks something of the generated logics: least fixed points, and,
+for System F, quantification over formulae to interpret \(\forall\), as
+reducibility candidates do. That is more than the spatial-behavioural logics of
+the working notes currently provide, and it is needed only for the
+\emph{statement} of the fragment; the first tranche rests on (i), (ii), (iv)
+and the source typing (Question~\ref{q:logic}).
+
+\paragraph{Typing guarantees termination, not a bound.} System F normalisation
+terminates, but its length is not bounded by any elementary function, and the
+same is true of linear logic with exponentials. Fragments with a precomputed
+cost bound exist --- the multiplicative fragment, light and soft linear logics
+--- and were set aside as too constrained to be interesting. So termination is
+the type system's responsibility and completion within budget is the
+deployer's. Lookahead is metered like everything else (\S\ref{sec:cost}); a
+comprehension that is not sufficiently funded does not complete, publishes
+nothing, and its deployer is notified. That is the whole policy.
 
 Lookahead is what makes bodies \emph{run} without making the comprehension
 wait on the world: a body cannot block on an outside writer, because during
@@ -1102,10 +1176,14 @@ sugar, and is private to the comprehension and its continuation.
 \paragraph{Why \fe{} has the right.} A process may appear on the left of
 \texttt{;} only if the continuation is guaranteed to be released. The
 synchronous send cannot offer that guarantee: it depends on a convention
-honoured by the receiver. \fe{} can. Its guards and bodies terminate by
-Obligation~\ref{obl:fragment}, its count reaches the measure, and so its
-publication is certain whenever it is funded. Termination is what earns the
-place on the left of \texttt{;}, and it is the type system that grants it.
+honoured by the receiver. \fe{} can. Its guards and bodies terminate because
+they are well typed in System F (later, in linear logic) and the translation
+reflects divergence (Obligation~\ref{obl:fragment}); its count reaches the
+measure; and so its publication is certain whenever it is funded. When it is
+not funded, nothing is published, \texttt{K} is not released, and the deployer
+is notified. Termination is what earns the place on the left of \texttt{;}, and
+it is the type system that grants it; funding decides only whether this run
+gets there.
 
 \paragraph{Chains.} Mixed chains need no further machinery. The chain
 \begin{lstlisting}
@@ -1197,30 +1275,33 @@ Because bodies run in isolation, the comprehension has no effects other than
 its publication, so on the outer lane it is all-or-nothing in the strongest
 sense.
 
-The inner lane is different. A body whose lookahead exhausts its \texttt{t}
-budget has no normal form within budget, so it never contributes, the count
-never reaches \(n\), and nothing is published. To consumers that is a
-non-event, but the outer tokens are spent. A funding proof that promises a
-result must therefore fund the inner lane in full, and the two-lane atomicity
-question --- reserve the inner depth for every candidate at entry, or let a
-failed lookahead burn what the outer gate drew --- is recorded as
-Question~\ref{q:inner}. Dependent groups reopen the outer question too, since
+The inner lane is different, and deliberately so. Typing guarantees that a
+body's lookahead terminates, but not within any particular budget. A body whose
+lookahead exhausts its \texttt{t} budget never contributes, the count never
+reaches \(n\), and nothing is published. The outer tokens are spent, nothing is
+reserved or refunded, and the deployer is notified: the node already records
+allocation denials in the deploy's budget trace, and an exhausted lookahead is
+one more such denial. To consumers the comprehension is a non-event. That is
+the policy, and it is sufficient: a comprehension that is not sufficiently
+funded does not complete. Dependent groups reopen the outer question, since
 their total is known only as the first group expands
 (Question~\ref{q:dependent}).
 
-\subsection{Precharge and linear funding proofs}
+\subsection{Precharge estimates}
 \label{sec:precharge}
 
 Per-binding charging moves the variability of \fe{}'s cost out of the semantics
-and into estimation. A linear funding proof must show that every gate a deploy
-will meet is funded, so for a \fe{} it needs an upper bound on \(\meas(m)\).
+and into estimation. No static guarantee of completion is required, since an
+underfunded comprehension simply does not complete. What an estimate buys is
+the deployer's ability to fund correctly the first time, and on the outer lane
+it can be exact once \(\meas(m)\) is bounded.
 
 \begin{remark}[Two uses of ``precharge'']
 In the node, \emph{precharge} also names the escrow mechanism --- precharge,
 run, refund --- that the cost-accounting work removed in favour of
 gate-funded execution. That mechanism is not being reintroduced. Here
-\emph{precharge} means the bound that a static funding proof assumes, and
-nothing is escrowed: the \(n\)-ary gate takes exactly what it needs when it
+\emph{precharge} means the estimate a deployer funds against, and nothing is
+escrowed: the \(n\)-ary gate takes exactly what it needs when it
 fires.
 \end{remark}
 
@@ -1234,8 +1315,11 @@ budget of depth \(d_t\),
 \]
 counting one token per binding, one per combination plus its operation, and
 one for the publication. For dependent groups, \(n\) is
-\(\meas(m) + \sum_x \meas(n(x))\). A \fe{} nested inside a body is funded from
-the inner lane and contributes its own bound to \(d_t\).
+\(\meas(m) + \sum_x \meas(n(x))\). The outer figure is exact given \(n\) and
+\(c_\oplus\). The inner figure is not derived from anything: \(d_t\) is the
+budget the deployer chooses to give each body, since System F typing supplies
+no bound to derive it from. A \fe{} nested inside a body is funded from the
+inner lane and draws on that same \(d_t\).
 
 \paragraph{Where bounds come from.} In decreasing order of precision:
 \begin{enumerate}[nosep]
@@ -1250,32 +1334,30 @@ for( @m <- ch where m.size() <= 64 ) {
 }
 \end{lstlisting}
 Here the \texttt{where} clause does double duty: it is the developer's filter,
-and it is the premise the estimator reads to discharge the precharge
-obligation. The honest default is to require such a guard, or a declared bound,
-before a \fe{} over received data may appear in a deploy that must be proven
-funded.
+and it is the premise the estimator reads to produce an exact outer figure. A
+deployer who wants that figure before running writes such a guard.
 \item \emph{At the gate.} The exact measure is available when the outer gate
-opens, and the \(n\)-ary gate uses it. This complements the static proof rather
-than replacing it: admission still needs the bound.
+opens, and the \(n\)-ary gate uses it. That makes the gate exact, but tells the
+deployer nothing in advance.
 \end{enumerate}
 
 \paragraph{Two admissibility classes.} A monad whose \(\mathsf{toBag}\) is not
 finite on its instances --- lazy streams, say --- cannot be measured, and so can
 never be precharged, and its comprehension can never complete. Since the
 completion condition of \S\ref{sec:refsem} is the measure, such monads are not
-merely unprovable but unusable with \fe{}; the elaborator reports
-\texttt{[monad-unmeasured]}. Among finite monads the split is between instances
-with a bound available to the funding proof, which are
-\emph{precharge-admissible}, and the rest, which run only under a gate that
-happens to be funded.
+merely hard to estimate but unusable with \fe{}; the elaborator reports
+\texttt{[monad-unmeasured]}. Among finite monads, an instance with a known bound
+gives the deployer an exact outer estimate, and any other instance is decided at
+the gate.
 
 \paragraph{Lanes.} The \texttt{s} and \texttt{t} gates draw on different
 per-signature purses, so the proof splits by signature, and the node's disjoint
-per-signature lane pools already enforce the split. If \texttt{t} may mention
+per-signature lane pools already enforce the split; so does the
+notification, which names the lane that ran dry. If \texttt{t} may mention
 variables bound by the pattern --- \verb|{% P %}[#x]| --- then each element pays
 for its own processing, which is useful when the elements of a collection come
-from different signers; the inner lanes then become data-dependent, and the
-proof must quantify over the elements' signatures rather than over a fixed lane
+from different signers; the inner lanes then become data-dependent, and an
+estimate must range over the elements' signatures rather than over a fixed lane
 (Question~\ref{q:hash}).
 
 %=============================================================================
@@ -1399,7 +1481,8 @@ representation directly, and public activation is off~\cite{f1r3nodeOTE}. The
 work this note adds lands in four places: the elaborator (the \texttt{Monads}
 builder, \texttt{toBag}, its obligations, and the origin check on aggregator
 instances with its diagnostics); the type checker (source sorts, the carrier of
-the aggregator, membership in \(\mathcal{T}\)); the reducer (the native node,
+the aggregator, System F typing of guards and bodies) and the translation
+\(\sem{-}\) that compiles them; the reducer (the native node,
 lookahead in isolation, and the charge); and the funding analysis (the demand
 rule).
 
@@ -1467,8 +1550,9 @@ and Kleisli composition in the vector-space monad is matrix multiplication ---
 which is why the rho--linear-algebra correspondence and the comprehension meet.
 But a body that uses its bound variable twice is not linear, and the quantum
 reading of graded \texttt{where} clauses is restricted to the linear fragment of
-\rhoc{}. The linearity check of that fragment applies to \fe{} bodies unchanged,
-and it is a further restriction on \(\mathcal{T}\) for this reading.
+\rhoc{}. The linearity check of that fragment applies to \fe{} bodies unchanged.
+The second terminating fragment, Abramsky's proof expressions, is linear by
+construction, so it is the natural home for bodies under this reading.
 
 \subsection{Summary}
 
@@ -1891,9 +1975,11 @@ the three built-in collections, each with \texttt{toBag}, with
 \texttt{ordered} on \texttt{Seq} and \texttt{commutative} on the other two.
 \item \fe{} with \texttt{<-}, \texttt{;} between groups, \texttt{\&} within
 them, crisp \texttt{where}, and \texttt{yield( rslt )}.
-\item Lookahead for guards and bodies, with the terminating fragment
-\(\mathcal{T}\) given by funding: a body is admitted when it is wrapped in a
-finite inner budget.
+\item Lookahead for guards and bodies, with the terminating fragment given by
+System F: a System F theory declared in the DDL, guards and bodies written as its
+terms with explicit annotations, type-checked at compile time and translated by
+\(\sem{-}\). An underfunded comprehension does not complete, and the deployer
+is notified through the budget trace.
 \item Stage~1 aggregation: \texttt{by} a theory instance descending from
 \texttt{CommutativeMonoid}, checked by origin, defaulting to
 \texttt{ParMonoid}; the diagnostics \texttt{[aggregator-not-commutative]} and
@@ -1909,7 +1995,10 @@ aggregator obligations recorded, and discharged for the prelude monads and for
 \end{enumerate}
 
 \noindent
-Deferred: sort parameters and user-declared monads (Step~2), with the
+Next: the second terminating fragment, Abramsky's proof expressions.
+Deferred: checking hand-written \flang{} bodies directly against
+\(\varphi_\tau\) with a type system generated by the Hypercube construction;
+sort parameters and user-declared monads (Step~2), with the
 parametric \rhoc{} calculus of \S\ref{sec:rho} as their acceptance example;
 syntax monads declared by substitution; composition through distributive laws;
 aggregation Stages~2--4; graded \texttt{where} in \fe{}; the lax modality.
@@ -1918,28 +2007,20 @@ aggregation Stages~2--4; graded \texttt{where} in \fe{}; the lax modality.
 \section{Open questions}
 \label{sec:questions}
 
-\begin{question}[The terminating fragment]
-\label{q:fragment}
-Is funding the right definition of \(\mathcal{T}\) for the first tranche, or
-should a cheaper syntactic fragment be admitted alongside it? And does the
-recorded uniqueness of normal forms on the funded fragment cover the bodies
-developers will write, or must \(\mathcal{T}\) exclude internal races
-explicitly?
+\begin{question}[The logic of the fragment]
+\label{q:logic}
+Part (iii) of Obligation~\ref{obl:fragment} needs least fixed points in the
+generated logics, and for System F quantification over formulae. Should the
+generated logics acquire both, so that the fragment can be stated in them and,
+eventually, hand-written bodies checked against it; or should \(\varphi_\tau\)
+target a fixed family of formulae and stay first order?
 \end{question}
 
-\begin{question}[Nondeterministic bodies]
-Should a body outside the deterministic fragment be admitted with its result
-declared nondeterministic, or refused? Admitting it keeps \fe{} total over
-\(\mathcal{T}\)'s terminating part; refusing it keeps every published result a
-function of the source.
-\end{question}
-
-\begin{question}[The inner lane]
-\label{q:inner}
-When a body's lookahead exhausts its budget, nothing is published and the outer
-tokens are spent. Should the inner budget for every candidate be reserved
-atomically at entry, alongside the outer gate, or is the burn acceptable given
-that the funding proof must cover the inner lane anyway?
+\begin{question}[Element sorts in System F]
+A body's pattern variables have the monad's element sort, and that sort must be
+the translation of a System F type. Should a theory's sorts be imported into the
+System F theory as base types, or represented by Church encodings, which System
+F supports but which change what the body sees?
 \end{question}
 
 \begin{question}[Dependent groups]
@@ -1954,7 +2035,7 @@ upper bound be taken at entry, accepting overpayment when the bound is loose?
 \label{q:hash}
 May the inner signature mention variables bound by the pattern,
 \verb|{% P %}[#x]|? It lets data pay for its own processing, at the price of
-data-dependent lanes in the funding proof.
+data-dependent lanes in the deployer's estimate.
 \end{question}
 
 \begin{question}[Semilattice in the tower]
@@ -1990,10 +2071,20 @@ as proposed, or should the qualifier always be required for readability?
 
 \begin{thebibliography}{99}\small\raggedright
 
+\bibitem{Abramsky94}
+S.~Abramsky.
+\newblock Proofs as processes.
+\newblock \emph{Theoretical Computer Science}, 135(1):5--9, 1994.
+
 \bibitem{BentonBiermanDePaiva98}
 P.~N.~Benton, G.~M.~Bierman, and V.~C.~V.~de~Paiva.
 \newblock Computational types from a logical perspective.
 \newblock \emph{Journal of Functional Programming}, 8(2):177--193, 1998.
+
+\bibitem{CairesPfenning10}
+L.~Caires and F.~Pfenning.
+\newblock Session types as intuitionistic linear propositions.
+\newblock In \emph{CONCUR 2010}, LNCS 6269, pages 222--236, 2010.
 
 \bibitem{DeanGhemawat04}
 J.~Dean and S.~Ghemawat.
@@ -2030,6 +2121,12 @@ M.~Fiore, G.~Plotkin, and D.~Turi.
 \newblock In \emph{Proceedings of the 14th IEEE Symposium on Logic in Computer
 Science (LICS)}, pages 193--202, 1999.
 
+\bibitem{GirardLafontTaylor89}
+J.-Y.~Girard, Y.~Lafont, and P.~Taylor.
+\newblock \emph{Proofs and Types}.
+\newblock Cambridge Tracts in Theoretical Computer Science 7. Cambridge
+University Press, 1989.
+
 \bibitem{Kock70}
 A.~Kock.
 \newblock Monads on symmetric monoidal closed categories.
@@ -2046,6 +2143,11 @@ E.~Moggi.
 \newblock Notions of computation and monads.
 \newblock \emph{Information and Computation}, 93(1):55--92, 1991.
 
+\bibitem{Reynolds74}
+J.~C.~Reynolds.
+\newblock Towards a theory of type structure.
+\newblock In \emph{Programming Symposium}, LNCS 19, pages 408--425, 1974.
+
 \bibitem{Wadler87}
 P.~Wadler.
 \newblock List comprehensions.
@@ -2057,6 +2159,18 @@ P.~Wadler.
 \newblock Comprehending monads.
 \newblock \emph{Mathematical Structures in Computer Science}, 2(4):461--493,
 1992.
+
+\bibitem{Wadler12}
+P.~Wadler.
+\newblock Propositions as sessions.
+\newblock In \emph{Proceedings of the 17th ACM SIGPLAN International Conference
+on Functional Programming (ICFP)}, pages 273--286, 2012.
+
+\bibitem{Wells99}
+J.~B.~Wells.
+\newblock Typability and type checking in System F are equivalent and
+undecidable.
+\newblock \emph{Annals of Pure and Applied Logic}, 98(1--3):111--156, 1999.
 
 \bigskip
 \noindent\textbf{F1R3FLY.io working notes.} Each lives in the F1R3FLY.io
@@ -2101,6 +2215,12 @@ L.~G.~Meredith.
 \newblock Two erasures and two laxities: internalising the cost and history
 monads over continued interactive GSLTs.
 \newblock F1R3FLY.io working note, 2026. \texttt{history-and-cost/}.
+
+\bibitem{Namespaces}
+L.~G.~Meredith.
+\newblock Namespaces without a name server: freshness by communication, and a
+fully abstract encoding of the \(\pi\)-calculus in the rho calculus.
+\newblock F1R3FLY.io working note, 2026. \texttt{pi2rhobugfix/}.
 
 \bibitem{Oriented}
 L.~G.~Meredith.
