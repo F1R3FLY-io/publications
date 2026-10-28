@@ -1,0 +1,1294 @@
+% =====================================================================
+%  Laboratories for Universal Negatives --- draft 1
+%  L. G. Meredith, F1R3FLY.io
+% =====================================================================
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[margin=1.1in]{geometry}
+\usepackage{mathrsfs}
+\usepackage{enumitem}
+\setlist[itemize]{label=$\bullet$}
+\usepackage{booktabs}
+\usepackage[expansion=false]{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{construction}[definition]{Construction}
+\newtheorem{notation}[definition]{Notation}
+\newtheorem{hypothesis}[definition]{Hypothesis}
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{corollary}[definition]{Corollary}
+\newtheorem{conjecture}[definition]{Conjecture}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{example}[definition]{Example}
+
+% --- rho notation, as in "Namespaces Without a Name Server" ---
+\newcommand{\rhoc}{\mathrm{rho}}
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{*}#1}
+\newcommand{\dr}[1]{\overline{#1}}
+\newcommand{\inp}[3]{\mathsf{for}(\,#1 \leftarrow #2\,)#3}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\enc}[1]{[\![#1]\!]}
+\newcommand{\nequiv}{\equiv_{\mathcal{N}}}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\Ctx}{\mathcal{C}}
+\newcommand{\Obs}{\mathcal{D}}
+\newcommand{\bisim}{\approx}
+\newcommand{\sbisim}{\sim}
+\newcommand{\treq}{\equiv_{\mathrm{tr}}}
+\newcommand{\fn}{\mathrm{fn}}
+\newcommand{\wild}{\mathord{\underline{\hspace{0.5em}}}}
+\DeclareRobustCommand{\S}{\ifmmode\mathsection\else$\mathsection$\fi}
+\newcommand{\hole}{[\,\cdot\,]}
+\newcommand{\ok}{\mathsf{ok}}
+\newcommand{\go}{\mathsf{go}}
+\newcommand{\lk}{\mathsf{l}}
+\newcommand{\Lab}[1]{\xrightarrow{\,#1\,}}
+\newcommand{\WLab}[1]{\overset{#1}{\Longrightarrow}}
+\newcommand{\act}{\mathbin{\star}}
+\newcommand{\cmp}{\mathbin{\circ}}
+\newcommand{\Dup}{\mathsf{D}}
+\newcommand{\ABS}{\textup{\textsc{Absence}}}
+\newcommand{\TREQ}{\textup{\textsc{TraceEq}}}
+\newcommand{\Pclass}{\mathbf{P}}
+\newcommand{\NPclass}{\mathbf{NP}}
+\newcommand{\coNP}{\mathbf{coNP}}
+\newcommand{\cost}{\mathrm{cost}}
+\newcommand{\Reg}{\mathcal{R}}
+
+\title{\textbf{Laboratories for Universal Negatives}\\[4pt]
+\large $\Pclass$ versus $\NPclass$ as the existence of an experimental regime,\\
+in the rho calculus with context-labelled bisimilarity}
+\author{L.\,G.\ Meredith\\[2pt] \normalsize F1R3FLY.io\quad \texttt{lgreg.meredith@f1r3fly.io}}
+\date{October 2026 --- draft 1}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We recast the separation of $\Pclass$ from $\NPclass$, if there is one,
+as a statement about which experiments a process can perform on another
+process. The setting is the rho calculus with context-labelled
+transitions: a label is a context, and an observer class is a set of
+contexts. Three steps. First, on bounded processes bisimilarity is
+polynomial and trace equivalence is $\coNP$-complete, and $\Pclass =
+\NPclass$ holds exactly when a polynomial-time normaliser turns trace
+equivalence into bisimilarity; a faithful normaliser whose output is
+determinate provably does not exist. Second, internalising the normaliser as a rho
+process $\enc{\Phi}(x)$ that receives its input as code on $x$ shows that
+everything it can do with that code is interaction: the context
+$\enc{\Phi}(x) \mid \out{x}{\hole}$ places its hole under a lift, where
+communication depends on name equality, and the only uses of a received
+name are as a channel and under a drop. What distinguishes code from a
+live process is that code supports repeated experiments. Third, we
+sharpen the graded interaction of fuzzy rho into an apparatus for
+\emph{controlled} experiments --- stamping for isolation and attribution,
+positional interventions, a unit-grade control, pooled readout --- and
+define an experimental regime as an access discipline, an intervention
+language, a readout and a cost model. The result is a classification.
+Black-box regimes are provably unable to certify that a bounded process
+cannot succeed: an adversary argument costs them $2^d$ intervened copies
+on inputs of size $O(d \log d)$. Under two stated cost hypotheses, $\Pclass = \NPclass$ if
+and only if some admissible regime certifies such universal negatives at
+polynomial cost. The black-box separation is an in-calculus analog of
+an oracle separation, so what remains of $\Pclass \neq \NPclass$ in this
+language is entirely a statement about white-box access.
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}\label{sec:intro}
+% =====================================================================
+
+This note began as a discussion of whether $\Pclass \neq \NPclass$ could
+be independent of ZFC, and of whether forcing could be adapted to show it.
+The obstruction to the second question is well understood. The statement
+$\Pclass \neq \NPclass$ is arithmetical ($\Pi^0_2$). Forcing adds no
+new natural numbers, so arithmetical statements are absolute between a
+model and its forcing extensions, and no set-theoretic forcing changes
+the truth value of $\Pclass \neq \NPclass$. (Shoenfield's theorem
+\cite{Shoenfield61} carries absoluteness much further, to $\Sigma^1_2$.)
+Forcing survives only in its model-theoretic form, over nonstandard
+models of weak arithmetic \cite{Krajicek11}. Related unprovability
+results for circuit lower bounds in bounded arithmetic are obtained by
+natural-proofs arguments rather than by forcing \cite{Razborov95}.
+Independence from strong theories would also be close to a positive
+answer. Ben-David and Halevi \cite{BenDavidHalevi92} show that if
+$\Pclass \neq \NPclass$ is independent of PA augmented with all true
+$\Pi_1$ sentences --- a strong, non-recursively-enumerable theory ---
+then $\NPclass$ has almost-polynomial algorithms. See \cite{Aaronson03}
+for a survey.
+
+Rather than pursue independence directly, we ask what shape the
+obstruction takes when the question is posed in a calculus whose native
+notion of equivalence is behavioural. The answer turns out to be
+operational: it is a question about laboratories.
+
+\subsection*{The idea, in four lines}
+
+\begin{enumerate}[label=(\arabic*),leftmargin=2.2em]
+\item Branching time is cheap and linear time is not: on bounded
+processes, bisimilarity is decidable in polynomial time and trace
+equivalence is $\coNP$-complete (\S\ref{sec:bounded}).
+
+\item $\Pclass = \NPclass$ if and only if a polynomial-time normaliser
+sends trace equivalence to bisimilarity (\S\ref{sec:normaliser}).
+
+\item Internalise the normaliser as a rho process $\enc{\Phi}(x)$
+receiving its input as code on $x$. Everything it does with that code is
+an experiment, and code differs from a live process in admitting repeated
+experiments (\S\ref{sec:internal}--\S\ref{sec:tiers}).
+
+\item $\Pclass \neq \NPclass$ if and only if no admissible experimental
+regime lets $\enc{\Phi}(x)$ certify a universal negative at polynomial
+cost. Black-box regimes provably cannot; white-box regimes are exactly as
+hard as $\Pclass$ versus $\NPclass$ (\S\ref{sec:experiments}--\S\ref{sec:regimes}).
+\end{enumerate}
+
+\subsection*{Contributions}
+
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em]
+\item A bisimulation-native statement of $\Pclass$ versus $\NPclass$
+(Theorem~\ref{thm:normaliser}), with an unconditional lower bound for
+faithful determinate normalisers (Proposition~\ref{prop:determinate}).
+
+\item The observation that a reflective normaliser is a context whose hole
+lies under a lift, and that in such a context every operation on the
+input is an interaction (Lemma~\ref{lem:uses}); the access tiers that
+follow are distinguished by the structural rules they permit
+(\S\ref{sec:tiers}).
+
+\item An apparatus for controlled experiments built from the graded
+interaction of fuzzy rho \cite{FuzzyRho}, with the two conditions ---
+inert signatures and equivariance --- under which a stamped copy is a
+faithful copy, and a counterexample showing that flat stamping is not
+equivariant (Example~\ref{ex:nonequivariant}).
+
+\item A definition of experimental regime, an exponential lower bound for
+black-box regimes that is unconditional in the number of experiments
+(Theorem~\ref{thm:blackbox}), and a
+characterisation of $\Pclass = \NPclass$ by the existence of an
+admissible regime (Theorem~\ref{thm:whitebox}), relative to two stated
+cost hypotheses.
+
+\item A heuristic map from the known barriers to features of the
+apparatus (\S\ref{sec:barriers}).
+\end{enumerate}
+
+\noindent Appendix~\ref{app:status} records the status of each result.
+Several are proved; some are proved relative to stated hypotheses; some
+are sketched; some are conjectures, and are labelled as such. Nothing
+here claims progress on $\Pclass$ versus $\NPclass$ itself. The
+contribution is a reformulation whose parts are the parts of a
+laboratory, together with the place in that laboratory where the known
+barriers sit.
+
+% =====================================================================
+\section{The rho calculus and context-labelled bisimilarity}\label{sec:rho}
+% =====================================================================
+
+\begin{definition}[Syntax]
+Processes $P$ and names $x$ are given by mutual recursion:
+\[
+P \ ::=\ \nil \ \mid\ P_1 \mid P_2 \ \mid\ \out{x}{P}
+   \ \mid\ \mathsf{for}(y_1 \leftarrow x_1 \,\&\, \cdots \,\&\, y_n \leftarrow x_n)P
+   \ \mid\ \drp{x}
+\qquad\qquad
+x \ ::=\ \quo{P}
+\]
+$\out{x}{P}$ is the \emph{lift}: it quotes $P$ and outputs the name
+$\quo{P}$ on $x$. The input binds $y_1,\dots,y_n$ in $P$; for $n = 1$ we
+write $\inp{y}{x}{P}$, and for $n > 1$ it is a \emph{join}. $\drp{x}$ is
+the \emph{drop}. We write $\wild$ for a bound name that does not occur.
+A process is \emph{closed} if no variable bound by an input occurs free in
+it; every quoted name in a closed process is then a constant.
+\end{definition}
+
+This is the calculus of \cite{MeredithRadestock05} with joins, in the
+notation of \cite{NWNS}. A name is in \emph{normal form} if no quote in it
+immediately encloses a drop. Rewriting $\quo{(\drp{x})}$ to $x$
+throughout gives a normal form $\nequiv$-equal to any given name. Name
+equivalence is decidable in polynomial time, being equality of unordered
+trees after normalisation.
+
+\begin{definition}[Name equivalence, structural congruence, reduction]
+As in \cite{NWNS}: $\nequiv$ is the least equivalence on names with
+$\quo{P_1} \nequiv \quo{P_2}$ whenever $P_1 \equiv P_2$, and
+$\quo{(\drp{x_1})} \nequiv x_2$ whenever $x_1 \nequiv x_2$; $\equiv$ is
+the least congruence containing $\alpha$-equivalence and the abelian
+monoid laws for $\mid$ with unit $\nil$, names being compared up to
+$\nequiv$. Reduction is
+\[
+\frac{x_i \nequiv x_i' \quad (1 \le i \le n)}
+     {\mathsf{for}(y_1 \leftarrow x_1 \,\&\, \cdots \,\&\, y_n \leftarrow x_n)P
+      \ \mid\ \out{x_1'}{Q_1} \mid \cdots \mid \out{x_n'}{Q_n}
+      \ \to\ P\{\quo{Q_1}/y_1, \dots, \quo{Q_n}/y_n\}}
+\]
+closed under $\mid$ and $\equiv$. Substitution replaces all names
+$\nequiv$-equal to the variable, reaches the object of a lift, does not
+reach beneath a quote, and performs the drop:
+$(\drp{x})\{\quo{P}/y\} = P$ when $x \nequiv y$.
+\end{definition}
+
+The duplicator $\Dup(x) \triangleq \inp{y}{x}{(\drp{y} \mid
+\out{x}{\drp{y}})}$ satisfies $\out{x}{Q} \mid \Dup(x) \to Q \mid
+\out{x}{Q}$; it is the source of contraction on names.
+
+\subsection{Context-labelled transitions}
+
+We do not use barbs. Following \cite{NWNS}, observation is by contexts.
+
+\begin{definition}[Context-labelled transitions and bisimilarity]
+\label{def:clbisim}
+Write $P \Lab{C} P'$ when $C[P] \to P'$, and $P \WLab{C} P'$ when $C[P]
+\to^* P'$. For an \emph{observer class} $\Obs \subseteq \Ctx$, a symmetric
+relation $\mathcal{R}$ is a $\Obs$-bisimulation if $P \mathrel{\mathcal{R}}
+Q$ and $P \Lab{C} P'$ with $C \in \Obs$ imply $Q \WLab{C} Q'$ with $P'
+\mathrel{\mathcal{R}} Q'$; $\bisim_\Obs$ is the largest such.
+\end{definition}
+
+\begin{definition}[Traces]
+An $\Obs$-trace of $P$ is a sequence $C_1 \cdots C_k$ of contexts in
+$\Obs$ with $P \WLab{C_1} P_1 \WLab{C_2} \cdots \WLab{C_k} P_k$. $P
+\treq^\Obs Q$ when $P$ and $Q$ have the same $\Obs$-traces. Plainly
+$\bisim_\Obs \;\subseteq\; \treq^\Obs$.
+\end{definition}
+
+\begin{definition}[Success]\label{def:success}
+Fix a name $\ok$ and let $C_\ok = \hole \mid \inp{\wild}{\ok}{\nil}$.
+$P$ \emph{can succeed} if $P \WLab{\hole} P' \Lab{C_\ok} P''$ for some
+$P', P''$ in which the displayed step consumes an output on $\ok$.
+\end{definition}
+
+Success is thus a context-labelled transition, not a barb. The whole of
+this note is about the choice of $\Obs$: an experimental regime will be,
+among other things, an observer class.
+
+\begin{remark}[Holes under a lift]\label{rem:bihol}
+The companion paper \cite{BIHOL} shows that in rho, context-labelled
+bisimilarity is a congruence for parallel composition, lift, input and
+drop-of-a-quote when observations are suitably restricted, and fails to
+be one for contexts with the hole under a quote, because communication
+depends on name equality rather than on bisimilarity. The contexts that
+matter in \S\ref{sec:internal} are exactly of that kind.
+\end{remark}
+
+\subsection{Cost}
+
+Cost-accounted rho charges phlogiston for communication. We need only two
+properties of the charge, stated as hypotheses because they are
+properties of a cost model, not of the calculus.
+
+\begin{hypothesis}[Simulation]\label{hyp:sim}
+There is a polynomial $q$ such that, for every deterministic Turing
+machine $M$, there is a rho process $R_M(x)$ which, given an input word
+$w$ as data on $x$, runs determinately to a representation of $M(w)$ at
+phlogiston at most $q(t_M(w) + |w|)$, where $t_M(w)$ is the running time.
+\end{hypothesis}
+
+\begin{hypothesis}[Accounting]\label{hyp:acct}
+Each communication --- including the graded communications of
+\S\ref{sec:experiments} and the probe interactions of
+\S\ref{sec:tiers} --- is charged at least $1$ plus the total size of the
+transmitted terms. Consequently a run of phlogiston $c$ from a term of
+size $n$ can be simulated by a deterministic Turing machine in time
+polynomial in $c + n$.
+\end{hypothesis}
+
+Hypothesis~\ref{hyp:acct} excludes the size explosion that free
+duplication would otherwise allow: a process that repeatedly receives $Q$
+and sends $Q \mid Q$ pays for every copy it makes.
+
+% =====================================================================
+\section{Bounded processes}\label{sec:bounded}
+% =====================================================================
+
+Two presentations of bounded behaviour are needed: an explicit one, on
+which the bisimulation analog is stated, and a succinct one, on which
+experiments are performed. They are polynomially inter-reducible through
+$\coNP$-completeness.
+
+\subsection{Explicit presentation}
+
+\begin{definition}
+An \emph{explicit bounded process} is a finite acyclic labelled
+transition system $G = (S, \Sigma, \to, s_0)$, given as a list of
+transitions; $|G|$ is the length of that list. $G$ is \emph{determinate}
+if every state has at most one $a$-successor for each $a \in \Sigma$.
+$\sbisim$ is strong bisimilarity and $\treq$ trace equivalence.
+\end{definition}
+
+\begin{construction}[Encoding]\label{con:encoding}
+Fix pairwise distinct closed names $\go_s, \lk_s$ for $s \in S$ and $a$
+for $a \in \Sigma$, chosen injectively (for instance by quoting numerals).
+Put
+\[
+\begin{aligned}
+\mathcal{E}(s) &\;=\; \out{\lk_s}{\nil}
+  \ \mid\ \prod_{(s,a,t) \in \to}
+     \mathsf{for}(\wild \leftarrow a \,\&\, \wild \leftarrow \lk_s)\,
+     \out{\go_t}{\nil},\\
+\mathcal{E}(G) &\;=\; \out{\go_{s_0}}{\nil}
+  \ \mid\ \prod_{s \in S} \inp{\wild}{\go_s}{\mathcal{E}(s)}.
+\end{aligned}
+\]
+The lock $\lk_s$ lets exactly one outgoing transition of $s$ fire; a
+state shared by several paths is encoded once and triggered at most once
+per run, because $G$ is acyclic. $|\mathcal{E}(G)| = O(|G|)$. The
+observer class is $\Obs_\Sigma = \{\, \hole \mid \out{a}{\nil} : a \in
+\Sigma \,\}$.
+\end{construction}
+
+Communications on $\go$-names are \emph{administrative}; a join
+consuming an offered $\out{a}{\nil}$ is \emph{principal}, in the sense of
+the phase separation of \cite{NWNS}. Administrative reductions are
+deterministic (each $\go_t$ has one listener) and terminate. A losing
+branch of $s$ is left as a join on $\lk_s$, which is never sent again
+and which no context in $\Obs_\Sigma$ can name, so it is inert.
+
+\begin{proposition}[Adequacy of the encoding]\label{prop:adequacy}
+Taking transitions to be principal steps followed by administrative
+normalisation, $s \sbisim t$ iff $\mathcal{E}(s) \bisim_{\Obs_\Sigma}
+\mathcal{E}(t)$, and $s \treq t$ iff $\mathcal{E}(s)
+\treq^{\Obs_\Sigma} \mathcal{E}(t)$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+After administrative normalisation, a term reachable from
+$\mathcal{E}(G)$ is $\mathcal{E}(s) \mid R$ with $R$ a parallel
+composition of inert joins and spent triggers. A principal step on
+$\out{a}{\nil}$ is available from it exactly when $s \Lab{a} t$ for some
+$t$, and leads, after normalisation, to $\mathcal{E}(t) \mid R'$. The
+residue $R$ contributes no $\Obs_\Sigma$-transitions. Both equivalences
+then transfer along the correspondence.
+\end{proof}
+
+\begin{remark}
+The restriction to $\Obs_\Sigma$ matters. An arbitrary rho context can
+name $\lk_s$, since it is computed by the encoding, and so revive a
+losing branch, much as an arbitrary context separates encodings in the
+necessity result of \cite{NWNS}. Reviving a branch uses knowledge of the
+term, which is a white-box operation in the sense of \S\ref{sec:tiers}.
+\end{remark}
+
+\begin{theorem}[Known complexity]\label{thm:known}
+On explicit bounded processes:
+\begin{enumerate}[label=(\alph*),leftmargin=2.2em,nosep]
+\item $\sbisim$ is decidable in polynomial time \cite{PaigeTarjan87};
+on finite transition systems in general it is $\Pclass$-complete
+\cite{BGS92};
+\item $\treq$ is $\coNP$-complete.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Proof of (b), sketch]
+Inequivalence is in $\NPclass$: guess a trace, of length at most the
+depth, present in one system and absent from the other; membership of a
+given trace is decided by tracking the set of reachable states.
+Hardness: equivalence of regular expressions without star is
+$\coNP$-hard \cite{StockmeyerMeyer73}; such an expression converts in
+polynomial time to an acyclic automaton, and marking acceptance by a
+final $\ok$-transition and trimming states that cannot reach acceptance
+turns language equivalence into trace equivalence.
+\end{proof}
+
+\subsection{Succinct presentation}
+
+\begin{definition}\label{def:flat}
+A process is \emph{flat} if it is closed, contains no drop (not even beneath a quote), and no bound
+name occurs in subject position. In a flat process each communication consumes an input
+prefix not under a lift, and none is created, since no transmitted term is
+ever run. So every run of a flat $P$ has length at most $|P|$. Let
+$\ABS$ be the problem: given a flat $P$, decide that $P$ \emph{cannot}
+succeed.
+\end{definition}
+
+\begin{proposition}\label{prop:abscomplete}
+$\ABS$ is $\coNP$-complete.
+\end{proposition}
+
+\begin{proof}
+It is in $\coNP$, since a successful run has length at most $|P|$ and is a
+certificate of success, checkable in polynomial time because name
+equivalence is. For hardness, reduce from CNF unsatisfiability.
+Given variables $v_1, \dots, v_d$ and clauses $c_1, \dots, c_m$, fix
+pairwise distinct closed names $b_i, t_{ij}, f_{ij}, e_j, \ok$, and let
+\[
+\mathit{Race}_i \;=\; \out{b_i}{\nil}
+  \ \mid\ \inp{\wild}{b_i}{\textstyle\prod_{j : v_i \in c_j} \out{t_{ij}}{\nil}}
+  \ \mid\ \inp{\wild}{b_i}{\textstyle\prod_{j : \neg v_i \in c_j} \out{f_{ij}}{\nil}},
+\]
+let $\mathit{Clause}_j$ be the parallel composition of
+$\inp{\wild}{t_{ij}}{\out{e_j}{\nil}}$ for each positive occurrence of
+$v_i$ in $c_j$ and $\inp{\wild}{f_{ij}}{\out{e_j}{\nil}}$ for each
+negative one, and put
+\[
+P_\varphi \;=\; \prod_i \mathit{Race}_i \ \mid\ \prod_j \mathit{Clause}_j
+  \ \mid\ \mathsf{for}(\wild \leftarrow e_1 \,\&\, \cdots \,\&\,
+  \wild \leftarrow e_m)\, \out{\ok}{\nil}.
+\]
+Each race is won by exactly one listener, which fixes a truth value for
+$v_i$; a clause signals $e_j$ only if one of its literals was made true;
+the final join fires only if every clause signalled. A satisfying
+assignment yields a successful schedule and conversely, so $P_\varphi$
+can succeed iff $\varphi$ is satisfiable. $P_\varphi$ is flat and of size
+polynomial in $\varphi$.
+\end{proof}
+
+The races are where scheduling nondeterminism lives. A \emph{resolution}
+of a flat process assigns a winner to each race. The point of
+\S\ref{sec:experiments} is to make resolutions the experimenter's choice
+rather than the scheduler's.
+
+% =====================================================================
+\section{Normalisers}\label{sec:normaliser}
+% =====================================================================
+
+\begin{definition}\label{def:normaliser}
+A \emph{normaliser} is a polynomial-time map $\Phi$ on explicit bounded
+processes such that for all $G, H$
+\[
+G \treq H \quad\Longleftrightarrow\quad \Phi(G) \sbisim \Phi(H).
+\]
+It is \emph{faithful} if moreover $\Phi(G) \treq G$, and \emph{determinate}
+if every $\Phi(G)$ is determinate.
+\end{definition}
+
+\begin{theorem}\label{thm:normaliser}
+$\Pclass = \NPclass$ if and only if a normaliser exists, and then a
+faithful one exists.
+\end{theorem}
+
+\begin{proof}
+($\Leftarrow$) Given $\Phi$, decide $G \treq H$ by computing $\Phi(G)$ and
+$\Phi(H)$ and testing $\sbisim$ (Theorem~\ref{thm:known}(a)). This puts a
+$\coNP$-complete problem in $\Pclass$, so $\coNP = \Pclass$ and hence
+$\NPclass = \Pclass$.
+
+($\Rightarrow$) If $\Pclass = \NPclass$ the polynomial hierarchy collapses
+to $\Pclass$. Let $m(G)$ be the least size of an explicit process
+trace-equivalent to $G$, and let $\Phi(G)$ be the lexicographically least
+explicit process $G'$, encoded as a list of transitions over states
+numbered $0, \dots, m$ and over the labels occurring in traces of $G$, with $|G'| = m(G)$ and
+$G' \treq G$. Both depend only on the trace class of $G$. Since $m(G) \le
+|G|$, $m(G)$ is found by asking, for each $m \le |G|$, whether some $G'$
+of size $m$ is trace-equivalent to $G$. The bits of $\Phi(G)$ are then
+found one at a time by asking whether some such $G'$ extends a given
+prefix. Each question has the form: there is a $G'$ such that for all
+traces up to the depth bound, membership agrees. That is
+$\Sigma^p_2$, hence polynomial-time. (This is the standard fact that
+$\Pclass = \NPclass$ yields polynomial-time canonical forms for
+$\coNP$ equivalence relations.) Then $\Phi(G) \treq G$, so
+$\Phi$ is faithful. If $G \treq H$ then $\Phi(G) = \Phi(H)$, hence
+$\Phi(G) \sbisim \Phi(H)$. Conversely $\Phi(G) \sbisim \Phi(H)$ implies
+$\Phi(G) \treq \Phi(H)$, hence $G \treq H$.
+\end{proof}
+
+\begin{proposition}[Faithful determinate normalisers do not exist]\label{prop:determinate}
+There are explicit bounded processes $G_n$ with $|G_n| = O(n^2)$ such
+that every determinate $H$ with $H \treq G_n$ has at least $2^n$ states.
+In particular no faithful determinate normaliser runs in polynomial time,
+unconditionally.
+\end{proposition}
+
+\begin{proof}
+Let $L_n = \{\, uv \in \{0,1\}^{2n} : u \neq v,\ |u| = |v| = n \,\}$, and
+let $G_n$ have the traces of the words of $L_n$ each followed by $\ok$.
+$G_n$ guesses a position $i \le n$, records the bit read there, counts
+$n$ further positions, checks that the bit there differs, reads to length
+$2n$ and emits $\ok$. Its states are indexed by a position, a guessed
+index and a bit, so there are $O(n^2)$ of them, and it is acyclic. Let $H$
+be determinate with $H \treq G_n$. Each $u \in \{0,1\}^n$ is a trace of
+$H$, since $u u'$ is in $L_n$ for any $u' \ne u$, and so leads to a
+unique state $h_u$. For $u \neq u'$ the trace $u' \ok$ is available from
+$h_u$ but not from $h_{u'}$, since $u'u' \notin L_n$. So the $h_u$ are
+pairwise distinct. This is the classical blow-up of determinisation
+\cite{MeyerFischer71,Moore71}, specialised to finite languages.
+\end{proof}
+
+Faithfulness matters. Without it a determinate normaliser exists iff
+$\Pclass = \NPclass$: if $\Pclass = \NPclass$, map $G$ to the straight-line
+system spelling out the bits of the canonical form of
+Theorem~\ref{thm:normaliser}. Straight lines are determinate, and two of
+them are bisimilar exactly when the canonical forms are equal.
+
+\begin{remark}[The ladder]\label{rem:ladder}
+There are three grades of normaliser. A faithful \emph{determinate}
+normaliser is excluded unconditionally (Proposition~\ref{prop:determinate}). An
+\emph{arbitrary} polynomial-time normaliser exists iff $\Pclass =
+\NPclass$ (Theorem~\ref{thm:normaliser}). Between them sit
+\emph{compositional} normalisers, which act on the encoded term
+$\mathcal{E}(G)$ in a syntax-directed way and commute with its operators,
+parallel composition and prefixing. For
+these we expect exponential lower bounds of the subset-construction kind
+(Conjecture~\ref{conj:compositional}), much as monotone circuits admit
+lower bounds that general circuits have so far resisted.
+\end{remark}
+
+\begin{conjecture}\label{conj:compositional}
+No faithful compositional normaliser runs in polynomial time.
+\end{conjecture}
+
+% =====================================================================
+\section{Internalising the normaliser}\label{sec:internal}
+% =====================================================================
+
+Write the internalised normaliser as $\enc{\Phi}(x)$: a fixed rho process,
+independent of its input, with a free name $x$ on which it expects that
+input. The configuration is
+\[
+\enc{\Phi}(x) \ \mid\ \out{x}{P} \;\;\to^*\;\; P'.
+\]
+In context-labelled terms the experimenter \emph{is} the context
+$C_\Phi = \enc{\Phi}(x) \mid \out{x}{\hole}$, and its hole lies under a
+lift. By Remark~\ref{rem:bihol} this is the position where
+$\bisim$ fails to be a congruence. So the requirement that $P \bisim Q$
+imply $C_\Phi[P] \bisim C_\Phi[Q]$, and \emph{a fortiori} the requirement
+that $P \treq Q$ imply it, is not free: it is the burden the normaliser
+carries. The live alternative, $\enc{\Phi} \mid \hole$, gets invariance
+under $\bisim$ for free from congruence and loses faithfulness instead
+(Example~\ref{ex:linear}).
+
+\begin{lemma}[What a received name is good for]\label{lem:uses}
+In $\inp{y}{x}{R}$, every free occurrence of $y$ in $R$ is either the
+subject of an input or output or the argument of a drop. Consequently,
+once $\enc{\Phi}(x)$ has received $\quo{P}$, it can
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em,nosep]
+\item run $P$, by a drop; or
+\item use $\quo{P}$ as a channel, which matters only to processes that
+also hold a name $\nequiv \quo{P}$, and so amounts to testing $\quo{P}$
+for name equality against names it or its environment constructs; or
+\item forward it inside a lifted term, which defers (i) or (ii) to the
+receiver.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+By the grammar, names occur only as subjects of input and output, as
+binders, under drop, and beneath quotes; occurrences beneath a quote are
+not free, since substitution does not reach there. Communication on a name fires only when the two
+subjects are $\nequiv$-equal.
+\end{proof}
+
+Pure rho has no third operation, no deconstructor. Any test on the syntax
+of $P$ is an interaction: either running $P$ against a context, or a
+communication whose firing condition is a name equality the experimenter
+arranged. So the quoted reading reduces, internally, to possibly iterated
+interaction with $P$. What separates it from the live reading is
+\emph{resource}: interaction with a live $P$ can use $P$ up, while a name
+can be dropped as often as the experimenter pays for.
+
+\begin{example}[Why one experiment is not enough]\label{ex:linear}
+Let $G = a.(b + c)$ and $H = a.b + a.c$, so $G \treq H$ and $G \not\sbisim
+H$. A context interacting with the live $\mathcal{E}(H)$ learns nothing
+until it offers $a$, and in $\mathcal{E}(H)$ the very join that consumes
+the offer also chooses the branch. Afterwards the continuation can do $b$
+or $c$, not both. The losing branch survives only as a dead join on a
+lock, which no observer in $\Obs_\Sigma$ can revive. A faithful normal
+form must have both traces $ab$ and $ac$, and a single linear experiment
+on $\mathcal{E}(H)$ cannot recover the one it did not see. In a calculus
+with summation the losing branch is discarded outright.
+\end{example}
+
+% =====================================================================
+\section{Access tiers and structural rules}\label{sec:tiers}
+% =====================================================================
+
+Quotation gives the input the exponential of linear logic: $\quo{P}$
+behaves as $!P$, the drop as dereliction, the duplicator as contraction.
+Access tiers are distinguished by which of these rules the experimenter
+may use on the received name, and by whether it may inspect the term.
+
+\begin{definition}[Tiers]\label{def:tiers}
+\begin{enumerate}[label=(\alph*),leftmargin=2.2em]
+\item \emph{Linear}: the received name is dropped at most once, as in the
+exactly-once input $\mathsf{for}(y \mathrel{\circ\!\!-} x)P$ of the
+linear fragment. No contraction.
+
+\item \emph{Replicable black-box}: the received name is used only under
+drop, and is forwarded only to receivers that likewise use it only under
+drop (\emph{drop-only} usage). The experimenter's contexts mention, of
+the copy's names, only those in a declared public interface (here $\ok$
+and any declared intervention ports). Contraction is allowed; inspection
+and name guessing are not.
+
+\item \emph{White-box}: as (b), and in addition the experimenter may apply
+the probes of the observer extension \cite{ObserverExt} to the received
+name itself --- to the quoted code, which does not run while it is read.
+The probes make each term constructor observable by interaction: an atom $\mathsf{Ask}_C$ meeting $C(t_1,\dots,t_n)$
+yields its arguments, and $\mathsf{Get}_{C,i}$ selects the $i$-th. Under
+the capability-guarded refinement of that construction, holding $x$ is
+what licenses inspection.
+\end{enumerate}
+\end{definition}
+
+Name guessing --- use (ii) of Lemma~\ref{lem:uses} against names the
+experimenter constructs --- is excluded from tier (b) deliberately. It is
+a syntactic test, and it belongs with inspection.
+
+\begin{conjecture}[Drop-only contexts are congruent]\label{conj:dropOnly}
+If the hole of $C$ lies under a lift and the corresponding name is used
+drop-only, then $P \bisim_\Obs Q$ implies $C[P] \bisim_\Obs C[Q]$ for
+suitable $\Obs$. That is, drop-only usage makes a quote transparent, and
+tier (b) is an admissible observer class in the sense of \cite{BIHOL}.
+\end{conjecture}
+
+% =====================================================================
+\section{Controlled experiments: sharpening fuzzy rho}\label{sec:experiments}
+% =====================================================================
+
+Repetition alone yields only existential evidence. If a copy of $P$
+succeeds, $P$ can succeed. If it fails, the scheduler may simply have
+resolved a race the other way. A controlled experiment needs isolation,
+attribution, fidelity, intervention, a control and a readout. We take
+each from the graded interaction of fuzzy rho \cite{FuzzyRho}, in which
+the transmitted term is modulated by a grade comparing the two
+interaction surfaces:
+\[
+\inp{y}{x}{R} \ \mid\ \out{u}{Q} \;\to\; R\{\quo{((u \cmp x) \act Q)}/y\},
+\qquad
+(u \cmp x) \act Q = Q\{\quo{(\dr{u} \mid \dr{x} \mid \dr{z})}/z : z \in \fn(Q)\},
+\]
+where $\dr{z}$ is the process quoted by $z$. This is the
+\emph{accumulator} model; the \emph{attenuator} replaces $\mid$ by the
+multiset meet $\wedge$.
+
+\subsection{Isolation and attribution: the stamp}
+
+\begin{definition}[Stamp]
+A \emph{signature} is a closed process $S$ having, as a $\mid$-prime
+component, an inert input $K_S = \inp{\wild}{k_S}{\nil}$ on an
+unforgeable name $k_S$ that occurs nowhere else. The \emph{stamp}
+$\theta_S$ sends each name $z$ in normal form to $\quo{(S \mid \dr{z})}$,
+and $S \act P$ applies $\theta_S$ to the names of $P$, taken in normal
+form.
+\end{definition}
+
+\begin{lemma}[Stamps are injective]\label{lem:injective}
+$\theta_S(z_1) \nequiv \theta_S(z_2)$ implies $z_1 \nequiv z_2$.
+\end{lemma}
+
+\begin{proof}
+$S \mid \dr{z}$ has the input $K_S$ as a component, so it is never
+$\equiv$ to a lone drop, and only the first clause of $\nequiv$ applies:
+$\theta_S(z_1) \nequiv \theta_S(z_2)$ means $S \mid \dr{z_1} \equiv S
+\mid \dr{z_2}$. Up to $\equiv$ a process is a finite multiset of
+$\mid$-prime components, and the free commutative monoid is cancellative,
+so $\dr{z_1} \equiv \dr{z_2}$, and $z_1 \nequiv z_2$ since both are in
+normal form.
+\end{proof}
+
+\begin{lemma}[Distinct signatures are disjoint]\label{lem:disjoint}
+Let $S_1, S_2$ be signatures with $k_{S_1} \neq k_{S_2}$, and $z_1, z_2$
+names of an input $P$ that mentions neither $k_{S_i}$. Then
+$\theta_{S_1}(z_1) \not\nequiv \theta_{S_2}(z_2)$.
+\end{lemma}
+
+\begin{proof}
+If $S_1 \mid \dr{z_1} \equiv S_2 \mid \dr{z_2}$, the prime component
+$K_{S_1}$ occurs on the right, hence in $S_2$ or in $\dr{z_2}$. Neither
+mentions $k_{S_1}$.
+\end{proof}
+
+Run $k$ copies with signatures $S_1, \dots, S_k$ whose unforgeable names
+$k_{S_i}$ are distinct, as the content-addressed channels of
+cost-accounted rho provide. Then by Lemmas~\ref{lem:injective}
+and~\ref{lem:disjoint} the copies share no channel, so they cannot
+interfere with one another, and every observation carries the signature
+of the copy that made it. The experimenter knows each $S_i$, so it can
+compute the stamped interface $\theta_{S_i}(\ok)$ on which to listen.
+
+\subsection{Fidelity: inertness and equivariance}
+
+A stamped copy is useful only if it is a faithful copy. Two things can go
+wrong.
+
+\paragraph{Signatures run under drop.} If $P$ contains $\drp{z}$ for a
+free $z$, the copy contains $\drp{\theta_S(z)}$, which runs $S \mid
+\dr{z}$. The signature must therefore be \emph{inert}: built, for
+instance, from inputs on unforgeable names that nothing ever sends on.
+
+\paragraph{Names synthesised at runtime escape the stamp.} Flat
+substitution stamps the names $P$ has at the moment it is sent, not the
+names it computes while it runs.
+
+\begin{example}[Flat stamping is not equivariant]\label{ex:nonequivariant}
+Let $P = \out{a}{\nil} \mid \inp{y}{a}{\out{y}{\nil}} \mid
+\inp{\wild}{\quo{\nil}}{\out{\ok}{\nil}}$. Then $P$ receives $y :=
+\quo{\nil}$, outputs on $\quo{\nil}$, and succeeds. In $S \act P$, for any
+signature $S$, the names $a$, $\ok$ and $\quo{\nil}$ are stamped, but
+the transmitted name $\quo{\nil}$ is synthesised from the object of the
+lift, which has no names, and so is not. The copy outputs on $\quo{\nil}$
+while its listener waits on $\theta_S(\quo{\nil}) \nequiv \quo{S}$. The
+copy cannot succeed.
+\end{example}
+
+\begin{definition}[Experimental grading]\label{def:expgrading}
+A grading $S \act (-)$ is \emph{experimental} if
+\begin{enumerate}[label=(E\arabic*),leftmargin=2.6em,nosep]
+\item its signatures are signatures in the sense above, pairwise
+distinct across copies;
+\item its signatures are inert;
+\item it is \emph{equivariant}: $P \to P'$ implies $S \act P \to S \act
+P'$, and every reduction of $S \act P$ is of this form.
+\end{enumerate}
+\end{definition}
+
+(E3) is the dynamic form of the binder transport law of \cite{FuzzyRho},
+$a \act [y]P = [y](a' \act P)$. It says the copy runs \emph{inside} the
+stamp, so that every name it ever creates is stamped.
+
+\begin{proposition}\label{prop:fidelity}
+If $S \act (-)$ is experimental, the relation $\{(P', S \act P')\}$ is a
+bisimulation between the reduction systems of $P$ and of $S \act P$, with
+observations on $z$ matched to observations on $\theta_S(z)$. In
+particular $S \act P$ can succeed at $\theta_S(\ok)$ iff $P$ can succeed.
+\end{proposition}
+
+\begin{proof}
+Immediate from (E3), with (E2) ensuring that the dropped signature
+contributes no transitions.
+\end{proof}
+
+Flat processes (Definition~\ref{def:flat}) synthesise no names that are
+ever used as channels and contain no drops, so flat stamping is
+experimental on them. Realising (E3) for general processes needs a
+namespace-relative evaluation of the copy; this is open
+(\S\ref{sec:open}).
+
+\subsection{Intervention, control, dose and readout}
+
+\paragraph{Intervention.} Uniform stamping isolates a copy but does not
+steer it. To control a variable we need the analog of Pearl's
+$\mathrm{do}(\cdot)$ \cite{Pearl09}: resolve a chosen race to a chosen
+branch. Stamping a single \emph{occurrence} does this. In
+$\out{z}{A} \mid \inp{y}{z}{B} \mid \inp{y}{z}{C}$, stamping the subject
+of the third component with an inert tag cuts that edge, and the race
+resolves to $B$. Occurrence-level stamping needs addresses into the term,
+which the probes $\mathsf{Get}_{C,i}$ supply, so positional intervention
+is a white-box operation. A \emph{full intervention} $\tau$ resolves
+every race. Under a full intervention a flat process runs determinately,
+up to the interleaving of independent steps.
+
+\paragraph{Control.} Classical rho is the case $u = x = \quo{\nil}$ of the
+graded comm \cite{FuzzyRho}. A copy sent at unit grade is the untreated
+baseline.
+
+\paragraph{Dose.} The order axiom of \cite{FuzzyRho} --- a larger match
+grade transmits at least as much information --- is, for partial or soft
+interventions, a monotone dose--response law. That law is what licenses
+inference from graded treatments.
+
+\paragraph{Readout.} The attenuator $u \cmp x = \quo{(\dr{u} \wedge
+\dr{x})}$ can collapse distinct channels onto one shared stamped name.
+Collapsing the success channels of a pool of copies onto one name gives a
+single readout that reports whether \emph{any} member succeeded. A
+negative pooled readout certifies failure for every member, provided the
+collapse sends nothing else to that name. Pooling saves readouts, not
+runs: each copy still realises one resolution.
+
+\begin{remark}[What failure now means]
+Under a full intervention $\tau$, failure is conclusive \emph{for $\tau$}.
+The controlled apparatus therefore converts demonic scheduling into the
+experimenter's choice. Success of $P$ is the existence of a $\tau$ under
+which the copy succeeds --- an $\NPclass$ witness, now chosen rather than
+granted. Failure of $P$ is failure under every $\tau$. The $\coNP$ half
+becomes a problem of experimental design: can polynomially many
+interventions, possibly pooled and graded, \emph{cover} the space of
+resolutions?
+\end{remark}
+
+% =====================================================================
+\section{Experimental regimes}\label{sec:regimes}
+% =====================================================================
+
+\begin{definition}[Regime]\label{def:regime}
+An \emph{experimental regime} is a tuple $\Reg = (A, I, O, c)$ where
+\begin{itemize}[leftmargin=2.2em,nosep]
+\item $A$ is an access tier (Definition~\ref{def:tiers});
+\item $I$ is an intervention language: a set of partial resolutions the
+experimenter may impose, each realised by an experimental grading;
+\item $O$ is a readout discipline: single, pooled or graded;
+\item $c$ is the cost model, phlogiston satisfying Hypotheses~\ref{hyp:sim}
+and~\ref{hyp:acct}.
+\end{itemize}
+A \emph{copy} is released by a graded communication that applies its
+signature and its intervention; we identify the copy with that
+communication. An \emph{experiment} is a finite pool of copies, run
+against test contexts allowed by $A$, with a readout in $O$. $\Reg$ is
+\emph{admissible} if, on every flat input, every experiment has an
+outcome independent of the scheduler. $\enc{\Phi}(x)$ \emph{exploits}
+$\Reg$ for $\ABS$ if, for every flat $P$, the configuration
+$\enc{\Phi}(x) \mid \out{x}{P}$ performs only experiments of $\Reg$, runs
+at phlogiston polynomial in $|P|$, and reports, independently of the
+scheduler, whether $P$ can succeed. (Given this last clause,
+admissibility is needed only of the experiments actually performed;
+regimes whose interventions are partial are rarely admissible, and
+Theorem~\ref{thm:blackbox} does not assume admissibility.)
+\end{definition}
+
+\begin{lemma}[Copies cost]\label{lem:copies}
+Under Hypothesis~\ref{hyp:acct}, a run of phlogiston $c$ releases at most
+$c$ copies.
+\end{lemma}
+
+\begin{proof}
+Each copy is its own graded communication, charged at least $1$.
+\end{proof}
+
+\begin{remark}
+Unstamped duplicates are cheaper. One communication can deliver $\quo{P}$
+to a body containing many drops. But duplicates share their channels, so
+they are neither isolated nor attributable, and none of them carries an
+intervention. In the black-box model below an unintervened duplicate is
+resolved by the scheduler, so it contributes nothing that an adversary
+cannot neutralise.
+\end{remark}
+
+\subsection{Black-box regimes cannot certify universal negatives}
+
+\begin{definition}[Black-box regime]\label{def:blackbox}
+$\Reg$ is \emph{black-box} if its tier is (a) or (b) and the outcome of
+each experiment on $P$ is determined by the experiment together with the
+success or failure, at the stamped public interface, of each copy under
+its intervention. Interventions are drawn from a public intervention
+language over declared race ports. These are granted as a primitive,
+which is more than a black-box experimenter could otherwise do, since
+positional intervention needs addresses; granting them only strengthens
+the lower bound below. Races left unresolved by an
+intervention are resolved by a scheduler outside the experimenter's
+control, and correctness is required under every scheduler.
+\end{definition}
+
+This definition is generous to the experimenter. It allows full
+interventions without any inspection, and it allows pooled readouts and
+any graded readout that is a function of the per-copy outcomes. It
+excludes graded readouts that aggregate over the resolutions of a single
+copy rather than taking the one the scheduler chose; those are the
+subject of Conjecture~\ref{conj:algebrise}.
+
+\begin{theorem}[Black-box lower bound]\label{thm:blackbox}
+For each $d$ there are flat processes $P_\bot$ and $P_\sigma$ for
+$\sigma \in \{0,1\}^d$, all of size $O(d \log d)$, such that $P_\bot$ cannot
+succeed, each $P_\sigma$ can, and every $\enc{\Phi}(x)$ that, using a
+black-box regime, reports correctly and independently of the scheduler
+on all of them releases at least $2^d$ intervened copies on input
+$P_\bot$. Under Hypothesis~\ref{hyp:acct} its phlogiston on $P_\bot$ is
+at least $2^d$.
+\end{theorem}
+
+\begin{proof}
+Let $\mathit{Race}_i = \out{b_i}{\nil} \mid \inp{\wild}{b_i}{\out{e_i^0}{\nil}}
+\mid \inp{\wild}{b_i}{\out{e_i^1}{\nil}}$, with race port $r_i$ naming the
+race on $b_i$. Put
+\[
+\begin{aligned}
+P_\sigma &= \prod_{i \le d} \mathit{Race}_i \ \mid\
+  \mathsf{for}(\wild \leftarrow e_1^{\sigma_1} \,\&\, \cdots \,\&\,
+  \wild \leftarrow e_d^{\sigma_d})\, \out{\ok}{\nil},\\
+P_\bot &= \prod_{i \le d} \mathit{Race}_i \ \mid\
+  \mathsf{for}(\wild \leftarrow e_1^0 \,\&\, \cdots \,\&\,
+  \wild \leftarrow e_d^0 \,\&\, \wild \leftarrow z)\, \out{\ok}{\nil}
+\end{aligned}
+\]
+with $z$ a name nothing sends on, and all names pairwise distinct. (With
+names as quoted numerals the size is $O(d \log d)$.) Then $P_\sigma$
+succeeds exactly under the resolution $\sigma$, and $P_\bot$ never
+succeeds.
+
+Consider a copy with intervention $\tau$ (a partial assignment of race
+outcomes). On $P_\bot$ it fails. On $P_\sigma$ it fails unless $\tau$ is
+the full assignment $\sigma$: if $\tau$ disagrees with $\sigma$ somewhere,
+the final join cannot fire; if $\tau$ leaves some race unresolved, a
+scheduler that resolves it against $\sigma$ makes the copy fail. Fix such
+a scheduler. By Definition~\ref{def:blackbox}, the outcome of every
+experiment on $P_\sigma$ then coincides with its outcome on $P_\bot$,
+unless the experiment contains a copy with full intervention $\sigma$.
+
+Run $\enc{\Phi}(x)$ on $P_\bot$ under the same scheduler. It is correct,
+so it reports failure. Let $T$ be the set of full interventions it ever applied
+to a copy. If some $\sigma \notin T$, then on $P_\sigma$, under the
+scheduler above, every experiment returns what it returned on $P_\bot$.
+By induction on the run, $\enc{\Phi}(x)$ makes the same adaptive choices
+and also reports failure, which is wrong. Hence $|T| = 2^d$. So
+$\enc{\Phi}(x)$ released at least $2^d$ intervened copies on $P_\bot$, and
+by Lemma~\ref{lem:copies} its phlogiston is at least $2^d$.
+\end{proof}
+
+\begin{corollary}\label{cor:nobb}
+No black-box regime, admissible or not, is exploitable for $\ABS$. In
+particular a linear regime, which admits one copy, is not.
+\end{corollary}
+
+\begin{remark}[Why this says nothing about $\Pclass$ versus $\NPclass$]
+\label{rem:oracle}
+In a white-box regime the family is trivial. $\enc{\Phi}$ reads the final
+join and sees either the conjunct on $z$ or the hidden $\sigma$. The lower
+bound is purely about access. It is a query lower bound for unstructured
+search, the in-calculus analog of the \emph{separating} half of the
+Baker--Gill--Solovay theorem \cite{BGS75}: a black-box experimenter
+computes with $P$ as an oracle, and an unconditional separation is
+available because the oracle hides its structure. We give no analog of
+the \emph{collapsing} half, so the correspondence with the relativisation
+barrier is an analogy, not a theorem.
+\end{remark}
+
+\begin{remark}[Graded and quantum readouts]
+If a graded regime allowed amplitude-weighted superpositions of
+interventions, as in the complex-weighted GSLTs, we would expect the bound
+to weaken to $\Omega(2^{d/2})$ and no further, by the
+Bennett--Bernstein--Brassard--Vazirani argument \cite{BBBV97}. Making this
+precise requires a quantum semantics of the graded comm.
+\end{remark}
+
+\subsection{White-box regimes are as hard as \texorpdfstring{$\Pclass$}{P} versus \texorpdfstring{$\NPclass$}{NP}}
+
+\begin{theorem}\label{thm:whitebox}
+Assume Hypotheses~\ref{hyp:sim} and~\ref{hyp:acct}, and that reading a
+term of size $n$ by probes costs phlogiston polynomial in $n$. Then
+$\Pclass = \NPclass$ if and only if some admissible regime is exploitable
+for $\ABS$. When it is, a white-box regime is.
+\end{theorem}
+
+\begin{proof}
+($\Rightarrow$) If $\Pclass = \NPclass$ then $\ABS \in \Pclass$ by
+Proposition~\ref{prop:abscomplete}, decided by some machine $M$. In a
+white-box regime $\enc{\Phi}(x)$ receives $\quo{P}$, reads the quoted code
+by probes into a data representation at polynomial cost, and runs $R_M$
+on it (Hypothesis~\ref{hyp:sim}). No copy of $P$ ever runs, so its report
+does not depend on the scheduler.
+
+($\Leftarrow$) Suppose $\enc{\Phi}(x)$ exploits a regime $\Reg$. Its report
+is independent of the scheduler, so simulating any one schedule computes
+it, and the whole configuration runs at polynomial phlogiston. By Hypothesis~\ref{hyp:acct} a deterministic
+machine simulates it in polynomial time, so $\ABS \in \Pclass$ and hence
+$\coNP = \Pclass = \NPclass$.
+\end{proof}
+
+The direction ($\Leftarrow$) holds for every regime, black-box or
+white-box, and uses admissibility only through the scheduler-independence
+of the report. Theorem~\ref{thm:whitebox} is a restatement, not a new
+technique: its content is in combination with Theorem~\ref{thm:blackbox}.
+
+\begin{corollary}[The restatement]\label{cor:restatement}
+Under the hypotheses of Theorem~\ref{thm:whitebox},
+\[
+\Pclass \neq \NPclass
+\quad\Longleftrightarrow\quad
+\begin{array}{l}
+\text{no admissible regime lets } \enc{\Phi}(x) \text{ certify, at}\\
+\text{polynomial cost, that a flat process cannot succeed.}
+\end{array}
+\]
+Black-box regimes provably cannot (Theorem~\ref{thm:blackbox}), so the
+remaining content of $\Pclass \neq \NPclass$, in this formulation, is that
+white-box access affords no exploit. A proof of $\Pclass = \NPclass$ would
+exhibit a laboratory.
+\end{corollary}
+
+% =====================================================================
+\section{The barriers, located}\label{sec:barriers}
+% =====================================================================
+
+The correspondences in this section are analogies. We record them because
+they say where in the apparatus each barrier would bite.
+
+\paragraph{Relativisation and black-box access.} An argument that applies
+uniformly to black-box regimes treats the input as an oracle.
+Theorem~\ref{thm:blackbox} and Remark~\ref{rem:oracle} show that such
+arguments can separate unconditionally while saying nothing about the
+unrelativised question. This mirrors the barrier of \cite{BGS75}. A full
+analog would also need a regime playing the role of the collapsing
+oracle; a regime with a primitive experiment answering a
+$\mathbf{PSPACE}$-complete question would do, but it is not admissible in
+our sense, since that experiment does not cost polynomial phlogiston.
+
+\paragraph{Algebrisation and graded aggregate readout.} A graded readout
+of the kind excluded from Definition~\ref{def:blackbox} returns an
+aggregate --- a weighted sum over the resolutions of a copy --- rather
+than the one outcome the scheduler chose. Heuristically this resembles
+querying an extension of the oracle beyond its truth table, the access
+model of the algebrisation barrier \cite{AaronsonWigderson09}, though a
+weighted sum is not a low-degree extension over a larger field. We
+conjecture that graded black-box regimes form a second tier that is
+unconditionally separated and equally uninformative
+(Conjecture~\ref{conj:algebrise}).
+
+\paragraph{Natural proofs.} An argument that certifies hardness through a
+large, constructive property of a process's full behaviour --- its table
+of outcomes over all interventions --- is the analog of a natural proof
+\cite{RazborovRudich97}. Making this precise is open.
+
+\begin{conjecture}\label{conj:algebrise}
+Theorem~\ref{thm:blackbox} holds, with a bound exponential in $d$, for
+black-box regimes extended by graded readouts that aggregate over the
+resolutions of each copy, provided grades are computed from interface
+names.
+\end{conjecture}
+
+% =====================================================================
+\section{Discussion}\label{sec:discussion}
+% =====================================================================
+
+\paragraph{Popper's asymmetry, with a price.} ``$P$ can succeed'' is
+existential. One experiment verifies it, and no number of failed
+experiments falsifies it until every resolution has been tried. ``$P$
+cannot succeed'' is universal. One experiment falsifies it, and verifying
+it means exhausting the resolutions \cite{Popper59}.
+Corollary~\ref{cor:restatement} puts a price on the asymmetry. Black-box
+laboratories pay exponentially, provably. Whether a white-box laboratory
+can pay polynomially is $\Pclass$ versus $\NPclass$.
+
+\paragraph{The mortal scientist.} A scientist modelled as a
+cost-accounted rho computation, observing populations through graded
+where-clauses, works in a black-box regime equipped with a distribution
+over schedules. Its evidence of absence is statistical --- a tail bound,
+not a certificate. The randomised analog of
+Corollary~\ref{cor:restatement} would compare such regimes with
+$\mathbf{BPP}$ or $\mathbf{AM}$ rather than $\Pclass$, and may be the more
+tractable version inside cost-accounted rho, because the graded structure
+already measures how much a failure tells.
+
+\paragraph{Automata learning.} Repeated black-box experiments with
+steerable choice are membership queries. Determinate systems are
+learnable from membership and equivalence queries in polynomial time
+\cite{Angluin87}. Under cryptographic assumptions, membership queries do
+not help for nondeterministic automata \cite{AngluinKharitonov95}. This
+matches the determinate/nondeterminate split of
+Proposition~\ref{prop:determinate} and Theorem~\ref{thm:blackbox}, though
+the correspondence has not been worked out.
+
+\paragraph{Independence, revisited.} If $\Pclass \neq \NPclass$ were
+independent of ZFC, ZFC could not rule out a laboratory. In some model
+with nonstandard integers, a nonstandard $\enc{\Phi}$ would exploit a
+regime whose cost bound is a nonstandard polynomial. The theorem of
+\cite{BenDavidHalevi92} concerns a different theory, PA with all true
+$\Pi_1$ sentences, and does not apply to ZFC directly. It does indicate
+how close to real such laboratories would have to be if independence held
+for theories of that kind. The
+Boolean-valued models of \cite{Krajicek11} have random variables as
+their integers. Grades valued in such an algebra are a natural candidate
+for the fuzzy rho of those models, and connecting the two is open.
+
+% =====================================================================
+\section{Open problems}\label{sec:open}
+% =====================================================================
+
+\begin{enumerate}[label=\arabic*.,leftmargin=2.2em]
+\item \textbf{Compositional normalisers.} Prove
+Conjecture~\ref{conj:compositional}. It is the analog of a monotone
+lower bound, and the most promising source of a provable restricted
+separation.
+
+\item \textbf{Equivariant stamping.} Realise (E3) for general rho
+processes by a namespace-relative evaluation in which every name the copy
+synthesises is stamped, or show that no rho context achieves it.
+
+\item \textbf{Drop-only congruence.} Prove
+Conjecture~\ref{conj:dropOnly}, making tier (b) an admissible observer
+class in the sense of \cite{BIHOL}.
+
+\item \textbf{Graded regimes.} Prove Conjecture~\ref{conj:algebrise}, and
+identify the quantum analog with its $\Omega(2^{d/2})$ bound.
+
+\item \textbf{Statistical regimes.} State and prove the randomised
+analog of Corollary~\ref{cor:restatement}.
+
+\item \textbf{Minimal labels.} Replace enabling contexts by minimal ones,
+following \cite{LeiferMilner00,BIHOL}, and check that
+Proposition~\ref{prop:adequacy} survives.
+
+\item \textbf{Cost hypotheses.} Verify Hypotheses~\ref{hyp:sim}
+and~\ref{hyp:acct} for cost-accounted rho as implemented, and determine
+the cost of probes in the observer extension.
+
+\item \textbf{The intermediate tier.} Characterise regimes with
+positional interventions but no full reading of the term. Is there an
+access discipline strictly between (b) and (c) that is still provably
+separated?
+\end{enumerate}
+
+% =====================================================================
+\begin{thebibliography}{99}
+% =====================================================================
+
+\bibitem{Aaronson03}
+S.~Aaronson.
+\newblock Is $P$ versus $NP$ formally independent?
+\newblock \emph{Bulletin of the EATCS}, 81:109--136, 2003.
+
+\bibitem{AaronsonWigderson09}
+S.~Aaronson and A.~Wigderson.
+\newblock Algebrization: a new barrier in complexity theory.
+\newblock \emph{ACM Transactions on Computation Theory}, 1(1), 2009.
+
+\bibitem{Angluin87}
+D.~Angluin.
+\newblock Learning regular sets from queries and counterexamples.
+\newblock \emph{Information and Computation}, 75(2):87--106, 1987.
+
+\bibitem{AngluinKharitonov95}
+D.~Angluin and M.~Kharitonov.
+\newblock When won't membership queries help?
+\newblock \emph{Journal of Computer and System Sciences}, 50(2):336--355,
+1995.
+
+\bibitem{BGS75}
+T.~Baker, J.~Gill, and R.~Solovay.
+\newblock Relativizations of the $P =? NP$ question.
+\newblock \emph{SIAM Journal on Computing}, 4(4):431--442, 1975.
+
+\bibitem{BGS92}
+J.~L. Balc\'azar, J.~Gabarr\'o, and M.~S\'antha.
+\newblock Deciding bisimilarity is $P$-complete.
+\newblock \emph{Formal Aspects of Computing}, 4(6A):638--648, 1992.
+
+\bibitem{BenDavidHalevi92}
+S.~Ben-David and S.~Halevi.
+\newblock On the independence of $P$ versus $NP$.
+\newblock Technical Report 714, Technion, 1992.
+
+\bibitem{BBBV97}
+C.~H. Bennett, E.~Bernstein, G.~Brassard, and U.~Vazirani.
+\newblock Strengths and weaknesses of quantum computing.
+\newblock \emph{SIAM Journal on Computing}, 26(5):1510--1523, 1997.
+
+\bibitem{FuzzyRho}
+Fuzzy rho-calculus: a quantale-graded interaction, and its lift to
+ci\,GSLTs with binding.
+\newblock Working note, F1R3FLY.io publications, \texttt{fuzzy-rho}.
+
+\bibitem{Krajicek11}
+J.~Kraj\'{\i}\v{c}ek.
+\newblock \emph{Forcing with Random Variables and Proof Complexity}.
+\newblock Volume 382 of LMS Lecture Note Series. Cambridge University
+Press, 2011.
+
+\bibitem{LeiferMilner00}
+J.~J. Leifer and R.~Milner.
+\newblock Deriving bisimulation congruences for reactive systems.
+\newblock In \emph{CONCUR 2000}, volume 1877 of \emph{LNCS}, pages
+243--258. Springer, 2000.
+
+\bibitem{NWNS}
+L.~G. Meredith.
+\newblock Namespaces without a name server: freshness by communication,
+and a fully abstract encoding of the $\pi$-calculus in the rho calculus.
+\newblock Draft 3, F1R3FLY.io publications, \texttt{pi2rhobugfix}, 2026.
+
+\bibitem{ObserverExt}
+L.~G. Meredith.
+\newblock Every constructor an interaction: observer extensions, and the
+discriminating power of spatial formulae in interactive graph-structured
+lambda theories.
+\newblock Draft, F1R3FLY.io publications,
+\texttt{spatial-formulae-discrimination-power}, 2026.
+
+\bibitem{MeredithRadestock05}
+L.~G. Meredith and M.~Radestock.
+\newblock A reflective higher-order calculus.
+\newblock \emph{Electronic Notes in Theoretical Computer Science},
+141(5):49--67, 2005.
+
+\bibitem{PaigeTarjan87}
+R.~Paige and R.~E. Tarjan.
+\newblock Three partition refinement algorithms.
+\newblock \emph{SIAM Journal on Computing}, 16(6):973--989, 1987.
+
+\bibitem{MeyerFischer71}
+A.~R. Meyer and M.~J. Fischer.
+\newblock Economy of description by automata, grammars, and formal
+systems.
+\newblock In \emph{12th Annual Symposium on Switching and Automata
+Theory}, pages 188--191. IEEE, 1971.
+
+\bibitem{Moore71}
+F.~R. Moore.
+\newblock On the bounds for state-set size in the proofs of equivalence
+between deterministic, nondeterministic, and two-way finite automata.
+\newblock \emph{IEEE Transactions on Computers}, C-20(10):1211--1214,
+1971.
+
+\bibitem{Pearl09}
+J.~Pearl.
+\newblock \emph{Causality}.
+\newblock Cambridge University Press, second edition, 2009.
+
+\bibitem{Popper59}
+K.~R. Popper.
+\newblock \emph{The Logic of Scientific Discovery}.
+\newblock Hutchinson, 1959.
+
+\bibitem{Razborov95}
+A.~A. Razborov.
+\newblock Unprovability of lower bounds on circuit size in certain
+fragments of bounded arithmetic.
+\newblock \emph{Izvestiya: Mathematics}, 59(1):205--227, 1995.
+
+\bibitem{RazborovRudich97}
+A.~A. Razborov and S.~Rudich.
+\newblock Natural proofs.
+\newblock \emph{Journal of Computer and System Sciences}, 55(1):24--35,
+1997.
+
+\bibitem{Shoenfield61}
+J.~R. Shoenfield.
+\newblock The problem of predicativity.
+\newblock In \emph{Essays on the Foundations of Mathematics}, pages
+132--139. Magnes Press, 1961.
+
+\bibitem{StockmeyerMeyer73}
+L.~J. Stockmeyer and A.~R. Meyer.
+\newblock Word problems requiring exponential time.
+\newblock In \emph{STOC 1973}, pages 1--9. ACM, 1973.
+
+\bibitem{BIHOL}
+C.~B. Wells and M.~Stay.
+\newblock Behavior in higher-order languages.
+\newblock In preparation.
+
+\end{thebibliography}
+
+\appendix
+
+% =====================================================================
+\section{Status of results}\label{app:status}
+% =====================================================================
+
+\begin{center}
+\begin{tabular}{@{}llp{0.46\textwidth}@{}}
+\toprule
+Result & Status & Note \\
+\midrule
+Prop.~\ref{prop:adequacy} & sketched & administrative phases as in \cite{NWNS} \\
+Thm.~\ref{thm:known} & known & (b) via \cite{StockmeyerMeyer73}; reduction sketched \\
+Faithfulness remark after Prop.~\ref{prop:determinate} & proved & \\
+Prop.~\ref{prop:abscomplete} & proved & \\
+Thm.~\ref{thm:normaliser} & proved & \\
+Prop.~\ref{prop:determinate} & proved & unconditional \\
+Conj.~\ref{conj:compositional} & conjecture & open problem 1 \\
+Lem.~\ref{lem:uses} & proved & syntactic \\
+Ex.~\ref{ex:linear} & illustrative & formal content in Thm.~\ref{thm:blackbox} \\
+Conj.~\ref{conj:dropOnly} & conjecture & open problem 3 \\
+Lem.~\ref{lem:injective}, \ref{lem:disjoint} & proved & \\
+Ex.~\ref{ex:nonequivariant} & proved & \\
+Prop.~\ref{prop:fidelity} & proved & given (E1)--(E3) \\
+Lem.~\ref{lem:copies} & proved & relative to Hyp.~\ref{hyp:acct} and Def.~\ref{def:regime} \\
+Thm.~\ref{thm:blackbox}, Cor.~\ref{cor:nobb} & proved & in the model of Def.~\ref{def:blackbox}; copy count unconditional, cost via Hyp.~\ref{hyp:acct} \\
+Thm.~\ref{thm:whitebox}, Cor.~\ref{cor:restatement} & proved & relative to Hyp.~\ref{hyp:sim}, \ref{hyp:acct} and probe cost; a restatement \\
+\S\ref{sec:barriers} & analogy & not theorems \\
+Conj.~\ref{conj:algebrise} & conjecture & open problem 4 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
