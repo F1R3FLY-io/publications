@@ -1,0 +1,150 @@
+\section{The cost schedule for non-COMM compute}\label{app:schedule}
+
+This appendix lists the price list of the compute charge (\S\ref{sec:charges}). It is \code{dev}'s existing cost schedule at \code{252a86d1d}, unchanged: the base weights are in \code{rholang/src/rust/interpreter/accounting/costs.rs}, and the charges are applied in \code{reduce.rs} unless a row says otherwise. Costs are in phlo; under \signed{P}{s} each phlo costs the wallet at~$s$ the deployment's \code{phloPrice} in REV.
+
+Sizes are byte lengths of the protobuf encoding unless a row says otherwise ($|t|$ is the encoded size of term $t$). Every method call \texttt{e.m(\ldots)} pays the method-call charge of 10 in addition to the method's own row. A COMM is not in this schedule: it costs one phlo and pays the proposer.
+
+\subsection{Process evaluation and the deployment}
+
+\begin{longtable}{@{}P{5.4cm}P{5.6cm}P{3.6cm}@{}}
+\toprule
+\textbf{Construct} & \textbf{Cost (phlo)} & \textbf{Charged at} \\
+\midrule
+\endhead
+Send \texttt{x!(\ldots)} evaluated & 11 & \code{reduce.rs:1242} \\
+Receive \texttt{for(\ldots)} evaluated & 11 & \code{reduce.rs:1285} \\
+Variable evaluated & 10 & \code{reduce.rs:1356} \\
+\texttt{match} & 12, once per match (not per case) & \code{reduce.rs:1391} \\
+\texttt{if} / \texttt{else} & 12 & \code{reduce.rs:1446} \\
+\texttt{new} $x_1,\ldots,x_n$ & $2n + 10$ & \code{reduce.rs:1602} \\
+Method call \texttt{e.m(\ldots)} & 10, plus the method's own row & \code{reduce.rs:1646, 2996} \\
+Substitution into a term & $|t|$ of the substituted term; on failure, of the original & \code{substitute.rs:91-98} \\
+Parsing the deployment's source & length of the source text & \code{interpreter.rs:59, 93} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Arithmetic and logic}
+
+For BigInt, $\ell_a, \ell_b$ are the byte lengths of the operands. For BigRat, $n_a, d_a, n_b, d_b$ are the byte lengths of the numerators and denominators, and $m$ is the largest of them.
+
+\begin{longtable}{@{}P{5.4cm}P{5.6cm}P{3.6cm}@{}}
+\toprule
+\textbf{Construct} & \textbf{Cost (phlo)} & \textbf{Charged at} \\
+\midrule
+\endhead
+\texttt{a + b} (fixed-width numbers) & 3 & \code{reduce.rs:2259-2283} \\
+\texttt{a - b} & 3 & \code{reduce.rs:2371-2395} \\
+\texttt{a * b} & 9 & \code{reduce.rs:1957-1985} \\
+\texttt{a / b} & 9 & \code{reduce.rs:2047-2079} \\
+\texttt{a \% b} & 9 & \code{reduce.rs:2152-2161} \\
+\texttt{<}, \texttt{<=}, \texttt{>}, \texttt{>=} (Bool, Int, Int32, Uint*, String, Double, Float32) & 3, whatever the operand size & \code{reduce.rs:1684-1758} \\
+\texttt{==}, \texttt{!=} & $\min(|a|, |b|)$ & \code{reduce.rs:2537, 2554} \\
+\texttt{and}, \texttt{or} & 2 & \code{reduce.rs:2569, 2579} \\
+\midrule
+BigInt \texttt{+}, \texttt{-} & $\max(\max(\ell_a,\ell_b)+1,\ 3)$ & \code{reduce.rs:2291-2426} \\
+BigInt \texttt{*}, \texttt{/}, \texttt{\%} & $\max(\ell_a \ell_b,\ 9)$ & \code{reduce.rs:1993-2214} \\
+BigInt negation & $\max(\ell_a, 1)$ & \code{reduce.rs:1920, 1935} \\
+BigInt comparison & $\max(\max(\ell_a,\ell_b),\ 3)$ & \code{reduce.rs:1777, 1798} \\
+\midrule
+BigRat \texttt{+}, \texttt{-} & $\max(4m^2 + m,\ 3)$ & \code{reduce.rs:2296, 2409} \\
+BigRat \texttt{*} & $\max(n_a n_b + d_a d_b + m,\ 9)$ & \code{reduce.rs:1997} \\
+BigRat \texttt{/} & $\max(n_a d_b + d_a n_b + m,\ 9)$ & \code{reduce.rs:2095} \\
+BigRat negation & $\max(n_a, 1)$ & \code{reduce.rs:1925} \\
+BigRat comparison & $\max(\max(n_a d_b,\ n_b d_a),\ 3)$ & \code{reduce.rs:1785} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Strings, bytes and collection operators}
+
+\begin{longtable}{@{}P{5.4cm}P{5.6cm}P{3.6cm}@{}}
+\toprule
+\textbf{Construct} & \textbf{Cost (phlo)} & \textbf{Charged at} \\
+\midrule
+\endhead
+\texttt{string \% map} (interpolation) & $10 + \text{length} \times \text{map size}$ & \code{reduce.rs:2673, 2692} \\
+\texttt{s1 ++ s2} (String) & $10 + |s_1| + |s_2|$ in characters & \code{reduce.rs:2726, 2733} \\
+\texttt{b1 ++ b2} (ByteArray) & $10 + \lfloor \log_{10} |b_1| \rfloor$; 10 if $b_1$ is empty & \code{reduce.rs:2726, 2740} \\
+\texttt{l1 ++ l2} (List) & $10 + $ elements of $l_1$ & \code{reduce.rs:2726, 2749} \\
+\texttt{set + e} & $10 + 3$ & \code{reduce.rs:2325, 6337} \\
+\texttt{set - e}, \texttt{map - k} & $10 + 3$ & \code{reduce.rs:2443, 2459} \\
+\texttt{set1 -{}- set2} & $10 + 3\,|set_2|$ & \code{reduce.rs:2828, 3588} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Methods}
+
+Each row is in addition to the method-call charge of 10.
+
+\begin{longtable}{@{}P{5.4cm}P{5.6cm}P{3.6cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Cost (phlo)} & \textbf{Charged at} \\
+\midrule
+\endhead
+\texttt{.nth(i)} & 10 & \code{reduce.rs:3059} \\
+\texttt{.toByteArray()} & $|t|$ & \code{reduce.rs:3120} \\
+\texttt{.hexToBytes()} & length of the string & \code{reduce.rs:3154} \\
+\texttt{.bytesToHex()} & length of the byte array & \code{reduce.rs:3201} \\
+\texttt{.concatBytes()} & total bytes concatenated & \code{reduce.rs:3270} \\
+\texttt{.validUtf8PrefixLen()}, \texttt{.decodeUtf8()} & length of the byte array & \code{reduce.rs:3322, 3374} \\
+\texttt{.toUtf8Bytes()} & length of the string & \code{reduce.rs:3417} \\
+\texttt{.length()} & 10 & \code{reduce.rs:6838} \\
+\texttt{.slice(from, to)} & \texttt{to} & \code{reduce.rs:6973} \\
+\texttt{.take(n)} & $n$ & \code{reduce.rs:7035} \\
+\midrule
+\texttt{.union(other)} (Set, Map, PathMap) & $3 \times$ size of \texttt{other} & \code{reduce.rs:3463-3518} \\
+\texttt{.diff(other)} & $3 \times$ size of \texttt{other} & \code{reduce.rs:3588-3642} \\
+\texttt{.add(e)}, \texttt{.set(k, v)} & 3 & \code{reduce.rs:6337, 6663} \\
+\texttt{.delete(e)} & 3 & \code{reduce.rs:6421} \\
+\texttt{.contains(e)}, \texttt{.get(k)}, \texttt{.getOrElse(k, d)} & 3 & \code{reduce.rs:6486-6600} \\
+\texttt{.keys()} & 10, whatever the map size & \code{reduce.rs:6722} \\
+\texttt{.size()} & number of elements & \code{reduce.rs:6785} \\
+\texttt{.toList()} (Set, Map, Tuple) & number of elements & \code{reduce.rs:7062-7104} \\
+\midrule
+PathMap \texttt{.intersection}, \texttt{.restriction}, \texttt{.joinInto} & $3 \times$ size of the argument & \code{reduce.rs:3716, 3791, 5145-5231} \\
+PathMap \texttt{.dropHead(n)} & $3n$ & \code{reduce.rs:3857} \\
+PathMap \texttt{.getLeaf}, \texttt{.getSubtrie} & 3 & \code{reduce.rs:4376, 4457} \\
+PathMap \texttt{.setLeaf} & 3 & \code{reduce.rs:4514} \\
+PathMap \texttt{.removeLeaf}, \texttt{.removeBranches}, \texttt{.prunePath} & 3 & \code{reduce.rs:4894, 4995, 5601} \\
+PathMap \texttt{.run}, \texttt{.readZipper}, \texttt{.readZipperAt}, \texttt{.writeZipper}, \texttt{.writeZipperAt}, \texttt{.descendTo}, \texttt{.setSubtrie}, \texttt{.graft}, \texttt{.atPath}, \texttt{.pathExists}, \texttt{.createPath} & 3 each & \code{reduce.rs:3954-5511} \\
+Zipper \texttt{.reset}, \texttt{.ascendOne}, \texttt{.ascend}, \texttt{.childCount}, \texttt{.descendFirst}, \texttt{.descendIndexedBranch}, \texttt{.toNextSibling}, \texttt{.toPrevSibling} & 3 each & \code{reduce.rs:5649-6271} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Storage}
+
+\code{dev} charges these sizes up front and refunds them when a COMM consumes the datum (\code{storage/charging_rspace.rs}). Under this design only what the run leaves in the tuplespace pays, once (\S\ref{sec:charges}). For a join, $k$ is its number of channels.
+
+\begin{longtable}{@{}P{5.4cm}P{5.6cm}P{3.6cm}@{}}
+\toprule
+\textbf{Left in the tuplespace} & \textbf{Cost (phlo)} & \textbf{\code{dev} source} \\
+\midrule
+\endhead
+A send & $|\text{channel}| + \sum |\text{data}| + (32 + 32k)$, with $k = 1$ & \code{charging_rspace.rs:111, 304} \\
+A receive & $\sum|\text{channels}| + \sum|\text{patterns}| + |\text{continuation}| + (32 + 32k)$ & \code{charging_rspace.rs:79, 304} \\
+A persistent send or receive & as above, once, when it is introduced & \code{charging_rspace.rs:279-325} \\
+\midrule
+\multicolumn{3}{@{}p{14.6cm}@{}}{\emph{Replaced.} \code{dev}'s COMM event storage, $(32 + 32k) + 64k$ (128 for one channel), is replaced by the one phlo of the COMM. \code{dev}'s refund to a consuming deploy of the producer's storage does not exist here.} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Known gaps}
+
+These are charged at a flat rate, or not at all, on \code{dev}. They stay as they are in this revision and are candidates for later changes to the schedule.
+
+\begin{longtable}{@{}P{4.6cm}P{4.8cm}P{5.2cm}@{}}
+\toprule
+\textbf{Item} & \textbf{On \code{dev}} & \textbf{Consequence} \\
+\midrule
+\endhead
+Pattern matching (the spatial matcher) & Not charged; \texttt{match} pays a flat 12 and a receive 11 & A complex pattern against a large term costs the same as a trivial one. \\
+File I/O, \code{rho:io:fs:native:*} & Weights defined in \code{io/costs.rs} (100 per call, 200 per path mutation, $+1$ per byte read, $+2$ per byte written, $+32$ per directory entry) but discarded by \code{NoopMetering} (\code{rho_runtime.rs:1309}) & File I/O is free. \\
+System processes (hashing, signature verification, registry) & Not charged beyond the COMM that invokes them & Hashing or verifying a large input is free at the compute level. \\
+\texttt{.toSet()}, \texttt{.toMap()}, \texttt{.toString()}, \texttt{.toBigInt()} & Only the method-call charge of 10 & Converting or rendering a large term is flat-priced. \\
+Comparisons \texttt{<}, \texttt{<=}, \texttt{>}, \texttt{>=} & Flat 3 & Comparing long strings is flat-priced. \\
+\texttt{.keys()} & Flat 10 & Building the key set of a large map is flat-priced. \\
+\texttt{l1 ++ l2} & Charges the length of $l_1$ & \code{costs.rs} documents the length of $l_2$; the call site passes $l_1$. \\
+\texttt{channel\_eval\_cost} (11) & Defined, never charged & Unused weight. \\
+Parallel composition, quote, dequote, bundles & No charge of their own & Their cost appears only through substitution and storage. \\
+Rent & Not charged over time & Stored data pays once; recurring rent is a later revision. \\
+\bottomrule
+\end{longtable}
