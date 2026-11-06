@@ -1,0 +1,753 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=BrickRed,
+  citecolor=BrickRed,
+  urlcolor=BrickRed
+}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{observation}[theorem]{Observation}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{obligation}{Obligation}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\Lam}{\Lambda}
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\bis}{\;\approx\;}
+\newcommand{\bisW}[1]{\approx_{#1}}
+\newcommand{\treq}[1]{\simeq^{\mathrm{tr}}_{#1}}
+\newcommand{\inp}[3]{\mathsf{for}(#1 \leftarrow #2)\,#3}
+\newcommand{\out}[2]{#1!(#2)}
+\newcommand{\quo}[1]{@#1}
+\newcommand{\drp}[1]{{*}#1}
+\newcommand{\nil}{\mathbf{0}}
+\newcommand{\HML}{\textsf{HML}}
+\newcommand{\Obs}{\mathcal{O}}
+\newcommand{\Ctx}{\mathsf{Ctx}}
+\newcommand{\enc}[1]{\llbracket #1 \rrbracket}
+\newcommand{\dia}[1]{\langle #1 \rangle}
+
+\title{\textbf{Inhabiting Choice}\\[0.35em]
+\large Confluent Witnesses, the Phenomena They Cannot Carry,\\
+and One Observation Made Three Times}
+
+\author{L.~G.~Meredith\\ \small F1R3FLY.io}
+\date{November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A system whose witnesses reduce confluently can \emph{state} non-confluent
+phenomena but cannot \emph{inhabit} them: no term of such a system has a
+branching structure, so the system's identity on its own witnesses is forced
+to be linear-time, and the logic adequate for that identity is forced to be
+determinate. This note makes that one observation three times. Abstractly, it
+is a consequence of Church--Rosser alone: on a confluent witness language the
+linear-time/branching-time spectrum collapses, whereas on the rho calculus it
+does not, and the generated Hennessy--Milner logic is obliged to discriminate
+proofs by the structure of their choices. For software verification, it says
+that a $\lambda$-term-based prover can certify a concurrent system only
+relative to a stipulated model of its non-determinism, and that the
+faithfulness of that model, unlike the faithfulness of a deterministic machine
+model, is not auditable by any means the prover possesses; a prover whose
+witnesses are processes on a process runtime makes the certificate an
+inhabitant of the system and the audit an internal bisimulation check. For
+artificial intelligence, it says that branching-time structure is invisible in
+any corpus of completed runs --- a trace distribution has a unique
+autoregressive factorisation --- so that an intelligence trained only by
+observation is linear-time by an information-theoretic limitation rather than
+a design choice, while naturally evolved intelligence demonstrably exploits
+races as races. The three registers share one spectrum, which we align with
+Pearl's ladder, and one remedy, which is witnesses that can be races and an
+identity on them at least as fine as step bisimulation.
+\end{abstract}
+
+% =====================================================================
+\section{The observation}
+% =====================================================================
+
+The prior notes of this series~\cite{ProofSearch,PaPContinued} argued that
+proof objects in Lean, Coq and Agda --- terms of a typed $\lambda$-calculus ---
+force proof \emph{search} into an orchestration layer outside the proof
+dynamics, because confluence leaves no room for choice in the reduction
+relation and closedness leaves no open end for an incomplete proof to reach
+out through. The present note isolates what we take to be the underlying fact
+and states it without reference to search.
+
+\begin{quote}
+\itshape A system whose witnesses reduce confluently can talk about
+non-confluent phenomena, but no witness of the system can be one. The
+phenomena are present in the building and absent from the proofs.
+\end{quote}
+
+The consequence that matters is for \emph{identity}. Whatever notion of
+``same proof'' such a system adopts, it is computed from a confluent
+dynamics, and on a confluent dynamics the distinction between branching-time
+and linear-time equivalences does not exist. The identity is therefore
+linear-time whether or not anyone chose it to be, and the logic adequate for
+it cannot distinguish two witnesses by \emph{when} a choice was made, because
+no witness ever makes one.
+
+We make the point three times. \S\ref{sec:abstract} states it as a pair of
+propositions about witness languages, with the $\lambda$-calculus and the rho
+calculus~\cite{MeredithRadestock05} as the two poles. \S\ref{sec:verification}
+reads it for the verification of concurrent software, where it says precisely
+what a $\lambda$-term-based prover's certificate of a concurrent system is a
+certificate \emph{of}. \S\ref{sec:ai} reads it for artificial intelligence,
+where it becomes a statement about what can be learned from traces and what
+requires intervention. \S\ref{sec:one} lays the three readings side by side,
+and \S\ref{sec:obligations} records what the note leaves owed.
+
+Throughout, the identity relation is the weak context-labelled bisimilarity of
+the companion papers~\cite{BIHOL,NoWNS,Extension}: labels are minimal enabling
+contexts in the open form of the Leifer--Milner
+construction~\cite{LeiferMilner00}, matched up to the relation being defined,
+with internal steps silent. We write $\bisW{W}$ for this relation on a witness
+language $W$, and $\treq{W}$ for the corresponding weak trace equivalence.
+
+% =====================================================================
+\section{The point, abstractly}\label{sec:abstract}
+% =====================================================================
+
+\subsection{Collapse of the spectrum under confluence}
+
+Let $W$ be an interactive graph-structured lambda theory in the sense
+of~\cite{Omnibus,Extension}: a signature, an equational theory, and rewrite
+rules whose left-hand sides are cuts. Its reduction relation $\to_W$ is the
+closure of the rules under contexts and equations; its context-labelled
+transition system has transitions $P \xrightarrow{c} P'$ for minimal enabling
+contexts $c$, with the empty context labelling internal steps.
+
+\begin{definition}[Determinate]
+$W$ is \emph{determinate} when $\to_W$ is confluent and internal steps are
+inert for labelled transitions: if $P \to_W P'$ and $P \xrightarrow{c} Q$
+with $c$ non-empty, then $P' \xRightarrow{c} Q'$ for some $Q' \bisW{W} Q$.
+\end{definition}
+
+Confluence alone does not give inertness, but for the $\lambda$-calculus the
+two come together: Church--Rosser supplies confluence, and standardisation
+supplies inertness, since any labelled transition --- an application to a
+fresh argument, in the open label discipline --- commutes with internal
+$\beta$-steps up to further internal steps.
+
+\begin{proposition}[Collapse]\label{prop:collapse}
+If $W$ is determinate then, on terms without divergence,
+$\bisW{W} \;=\; \treq{W}$. The linear-time/branching-time spectrum between
+them is a single point.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+This is Milner's determinacy theorem~\cite{MilnerCCS} in the labelled setting
+of Groote and Sellink's $\tau$-confluence~\cite{GrooteSellink}. Trace
+equivalence is contained in bisimilarity on determinate systems because the
+set of states reachable by a given weak trace is, up to $\bisW{W}$, a
+singleton: any two such states are internal-reducts of a common ancestor and
+reconverge by confluence, and their labelled capabilities agree by inertness.
+So trace-equivalent terms have bisimilar successors after every label, and
+trace equivalence is a bisimulation. The reverse inclusion always holds.
+Divergence is excluded because a divergent term has traces without having the
+matching derivatives; on the strongly normalising fragment the hypothesis is
+vacuous.
+\end{proof}
+
+\begin{corollary}[$\lambda$-witnesses]\label{cor:lambda}
+Let $\Lam$ be the $\lambda$-calculus as an interactive GSLT with cut
+application and rule $\beta$. On closed, typed, strongly normalising terms,
+$\bisW{\Lam}$ coincides with $\beta\eta$-equality.
+\end{corollary}
+
+\begin{proof}[Proof sketch]
+By Proposition~\ref{prop:collapse}, $\bisW{\Lam}$ is trace equivalence, and
+with labels ``apply to a fresh argument'' traces are applicative behaviour.
+Two $\beta\eta$-distinct normal forms of the same simple type are separated by
+an applicative context given two base constants (the typed B\"ohm
+theorem~\cite{Statman83}), and $\beta\eta$-equal terms are applicatively
+indistinguishable. On this fragment $\eta$ is behaviourally invisible, since
+every closed term of arrow type converges to an abstraction.
+\end{proof}
+
+So the proof identity of a $\lambda$-witnessed system is \emph{forced} to be
+$\beta\eta$ on the proof-assistant fragment, and forced to be linear-time
+everywhere: it was never a choice.
+
+\subsection{Non-collapse on the rho calculus}
+
+The rho calculus has no choice primitive; non-determinism arises from races
+on names. Write $\mathsf{race}(a; P, Q)$ for
+$\inp{x}{a}{P} \mid \inp{x}{a}{Q} \mid \out{a}{\nil}$, which runs exactly one
+of $P$, $Q$.
+
+\begin{proposition}[Non-collapse]\label{prop:noncollapse}
+There are closed rho processes $P, Q$ with $P \treq{\rhoc} Q$ and
+$P \not\bisW{\rhoc} Q$, separated by a generated Hennessy--Milner formula.
+\end{proposition}
+
+\begin{proof}
+Take the process-calculus textbook pair, rendered with races:
+\[
+P \;=\; \inp{x}{a}{\mathsf{race}(k;\ \out{b}{\nil},\ \out{c}{\nil})},
+\qquad
+Q \;=\; \mathsf{race}(k;\ \inp{x}{a}{\out{b}{\nil}},\ \inp{x}{a}{\out{c}{\nil}}),
+\]
+with $k$ private. Both have weak traces $\{\epsilon, a, ab, ac\}$ under the
+obvious observers. After $P$'s input on $a$, both $b$ and $c$ remain
+reachable; after $Q$'s, exactly one does. The formula
+$\dia{a}(\dia{b}\top \wedge \dia{c}\top)$, with $\dia{\ell}$ the modality for
+the minimal context offering $\ell$, holds of $P$ and fails of $Q$. By the
+Hennessy--Milner characterisation~\cite{HennessyMilner85} they are not
+bisimilar.
+\end{proof}
+
+The pair is familiar; its interest here is what it says about witnesses. Read
+$P$ and $Q$ as proof-processes of a proposition whose discharge involves
+choosing between lemma $b$ and lemma $c$. $P$ is the proof that keeps both
+options open past the first obligation; $Q$ is the proof that commits before
+it. They are the \emph{same proof} under any linear-time identity and
+\emph{different proofs} under bisimulation, and the difference is exactly when
+the choice was made. No $\lambda$-term can be either of them, and no
+$\lambda$-witnessed system can have a proof identity that depends on the
+timing of a choice, because Proposition~\ref{prop:collapse} says the timing is
+never there to depend on.
+
+\subsection{Talked about and inhabited}
+
+The two propositions together are the observation of \S1 in formal dress.
+
+\begin{observation}[Statement without inhabitation]\label{obs:inhabit}
+A system $W$ \emph{states} a non-confluent phenomenon when some relation
+definable in $W$ exhibits it --- a transition system encoded as data, with
+$P$ and $Q$ of Proposition~\ref{prop:noncollapse} as two of its states. $W$
+\emph{inhabits} it when some term of $W$ exhibits it under $W$'s own
+reduction. A confluent $W$ can do the first and never the second. Its identity
+on witnesses, and the logic adequate for that identity, are therefore blind
+to the phenomenon even while its propositions quantify over it.
+\end{observation}
+
+The generated logic makes the blindness visible. On a determinate $W$, the
+generated $\HML$~\cite{Extension} is itself determinate: $\dia{c}\varphi
+\wedge \dia{c}\psi$ entails $\dia{c}(\varphi \wedge \psi)$ up to internal
+steps, so the modalities carry no information beyond the trace they name and
+the possibility of divergence. The adequate formulae for $\lambda$-witnesses
+are a degenerate fragment of the adequate formulae for rho-witnesses, in which
+the connective that distinguishes $P$ from $Q$ above has nothing to
+distinguish.
+
+\begin{remark}[Which comparison is being made]
+It is tempting to compare the two systems by encoding $\Lam$ into $\rhoc$ and
+asking whether rho observers separate $\lambda$-terms that $\lambda$ observers
+identify. The companion paper~\cite{NoWNS} supplies the discipline for that
+comparison: an encoding is a pair $(F,\Phi)$ on terms and contexts, bisimilarity
+is indexed by an observer class, and full abstraction holds relative to
+$\operatorname{im}\Phi$ while the restriction to $\operatorname{im}\Phi$ is
+forced. Carried out for $\Lam$, the comparison yields three nested relations on
+$\lambda$-terms: relative to encoded $\lambda$-contexts, no separation
+(Conjecture~\ref{conj:fullabs} below); relative to encoded $\pi$-contexts, the
+gap between L\'evy--Longo tree equality and lazy observational
+equivalence~\cite{Sangiorgi94,Lassen99}, confined to terms with unsolvable
+subterms; relative to all rho contexts, a further separation that exposes the
+encoding's bookkeeping and is uninformative about proofs. That comparison is
+worth making, and we record its obligations in \S\ref{sec:obligations}, but it
+is \emph{not} the point of this note. Every one of those relations is a
+relation on $\lambda$-terms, and every $\lambda$-term is confluent. The
+separation that matters is between the confluent image of $F$ and the
+non-confluent witnesses outside it, where there is nothing on the $\lambda$
+side to compare against. Observation~\ref{obs:inhabit} is about that.
+\end{remark}
+
+\subsection{Beyond branching: steps and causes}
+
+The spectrum has a third level above branching time. Ordinary context-labelled
+bisimulation satisfies the expansion law, $a \mid b \bis a.b + b.a$ with $+$
+rendered by a race, so a rho-witnessed system with that identity inhabits
+branching but not causal independence --- Observation~\ref{obs:inhabit}
+transposed one level up. The remedy is again a matter of presentation rather
+than of redefining bisimulation. Adding the synchronous rule
+\[
+\frac{P_1 \to Q_1 \qquad P_2 \to Q_2}{P_1 \mid P_2 \;\to\; Q_1 \mid Q_2}
+\tag{Par-2}
+\]
+to $R$ as a single step --- the one-cell shadow of horizontal composition in
+rewriting logic~\cite{Meseguer92} --- makes the derived transition system a
+step transition system, the induced identity step bisimulation, and the
+expansion law false. Step bisimulation records simultaneity and not
+dependence: $a \mid b$ and $(a \mid b) + a.b$ are step bisimilar and
+pomset-distinct~\cite{GlabbeekGoltz}. For dependence the rho calculus has an
+unusual resource: a reduction creates at most one name, and creates it in a
+substitution-transparent position~\cite{NoWNS}, so a redex on a name created
+by an earlier reduction is causally after it and the quote structure of the
+name is a provenance record. A history-preserving bisimulation for rho can read
+its dependence relation off name creation on the fresh-name fragment; the rest
+is the subject of the history-functor note.
+
+\subsection{The price}
+
+$\beta\eta$ on strongly normalising typed terms is decidable; bisimilarity on
+a Turing-complete reflective calculus is not. The collapse of
+Proposition~\ref{prop:collapse} is what buys Lean its decidable proof
+identity and its cheap checking, and for propositions that are static ---
+inhabitation, arithmetic --- it loses nothing, because there is nothing
+behavioural to lose. The observation bites exactly where the propositions are
+about behaviour: there a confluent witness cannot carry the branching
+structure that \emph{is} the content of the proof, and the identity it imposes
+equates proofs that differ in the one respect the proposition is about.
+
+% =====================================================================
+\section{The point, for software verification}\label{sec:verification}
+% =====================================================================
+
+\subsection{What a $\lambda$-term prover does certify}
+
+It is important not to overstate the case. Lean, Coq and Isabelle verify
+non-confluent systems routinely. Iris~\cite{Iris} proves linearisability and
+race-freedom of fine-grained concurrent data structures; CertiKOS~\cite{CertiKOS}
+certifies a concurrent operating-system kernel, scheduler included, down to
+assembly, through a stack of certified abstraction layers and a
+concurrency-aware compiler whose correctness proof is itself a Coq term. A
+ticket-reservation system's ``no double booking under any interleaving'' is a
+universally quantified statement over a transition relation, and its proof is a
+$\lambda$-term doing induction on reachable states with an invariant. Nothing
+in \S\ref{sec:abstract} prevents this: the non-confluence is \emph{stated},
+as an inductive relation, and the proof is about the relation.
+
+So the claim is not that such systems cannot be verified with $\lambda$-term
+witnesses. It is a claim about what the certificate is a certificate of, and
+about which part of the trusted base can be examined.
+
+\subsection{What is outside: the model of non-determinism}
+
+Every such development begins by stipulating a model of the non-determinism:
+the interleaving semantics, the scheduler, the memory model, entered as a
+definition of which executions exist. The proof quantifies over that
+definition. The faithfulness of the definition to the machine is not a theorem
+anywhere; it is the trusted base, as the instruction-set model is the trusted
+base of a sequential verification. The asymmetry between the two cases is the
+point.
+
+\begin{observation}[Unauditability]\label{obs:audit}
+For a sequential system the trusted base is a deterministic step function, and
+its faithfulness is auditable by execution: run the machine, run the model,
+compare traces, and every discrepancy is a counterexample found by running.
+For a concurrent system the trusted base is a relation --- a set of permitted
+interleavings --- and no finite set of observed runs distinguishes it from
+many other relations. Faithfulness is a branching-time property of the model,
+and checking it requires a branching-time observer. By
+Observation~\ref{obs:inhabit}, a $\lambda$-term-based prover contains no
+inhabitant with branching structure, hence nothing that can be run against the
+machine to perform the check.
+\end{observation}
+
+The trust is therefore not merely unproven; it is unexaminable by any means
+the prover possesses. The sequential verifier's trusted base is auditable by
+the one thing a $\lambda$-prover does have, execution. The concurrent
+verifier's is not.
+
+\subsection{Cost, and where the certificate lives}
+
+Two further consequences follow, both visible in the heroic projects.
+
+First, cost. In the $\lambda$-witnessed world the certificate is a term checked
+once and discarded, and the running system is a different object produced by
+extraction or compilation. The link between them is a theorem --- a verified
+compiler whose correctness statement is a simulation under all interleavings
+--- and at every refinement layer the branching structure the witness cannot
+carry must be re-encoded by hand as a relation and the refinement re-proved as
+a $\lambda$-term \emph{about} two relations. CertiKOS reaches the bottom of its
+stack at a cost proportional to exactly the structure its proof objects cannot
+inhabit, and the next concurrent system starts over.
+
+Second, deployment. A $\lambda$-proof cannot be run against the system it
+certifies. A rho-witnessed proof with pending obligations \emph{is} a process,
+--- under the obligation-as-communication reading of~\cite{ProofSearch} it is a
+runtime monitor --- and on a runtime that is the calculus, context-labelled
+bisimulation quantifies over the environments the system will actually meet,
+because the contexts \emph{are} rho processes. The model/implementation gap
+does not vanish; it moves, from ``this model is faithful to the machine''
+(per system, unauditable) to ``this implementation is faithful to the
+calculus'' (once, for the platform). That is what verified compilation did for
+sequential code. Process witnesses do it for concurrent code by construction
+rather than by a per-system refinement stack.
+
+\subsection{True concurrency makes the gap wider}
+
+The interleaving models of \S3.1 are a defensible projection on a single core
+or under sequential consistency. On multicore hardware they are false, and the
+field models weak memory axiomatically, as partial orders on events per
+candidate execution~\cite{Herd}, because interleaving cannot express the
+reorderings the hardware permits. The trusted base is then a partial-order
+model, and Observation~\ref{obs:audit} sharpens: its faithfulness is a property
+of an independence relation, two levels above anything a confluent witness can
+inhabit. On the rho side the corresponding move is Par-2 of \S2.4; the
+F1R3FLY runtime is itself a partial-order system, a block DAG merging
+independent deploys by conflict detection, so a verification on that runtime
+whose identity is interleaving bisimulation under-specifies the system it runs
+on. For the ticket system the difference is concrete: two reservations on
+disjoint seats should commute, an interleaving proof reaches that fact only
+through a linearisability argument that re-derives commutation from outside,
+and a step-concurrent witness has the commutation as a single Par-2 step.
+
+% =====================================================================
+\section{The point, for artificial intelligence}\label{sec:ai}
+% =====================================================================
+
+\subsection{Traces cannot reveal branching}
+
+The value proposition of the current programme is that the salient aspects of
+intelligence are software, and in its dominant form, that they are what one
+obtains by predicting traces at scale. Proposition~\ref{prop:noncollapse}
+has a direct consequence for that form.
+
+\begin{proposition}[Observational invisibility of branching]\label{prop:invisible}
+Let $\mu$ be a probability distribution over finite traces. Then $\mu$ has a
+unique autoregressive factorisation $\mu(x_1\cdots x_n) = \prod_i
+\mu(x_i \mid x_{<i})$, and any two labelled transition systems inducing $\mu$
+--- in particular the probabilistic renderings
+$p\cdot a.b + (1-p)\cdot a.c$ and $a.(p\cdot b + (1-p)\cdot c)$ of
+Proposition~\ref{prop:noncollapse} --- induce the same factorisation. A
+learner whose only access to the system is samples from $\mu$ cannot
+distinguish them.
+\end{proposition}
+
+\begin{proof}
+Conditional probabilities are determined by the joint distribution; the two systems are
+trace-distribution equivalent by construction and not probabilistically
+bisimilar~\cite{LarsenSkou91}.
+\end{proof}
+
+So a next-token predictor trained on a corpus of completed runs, however
+large, represents the trace distribution and nothing more. The question
+``was the die cast before or after $a$?'' has no answer in the data. The
+limitation is not architectural; it is information-theoretic.
+\emph{Branching-time structure is invisible to any observer that does not
+act.}
+
+\subsection{Experimenters and spectators}
+
+To learn branching structure one has to intervene: place the system in a
+state, supply a context, and observe what it can still do. That is the
+context-labelled bisimulation game of~\cite{BIHOL,Extension} read as an
+epistemology --- the observer chooses a label, the system answers --- and the
+mortal-scientist programme~\cite{Scientist} is its agent. Bisimulation is the
+equivalence an \emph{experimenter} can learn; trace equivalence is what a
+\emph{spectator} gets.
+
+The alignment with Pearl's ladder~\cite{Pearl09} is exact. Rung one,
+association, is linear time: what a trace distribution supports. Rung two,
+intervention, is branching time: what an experimenter supplying contexts can
+learn, and what bisimulation characterises. Rung three, counterfactuals,
+requires the causal structure, which is the true-concurrency level of
+\S2.4 --- history-preserving bisimulation, with dependence as an object. The
+ladder and the linear/branching/causal spectrum are one hierarchy seen from
+statistics and from concurrency theory.
+
+\subsection{Where the stack sits}
+
+The indictment is specific and should be aimed carefully. Next-token
+prediction on observational text is rung one by construction. Reinforcement
+learning is not: a Markov decision process is a branching-time object, a
+state with actions and distributions over successors, and bisimulation for
+MDPs is an established tool for state abstraction~\cite{GivanDeanGreig03}. An
+RL agent learns by intervening. Post-training a language model with outcome
+rewards is the community purchasing rung-two data for a rung-one model, which
+is evidence that the limitation is felt.
+
+But reinforcement learning stops one rung short of nature. An MDP, and even a
+Markov game with simultaneous moves, has a global clock: the world steps in
+lockstep. The world does not. The races of the natural world --- which sperm
+fertilises the egg, which antelope the pride culls, which flower the bee
+reaches --- are truly concurrent, and an agent that models them as
+interleaved under a global tick attributes dependence where there is only
+coincidence. That is the step/pomset gap of \S2.4, now as a claim about what
+evolved intelligence must track.
+
+\subsection{Nature exploits races as races}
+
+The examples must be of the right kind. Sensitivity to \emph{who won} a race
+is observation of an outcome, rung one. The claim requires organisms sensitive
+to the race \emph{as a race} --- that it could go otherwise, and that one can
+act on the branching. The ethological and evolutionary literature supplies
+them.
+
+\begin{itemize}[leftmargin=2.2em,itemsep=0.25em]
+\item \textbf{Protean behaviour.} Prey move unpredictably in order to defeat
+a predator's predictive model~\cite{HumphriesDriver70}. The strategy only
+makes sense against an opponent reasoning in branching time, and only works if
+the prey itself can generate genuine branching.
+\item \textbf{Mixed strategies.} Hawk--dove and every mixed evolutionarily
+stable strategy~\cite{MaynardSmith82} is a population exploiting the fact that
+the opponent must model a choice, not a trace.
+\item \textbf{Bet-hedging.} Organisms produce offspring carrying non-confluent
+strategies, so that whichever environment arrives some
+win~\cite{SegerBrockmann87}. This is the biological hedge: pursue both
+branches, keep what succeeds.
+\item \textbf{Sexual selection.} The race is manufactured; the ornament exists
+to structure a competition whose outcome is informative only because it was a
+race.
+\end{itemize}
+
+The lion that drives the herd to \emph{create} a race it can win is doing
+rung-two work; the lion that eats the slowest is doing rung one. The first is
+intelligence; the second is a filter.
+
+\subsection{Witnesses, again}
+
+The last step returns to \S\ref{sec:abstract}. An agent's knowledge is its
+hypotheses and plans --- in the mortal-scientist setting, its proofs.
+Bet-hedging is a \emph{plan that is itself a race}: pursue two branches in
+parallel and commit to whichever lands. That plan is a non-confluent witness.
+A $\lambda$-plan cannot be it; it can describe it from outside and hand it to
+a scheduler, which is the orchestration-outside-the-dynamics of~\cite{ProofSearch}
+reappearing as a limit on cognition. So the requirement on a software
+rendering of intelligence is not only that it \emph{discriminate} branching
+phenomena but that its internal representations \emph{inhabit} them.
+Observation~\ref{obs:inhabit}, drawn through the agent's own cognition: an
+intelligence whose hypotheses are confluent can observe hedging but cannot
+hedge in its hypotheses.
+
+% =====================================================================
+\section{One point, three registers}\label{sec:one}
+% =====================================================================
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}p{0.2\textwidth}p{0.25\textwidth}p{0.25\textwidth}p{0.22\textwidth}@{}}
+\toprule
+ & \textbf{abstract} & \textbf{verification} & \textbf{intelligence} \\
+\midrule
+the confluent object & a $\lambda$-witness & a proof about a model & a trace predictor \\
+what it can state & a transition relation & the system's interleavings & the world's runs \\
+what it cannot inhabit & a race & the system's non-determinism & a hedge \\
+forced identity & $\beta\eta$ / trace eq. & model-relative certificate & trace distribution \\
+what is unexaminable & timing of choice & faithfulness of the model & when the die was cast \\
+the remedy & rho witnesses, $\bisW{\rhoc}$ & process certificates on a process runtime & an experimenter with race-shaped hypotheses \\
+one level up & Par-2, provenance & weak memory, block DAGs & clockless nature, rung three \\
+\bottomrule
+\end{tabular}
+\caption{The observation in its three readings.}
+\label{tab:three}
+\end{table}
+
+The rows of Table~\ref{tab:three} are not analogies. The same proposition ---
+collapse of the spectrum under confluence --- underlies all three columns, and
+the same remedy answers all three: witnesses that can be races, and an identity
+on them at least as fine as step bisimulation, with the generated logic
+following the presentation. The verification column and the intelligence
+column are the abstract column applied to a certificate and to a hypothesis
+respectively; a certificate is a hypothesis one has stopped testing.
+
+% =====================================================================
+\section{Obligations}\label{sec:obligations}
+% =====================================================================
+
+The note is an observation with consequences, and it leaves theorems owed.
+
+\begin{obligation}[Determinacy of $\Lam$]
+Establish inertness for the open minimal-label transition system of $\Lam$
+under the BIHOL construction, so that Proposition~\ref{prop:collapse} applies
+without the standardisation hand-wave, and identify $\bisW{\Lam}$ exactly on
+untyped terms: lazy observational equivalence if the labels are closed
+second-order contexts~\cite{DHL09}, normal-form bisimilarity --- L\'evy--Longo
+tree equality~\cite{Lassen99} --- if they are open with fresh variables. The
+two differ on terms with unsolvable subterms and nowhere else.
+\end{obligation}
+
+\begin{conjecture}[Full abstraction relative to encoded contexts]\label{conj:fullabs}
+For the composite encoding $\enc{-} : \Lam \to \rhoc$ through Milner's
+encoding~\cite{Milner92} and the local-allocator encoding of~\cite{NoWNS},
+$M \bisW{\Lam} N$ iff $\enc{M} \bisW{\rhoc,\operatorname{im}\Phi} \enc{N}$.
+The $\pi$-to-rho half is the full-abstraction theorem of~\cite{NoWNS}; the
+$\lambda$-to-$\pi$ half is operational correspondence for the standard
+encoding, with the base case of soundness the place to watch.
+\end{conjecture}
+
+\begin{obligation}[Step and causal identities]
+Verify that Par-2 as a rule scheme admits redex-RPOs in the sense
+of~\cite{BIHOL}, so that step labels are multisets of minimal contexts and
+step bisimulation is the derived identity; then align the provenance relation
+read off name creation with history-preserving bisimulation on the fresh-name
+fragment, and state what the history functor adds on the remainder.
+\end{obligation}
+
+\begin{obligation}[The audit as a theorem]
+Observation~\ref{obs:audit} is stated informally. Its content is that
+faithfulness of a non-deterministic model is not a trace property, which is
+Proposition~\ref{prop:invisible} read for machines rather than corpora; a
+precise statement should say which class of tests a $\lambda$-prover can run
+against a system and prove that the class is contained in trace observation.
+\end{obligation}
+
+\begin{obligation}[Target 3 of~\cite{ProofSearch}, relocated]
+``Proof identity is bisimulation'' is trivial on saturated proof-processes,
+which have no transitions and are therefore all bisimilar to $\nil$. The
+target should be restated on open proof-processes --- proofs as functions of
+their obligations --- where \S2.1 says it agrees with $\beta\eta$ on the
+$\lambda$-image and \S2.2 says it does not collapse outside it; exported
+witnesses, compared as names, are identified up to structural congruence and
+belong to a separate proposition.
+\end{obligation}
+
+\section*{Acknowledgements}
+
+The questions that shaped this note --- whether $\lambda$-witnessed systems
+are even cognizant of non-confluent phenomena, what the functional difference
+is for a verifier armed only with such a prover, and whether the argument
+survives true concurrency --- were put to the author in conversation and are
+answered here in the order they were asked. Claude (Anthropic) assisted with
+source review and drafting.
+
+\begin{thebibliography}{99}
+
+\bibitem{ProofSearch} L.~G.~Meredith.
+\newblock Proof search as concurrent reaction: the rho calculus and the
+category of continued interactive GSLTs as a substrate for proof objects with
+internalized, cost-accounted search.
+\newblock F1R3FLY.io technical note, 2026.
+
+\bibitem{PaPContinued} L.~G.~Meredith.
+\newblock Proofs as processes, continued.
+\newblock F1R3FLY.io technical note, 2026.
+
+\bibitem{BIHOL} C.~B.~Wells, M.~Stay and L.~G.~Meredith.
+\newblock Behavior in higher-order languages: admissible observers, relative
+pushouts, and the encoding of extended theories.
+\newblock In preparation, F1R3FLY.io, 2026.
+
+\bibitem{NoWNS} L.~G.~Meredith.
+\newblock Namespaces without a name server: freshness by communication, and a
+fully abstract encoding of the $\pi$-calculus in the rho calculus.
+\newblock F1R3FLY.io technical note, v3, 2026.
+
+\bibitem{Extension} L.~G.~Meredith.
+\newblock Spatial formulae, discrimination power, and the observer extension
+of an interactive GSLT.
+\newblock F1R3FLY.io technical note, v2, 2026.
+
+\bibitem{Omnibus} L.~G.~Meredith.
+\newblock Graph-structured lambda theories: a reference for the working
+developer.
+\newblock F1R3FLY.io, 2026.
+
+\bibitem{Scientist} L.~G.~Meredith.
+\newblock The mortal scientist: learning as cost-accounted computation in a
+reflective higher-order calculus.
+\newblock F1R3FLY.io, 2026.
+
+\bibitem{MeredithRadestock05} L.~G.~Meredith and M.~Radestock.
+\newblock A reflective higher-order calculus.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}
+\textbf{141}(5):49--67, 2005.
+
+\bibitem{LeiferMilner00} J.~J.~Leifer and R.~Milner.
+\newblock Deriving bisimulation congruences for reactive systems.
+\newblock In \emph{CONCUR 2000}, LNCS \textbf{1877}, pp.~243--258. Springer, 2000.
+
+\bibitem{MilnerCCS} R.~Milner.
+\newblock \emph{Communication and Concurrency}.
+\newblock Prentice Hall, 1989.
+
+\bibitem{GrooteSellink} J.~F.~Groote and M.~P.~A.~Sellink.
+\newblock Confluence for process verification.
+\newblock \emph{Theoretical Computer Science} \textbf{170}(1--2):47--81, 1996.
+
+\bibitem{Statman83} R.~Statman.
+\newblock $\lambda$-definable functionals and $\beta\eta$ conversion.
+\newblock \emph{Archiv f\"ur mathematische Logik und Grundlagenforschung}
+\textbf{23}:21--26, 1983.
+
+\bibitem{HennessyMilner85} M.~Hennessy and R.~Milner.
+\newblock Algebraic laws for nondeterminism and concurrency.
+\newblock \emph{Journal of the ACM} \textbf{32}(1):137--161, 1985.
+
+\bibitem{Sangiorgi94} D.~Sangiorgi.
+\newblock The lazy lambda calculus in a concurrency scenario.
+\newblock \emph{Information and Computation} \textbf{111}(1):120--153, 1994.
+
+\bibitem{Lassen99} S.~B.~Lassen.
+\newblock Bisimulation in untyped lambda calculus: B\"ohm trees and
+bisimulation up to context.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}
+\textbf{20}:346--374, 1999.
+
+\bibitem{DHL09} P.~Di Gianantonio, F.~Honsell and M.~Lenisa.
+\newblock RPO, second-order contexts, and $\lambda$-calculus.
+\newblock \emph{Logical Methods in Computer Science} \textbf{5}(3), 2009.
+
+\bibitem{Milner92} R.~Milner.
+\newblock Functions as processes.
+\newblock \emph{Mathematical Structures in Computer Science}
+\textbf{2}(2):119--141, 1992.
+
+\bibitem{Meseguer92} J.~Meseguer.
+\newblock Conditional rewriting logic as a unified model of concurrency.
+\newblock \emph{Theoretical Computer Science} \textbf{96}(1):73--155, 1992.
+
+\bibitem{GlabbeekGoltz} R.~J.~van Glabbeek and U.~Goltz.
+\newblock Refinement of actions and equivalence notions for concurrent systems.
+\newblock \emph{Acta Informatica} \textbf{37}:229--327, 2001.
+
+\bibitem{Iris} R.~Jung, R.~Krebbers, J.-H.~Jourdan, A.~Bizjak, L.~Birkedal and
+D.~Dreyer.
+\newblock Iris from the ground up: a modular foundation for higher-order
+concurrent separation logic.
+\newblock \emph{Journal of Functional Programming} \textbf{28}, 2018.
+
+\bibitem{CertiKOS} R.~Gu, Z.~Shao, H.~Chen, X.~Wu, J.~Kim, V.~Sj\"oberg and
+D.~Costanzo.
+\newblock CertiKOS: an extensible architecture for building certified
+concurrent OS kernels.
+\newblock In \emph{OSDI 2016}, pp.~653--669. USENIX, 2016.
+
+\bibitem{Herd} J.~Alglave, L.~Maranget and M.~Tautschnig.
+\newblock Herding cats: modelling, simulation, testing, and data mining for
+weak memory.
+\newblock \emph{ACM Transactions on Programming Languages and Systems}
+\textbf{36}(2), 2014.
+
+\bibitem{LarsenSkou91} K.~G.~Larsen and A.~Skou.
+\newblock Bisimulation through probabilistic testing.
+\newblock \emph{Information and Computation} \textbf{94}(1):1--28, 1991.
+
+\bibitem{Pearl09} J.~Pearl.
+\newblock \emph{Causality: Models, Reasoning, and Inference}, 2nd ed.
+\newblock Cambridge University Press, 2009.
+
+\bibitem{GivanDeanGreig03} R.~Givan, T.~Dean and M.~Greig.
+\newblock Equivalence notions and model minimization in Markov decision
+processes.
+\newblock \emph{Artificial Intelligence} \textbf{147}(1--2):163--223, 2003.
+
+\bibitem{HumphriesDriver70} D.~A.~Humphries and P.~M.~Driver.
+\newblock Protean defence by prey animals.
+\newblock \emph{Oecologia} \textbf{5}:285--302, 1970.
+
+\bibitem{MaynardSmith82} J.~Maynard Smith.
+\newblock \emph{Evolution and the Theory of Games}.
+\newblock Cambridge University Press, 1982.
+
+\bibitem{SegerBrockmann87} J.~Seger and H.~J.~Brockmann.
+\newblock What is bet-hedging?
+\newblock \emph{Oxford Surveys in Evolutionary Biology} \textbf{4}:182--211, 1987.
+
+\end{thebibliography}
+
+\end{document}
