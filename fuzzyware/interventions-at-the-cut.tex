@@ -1,0 +1,1518 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+\usepackage[T1]{fontenc}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\setlength{\emergencystretch}{2.5em}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Theorem environments
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{principle}[theorem]{Principle}
+\newtheorem{obligation}[theorem]{Obligation}
+\newtheorem{observation}[theorem]{Observation}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros.  NOTATION RULES OBSERVED THROUGHOUT:
+%   * the rho calculus is never written with the Greek letter rho
+%   * quoting is @P, dropping is *x; corner quotes are pre-2016 notation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\V}{\mathbb{V}}
+\newcommand{\Bool}{\mathbb{B}}
+\newcommand{\Rnn}{\mathbb{R}_{\geq 0}}
+\newcommand{\Cx}{\mathbb{C}}
+\newcommand{\Nat}{\mathbb{N}}
+\newcommand{\Proc}{\mathcal{P}}
+\newcommand{\Names}{\mathcal{N}}
+\newcommand{\Reach}{\mathrm{Reach}}
+\newcommand{\supp}{\mathrm{supp}}
+\newcommand{\scong}{\equiv}
+\newcommand{\tensorv}{\otimes}
+\newcommand{\sumv}{\oplus}
+\newcommand{\Cand}{\mathrm{Cand}}
+\newcommand{\Out}{\mathrm{out}}
+\newcommand{\crisp}[1]{\lceil #1 \rceil}
+\newcommand{\dok}{\textsf{do}}
+\newcommand{\ink}{\textsf{in}}
+\newcommand{\fork}{\textsf{for}}
+\newcommand{\where}{\textsf{where}}
+\newcommand{\PA}{\mathrm{PA}}
+\newcommand{\dsep}{\perp\!\!\!\perp}
+
+\newcommand{\lolli}{\mathrel{\reflectbox{$\multimap$}}}
+
+\lstdefinestyle{rholang}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  morekeywords={for,new,in,where,contract,match,if,else,do},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  framesep=5pt,
+  rulecolor=\color{black!35},
+  xleftmargin=6pt,
+  aboveskip=9pt,
+  belowskip=9pt
+}
+\lstset{style=rholang}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{\bfseries Interventions at the Cut\\[4pt]
+\large Pearl's \textsf{do} as a scoped guard in the rho calculus with graded
+where-clauses: an exact embedding of causal Bayesian networks, its
+$\sigma$-calculus generalisation, and the fragments that make it run}
+
+\author{L.\,G.\ Meredith\\ \small F1R3FLY.io}
+
+\date{F1R3FLY.io working note --- November 2026\\[2pt]
+\normalsize Draft 1}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A program in the rho calculus with graded where-clauses, valued over the
+non-negative reals, already carries a causal model: the likelihood of a causal
+history is a product over firing sites of a locally normalised factor, each
+site's factor is its clause, each site's parents are the data its pattern and
+clause read, and the resolver that settles its race is the exogenous noise.
+This note makes the model explicit and adds the one thing Pearl's calculus has
+that the clause language lacked --- an operator that intervenes.
+
+The operator is a scoped decoration on parallel composition,
+$\dok(\,y_1 \models \varphi_1 \ \&\ \cdots\ \&\ y_n \models \varphi_n\,)\
+\ink\ P$, read as: whenever a race for the binding of $y_i$ arises inside
+$P$, resolve it among the candidates satisfying $\varphi_i$, with the site's own
+weights restricted to that set. It is placed at the cut because an aperture is a
+property of the cut and of neither agent flanking it, and because whether a
+particular cut will ever occur is undecidable even in the sequential fragment,
+so an intervention cannot be a surgery on a known node and must be a policy
+conditional on an event. The construct lowers into the where-clause by the
+normal-form theorem for weight maps, so it is a conservative extension, and it
+sits beside the cost membrane as a second index on a polymorphic cut.
+
+With it, Pearl's causal Bayesian networks over finite domains embed exactly: a
+variable is a join on its parents' channels together with an ancilla race over
+its domain, the conditional probability table is the clause in disjunctive
+normal form, the term is staged so that each gate is its own contention set,
+and the truncated factorisation is the likelihood of a causal history.
+Intervening on the ancilla binding deletes the incoming edges on the nose:
+normalisation sends the one surviving weight to $1$ for every value of the
+parents, and the positivity condition Pearl needs appears as a receipt that
+can starve. The three rules of the do-calculus are then theorems about the
+embedded fragment rather than axioms, and counterfactuals are replay from a
+recorded pre-state under the intervention. The construction is the one-qubit
+gadget of the quantum paper with real weights, and we say exactly what the
+resemblance amounts to. Restricting to a set rather than a point, or supplying
+a graded constraint, lands in Correa and Bareinboim's $\sigma$-calculus, whose
+induced graph we read off the free names of the constraint.
+
+The naive interpretation of the construct is expensive in three independent
+ways --- the constraint language can contain modalities and fixed points, the
+scope can be dynamic through reflection, and restriction changes the
+normalisation of contention sets whose enumeration is permanent-shaped --- and
+whether a given $\dok$ is vacuous is a reachability question. We propose
+fragments of the constraint language graded by evaluation cost, and type-based
+restrictions on the scope (staging, flatness, finite-domain channel types,
+namespace confinement) under which lowering is exact, checks are constant-time,
+and the semantics is Pearl's. We close by proposing the mechanism as the
+constructive content owed by the companion note on inhabiting choice: rung two
+of Pearl's ladder is a graded race under a $\dok$, rung three is its replay, and
+the vending-machine refusal that no trace can reveal is a receipt that starves
+under a one-line intervention.
+\end{abstract}
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}\label{sec:intro}
+
+\subsection{Where the choice is}
+
+A \rhoc{} program does not determine its own execution. Write
+\[
+  x!(Q_1) \mid \fork(y \leftarrow x)P \mid x!(Q_2)
+\]
+and the operational semantics permits two reductions without saying which
+happens or with what tendency. The graded where-clause programme
+\cite{GradedV4,GradedQuantum,GradedPLN} takes this silence as a parameter: the
+\where{} clause of the for-comprehension is valued in a commutative semiring and
+evaluated once per candidate match, so that the programmer may write the
+resolution mechanism down rather than inherit it. Over the Booleans this is
+rholang; over $\Cx$ it is a syntax for arranging interference; over $\Rnn$ it is
+stochastic execution, and the companion paper \cite{GradedPLN} showed that the
+real instance is the one in which a learner lives, because it is the one with a
+likelihood to differentiate.
+
+The present note observes that the real instance is also the one in which a
+\emph{causal} model lives, in the precise sense of Pearl
+\cite{Pearl95,Pearl09}, and that it has been living there since the clause was
+introduced. What was missing was not a model but an operator: the calculus
+could observe its races and weight them, but had no syntax for \emph{forcing}
+one. Pearl's $\dok$ is that syntax, and this note gives it a home.
+
+\subsection{The observation}
+
+The likelihood of a causal history in \cite{GradedPLN} is
+\begin{equation}\label{eq:lik}
+  \Pr\nolimits_\theta(h) \;=\; \prod_{i=1}^{\ell}
+  \frac{w(\theta,\sigma_i)}{\sum_{\tau \in \Gamma_i} w(\theta,\tau)} ,
+\end{equation}
+a product over firing sites of a factor normalised within the site's contention
+set $\Gamma_i$. Read with Pearl's dictionary this is a Bayesian-network
+factorisation. The variable is the site $r$ and its value is the matching
+$\sigma$ that fired. Its parents are the contents of $\Gamma_r$ --- what rests
+on the channels the pattern and the clause read. Its mechanism is the clause
+$\psi_r$. Its exogenous noise is the resolver's draw. And the thesis of the
+whole programme, that the resolution mechanism is a parameter supplied from
+outside the term, is Pearl's exogeneity: $U$ is what the model does not
+explain.
+
+Three consequences follow before any construction, and we state them here
+because they govern what follows.
+
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+\item \emph{The parent set is syntactic.} Pearl must posit the graph. Here the
+parents of a site are the names its pattern and the crisp subformulae of its
+clause read; the graph is written in the program. The one construct that can
+smuggle in an unlisted parent is reflection --- $*y$ dropping received code ---
+which is the same suspect the choice-formulae note \cite{ChoiceFormulae}
+identified for subject reduction.
+\item \emph{Observation and intervention are already priced differently.}
+Conditioning on ``the race at $r$ went $x$'' keeps the histories in which it did
+and renormalises, which \cite{GradedV4} showed is post-selection and charged at
+$1/\Pr(x)$ retries. Intervention replaces a column block of the transfer
+operator and renormalises nothing. The two differ exactly when histories
+producing $x$ also influence the outcome by another route, which is a
+confounder; the paradigm confounder in the programme's own examples is a belief
+datum read by two sites.
+\item \emph{The do-calculus is Paper II territory.} Pearl's rules presuppose a
+measure over histories. Over $\Cx$ a reachable outcome may carry amplitude zero,
+so there is no per-branch probability \cite[Principle~3.5]{GradedPLN}, and the
+counterpart on the complex side is the quantum-causal-models literature
+\cite{CostaShrapnel,AllenEtAl}, a different object. Everything below is over
+$\Rnn$.
+\end{itemize}
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=3pt]
+\item \textbf{Interventions have one carrier} (\S\ref{sec:carrier}). An
+intervention is a change of section over the candidate fibre of a site. The
+fibre at a deterministic site is a point, so deterministic communication is
+intervention-transparent (the dual of amplitude-transparency,
+\cite[Prop.~8.5]{GradedV4}); a context cannot force a race it does not own over
+$\Rnn$ (the converse of the aperture principle), and can exactly in the
+idempotent algebras; and the observation/intervention gap --- the whole content
+of Pearl's calculus --- lives only on races.
+\item \textbf{The construct} (\S\ref{sec:construct}). A scoped decoration on
+the cut, $\dok(C)\ \ink\ P$, with a membrane semantics and a lowering into the
+where-clause that agree on the reflection-free scope. It is a conservative
+extension by the normal-form theorem for weight maps, it composes by
+conjunction, and it is the operator that moves a formula from specification
+position to guard position in the sense of \cite{Omnibus}.
+\item \textbf{The embedding} (\S\ref{sec:pearl}). Causal Bayesian networks over
+finite domains are the $\Rnn$ instance of the graded clause on staged terms;
+$\dok$ on the ancilla binding is graph surgery on the nose
+(Theorem~\ref{thm:surgery}); the three rules are derived
+(Corollary~\ref{cor:rules}); counterfactuals are replay
+(Theorem~\ref{thm:cf}). Positivity appears as starvation.
+\item \textbf{The Shor gadget} (Remark~\ref{rem:shor}). The variable gadget is
+the one-qubit gadget of \cite{GradedQuantum} with a stochastic matrix in place
+of a unitary one, and the resemblance is a theorem about the semiring rather
+than an analogy.
+\item \textbf{The $\sigma$-calculus} (\S\ref{sec:sigma}). Set-valued and graded
+constraints are Correa--Bareinboim $\sigma$-interventions
+\cite{CorreaBareinboim}; the induced graph is read off the free names of the
+constraint; Pearl's atomic $\dok$ is the singleton case.
+\item \textbf{Complexity, and the fragments that tame it}
+(\S\ref{sec:complexity}). The naive interpretation pays for modalities and
+fixed points in the constraint, for dynamic scope through reflection, and for
+permanent-shaped renormalisation of contention sets; vacuity of a $\dok$ is a
+reachability question. We grade the constraint language into four fragments by
+evaluation cost and impose four type disciplines on the scope under which
+lowering is exact and the semantics is Pearl's
+(Proposition~\ref{prop:practical}).
+\item \textbf{Execution} (\S\ref{sec:execution}). The construct lowers in the
+elaboration pass the node already has, its membrane form is the seal tree's
+twin, an intervention is a COMM and is priced as one, and a counterfactual is
+the trace-replay the validators already perform.
+\item \textbf{Inhabiting choice, discharged} (\S\ref{sec:inhabiting}). The
+companion note \cite{Inhabiting} aligned Pearl's ladder with the
+linear/branching/causal spectrum by argument; this note supplies the
+constructive content, and the vending-machine benchmark becomes a one-line
+program.
+\end{enumerate}
+
+\subsection{What this note does not do}
+
+It does not treat continuous domains, which need the DDL's numeric types to
+carry an ancilla as a density. It does not prove the $\sigma$-calculus rules
+beyond the staged fragment, where the graph is dynamic and the right objects
+are the branching cells of \cite{AbbesBenveniste}; that is stated as an
+obligation. It does not fix the token charge of a $\dok$ against the ledger. And
+it does not treat the complex instance.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The calculus}\label{sec:calculus}
+
+The presentation is self-contained and follows \cite{GradedPLN}; a reader of
+that paper may skip to \S\ref{sec:carrier}.
+
+\begin{definition}[Syntax]\label{def:syntax}
+Processes $P$ and names $x$ are given by
+\[
+\begin{array}{rcl}
+P &::=& 0 \;\mid\; x!(P) \;\mid\; \fork(\,\vec{y} \leftarrow \vec{x}
+  \;\where\; \psi\,)\,P \;\mid\; P \mid P \;\mid\; *x
+  \;\mid\; \textsf{new}\ x\ \ink\ P \\[2pt]
+x &::=& @P
+\end{array}
+\]
+A receipt $\fork(y_1 \leftarrow x_1 \,\&\, \cdots \,\&\, y_m \leftarrow x_m
+\;\where\; \psi)P$ is a \emph{join}: it fires only when every pattern is matched.
+The clause $\psi$ is drawn from the graded sort below and takes values in $\V$;
+its absence abbreviates $\crisp{\top}$. Receipts are linear by default; the
+persistent form $\Leftarrow$ survives its firing.
+\end{definition}
+
+\begin{definition}[Structural congruence]
+$\scong$ is the least congruence making $(\,\mid\,, 0)$ a commutative monoid and
+satisfying $*@P \scong P$ and $@*x = x$, closed under $\alpha$-equivalence and
+scope extrusion for \textsf{new}.
+\end{definition}
+
+\begin{definition}[Formula sorts]\label{def:sorts}
+The \emph{crisp} sort retains the full propositional structure of the
+generated logic, including negation and fixed points:
+\[
+\beta ::= \top \;\mid\; \Out(n)\beta \;\mid\; \mathrm{in}(n)\beta
+      \;\mid\; \beta \mid \beta \;\mid\; @\beta
+      \;\mid\; \beta \wedge \beta \;\mid\; \neg\beta
+      \;\mid\; \langle K\rangle\beta \;\mid\; \nu X.\beta .
+\]
+The \emph{graded} sort has no negation and takes values in $\V$:
+\[
+\psi ::= \crisp{\beta} \;\mid\; v \;\mid\; \psi \tensorv \psi
+      \;\mid\; \psi \sumv \psi \;\mid\; \langle K\rangle_{\V}\psi
+      \;\mid\; X \;\mid\; \mu X.\psi \;\mid\; \nu X.\psi ,
+\]
+with $v$ ranging over constants of $\V$ and fixed-point variables positive and
+guarded. $\crisp{-}$ sends a crisp formula to $1$ where it holds and to $0$
+where it does not.
+\end{definition}
+
+\begin{definition}[Candidates and contention]\label{def:cand}
+Fix a term $P$ and a receipt occurrence $r$ with patterns $y_1,\dots,y_m$ on
+channels $x_1,\dots,x_m$. A \emph{candidate} at $r$ is an injective assignment
+$\sigma$ of the patterns to messages resting on the corresponding channels;
+$\Cand(P,r)$ is the set of candidates. Two candidates \emph{contend} if they
+share a message or share a linear receipt; a \emph{contention set} is a
+connected component of the contention relation, and it is the unit at which
+weights are normalised.
+\end{definition}
+
+\begin{definition}[Weighted communication]\label{def:comm}
+Write $\psi\sem{\sigma} \in \V$ for the value of the clause with the pattern
+variables bound as $\sigma$ prescribes. If $\psi\sem{\sigma} \neq 0$ then
+$P \longrightarrow_{\psi\sem{\sigma}} P'$, where $P'$ is the residue of consuming
+the assigned messages and $r$ and substituting. A candidate of value $0$ offers
+no transition.
+\end{definition}
+
+\begin{definition}[Completion over $\Rnn$]\label{def:completion}
+Throughout, $\V = (\Rnn,+,\times,0,1)$. Resolution normalises within a
+contention set: the probability that a given maximal matching fires is its
+weight divided by the total over the set. A contention set is \emph{complete}
+when that total is $1$.
+\end{definition}
+
+\begin{definition}[Causal history]\label{def:history}
+A causal history $h$ of length $\ell$ is a sequence of contention sets and
+maximal matchings $(\Gamma_1,\sigma_1),\dots,(\Gamma_\ell,\sigma_\ell)$,
+quotiented by the interleaving of independent firings. Its likelihood is
+\eqref{eq:lik}.
+\end{definition}
+
+The quotient is load-bearing: without it $m$ independent firings contribute the
+$m!$ linearisations of a partial order, measured as $2, 6, 24$ in the companion
+papers. With it the likelihood is a product over \emph{events}, and an event
+structure's configurations are partial orders, hence acyclic. This is the
+first point at which the dictionary of \S\ref{sec:intro} must be read with
+care: the \emph{event-level} graph is always a DAG; the \emph{variable-level}
+graph, which identifies events of a kind, may have cycles when the term
+recurses. Pearl applies verbatim at the event level. The variable level is
+where the fixed point of \cite{GradedPLN} lives, and where this note imposes
+types.
+
+\begin{proposition}[Support adequacy is exact over $\Rnn$ {\cite[Prop.~3.3]{GradedPLN}}]
+\label{prop:adequacy}
+With all clause constants strictly positive, $\supp\sem{P} = \Reach(P)$: every
+reachable outcome carries positive weight, so every branch of every contention
+set has a probability.
+\end{proposition}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Interventions have one carrier}\label{sec:carrier}
+
+Before adding syntax it is worth settling what an intervention can touch, since
+the answer constrains the syntax.
+
+\begin{definition}[Intervention, semantically]\label{def:intervention}
+An \emph{intervention} at a site $r$ of $P$ is a replacement of the map
+$\Cand(P,r) \to \V$ denoted by $\psi_r$ with another such map. It is
+\emph{hard} when the replacement is the indicator of a single candidate,
+\emph{set-valued} when it is the indicator of a subset, and \emph{soft}
+otherwise.
+\end{definition}
+
+\begin{proposition}[Deterministic communication is intervention-transparent]
+\label{prop:transparent}
+At a site with exactly one candidate, every intervention is either the identity
+on the normalised dynamics or disables the site. In particular no intervention
+at such a site changes which outcome is reached when the site fires.
+\end{proposition}
+
+\begin{proof}
+The fibre is a singleton; a map on a singleton is determined by whether its
+value is zero. Normalisation within the contention set sends any nonzero value
+to $1$.
+\end{proof}
+
+This is the dual of amplitude-transparency \cite[Prop.~8.5]{GradedV4}: a
+deterministic step neither carries weight nor admits a choice. To intervene at
+a deterministic site one must change the fibre --- inject a datum or delete one
+--- and the moment a datum is injected the site has two candidates and is a
+race. Deletion is the degenerate case, resolution toward the empty section.
+
+\begin{proposition}[No hard intervention by context over $\Rnn$]
+\label{prop:nocontext}
+Let $r$ be a race in $P$. No \rhoc{} context $C[-]$ makes $C[P]$ resolve $r$
+to a chosen candidate with probability $1$ under the normalised $\Rnn$
+semantics, unless $C$ consumes every competing candidate before $r$ can fire
+--- which is itself a race $C$ wins with probability strictly less than $1$. Over
+an idempotent resolution algebra (Viterbi, tropical) a context whose eater
+carries strictly dominating weight does force the outcome.
+\end{proposition}
+
+\begin{proof}
+The first claim is the aperture principle \cite[Prin.~2.1]{GradedV4} read in
+the forcing direction: a context can add contention and consume contenders, and
+consuming a contender is a candidate at a site in contention with $r$. Over
+$\Rnn$ every candidate of positive weight has positive probability
+(Proposition~\ref{prop:adequacy}), so $r$ fires first with positive probability.
+Over an idempotent algebra resolution is argmax, which is attained by a
+definable section when the maximum is unique \cite[Prop.~3.4(i)]{ChoiceFormulae}.
+\end{proof}
+
+So the carrier of intervention is the candidate set at a receipt, a nontrivial
+intervention exists exactly where that set has or is given more than one
+element, and over $\Rnn$ hard intervention requires access to the clause ---
+white-box access, in the vocabulary of \cite{ExpRegimes}. Two qualifications
+belong here. First, it is the \emph{gap} between observation and intervention
+that lives only on races: one may replace $x!(1)$ by $x!(2)$ in a confluent
+program and change its output with no race anywhere, but that is running a
+different term, $\Pr(y\mid x)$ and $\Pr(y\mid \dok(x))$ coincide trivially
+because there are no histories to reweight, and none of Pearl's rules has
+content there. Second, the clause controls the jump chain and not the holding
+times \cite[Rem.~3.2]{GradedPLN}, so an intervention on \emph{when} a site fires
+is outside the clause and outside this note unless time is reified as data, at
+which point it is a race again.
+
+\begin{principle}[Interventions are metered because they are races]
+\label{prin:metered}
+A race is a COMM and a COMM costs one unit of phlo. Reading the trace is free;
+intervening is charged. This is not a policy choice: intervention has no
+carrier other than the event the ledger already prices.
+\end{principle}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The construct: a decorated cut}\label{sec:construct}
+
+\subsection{Why the cut}
+
+There is always a node in the syntax tree above a race, and it is a parallel
+composition: a race needs a receiver and at least two things it could meet. The
+graded programme already located the aperture there --- an aperture is a
+property of the cut and not of either agent flanking it
+\cite[Rem.~2.3]{GradedV4} --- and the cost-accounting programme already made the
+cut polymorphic, indexing it by signatures and seals \cite{CostMonad}. An
+intervention is a second index on the same operator.
+
+The reason it cannot be anything more specific is a halting argument. Whether
+a particular cut will ever occur is undecidable, already in the sequential
+fragment, since \rhoc{} is Turing complete and ``this receipt fires'' is a
+nontrivial reachability property. So an intervention cannot be a surgery on a
+node known in advance; it must be a \emph{policy conditional on an event}:
+\emph{if} a race for this binding arises, \emph{then} resolve it thus. Vacuous
+if the race never arises. Pearl's nearest object is a dynamic treatment regime
+rather than an atomic $\dok$, and the formal home is the unfolding rather than
+the DAG.
+
+\subsection{Syntax}
+
+\begin{definition}[The $\dok$ membrane]\label{def:do}
+Extend Definition~\ref{def:syntax} with
+\[
+  P ::= \cdots \;\mid\; \dok(\,C\,)\ \ink\ P, \qquad
+  C ::= y \models \varphi \;\mid\; y \models \psi \;\mid\; C \,\&\, C ,
+\]
+where $y$ is a pattern variable, $\varphi$ a crisp formula and $\psi$ a graded
+formula, each with $y$ among its free names. We write $\dok(y = Q)$ for
+$\dok(y \models \crisp{y = @Q})$ and $\dok(y \in S)$ for the disjunction over a
+finite set.
+\end{definition}
+
+\begin{lstlisting}
+do( y = Q2 ) in { x!( Q1 ) | for( y <- x )P | x!( Q2 ) }
+
+do( y1 |= phi1 & y2 |= phi2 ) in { P1 | P2 | P3 }
+\end{lstlisting}
+
+\subsection{Semantics, twice}
+
+\begin{definition}[Membrane semantics]\label{def:membrane}
+Let $r$ be a receipt occurrence inside the scope of $\dok(C)\ \ink\ P$ binding a
+variable $y$ constrained in $C$ by $\varphi$ (resp.\ $\psi$). At $r$ the
+clause is read as
+\[
+  \psi_r \tensorv \crisp{\varphi} \qquad\text{(resp. } \psi_r \tensorv \psi
+  \text{)},
+\]
+with the constraint evaluated under the candidate's substitution, and
+normalisation within the contention set is taken \emph{after} the restriction.
+Reduction is $\dok(C)\ \ink\ P \longrightarrow_w \dok(C)\ \ink\ P'$ whenever
+$P \longrightarrow_w P'$ under clauses so read. A receipt in scope binding an
+unconstrained variable is unaffected; a receipt arriving in scope by reflection
+is constrained like any other.
+\end{definition}
+
+\begin{definition}[Lowering]\label{def:lowering}
+On a scope $P$ in which every receipt binding a constrained variable is
+syntactically present and its channel is a literal or \textsf{new}-bound name,
+define $\lfloor \dok(C)\ \ink\ P \rfloor$ to be $P$ with each such receipt's
+clause replaced by $\psi_r \tensorv \crisp{\varphi}$ (resp.\ $\psi_r \tensorv
+\psi$), and the $\dok$ erased.
+\end{definition}
+
+\begin{proposition}[Lowering is exact on flat scopes]\label{prop:lowering}
+If $P$ contains no drop $*z$ at a position that can come to contain a receipt,
+then $\dok(C)\ \ink\ P$ and $\lfloor \dok(C)\ \ink\ P \rfloor$ have the same
+weighted transition system, hence the same graded denotation and the same
+likelihood on every causal history.
+\end{proposition}
+
+\begin{proof}
+Under the hypothesis every receipt that will ever be in scope is present in $P$
+up to substitution of names for pattern variables, which does not create or
+destroy binders. Definition~\ref{def:membrane} reads each such clause exactly as
+Definition~\ref{def:lowering} rewrites it, and the contention relation is
+unchanged because restriction removes candidates without adding any.
+\end{proof}
+
+The hypothesis is the \emph{flat} fragment of \cite{ExpRegimes}, and the gap
+between the two semantics is exactly the dynamic scope that reflection
+introduces. We take the membrane as the definition and the lowering as the
+optimisation, for the same reason \cite{ChoiceFormulae} stratifies \where{}:
+received code is the one route by which an unlisted binder --- and, in the
+causal reading, an unlisted parent --- enters.
+
+\begin{remark}[Hygiene]
+$\dok(y \ldots)\ \ink\ P$ refers to a name bound inside $P$, so $y$ ceases to be
+$\alpha$-convertible independently of the $\dok$. We read the construct as part
+of the binding scope: the $\dok$ and every receipt it reaches are renamed
+together. The alternative --- labelled receipts addressed by label --- is better
+theory and worse ergonomics; the semantics is the same.
+\end{remark}
+
+\subsection{Restriction, override, and the normal form}
+
+\begin{observation}[Restrict, not override]\label{obs:restrict}
+Definition~\ref{def:membrane} \emph{multiplies} the clause by the constraint.
+It does not replace it. For $\fork(y \leftarrow x \;\where\; \crisp{*y > 5})P$
+under $\dok(y = 3)$, the restricted clause is $0$ on every candidate and the site
+waits; an override would force a $3$. Pearl's atomic $\dok$ severs the mechanism
+and so is an override in spirit --- but \S\ref{sec:pearl} shows that on the
+embedded models the two coincide, because the embedding puts the mechanism in
+the \emph{weights} and the restriction is on an ancilla whose own gate is
+$\top$. Where they differ, restriction is the construct of this note and
+override is a $\sigma$-intervention (\S\ref{sec:sigma}).
+\end{observation}
+
+\begin{proposition}[A compressed $\dok$ is a weight map]\label{prop:dnf}
+A constraint $y \models \bigoplus_i v_i \tensorv \crisp{\chi_i}$ with the
+$\chi_i$ pairwise exclusive denotes the weight map $(\chi_i, v_i)_i$ of the
+weighted-GSLT programme restricted to the fibre at $y$'s site, and every weight
+map on that fibre is so denoted. In particular $\dok(y = Q_1 \vee y = Q_2)$ is
+the weight map assigning $1$ to two candidates and $0$ to the rest.
+\end{proposition}
+
+\begin{proof}
+This is \cite[Thm.~7.2]{GradedV4} applied to the constraint rather than the
+clause.
+\end{proof}
+
+So several interventions compress into one expression for the reason weight
+maps have a normal form: a formula has one value. The $\dok$ is a scoped weight
+map placed at the cut, and the normal-form theorem is what makes it a
+conservative extension.
+
+\begin{proposition}[Composition]\label{prop:compose}
+$\dok(C_1)\ \ink\ \dok(C_2)\ \ink\ P$ and $\dok(C_1 \,\&\, C_2)\ \ink\ P$ have the
+same weighted transition system; $\&$ is commutative and associative; and
+$\dok(y \models \top)\ \ink\ P$ has the transition system of $P$.
+\end{proposition}
+
+\begin{proof}
+Multiplication in $\Rnn$ is commutative and associative with unit $1$, and
+$\crisp{\top} = 1$.
+\end{proof}
+
+\begin{remark}[Specification into guard]\label{rem:specguard}
+The omnibus \cite[Part~III]{Omnibus} places one formula in four positions:
+specification, test, guard, hypothesis. A $\dok(y \models \varphi)$ takes the
+$\nu$-property ``every binding of $y$ satisfies $\varphi$'' --- a specification
+one would check --- and installs it in guard position at every site in scope,
+including sites not yet visible. The $\dok$ is the operator that turns a
+specification into a guard, and the Principle that the guard is where
+resolution becomes legible is why that is the right place for an intervention
+to live.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The embedding of Pearl's calculus}\label{sec:pearl}
+
+\subsection{Causal Bayesian networks}
+
+\begin{definition}[Causal Bayesian network]\label{def:cbn}
+A \emph{causal Bayesian network} $M = (G, \{P_i\})$ over variables
+$V_1,\dots,V_n$ with finite domains $D_1,\dots,D_n$ consists of a DAG $G$ on the
+$V_i$ and, for each $i$, a conditional probability table $P_i(v \mid \mathit{pa})$
+for $v \in D_i$ and $\mathit{pa} \in \prod_{j \in \PA_i} D_j$. It induces
+$\Pr_M(v_1,\dots,v_n) = \prod_i P_i(v_i \mid \mathit{pa}_i)$. $M$ is
+\emph{positive} when every table entry is strictly positive. For $X \subseteq V$
+and an assignment $x$, the \emph{submodel} $M_x$ replaces $P_i$ by the point
+mass at $x_i$ for each $V_i \in X$ and deletes the incoming edges of $X$, and
+$\Pr_M(y \mid \dok(x)) := \Pr_{M_x}(y)$.
+\end{definition}
+
+A structural causal model refines this by writing each $V_i = f_i(\PA_i, U_i)$
+with $U_i$ independent exogenous variables; a CBN is an SCM with the $U_i$
+marginalised. The embedding below is of the CBN; \S\ref{ssec:cf} recovers the
+$U_i$ as the record of the resolver's draws.
+
+\subsection{The variable gadget}
+
+\begin{definition}[Fan-out]\label{def:fanout}
+For a variable $V_i$ with children $V_{j_1},\dots,V_{j_k}$, allocate fresh
+channels $v_i^{(j_1)},\dots,v_i^{(j_k)}$, one per child, and a readout channel
+$v_i^{\circ}$. Emitting $V_i$'s value $d$ is the parallel composition
+$v_i^{(j_1)}!(d) \mid \cdots \mid v_i^{(j_k)}!(d) \mid v_i^{\circ}!(d)$.
+\end{definition}
+
+\begin{definition}[The gadget]\label{def:gadget}
+For each $V_i$ with parents $V_{p_1},\dots,V_{p_m}$ and domain $D_i =
+\{d_1,\dots,d_s\}$, allocate a fresh ancilla channel $w_i$ and write
+\begin{lstlisting}
+new wi in {
+    wi!(d1) | ... | wi!(ds)
+  | for( p1 <- vp1_i & ... & pm <- vpm_i
+       & u1 <- wi & ... & us <- wi
+         where  [ *p1 = pa1 and ... and *pm = pam and *u1 = v ] * P_i(v | pa)
+              + ...   // one summand per (pa, v) in the table
+       )
+    { emit_i( *u1 ) }
+}
+\end{lstlisting}
+where \texttt{vpj\_i} is the copy $v_{p_j}^{(i)}$ of parent $j$ allocated to
+this gadget, $\mathit{emit}_i$ is the fan-out of Definition~\ref{def:fanout},
+the crisp bracket is the indicator embedding, and the sum has one summand for
+each $\mathit{pa} \in \prod_j D_{p_j}$ and $v \in D_i$. A root variable has
+$m = 0$.
+The \emph{model term} $\sem{M}$ is the parallel composition of the gadgets under
+one \textsf{new} binding all the channels.
+\end{definition}
+
+The join consumes all $s$ ancilla messages, so there is no residual on $w_i$
+and no which-path record; the candidates are the $s!$ bijections from
+$u_1,\dots,u_s$ to $D_i$, and the continuation mentions only $u_1$, so the $s!$
+candidates fall into $s$ outcome classes of $(s-1)!$ each, one per value of
+$u_1$. The clause is constant on each class. Under normalisation within the
+contention set the $(s-1)!$ multiplicity cancels, and the probability that the
+gadget emits $v$ given parent data $\mathit{pa}$ is $P_i(v \mid \mathit{pa})$.
+
+\begin{lemma}[Staging]\label{lem:staging}
+In $\sem{M}$ every receipt is its own contention set, each gadget fires exactly
+once, and the causal order of every history is a linear extension of $G$.
+\end{lemma}
+
+\begin{proof}
+Every channel has exactly one receiver (fan-out gives each child its own copy)
+and every ancilla channel is private to its gadget, so no two receipts share a
+message or a receipt; contention sets are singletons. A gadget is enabled
+exactly when all its parent copies have been emitted, which is
+\cite[Prop.~8.3]{GradedV4}: the circuit's DAG is the term's causal order.
+\end{proof}
+
+\begin{theorem}[Adequacy of the embedding]\label{thm:adequacy}
+Causal histories of $\sem{M}$ reaching a normal form are in bijection with
+assignments $(v_1,\dots,v_n) \in \prod_i D_i$, read off the readout channels,
+and the likelihood \eqref{eq:lik} of the history for $(v_1,\dots,v_n)$ is
+$\Pr_M(v_1,\dots,v_n)$.
+\end{theorem}
+
+\begin{proof}
+By Lemma~\ref{lem:staging} a history is determined, up to the interleaving the
+quotient removes, by the outcome class chosen at each gadget, i.e.\ by the
+vector of values; conversely every vector is realised since every ancilla value
+is present. The factor contributed by gadget $i$ is its restricted-and-normalised
+clause value, $P_i(v_i \mid \mathit{pa}_i)$ by the computation following
+Definition~\ref{def:gadget}, and \eqref{eq:lik} multiplies the factors.
+\end{proof}
+
+Theorem~\ref{thm:adequacy} says the truncated-factorisation \emph{form} is not
+imposed on the semantics; it \emph{is} the semantics, and the staging that makes
+each gadget its own contention set is what makes the event structure
+confusion-free in the sense of \cite{VaraccaVolzerWinskel}, which is the
+condition under which local probabilistic choice composes to a global measure
+at all.
+
+\begin{remark}[The Shor gadget]\label{rem:shor}
+Definition~\ref{def:gadget} is the one-qubit gadget of \cite[Lemma~8.1]{GradedV4}
+and \cite[\S10]{GradedQuantum} --- ancilla channel carrying the domain, a join
+that consumes everything, a continuation that re-emits without mentioning what
+was consumed, and a clause in disjunctive normal form indexed by (input, output)
+--- with three changes: the domain is $D_i$ rather than $\{0,1\}$, the inputs
+are several parents rather than one wire, and the matrix the clause realises is
+\emph{stochastic} rather than unitary. The resemblance is exact and is a
+statement about the semiring. The quantum gadget realises every $2 \times 2$
+matrix over $\Cx$ because the clause may mention both the input datum and the
+ancilla assignment; the present gadget realises every stochastic matrix over
+$\Rnn$ for the same reason, and the restriction to stochastic rather than
+arbitrary non-negative matrices is supplied by normalisation within the
+contention set rather than by the clause. The two erasures of
+\cite[Rem.~8.2]{GradedV4} are both present: the join's totality erases which
+ancilla message was which (recombination within a superposition, inert here
+since there is no phase to recombine), and the continuation's silence about the
+parents erases the input basis (which is what makes the gadget a linear map
+into a fixed codomain, i.e.\ a conditional probability table rather than a
+family of unrelated tables). What differs is what the two calculi then do with
+the matrix: over $\Cx$ one arranges for columns to interfere and reads a
+detector that never fires; over $\Rnn$ one reads the trace. Modular
+exponentiation in Shor is ordinary rholang running inside every branch at no
+cost \cite[Cor.~8.6]{GradedV4}; here the analogous statement is
+Proposition~\ref{prop:transparent}, that deterministic subcomputations of a
+causal model neither carry probability nor admit intervention.
+\end{remark}
+
+\subsection{Surgery}
+
+\begin{theorem}[Graph surgery is restriction of the ancilla race]
+\label{thm:surgery}
+Let $M$ be positive and $V_i \in V$, $v \in D_i$. Then
+\[
+  \sem{\,\dok(u_1 = v)\ \ink\ \sem{M}\,} \;=\; \sem{M_{V_i = v}}
+\]
+as weighted transition systems up to structural congruence, where $u_1$ is the
+first ancilla pattern of gadget $i$. Hence
+$\Pr_{\sem{M}}(y \mid \dok(V_i = v)) = \Pr_{M}(y \mid \dok(V_i = v))$ for every
+$y$.
+\end{theorem}
+
+\begin{proof}
+At gadget $i$ the restricted clause is the original clause times
+$\crisp{*u_1 = v}$, which is $P_i(v \mid \mathit{pa})$ on the $(s-1)!$
+candidates in the class $u_1 \mapsto v$ and $0$ elsewhere. The contention set is
+the gadget alone (Lemma~\ref{lem:staging}), so normalisation divides by
+$(s-1)!\,P_i(v \mid \mathit{pa})$, which is nonzero by positivity, and the class
+fires with probability $1$ \emph{for every value of the parents}. The gadget's
+normalised dynamics is therefore the point mass at $v$ independent of
+$\mathit{pa}$, which is exactly the mechanism of $M_{V_i=v}$ at $V_i$; the
+parents are still consumed, so the term is unchanged elsewhere; and every other
+gadget is unaffected by Proposition~\ref{prop:lowering}, the model term being
+flat. Theorem~\ref{thm:adequacy} applied to $M_{V_i=v}$ gives the distribution.
+\end{proof}
+
+The theorem is the reason to address the \emph{ancilla} binding. Restricting a
+parent pattern $p_j$ instead would select on inputs --- a conditioning --- not
+sever a mechanism. The embedding fixes that the value of a variable is carried
+by its ancilla binding, and that is the whole of what makes the surgery exact:
+the gadget's own gate is $\top$, so restriction and override coincide
+(Observation~\ref{obs:restrict}), and the weights that encoded the mechanism are
+the thing normalisation discards.
+
+\begin{remark}[Positivity is starvation]\label{rem:positivity}
+If $P_i(v \mid \mathit{pa}) = 0$ for some reachable $\mathit{pa}$, the
+restricted gadget has clause $0$ on every candidate when those parents arrive,
+and the receipt waits forever: the history deadlocks by starvation, in the sense
+of \cite{ProofSearch}. This is exactly where Pearl's $\Pr(y \mid \dok(x))$ is
+undefined without positivity, and the embedding renders the undefinedness as a
+mortal computation's death rather than as a division by zero. Positivity of
+the CPT is decidable by inspection on finite domains; the general question
+``is this $\dok$ vacuous or fatal'' is reachability (\S\ref{sec:complexity}).
+\end{remark}
+
+\begin{corollary}[The do-calculus is derived]\label{cor:rules}
+For positive $M$ and disjoint $X, Y, Z, W \subseteq V$, the three rules of
+\cite{Pearl95} hold of $\sem{M}$ under $\dok$ as defined here:
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt]
+\item $\Pr(y \mid \dok(x), z, w) = \Pr(y \mid \dok(x), w)$ if
+      $(Y \dsep Z \mid X, W)_{G_{\overline{X}}}$;
+\item $\Pr(y \mid \dok(x), \dok(z), w) = \Pr(y \mid \dok(x), z, w)$ if
+      $(Y \dsep Z \mid X, W)_{G_{\overline{X}\underline{Z}}}$;
+\item $\Pr(y \mid \dok(x), \dok(z), w) = \Pr(y \mid \dok(x), w)$ if
+      $(Y \dsep Z \mid X, W)_{G_{\overline{X}\,\overline{Z(W)}}}$,
+\end{enumerate}
+with $Z(W)$ the $Z$-nodes that are not ancestors of $W$ in $G_{\overline{X}}$,
+conditioning read as post-selection on histories, and $\dok$ on several
+variables as the conjunction $\&$ of their ancilla restrictions.
+\end{corollary}
+
+\begin{proof}
+By Theorems~\ref{thm:adequacy} and \ref{thm:surgery} and
+Proposition~\ref{prop:compose}, every interventional distribution of $\sem{M}$
+is the corresponding distribution of a submodel of $M$, and post-selection on
+histories is conditioning in that submodel. The rules are Pearl's theorem for
+the CBN $M$ \cite{Pearl95,Pearl09}.
+\end{proof}
+
+The content of the corollary is not that the rules are true --- Pearl proved
+that --- but that the object they are stated for is literally present in the
+semantics, so that nothing is being modelled. The d-separation premises are
+statements about $G$, and $G$ is the causal order of the staged term
+(Lemma~\ref{lem:staging}); we conjecture in \S\ref{sec:open} that they are
+expressible as crisp-sort behavioural formulae over $\sem{M}$ and so dischargeable
+by the model checker.
+
+\subsection{Counterfactuals}\label{ssec:cf}
+
+Pearl's third rung asks what $Y$ would have been had $X$ been $x$, in the
+world that actually occurred. In an SCM this is abduction (infer $U$ from the
+evidence), action (mutilate), prediction (compute).
+
+\begin{definition}[Exogenous record]\label{def:record}
+A \emph{run} of $\sem{M}$ is a causal history together with, at each gadget, the
+candidate that fired. Its \emph{exogenous record} $u$ is the vector of fired
+ancilla classes. A run is \emph{replayed under} $\dok(C)$ from a pre-state $S$
+by executing $\dok(C)\ \ink\ S$ with the resolver instructed, at each gadget
+whose contention set is unchanged from the recorded run, to fire the recorded
+class if it is still a candidate of nonzero restricted weight, and otherwise to
+sample.
+\end{definition}
+
+\begin{theorem}[Counterfactuals are replay]\label{thm:cf}
+Let $M$ be positive, let $u$ be the exogenous record of a run with outcome
+$(v_1,\dots,v_n)$, and let $S$ be the initial state. Then replaying under
+$\dok(u^{(i)}_1 = x)$ from $S$ yields, at every gadget other than $i$ and its
+descendants, the recorded value, and at $i$ and its descendants the values
+$Y_{V_i = x}(u)$ of the SCM whose exogenous variables are the ancilla draws.
+On the staged fragment the ``otherwise sample'' branch of
+Definition~\ref{def:record} is never taken.
+\end{theorem}
+
+\begin{proof}
+Lemma~\ref{lem:staging}: every gadget's contention set is itself, and its
+candidate set depends only on which parent values arrived, every ancilla value
+being present. So the recorded class is always a candidate; it has nonzero
+restricted weight by positivity except at gadget $i$, where the restriction
+forces $x$. Non-descendants of $V_i$ receive the same parent values as in the
+run and fire the recorded class; descendants receive the mutilated values and
+fire their recorded class, which is $f_j(\mathit{pa}_j', u_j)$ for the SCM in
+which $u_j$ selects the class --- the standard reduction of a CBN to an SCM by
+inverse-CDF sampling, with the class index as $U_j$.
+\end{proof}
+
+The ``otherwise sample'' clause is where the general case lives: off the staged
+fragment an intervention can change what rests on a channel and thereby which
+candidates exist, and ``the same draw'' is no longer well defined. That is the
+dynamic-graph obstacle of \S\ref{sec:open} seen from the third rung.
+
+\subsection{The dictionary, completed}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.27\textwidth}>{\raggedright\arraybackslash}p{0.34\textwidth}>{\raggedright\arraybackslash}p{0.31\textwidth}@{}}
+\toprule
+\textbf{Pearl} & \textbf{graded \rhoc{} over $\Rnn$} & \textbf{f1r3node}\\
+\midrule
+variable $V_i$ & gadget $i$; value = fired ancilla class & a COMM event\\
+parents $\PA_i$ & data on the channels the pattern and clause read & the contention set, from the pre-state\\
+mechanism $P_i(\cdot\mid\mathit{pa})$ & the clause, in DNF & the \texttt{condition} field, pure evaluator\\
+exogenous $U_i$ & the resolver's draw at the ancilla race & the executing validator's resolution\\
+DAG $G$ & causal order of the staged term & --- \\
+$\Pr(y \mid x)$ & post-selection on histories, $1/\Pr(x)$ retries & filtering finalised traces\\
+$\Pr(y \mid \dok(x))$ & $\dok(u_1 = x)\ \ink\ \sem{M}$ & elaboration rewrite / membrane\\
+$\sigma$-intervention & $\dok(y \models \psi)$ & same\\
+$Y_x(u)$ & replay under $\dok$ with the record held & fork from pre-state, replay the trace\\
+positivity & no restricted receipt starves & no deadlock in the trace\\
+d-separation & behavioural formula over the staged term (conj.) & the Softwhere checker\\
+\bottomrule
+\end{tabular}
+\caption{The dictionary.}\label{tab:dictionary}
+\end{table}
+
+Table~\ref{tab:dictionary} collects the correspondence. The right-hand column
+is the subject of \S\ref{sec:execution}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Relation to the $\sigma$-calculus}\label{sec:sigma}
+
+Pearl's atomic $\dok$ replaces a mechanism by a constant. Correa and Bareinboim
+\cite{CorreaBareinboim} generalise to \emph{$\sigma$-interventions}, which
+replace the mechanism of $X$ by an arbitrary new one $P^*(x \mid \mathit{pa}^*)$
+--- possibly stochastic, possibly conditional on a different parent set --- and
+give a calculus whose rules are stated on the graph $G_\sigma$ in which $X$'s
+incoming edges are those of the \emph{new} mechanism. Atomic $\dok$ is the case
+$\mathit{pa}^* = \emptyset$ and $P^*$ a point mass; the soft and conditional
+interventions of \cite{EberhardtScheines} are intermediate cases.
+
+The construct of \S\ref{sec:construct} is natively a $\sigma$-intervention, and
+the three forms it takes have three induced graphs.
+
+\begin{proposition}[Induced graphs]\label{prop:sigmagraph}
+Let gadget $i$ of $\sem{M}$ be placed under $\dok(u_1 \models \psi)$. Then the
+restricted gadget is a $\sigma$-intervention on $V_i$ whose new mechanism is
+$P_i(v \mid \mathit{pa}) \cdot \psi\sem{v, \cdot}$ normalised, and whose parent
+set in $G_\sigma$ is
+\[
+  \PA^*_i \;=\; \PA_i \cup \mathrm{fn}(\psi)\setminus\{u_1\}
+\]
+when $\psi$ is not an indicator of a singleton, and $\mathrm{fn}(\psi)\setminus\{u_1\}$
+when it is. Here $\mathrm{fn}(\psi)$ are the names of variables (readout
+channels of other gadgets, or data in scope) that $\psi$'s crisp subformulae
+read.
+\end{proposition}
+
+\begin{proof}
+Restriction multiplies, so the new mechanism depends on $\mathit{pa}$ through
+$P_i$ unless the restriction leaves a single class, in which case normalisation
+discards $P_i$ (Theorem~\ref{thm:surgery}); and it depends on whatever $\psi$
+reads. The parent set of a mechanism is the set of variables it reads.
+\end{proof}
+
+Three readings follow. The \emph{set-valued} $\dok(u_1 \in S)$ with $|S| \geq 2$
+keeps the original edges: it conditions the mechanism on $S$, which is a
+$\sigma$-intervention in which $P^*$ is $P_i$ restricted and renormalised, and
+Pearl's three rules do not apply to it verbatim because no edge is deleted. The
+\emph{graded} $\dok(u_1 \models \psi)$ with $\psi$ reading only $u_1$ reweights
+the mechanism by a function of the value --- a dose, in the vocabulary of
+\cite{ExpRegimes}. The \emph{conditional} $\dok(u_1 \models \varphi)$ with
+$\varphi$ reading other variables is a policy, a dynamic regime, and its parents
+are written in the formula. In every case the graph on which the
+$\sigma$-calculus rules are to be evaluated is read off the syntax of the
+constraint, which is the same point as the first consequence of
+\S\ref{sec:intro}: the parent set is syntactic, now for the intervention as
+well as for the model.
+
+\begin{remark}[Override as $\sigma$]
+Replacing rather than multiplying --- $\psi_r \mapsto \psi$ --- is a
+$\sigma$-intervention with $\PA^* = \mathrm{fn}(\psi)$ outright, and is the
+construct one wants when the site's own gate must be severed. It is expressible
+as a second mode of the membrane and lowers the same way; we leave it out of
+the primitive syntax because on the embedded models it is unnecessary
+(Theorem~\ref{thm:surgery}), and off them its complexity is that of
+\S\ref{sec:complexity} with no compensating structure.
+\end{remark}
+
+\begin{remark}[Cross-site constraints are excluded]
+A constraint relating $y_1$ and $y_2$ bound at \emph{different} receipts would
+be a correlation across sites: a $\sigma$-intervention with shared exogenous
+noise, which is outside both Pearl's and Correa--Bareinboim's calculi and is,
+operationally, a join of the two receipts. Definition~\ref{def:do} excludes it by
+requiring each $\varphi_i$ to be a constraint on $y_i$ alone; $\&$ is a product of
+independent restrictions, which is Pearl's joint $\dok$.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Complexity, and the fragments that tame it}\label{sec:complexity}
+
+The membrane semantics of Definition~\ref{def:membrane} is simple to state and
+expensive to run. The expense comes from three independent sources, and a
+fourth question --- whether the $\dok$ does anything at all --- is undecidable in
+general. We name each, then propose the fragments.
+
+\subsection{Four sources of cost}
+
+\paragraph{The constraint.} $\varphi$ ranges over the full crisp sort, which
+contains the modality $\langle K\rangle$ and the fixed point $\nu X$. A
+modality-free spatial constraint of depth $d$ costs $O(2^d)$ to evaluate against
+a datum (the companion forager charges $\kappa_{\rm sense} = 2^d$ for exactly
+this). A modal constraint requires successor exploration to the budget $\beta$,
+exponential in $\beta$. A fixed point requires model checking against the
+reachable configuration graph, which is PSPACE-hard on finite-state fragments
+and undecidable on \rhoc{} at large. And the constraint is evaluated
+\emph{per candidate}, since the clause is.
+
+\paragraph{The scope.} Under the membrane semantics the set of constrained
+receipts is not known statically: a receipt arriving by reflection must be
+checked for a constrained binder when it arrives, and the check is a name
+comparison under the hygiene convention, which is cheap, but the
+\emph{tracking} of scope through reduction --- which membrane a given receipt is
+under, when membranes nest and received code carries its own --- is a run-time
+cost proportional to the depth of nesting, paid on every COMM.
+
+\paragraph{The contention set.} Restriction removes candidates and so changes
+the normalisation of the contention set they belonged to. Where contention sets
+are singletons (Lemma~\ref{lem:staging}) this is a division. Where they are
+not, the normaliser is a sum over maximal matchings, which is permanent-shaped
+and $\#\mathsf{P}$-hard in general \cite{GradedQuantum}; a $\dok$ that touches a
+large contention set forces that sum to be recomputed.
+
+\paragraph{Vacuity and fatality.} Whether any receipt binding $y$ ever fires
+inside $P$ is reachability, undecidable in general. So whether a given $\dok$
+is vacuous (no constrained race ever arises), effective (some arise and some
+candidate always satisfies $\varphi$), or fatal (a constrained race arises with
+no satisfying candidate, and starves) cannot be decided for arbitrary $P$. This
+is the halting argument of \S\ref{sec:construct} returning as a cost: the
+programmer cannot in general know what an intervention will cost before paying
+for it.
+
+\subsection{Fragments of the constraint language}
+
+\begin{definition}[Constraint fragments]\label{def:fragments}
+\begin{description}[leftmargin=1.6em,itemsep=2pt]
+\item[$\mathcal{F}_0$ (values).] $y = Q$ and $y \in S$ for a finite set $S$ of
+closed terms; and $\bigoplus_i v_i \tensorv \crisp{y = Q_i}$. Evaluation is a
+structural-congruence test against $|S|$ terms: constant in the term, linear in
+the datum. This is the Pearl fragment: Theorems~\ref{thm:surgery} and
+\ref{thm:cf} and Corollary~\ref{cor:rules} use nothing else.
+\item[$\mathcal{F}_1$ (spatial).] Modality-free, fixed-point-free crisp
+formulae over the bound datum and the data in scope, of bounded depth $d$; and
+graded formulae built from them by $\tensorv$, $\sumv$ and constants. Evaluation
+is $O(2^d)$ per candidate and needs no successor exploration; the graded members
+are posynomials in their constants \cite[Prop.~5.2]{GradedPLN}, so a learner
+can differentiate them. Conditional $\sigma$-interventions
+(Proposition~\ref{prop:sigmagraph}) live here.
+\item[$\mathcal{F}_2$ (budgeted modal).] $\mathcal{F}_1$ closed under
+$\langle K\rangle_\V$ to a declared depth $\beta$. Evaluation explores
+successors to depth $\beta$ and is charged the inference budget already present
+in the calculus \cite[Rem.~6.5]{GradedV4}. Interventions conditional on what a
+site \emph{could} do next --- ``restrict to candidates after which $\varphi$ is
+reachable in two steps'' --- live here.
+\item[$\mathcal{F}_3$ (fixed points).] The full crisp sort. Not evaluable at
+the site in general; admissible in \emph{specification} position, where the
+model checker discharges it offline on a finite-state fragment, and then
+lowered to $\mathcal{F}_1$ by replacing the fixed point with the finite
+disjunction it unfolds to on that fragment.
+\end{description}
+\end{definition}
+
+\begin{principle}[Where each fragment runs]\label{prin:fragments}
+$\mathcal{F}_0$ and $\mathcal{F}_1$ run at the site, in the clause evaluator,
+at the cost of a guard. $\mathcal{F}_2$ runs at the site under the inference
+budget and is priced by it. $\mathcal{F}_3$ belongs to the checker, not the
+clause: it is what one \emph{verifies} about an intervention, not what one
+\emph{executes} as one. A $\dok$ whose constraint is in $\mathcal{F}_3$ is a
+specification awaiting lowering, and Remark~\ref{rem:specguard} says that
+lowering is the construct's whole job.
+\end{principle}
+
+\subsection{Type-based constraints on the scope}
+
+The constraint fragments bound the cost of one evaluation. The scope
+disciplines bound how many evaluations there are, whether the scope is static,
+and whether the contention sets are small. They are types in the sense the
+programme already uses: spatial-behavioural formulae imposed on $P$ as
+admission conditions, decidable on the fragment and checked once.
+
+\begin{definition}[Scope disciplines]\label{def:types}
+\begin{description}[leftmargin=1.6em,itemsep=2pt]
+\item[$\mathcal{T}_1$ (staged).] Every channel in scope has exactly one
+receiver, every receipt consumes every message on each of its channels, and
+data flow uses the linear binding arrow $\lolli$ of \cite{GradedQuantum}
+outside continuations' fan-out. Consequence: contention sets are singletons,
+the normaliser is a division, the causal order is a static DAG
+(Lemma~\ref{lem:staging}), and each gadget fires once.
+\item[$\mathcal{T}_2$ (flat).] No drop $*z$ in scope at a position that can
+come to contain a receipt; equivalently the stratified \where{} of
+\cite{ChoiceFormulae} with ceiling $\bot$ on binders. Consequence: the set of
+constrained receipts is static and lowering is exact
+(Proposition~\ref{prop:lowering}); no scope tracking at run time.
+\item[$\mathcal{T}_3$ (finite-domain).] Every channel a constrained variable is
+bound on carries a DDL type with finitely many closed values. Consequence:
+$\mathcal{F}_0$ constraints are sets of enumerable size; vacuity and fatality
+are decidable by inspecting which values the clause assigns positive weight,
+which is the positivity check of Remark~\ref{rem:positivity}.
+\item[$\mathcal{T}_4$ (confined).] Every constrained receipt lies within the
+deployer's seal in the sense of \cite{CostMonad}, so that the $\dok$ reaches
+only code its author pays for. Consequence: the membrane coincides with the
+seal tree, the capability to intervene is the capability to deploy, and
+Proposition~\ref{prop:nocontext} is not a limitation but the boundary of the
+namespace.
+\end{description}
+\end{definition}
+
+\begin{proposition}[The practical fragment]\label{prop:practical}
+Under $\mathcal{T}_1$--$\mathcal{T}_4$ with constraints in $\mathcal{F}_0$:
+(i) $\dok(C)\ \ink\ P$ lowers at elaboration and the membrane is erased;
+(ii) each constrained candidate costs one structural-congruence test against
+$|S|$ closed terms; (iii) vacuity and fatality are decidable; (iv) the induced
+graph $G_\sigma$ is the static DAG with the constrained variables' incoming edges
+deleted; and (v) the semantics is that of Definition~\ref{def:cbn} exactly.
+Under $\mathcal{T}_1$--$\mathcal{T}_3$ with constraints in $\mathcal{F}_1$,
+(i)--(iii) hold, $G_\sigma$ is the static DAG with $\PA^*_i$ as in
+Proposition~\ref{prop:sigmagraph}, and the semantics is a $\sigma$-intervention
+on a CBN.
+\end{proposition}
+
+\begin{proof}
+(i) is Proposition~\ref{prop:lowering}, whose hypothesis is $\mathcal{T}_2$.
+(ii) is the definition of $\mathcal{F}_0$. (iii): under $\mathcal{T}_1$ every
+constrained receipt fires exactly once and its candidate set is determined by
+its parents' values, which range over a finite product by $\mathcal{T}_3$;
+enumerate. (iv) and (v) are Theorem~\ref{thm:surgery} and
+Proposition~\ref{prop:sigmagraph}, whose hypotheses are supplied by
+$\mathcal{T}_1$ and $\mathcal{T}_3$. The second statement replaces
+Theorem~\ref{thm:surgery} by Proposition~\ref{prop:sigmagraph}.
+\end{proof}
+
+\begin{table}[t]
+\centering\footnotesize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.26\textwidth}>{\raggedright\arraybackslash}p{0.19\textwidth}>{\raggedright\arraybackslash}p{0.29\textwidth}@{}}
+\toprule
+\textbf{constraint} & \textbf{per-candidate cost} & \textbf{needs} & \textbf{supports}\\
+\midrule
+$\mathcal{F}_0$ & $O(|S|)$ congruence tests & nothing & Pearl's $\dok$, rules, counterfactuals\\
+$\mathcal{F}_1$ & $O(2^d)$ & bounded depth $d$ & conditional $\sigma$, doses, policies\\
+$\mathcal{F}_2$ & $O(b^\beta)$, $b$ branching & inference budget $\beta$ & interventions on reachable futures\\
+$\mathcal{F}_3$ & checker & finite-state fragment & specification only; lower to $\mathcal{F}_1$\\
+\midrule
+\textbf{scope type} & \multicolumn{3}{l@{}}{\textbf{what it buys}}\\
+\midrule
+$\mathcal{T}_1$ staged & \multicolumn{3}{>{\raggedright\arraybackslash}p{0.74\textwidth}@{}}{singleton contention sets; static DAG; one firing per gadget}\\
+$\mathcal{T}_2$ flat & \multicolumn{3}{>{\raggedright\arraybackslash}p{0.74\textwidth}@{}}{exact lowering; no run-time scope tracking}\\
+$\mathcal{T}_3$ finite-domain & \multicolumn{3}{>{\raggedright\arraybackslash}p{0.74\textwidth}@{}}{decidable vacuity and fatality}\\
+$\mathcal{T}_4$ confined & \multicolumn{3}{>{\raggedright\arraybackslash}p{0.74\textwidth}@{}}{$\dok$ reaches only paid-for code; the capability to intervene is the capability to deploy}\\
+\bottomrule
+\end{tabular}
+\caption{Fragments and disciplines.}\label{tab:fragments}
+\end{table}
+
+The disciplines are not new to the programme. $\mathcal{T}_1$ is the safe
+fragment of \cite[\S9]{GradedQuantum} in which $\sem{P}$ is a quantum state;
+$\mathcal{T}_2$ is the flat fragment of \cite{ExpRegimes} and the stratified one
+of \cite{ChoiceFormulae}; $\mathcal{T}_3$ is what the DDL supplies for free; and
+$\mathcal{T}_4$ is the seal discipline of the cost-accounting work. That four
+notes written for four purposes draw the same line is the best evidence we have
+that the line is real. The route to larger fragments is the one the
+monadic-foreach note already proposes: typed calculi translated into the
+language with types as spatial-behavioural formulae, System~F first and then
+Abramsky's CLL, each of which supplies a terminating fragment on which
+$\mathcal{F}_3$ is decidable.
+
+\begin{remark}[What is lost outside the fragment]
+Outside $\mathcal{T}_1$ the contention sets are the branching cells of
+\cite{AbbesBenveniste} and a $\dok$ that touches one must be understood as a
+restriction of the cell's distribution; outside $\mathcal{T}_2$ a $\dok$ is a
+genuine run-time membrane; outside $\mathcal{T}_3$ positivity is a reachability
+question; outside $\mathcal{T}_4$ an intervention on another's code is a soft
+intervention by Proposition~\ref{prop:nocontext}, an experiment rather than a
+surgery. None of these is a failure of the construct. They are where Pearl's
+calculus stops and the calculus of this programme continues.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Execution}\label{sec:execution}
+
+The construct was designed against the execution framework rather than for a
+simulator, and most of what it needs exists.
+
+\paragraph{Lowering.} The normaliser already carries an elaboration pass that
+puts every deployment into normative forms so that the reducer's seal record is
+read off the term. Lowering $\dok$ under $\mathcal{T}_2$ is one more rewrite in
+that pass, and it leaves no run-time trace: the constrained clauses are
+ordinary clauses with one more conjunct, evaluated by the pure
+\texttt{condition} evaluator the matcher already calls per candidate.
+
+\paragraph{The membrane.} Off $\mathcal{T}_2$ the $\dok$ is a run-time membrane,
+and it is the twin of the cost membrane $\{\%\ P\ \%\}[s]$: a scoped decoration
+on the cut, read off the term by the reducer, altering the COMM rule within.
+The seal tree rooted at the deployer's wallet becomes a seal-and-constraint
+tree; a receipt arriving by reflection inherits the innermost constraint as it
+inherits the innermost seal. The two decorations commute
+(Proposition~\ref{prop:compose} extends to them, since metering does not read
+the clause and the clause does not read the meter) and so may be nested in
+either order.
+
+\paragraph{Pricing.} An intervention is one COMM on the port, by
+Principle~\ref{prin:metered}, plus the marginal cost of the extra conjunct per
+candidate evaluation, which under $\mathcal{F}_0$ is a congruence test. The
+charge for an $\mathcal{F}_2$ constraint is the inference budget it declares.
+Fixing these against the ledger is Obligation~\ref{ob:price}.
+
+\paragraph{Observation, and who does it.} The validators' execution model ---
+one node executes and produces a trace, the others replay it to confirm the
+state change --- is, in the vocabulary of \cite{Inhabiting}, an
+experimenter/spectator split. The executing validator resolves the races and
+so performs rung two; the replayers observe and are rung one. $\Pr(y \mid x)$ is
+estimated from the finalised trace; it costs nothing beyond storage and is
+exactly what \cite[Prop.~4.1]{Inhabiting} says it is: the trace distribution,
+and no more.
+
+\paragraph{Counterfactuals.} Theorem~\ref{thm:cf} needs a pre-state and a
+record of fired candidates. The order-then-execute design runs each envelope
+from the block pre-state and records the winners; the losing candidates are
+recomputable from the pre-state deterministically, so nothing further need be
+stored. The same record is what the gradient of \cite[Cor.~5.7]{GradedPLN}
+accumulates --- one number per firing from the candidates the site already
+evaluated --- so one instrumentation serves learning and counterfactual replay.
+The stable site identity the replay requires is the quotation of the receipt,
+exactly as the heralds of \cite[\S9]{GradedV4} name their sites.
+
+\paragraph{The kernel.} $\Pr(y \mid \dok(x))$ is $e_y^{\!\top}\, T_{\dok(x)}^{\beta}
+\,\lvert P\rangle$ for the transfer operator with one column block replaced, and
+the adjoint of \cite[Thm.~5.6]{GradedPLN} is the same Neumann series. A batch
+of interventional queries and the modal gradient share one sparse matrix-vector
+path on the GPU.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Inhabiting choice, discharged}\label{sec:inhabiting}
+
+The companion note \cite{Inhabiting} makes one observation three times: a
+system whose witnesses reduce confluently can \emph{state} a non-confluent
+phenomenon but cannot \emph{inhabit} it, so its identity on witnesses is forced
+to be linear-time, and the logic adequate for that identity is forced to be
+determinate. In its reading for artificial intelligence it aligns the
+linear/branching/causal spectrum with Pearl's ladder --- association,
+intervention, counterfactual --- and names the remedy as witnesses that can be
+races and an identity on them at least as fine as step bisimulation. The
+alignment is by argument. The present note is its constructive content, and we
+propose the mechanism as the tool for each of the obligations that note leaves
+owed.
+
+\paragraph{Rung two is a graded race under a $\dok$.} The note's rung two is
+``what an experimenter supplying contexts can learn,'' characterised by
+context-labelled bisimulation. Proposition~\ref{prop:nocontext} sharpens this:
+a context supplies apertures and cannot force them, so the experimenter's power
+over $\Rnn$ is exactly the $\dok$ membrane on the code it owns together with
+soft interventions on the rest. Theorem~\ref{thm:surgery} says that on the
+staged fragment that power is Pearl's rung two on the nose. Rung three is
+Theorem~\ref{thm:cf}: replay with the record held.
+
+\paragraph{The vending-machine benchmark becomes a program.} The smallest
+behaviour invisible to a trace is Milner's pair
+\[
+  P = \mathit{coin}.(\mathit{tea} + \mathit{coffee}), \qquad
+  Q = \mathit{coin}.\mathit{tea} + \mathit{coin}.\mathit{coffee},
+\]
+and the observable a trace cannot recover is a \emph{refusal}: coin in, tea
+requested, nothing out. Render the machines with races in the usual way, with
+$y$ the variable bound at the drink-selecting receipt. Then
+\[
+  \dok(y = \mathit{tea})\ \ink\ (\mathit{coin}!() \mid P)
+  \quad\text{and}\quad
+  \dok(y = \mathit{tea})\ \ink\ (\mathit{coin}!() \mid Q)
+\]
+differ in exactly one way: the first always delivers tea, and the second, on
+the branch where $Q$ has committed to coffee before the coin, has a restricted
+receipt with no satisfying candidate and \emph{starves}. The refusal that never
+appears in a log of completed runs is a deadlock in the intervened term. The
+benchmark the note proposes --- logs from one machine chosen by a hidden coin,
+completed actions only, then the refusal question --- is answered by one
+$\dok$ and one observation of whether anything was delivered, which is the
+``one attempted tea after one coin'' the note says settles the question; here it
+is a term one can run.
+
+\paragraph{The audit as a theorem.} The note's verification reading says a
+$\lambda$-term prover can certify a concurrent system only relative to a
+stipulated model of its non-determinism, and that the faithfulness of the model
+is not auditable by any means the prover possesses. Its obligation is to say
+which class of tests such a prover can run and prove the class contained in
+trace observation. Proposition~\ref{prop:nocontext} is half of that statement:
+a test that cannot force a race is a context, and a context's observations are
+contained in the support reading. The other half is that a $\dok$ is precisely
+a test outside that class, and that on a process runtime the certificate can
+contain one.
+
+\paragraph{The three requirements as a theorem.} The note's closing section
+argues that recursive self-improvement needs an improvement operator that acts
+on witnesses that are races, preserves branching through evaluation, and funds
+the branches that lose. A $\dok$ is an operator on witnesses that changes their
+branching --- it is the only kind there is, by \S\ref{sec:carrier} --- and the
+set-valued form $\dok(y \in S)$ with $S$ the \emph{losing} candidates is the
+operator that funds them: it restricts the race away from its current winner.
+That an improvement operator definable on a determinate language cannot increase
+branching is Proposition~\ref{prop:transparent} read for the whole language;
+that one definable on \rhoc{} with the cost endofunctor can is this note.
+
+\paragraph{Hedges that are inherited.} The note's last row asks what leaves the
+saddle point: tactics as witnesses, certificates that run, hedges that are
+inherited. A hypothesis of the mortal scientist is a clause; a clause under a
+$\dok$ is a hypothesis together with the experiment that would test it; and a
+germ carrying both is a hedge that is inherited. Which is to say that the
+construct of this note is what the scientist's germs were missing in order to
+be rung-two objects rather than rung-one ones, and the reproduction note's
+crossover on quoted code applies to it unchanged, since a $\dok$ is a term.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Open problems}\label{sec:open}
+
+\begin{obligation}[d-separation as a behavioural formula]\label{ob:dsep}
+Corollary~\ref{cor:rules} evaluates the d-separation premises on $G$. Since
+$G$ is the causal order of the staged term, the premises should be crisp-sort
+formulae over $\sem{M}$ --- ``no history has a causal path from a $Z$-firing to a
+$Y$-firing not passing through $X$ or $W$'' is a $\nu$-property --- dischargeable
+by the model checker. Stating and proving the correspondence would make the
+rules' side conditions checkable in the same instrument as their conclusions.
+\end{obligation}
+
+\begin{obligation}[The rules off the staged fragment]\label{ob:general}
+Outside $\mathcal{T}_1$ the contention sets are branching cells and the event
+structure may be confused. The conjecture is that the $\sigma$-calculus rules
+hold on the confusion-free fragment with d-separation read off the event
+structure, and that on the confused fragment they hold per branching cell with
+the cell's distribution in place of the mechanism. The results of
+\cite{VaraccaVolzerWinskel,AbbesBenveniste} are the starting point and should
+be verified against the sources before being leaned on.
+\end{obligation}
+
+\begin{obligation}[The price of a $\dok$]\label{ob:price}
+Principle~\ref{prin:metered} says an intervention is a COMM. The marginal
+charge of the constraint conjunct, the budget charge of an $\mathcal{F}_2$
+constraint, and the charge for a counterfactual replay have not been fixed
+against the ledger. Until they are, ``an intervention costs one phlo'' names an
+intention.
+\end{obligation}
+
+\begin{obligation}[Identifiability across namespaces]\label{ob:ident}
+Pearl's identifiability question --- when is $\Pr(y \mid \dok(x))$ computable
+from observational data in the presence of hidden variables --- has a sharp
+rendering here: the hidden variables are the code one cannot read, the boundary
+is the namespace, and the observational data is the shard's finalised trace.
+The ID algorithm of \cite{ShpitserPearl} should transfer to the staged fragment
+directly; what it says about a shard is the question.
+\end{obligation}
+
+\begin{obligation}[Continuous domains]\label{ob:continuous}
+The gadget enumerates the domain on the ancilla channel. A continuous variable
+needs the DDL's numeric types to carry an ancilla as a density, and the
+contention-set normalisation to become an integral. The Gillespie reading of
+\cite{WeightedGSLT} is the natural home.
+\end{obligation}
+
+\begin{obligation}[Cycles]\label{ob:cycles}
+A recursive term has an acyclic event-level graph and a cyclic variable-level
+one. The cyclic SCMs of \cite{BongersEtAl} and the graded fixed point of
+\cite{GradedPLN} should meet here, with the budget $\beta$ as the unrolling
+depth.
+\end{obligation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}\label{sec:conc}
+
+A graded program over the non-negative reals was a causal model before anyone
+said so: its likelihood factorises over sites, its parents are written in its
+clauses, and its exogenous noise is the resolver the programme had already made
+a parameter. What it lacked was an operator that forces a race, and the operator
+turns out to want a specific home. It cannot sit at a node, because whether a
+node will ever occur is undecidable; it sits at the cut, as a policy conditional
+on a race arising, and it lowers into the where-clause by the normal-form
+theorem for weight maps, so it adds nothing to the calculus that was not already
+expressible --- only a place to say it.
+
+With it, Pearl's calculus embeds exactly, and the embedding is the Shor gadget
+with a stochastic matrix in place of a unitary one. Intervening on the ancilla
+binding deletes incoming edges because normalisation discards the weights that
+encoded the mechanism; positivity is a receipt that does not starve; the three
+rules are theorems; counterfactuals are replay. Set-valued and graded
+constraints land in the $\sigma$-calculus with the induced graph read off the
+free names of the constraint. The construct is expensive to run naively, in
+ways that are each separately familiar from the programme's other notes, and
+the fragments that tame it are the fragments those notes had already drawn.
+
+The mechanism is offered as the constructive half of the inhabiting-choice
+argument. A race under a $\dok$ is rung two; its replay is rung three; and the
+refusal that no corpus of completed runs can reveal is, in the intervened
+term, a receipt that waits for a tea that will never come.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{thebibliography}{99}\raggedright
+
+\bibitem{Pearl95}
+J.~Pearl.
+\newblock Causal diagrams for empirical research.
+\newblock \emph{Biometrika} 82(4):669--688, 1995.
+
+\bibitem{Pearl09}
+J.~Pearl.
+\newblock \emph{Causality: Models, Reasoning, and Inference}.
+\newblock Cambridge University Press, second edition, 2009.
+
+\bibitem{Pearl93}
+J.~Pearl.
+\newblock Graphical models, causality and intervention.
+\newblock \emph{Statistical Science} 8(3):266--269, 1993.
+
+\bibitem{BareinboimHierarchy}
+E.~Bareinboim, J.~D.~Correa, D.~Ibeling, and T.~Icard.
+\newblock On Pearl's hierarchy and the foundations of causal inference.
+\newblock In \emph{Probabilistic and Causal Inference: The Works of Judea
+Pearl}, ACM Books, 2022.
+
+\bibitem{CorreaBareinboim}
+J.~D.~Correa and E.~Bareinboim.
+\newblock A calculus for stochastic interventions: causal effect identification
+and surrogate experiments.
+\newblock In \emph{AAAI 2020}, pp.~10093--10100.
+
+\bibitem{ShpitserPearl}
+I.~Shpitser and J.~Pearl.
+\newblock Identification of joint interventional distributions in recursive
+semi-Markovian causal models.
+\newblock In \emph{AAAI 2006}, pp.~1219--1226.
+
+\bibitem{EberhardtScheines}
+F.~Eberhardt and R.~Scheines.
+\newblock Interventions and causal inference.
+\newblock \emph{Philosophy of Science} 74(5):981--995, 2007.
+
+\bibitem{BongersEtAl}
+S.~Bongers, P.~Forr\'e, J.~Peters, and J.~M.~Mooij.
+\newblock Foundations of structural causal models with cycles and latent
+variables.
+\newblock \emph{Annals of Statistics} 49(5):2885--2915, 2021.
+
+\bibitem{VaraccaVolzerWinskel}
+D.~Varacca, H.~V\"olzer, and G.~Winskel.
+\newblock Probabilistic event structures and domains.
+\newblock \emph{Theoretical Computer Science} 358(2--3):173--199, 2006.
+
+\bibitem{AbbesBenveniste}
+S.~Abbes and A.~Benveniste.
+\newblock True-concurrency probabilistic models: branching cells and
+distributed probabilities for event structures.
+\newblock \emph{Information and Computation} 204(2):231--274, 2006.
+
+\bibitem{CostaShrapnel}
+F.~Costa and S.~Shrapnel.
+\newblock Quantum causal modelling.
+\newblock \emph{New Journal of Physics} 18:063032, 2016.
+
+\bibitem{AllenEtAl}
+J.-M.~A.~Allen, J.~Barrett, D.~C.~Horsman, C.~M.~Lee, and R.~W.~Spekkens.
+\newblock Quantum common causes and quantum causal models.
+\newblock \emph{Physical Review X} 7:031021, 2017.
+
+\bibitem{LarsenSkou}
+K.~G.~Larsen and A.~Skou.
+\newblock Bisimulation through probabilistic testing.
+\newblock \emph{Information and Computation} 94(1):1--28, 1991.
+
+\bibitem{MilnerCCS}
+R.~Milner.
+\newblock \emph{Communication and Concurrency}.
+\newblock Prentice Hall, 1989.
+
+\bibitem{MeredithRadestock}
+L.~G.~Meredith and M.~Radestock.
+\newblock A reflective higher-order calculus.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}
+141(5):49--67, 2005.
+
+\bibitem{GradedV4}
+L.~G.~Meredith.
+\newblock Graded where-clauses: non-crisp truth values as the syntax of
+non-determinism resolution in the rho calculus, version 4.
+\newblock F1R3FLY.io working note, \texttt{fuzzyware/graded-where-v4}, August
+2026.
+
+\bibitem{GradedQuantum}
+L.~G.~Meredith.
+\newblock Races decided by the Born rule: the quantum instance of the graded
+where-clause, version 6.
+\newblock F1R3FLY.io working note, \texttt{fuzzyware/graded-where-quantum-v6},
+August 2026.
+
+\bibitem{GradedPLN}
+L.~G.~Meredith.
+\newblock Graded where-clauses over the reals: one-dimensional grading as the
+mortal scientist's gradient, and probabilistic logic as the metric that
+gradient requires.
+\newblock F1R3FLY.io working note, \texttt{fuzzyware/graded-where-pln}, August
+2026.
+
+\bibitem{Omnibus}
+L.~G.~Meredith.
+\newblock Observation disciplines: how logics are generated from term
+structure, and why graded where-clauses are the mortal scientist's instrument.
+\newblock F1R3FLY.io working note, \texttt{rho-mind/observation-disciplines},
+August 2026.
+
+\bibitem{ChoiceFormulae}
+L.~G.~Meredith.
+\newblock Choice principles as graded where-clauses: one programming paradigm
+at every altitude of the Weihrauch lattice.
+\newblock F1R3FLY.io working note, \texttt{choice-types/choice-formulae},
+August 2026.
+
+\bibitem{ExpRegimes}
+L.~G.~Meredith.
+\newblock Experimental regimes: laboratories for universal negatives.
+\newblock F1R3FLY.io working note, \texttt{pnp-experiments/experimental-regimes},
+2026.
+
+\bibitem{Inhabiting}
+L.~G.~Meredith.
+\newblock Inhabiting choice: what a confluent witness cannot be.
+\newblock F1R3FLY.io working note,
+\texttt{proof-dynamics-and-reasoning/inhabiting-choice}, November 2026.
+
+\bibitem{ProofSearch}
+L.~G.~Meredith.
+\newblock Proof search as concurrent reaction.
+\newblock F1R3FLY.io working note,
+\texttt{proof-dynamics-and-reasoning/proof-search}, 2026.
+
+\bibitem{CostMonad}
+L.~G.~Meredith.
+\newblock Cost accounting as an endofunctor on continued interactive GSLTs.
+\newblock F1R3FLY.io working note,
+\texttt{cost-accounting-as-monad/continued-gslt-cost-v2}, 2026.
+
+\bibitem{WeightedGSLT}
+L.~G.~Meredith.
+\newblock Weighted GSLTs: stochastic and quantum simulation for decorated
+continued interactive GSLTs.
+\newblock F1R3FLY.io working note, \texttt{rho-life/weighted-gslt}, 2026.
+
+\bibitem{Gillespie}
+D.~T.~Gillespie.
+\newblock Exact stochastic simulation of coupled chemical reactions.
+\newblock \emph{Journal of Physical Chemistry} 81(25):2340--2361, 1977.
+
+\bibitem{HennessyMilner}
+M.~Hennessy and R.~Milner.
+\newblock Algebraic laws for nondeterminism and concurrency.
+\newblock \emph{Journal of the ACM} 32(1):137--161, 1985.
+
+\end{thebibliography}
+
+\end{document}
