@@ -30,12 +30,13 @@
 
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 \setlist{nosep}
+\emergencystretch=3em \tolerance=3000 \hfuzz=0.5pt
 \renewcommand{\arraystretch}{1.15}
 
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\subtxt}{\footnotesize\color{quiet}}
 \newcommand{\dev}{\code{dev}}
-\newcommand{\ote}{\code{feature/rev-stacks-ote}}
+\newcommand{\ote}{\path{feature/rev-stacks-ote}}
 
 \title{Node-Local Deploy Queues and the \code{f1r3node-async-rust} Client\\
   {\large A design note for \code{f1r3node-rust}}}
@@ -148,9 +149,9 @@ nodes. A broker outage affects only its own node's intake.}
 \section{Today's deploy ingress on \dev}
 
 Every deploy, however it arrives, converges on one function:
-\code{BlockAPI::deploy} in \code{casper/src/rust/api/block\_api.rs}. That is the seam
+\code{BlockAPI::deploy} in \path{casper/src/rust/api/block_api.rs}. That is the seam
 the queue consumer will call. There is no buffering, rate limiting or queueing on the
-ingress path today, and nothing in the code or \code{docs/} mentions RabbitMQ or AMQP.
+ingress path today, and nothing in the code or \path{docs/} mentions RabbitMQ or AMQP.
 
 \paragraph{Entry points.}
 \begin{center}\small
@@ -166,18 +167,18 @@ CLI \code{node deploy} & \path{casper/src/rust/util/comm/deploy_runtime.rs}, \pa
 \end{center}
 
 \paragraph{The wire type.} \code{DeployDataProto}
-(\code{models/src/main/protobuf/CasperMessage.proto}) carries \code{deployer},
+(\path{models/src/main/protobuf/CasperMessage.proto}) carries \code{deployer},
 \code{term}, \code{timestamp}, \code{sig}, \code{sigAlgorithm}, \code{phloPrice},
 \code{phloLimit}, \code{validAfterBlockNumber}, \code{shardId}, \code{language},
 \code{expirationTimestamp}, \code{parameters}. The signature
-(\code{crypto/src/rust/signatures/signed.rs}, \code{Signed<DeployData>}) covers the
+(\path{crypto/src/rust/signatures/signed.rs}, \code{Signed<DeployData>}) covers the
 proto encoding of the data fields only; \code{deployer}, \code{sig} and
 \code{sigAlgorithm} are outside the preimage, and \code{language} is dropped on
 decode. The deploy's identity everywhere is its signature (\code{DeployId = sig}).
 
 \paragraph{Checks at ingress, in order} (\code{BlockAPI::deploy}, then
 \code{admit\_deploy} $\to$ \code{reserve\_deploy} in
-\code{casper/src/rust/engine/multi\_parent\_casper/block\_admission.rs}):
+\path{casper/src/rust/engine/multi_parent_casper/block_admission.rs}):
 \begin{enumerate}[leftmargin=2em]
   \item node not read-only (a node without a validator key refuses all deploys);
   \item \code{shardId} equals the node's \code{casper.shard\_name};
@@ -189,8 +190,8 @@ decode. The deploy's identity everywhere is its signature (\code{DeployId = sig}
   \item local validator is bonded;
   \item \textbf{block window:} \code{deploy\_window::is\_open(validAfter, latest+1,
     deploy\_lifespan)}, i.e.\ $\mathit{validAfter} > \mathit{latest} + 1 - \mathit{lifespan}$;
-  \item not already known: pool (\code{deploy\_storage.contains\_sig}), DAG
-    (\code{deploy\_canonical\_appearance}), rejected-deploy buffer;
+  \item not already known: pool (\path{deploy_storage.contains_sig}), DAG
+    (\path{deploy_canonical_appearance}), rejected-deploy buffer;
   \item term parses (\code{interpreter\_util::mk\_term}; failure $\to$
     \code{DeployError::ParsingError});
   \item compare-and-swap insert into the pool with the signature re-verified
@@ -208,14 +209,14 @@ That split is what the consumer's acknowledgement policy is built on
 \code{ParsingError}, \code{MissingUser}, \code{UnknownSignatureAlgorithm},
 \code{SignatureVerificationFailed}, \code{DuplicateDeploy}; plus
 \code{DeployValidationError\{message\}} for steps 1--8. HTTP maps them in
-\code{shared\_handlers::classify\_error} (409 \code{duplicate\_deploy}, 400
+\path{shared_handlers::classify_error} (409 \code{duplicate\_deploy}, 400
 \code{illegal\_argument}); gRPC wraps them in \code{ServiceError}.
 
 \paragraph{The pool and the proposer.} Accepted deploys sit in
-\code{KeyValueDeployStorage} (\code{block-storage/src/rust/deploy/}, LMDB, keyed by
+\code{KeyValueDeployStorage} (\path{block-storage/src/rust/deploy/}, LMDB, keyed by
 sig), beside a \code{rejected\_deploy\_buffer} of merge-rejected deploys awaiting
 re-proposal. The pool is node-local; deploys never gossip.
-\code{prepare\_user\_deploys} (\code{casper/src/rust/blocks/proposer/block\_creator.rs})
+\code{prepare\_user\_deploys} (\path{casper/src/rust/blocks/proposer/block_creator.rs})
 reads the whole pool, drops future deploys ($\mathit{validAfter} \ge
 \mathit{block\_number}$) and expired ones (block-window or wall-clock; expired deploys
 are deleted from the pool at this point), filters out deploys already in scope,
@@ -226,14 +227,14 @@ back-pressure. Deploys leave the pool when the finalizer settles them or when th
 expire.
 
 \paragraph{Ingress limits that exist today.} gRPC max message 16\,MiB, HTTP body
-16\,MiB, tonic \code{concurrency\_limit\_per\_connection(1024)}, and a proposer queue
+16\,MiB, tonic \path{concurrency_limit_per_connection(1024)}, and a proposer queue
 cap of 1\,024 pending proposals. Nothing bounds the pool itself on \dev.
 
 \paragraph{Node start-up.} \code{NodeRuntime::node\_program}
-(\code{node/src/rust/runtime/node\_runtime.rs}) owns a \code{JoinSet} of named
+(\path{node/src/rust/runtime/node_runtime.rs}) owns a \code{JoinSet} of named
 critical tasks (\code{spawn\_named\_task}): transport, discovery, Casper loop, block
 processor, proposer, heartbeat proposer, gRPC/HTTP servers. Dependencies are wired in
-\code{node/src/rust/runtime/setup.rs::setup\_node\_program}, where
+\path{node/src/rust/runtime/setup.rs::setup_node_program}, where
 \code{engine\_cell}, \code{trigger\_propose\_f} and \code{shard\_name}---the three
 things \code{BlockAPI::deploy} needs---are built. A queue consumer is one more named
 task wired there.
@@ -289,8 +290,8 @@ unconditionally in \code{hash\_set\_casper}; and (b)~the \code{ShardResourcePoli
 (\path{casper/src/rust/v6/resource_policy.rs}: \code{block\_records} 64,
 \code{block\_record\_bytes} 8\,MiB, \code{max\_envelopes} 256, \code{demand\_cap},
 byte-to-phlo coefficients) embedded in \code{TokenMetadata.rhox} and read by
-\code{v6/genesis\_policy.rs}. Two gaps the survey found, outside this note's scope:
-\code{approve\_block\_protocol.rs} always passes \code{ShardResourcePolicy::default()}
+\path{v6/genesis_policy.rs}. Two gaps the survey found, outside this note's scope:
+\code{approve\_block\_protocol.rs} always passes \path{ShardResourcePolicy::default()}
 (operators cannot set it yet), and the Oct~26 search caps and time budget $T$ are not
 in the code.
 
@@ -422,8 +423,8 @@ back as a nack and the client surfaces \code{QueueFull}); the consumer's
 \code{PoolFull} from \code{pool\_admission} (how full the node lets its pool get). On
 \dev{} the third bound does not exist, so the consumer adds a soft one: it counts
 \code{list\_pending\_deploys()} (\dev{} has no \code{pending\_count}; the branch's
-\code{KeyValueDeployStorage::pending\_count} arrives with DQ-2) against
-\code{deploy-queue.max-pool-backlog} at most once a second, and treats overflow as
+\path{KeyValueDeployStorage::pending_count} arrives with DQ-2) against
+\path{deploy-queue.max-pool-backlog} at most once a second, and treats overflow as
 transient. Porting P0-09's \code{pool\_admission} to \dev{} would make the two
 branches identical here and is recommended.
 
@@ -435,7 +436,7 @@ Failure & Effect & Handling \\
 Broker down or unreachable & This node stops taking queued deploys; gRPC/HTTP ingress unaffected; other nodes unaffected (no shared broker) & lapin auto-recovery with backoff; \path{deploy_queue_connected} gauge = 0; the task is supportive, not critical: it does not take the node down (\S\ref{sec:open}) \\
 Node down, broker up & Queue keeps accepting publishes up to \path{x-max-length}; deliveries wait & On restart the consumer resumes; deploys whose window closed meanwhile are terminal-rejected at ingress and reported \\
 Both down (same host) & Clients get connection errors & Client policy (\S\ref{sec:client}) \\
-Poison message (undecodable) & Would loop if nacked with requeue & Classified terminal: acked, \path{rejected} event, counted in \code{deploy\_queue\_rejected\_total\{reason="decode"\}} \\
+Poison message (undecodable) & Would loop if nacked with requeue & Classified terminal: acked, \path{rejected} event, counted in \path{deploy_queue_rejected_total} with \code{reason="decode"} \\
 Queue-side TTL hit & Dead-lettered to \path{f1r3node.deploy.expired} & \code{expired\{sig, stage="queue"\}} published by the DLQ watcher; the deploy would have failed the block window anyway \\
 Replay by a hostile publisher & Signature valid, bytes identical & \path{DuplicateDeploy} or block-window expiry; nothing to gain \\
 \bottomrule
@@ -448,13 +449,13 @@ Replay by a hostile publisher & Signature valid, bytes identical & \path{Duplica
 \label{sec:ttl}
 
 The TTL is already shard-wide on both branches, so no new consensus parameter is
-needed. \code{deploy-lifespan} (default 50 blocks; \code{casper/src/rust/casper\_conf.rs},
+needed. \code{deploy-lifespan} (default 50 blocks; \path{casper/src/rust/casper_conf.rs},
 \code{defaults.conf}) only seeds genesis: it is written into the PoS contract
 (\code{\$\$deployLifespan\$\$} in \code{PoS.rhox} and \code{PoSV6.rhox}, via
-\code{genesis/contracts/standard\_deploys.rs}), served by
-\code{PoS("getConsensusParameters")}, and at start-up \code{hash\_set\_casper}
-(\code{casper/src/rust/casper.rs}) reads it from the approved block's post-state
-through \code{token\_metadata\_check::read\_on\_chain\_consensus\_parameters} and
+\path{genesis/contracts/standard_deploys.rs}), served by
+\path{PoS("getConsensusParameters")}, and at start-up \code{hash\_set\_casper}
+(\path{casper/src/rust/casper.rs}) reads it from the approved block's post-state
+through \path{token_metadata_check::read_on_chain_consensus_parameters} and
 overwrites the local value unconditionally. A node whose chain state lacks it fails to
 start. Every node in a shard therefore enforces the same window, and an operator sets
 it once, at shard launch, through \code{casper.deploy-lifespan} on the genesis node.
@@ -475,10 +476,10 @@ the buffer makes bursts survivable, the window keeps them bounded.
 \paragraph{Where the window is enforced} (same on both branches unless noted):
 ingress (\code{BlockAPI::deploy}); the proposer (\code{prepare\_user\_deploys} on
 \dev, \code{select\_envelopes} on v6, both deleting or skipping expired deploys);
-block validation (\code{Validate::transaction\_expiration},
+block validation (\path{Validate::transaction_expiration},
 \code{future\_transaction}, \code{time\_based\_expiration}); the merger
-(\code{dag\_merger::split\_window\_closed\_chains}); and on v6 the gate's
-prior-status window (\code{v6/core.rs::prior}). The queue adds no enforcement point;
+(\path{dag_merger::split_window_closed_chains}); and on v6 the gate's
+prior-status window (\path{v6/core.rs::prior}). The queue adds no enforcement point;
 it only needs to stop holding messages that can no longer pass.
 
 \paragraph{Queue-side TTL, derived not configured.} RabbitMQ can expire messages by
@@ -613,7 +614,7 @@ test in \S\ref{sec:plan}.
 
 \paragraph{Where it lives.} A new repository \code{F1R3FLY-io/f1r3node-async-rust},
 Apache~2.0 like the node, depending on \code{f1r3node-rust} crates by git revision.
-Alternative: a \code{client/} workspace crate inside \code{f1r3node-rust}, which
+Alternative: a \path{client/} workspace crate inside \code{f1r3node-rust}, which
 keeps versions in lock-step but ties client releases to node releases
 (\S\ref{sec:open}).
 
@@ -672,8 +673,8 @@ CLI overrides follow the \code{config\_mapper.rs} pattern for each key.
 not stop the node.
 
 \paragraph{Running the broker.} One RabbitMQ container per node:
-\code{docker/shard.yml} gains a \code{rabbitmq-<n>} service per validator, with the
-management plugin bound to localhost only; \code{docker/standalone.yml} gains one.
+\path{docker/shard.yml} gains a \code{rabbitmq-<n>} service per validator, with the
+management plugin bound to localhost only; \path{docker/standalone.yml} gains one.
 The \code{ign1t10n} installer (local macOS shard) adds a RabbitMQ install step and the
 three config lines. Production guidance: broker and node on the same host or pod so
 ``node-local'' holds physically; a broker shared between validators is a
@@ -704,8 +705,8 @@ without broker credentials.
 \label{sec:plan}
 
 Five patches, each independently testable, in the lane style of the rev-stacks plan
-(\code{patch/<ID>} branches, \code{[agent]} commits, decisions logged under
-\code{docs/designs/deploy-queue/decisions/}). DQ-1 and DQ-3 can run in parallel once
+(\path{patch/<ID>} branches, \code{[agent]} commits, decisions logged under
+\path{docs/designs/deploy-queue/decisions/}). DQ-1 and DQ-3 can run in parallel once
 the message contract in \S\ref{sec:node} is frozen.
 {\small
 \begin{xltabular}{\textwidth}{L{1.9cm} X L{2.8cm} X}
@@ -729,13 +730,13 @@ DQ-5 lifecycle events (phase 2) & Hook in \path{finality/deploy_lifecycle.rs} (b
     fields 15--16 present on \dev's decoder (must survive as raw bytes, never be
     re-encoded).
   \item Integration: RabbitMQ in \code{testcontainers}; the three-validator
-    \code{docker/shard.yml}; crash between admit and ack; broker restart mid-burst
+    \path{docker/shard.yml}; crash between admit and ack; broker restart mid-burst
     (auto-recovery); node restart with a full queue.
   \item Soak, the point of the exercise: \code{f1r3deploy burst} from $N$ clients
     against one node and against all three, at rates above and below what the shard
     drains, measuring admission latency, pool depth, time-to-finalized, and the
     fraction shed by the block window. Run on both branches through
-    \code{scripts/casper-soak}; the v6 run is the one that matters for the ASI
+    \path{scripts/casper-soak}; the v6 run is the one that matters for the ASI
     TestNet and should follow the Track~B handoff candidate, not precede it. Pass
     criteria: no validator stall across the run; no deploy lost without a terminal
     event; shed fraction $0$ at a sustainable rate and bounded by $\mathit{lifespan}$
@@ -767,9 +768,9 @@ patch, not the design.
     \code{shard.tip} only; lifecycle events in DQ-5 after the Track~B handoff, so the
     consumer does not touch the finalizer while that lane is landing.
   \item \textbf{Client repository.} Recommended: a separate
-    \code{F1R3FLY-io/f1r3node-async-rust} repo pinned to node revisions, since
+    \path{F1R3FLY-io/f1r3node-async-rust} repo pinned to node revisions, since
     clients release on their own cadence and ASI's TestNet users will consume it
-    independently of node builds. Alternative: a \code{client/} workspace crate.
+    independently of node builds. Alternative: a \path{client/} workspace crate.
   \item \textbf{Early elaboration check on v6.} Running
     \code{source\_to\_adt\_elaborated} in the consumer would reject malformed seal
     forms immediately instead of letting them become \code{Discarded} network-wide,
@@ -787,7 +788,7 @@ patch, not the design.
     the per-deployer variant as the follow-up if the soak shows starvation.
   \item \textbf{Naming and home.} \code{f1r3node-async-rust} is the working name;
     \code{f1r3node-client} is the alternative. Also whether this note is checked into
-    \code{docs/designs/deploy-queue/} on \dev{} as the lane's design record.
+    \path{docs/designs/deploy-queue/} on \dev{} as the lane's design record.
 \end{enumerate}
 
 \section*{Sources}
