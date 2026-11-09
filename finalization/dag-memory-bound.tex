@@ -1,0 +1,369 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,columns=fullflexible,keepspaces=true}
+\newcommand{\code}[1]{\texttt{#1}}
+\setlist{nosep}
+\sloppy
+\setlength{\emergencystretch}{3em}
+
+\title{Bounding the in-memory block DAG in \code{f1r3node-rust}\\
+\large Code analysis of issue \#933 and a development plan}
+\author{Design note for the F1R3FLY.io node team}
+\date{9 November 2026 --- \code{dev} at \code{0ccc315d}}
+
+\begin{document}
+\maketitle
+
+\section{Summary}
+
+The claim is correct and the defect is evident in the code. The in-memory
+\code{DagState} in \path{block-storage/src/rust/dag/block_metadata_store.rs}
+holds seven collections keyed by block hash or height. Six of them ---
+\code{dag\_set}, \code{child\_map}, \code{height\_map}, \code{block\_number\_map},
+\code{main\_parent\_map} and \code{self\_justification\_map} --- receive an entry on
+every insert and have no removal path anywhere in the workspace (outside test
+fixtures). Only \code{finalized\_block\_set} is capped. Finalization advances
+\code{last\_finalized\_block} and sets per-block flags, but never shrinks the
+indices; and at startup \code{BlockMetadataStore::try\_new} rebuilds all six from
+every metadata row in LMDB, so memory is proportional to the whole chain
+history, never to the live frontier. GitHub issue \#933 (opened 4 Nov 2026)
+reports the same structures, with a measured 3{,}493 bytes of live heap per
+block and about 37\,MB/h of growth per node on an idle 15-node testnet.
+
+The intuition that finalization should allow the in-memory DAG to be
+``reset'' is right in spirit but needs one refinement: the correct shape is a
+\emph{window} of heights behind the last finalized block (LFB), not a reset to
+the fringe, because several readers legitimately walk below the LFB. The
+repository already contains the machinery to make this safe --- the ``restore
+horizon'' contract for nodes joined from a Last Finalized State (LFS) snapshot,
+under which a block the node does not hold is reported as \code{BlockNotHeld}
+and deferred rather than treated as a fault. A windowed DAG makes every node
+look like an LFS-restored node whose horizon advances with finality. The plan
+below reuses that contract rather than inventing a second one.
+
+\section{What the code does today}
+
+\subsection{The growing structures}
+
+\begin{lstlisting}
+// block_metadata_store.rs
+pub(crate) struct DagState {
+    pub(crate) dag_set: imbl::HashSet<BlockHash>,
+    pub(crate) child_map: imbl::HashMap<BlockHash, imbl::HashSet<BlockHash>>,
+    pub(crate) height_map: imbl::OrdMap<i64, imbl::HashSet<BlockHash>>,
+    pub(crate) block_number_map: imbl::HashMap<BlockHash, i64>,
+    pub(crate) main_parent_map: imbl::HashMap<BlockHash, BlockHash>,
+    pub(crate) self_justification_map: imbl::HashMap<BlockHash, BlockHash>,
+    pub(crate) last_finalized_block: Option<(BlockHash, i64)>,
+    pub(crate) finalized_block_set: imbl::HashSet<BlockHash>,
+}
+\end{lstlisting}
+
+\code{add\_block\_to\_dag\_state} inserts into all of the first six on every
+\code{add}. The only remover in the file is
+\code{prune\_finalized\_cache\_if\_needed}, which trims
+\code{finalized\_block\_set} from 50{,}000 to 25{,}000 entries (and does so in
+arbitrary iteration order, not oldest-first; \code{is\_finalized} falls back to
+the LMDB metadata row, so this is a cache miss rather than a correctness bug).
+A workspace-wide search for \code{.remove(} on the other six fields finds
+nothing outside tests.
+
+The design is inherited from the Scala \code{BlockMetadataStore} the file
+header cites, which also kept its DAG indices in memory for the life of the
+process; the Rust port adds three more per-block maps
+(\code{block\_number\_map}, \code{main\_parent\_map},
+\code{self\_justification\_map}) as hot-path caches, roughly doubling the
+per-block footprint. The measured $\sim$3.5\,KB per block is consistent with
+six \code{imbl} HAMT entries holding 32-byte \code{Bytes} keys plus a freshly
+allocated \code{imbl::HashSet} per block in \code{child\_map}; the child sets
+are the likely dominant term and the profile in Phase~0 should confirm that.
+
+\subsection{What finalization does, and does not, do}
+
+\code{BlockDagKeyValueStorage::record\_directly\_finalized} (called from
+\code{finalization\_runner.rs}) walks the held, unfinalized ancestry of the new
+LFB, runs the finalization effect, then \code{record\_finalized} marks the
+blocks finalized in LMDB, adds them to \code{finalized\_block\_set} and
+advances \code{last\_finalized\_block}. Nothing is removed from the six
+indices. \code{propagate\_ft\_to\_finalized\_blocks} then scans every
+finalized block whose cached fault tolerance is below the new value --- a
+second place where cost grows with history rather than with the frontier
+(partly mitigated by the \code{ft\_lower\_bound} skip).
+
+\subsection{Startup}
+
+\code{BlockMetadataStore::try\_new} calls \code{store.collect} over the entire
+\code{block-metadata} LMDB table and folds every row into a fresh
+\code{DagState}. Both the time and the resident memory of a restart therefore
+scale with total chain length. Issue \#923 (disk growth) is the on-disk twin;
+this note deliberately leaves LMDB contents intact and bounds only the
+in-memory view.
+
+\section{Why a reset to the fringe is not quite right}
+
+A \code{KeyValueDagRepresentation} snapshot answers two different kinds of
+question: \emph{membership} (``does this node hold block $h$?'') and
+\emph{structure} (children, heights, main-parent spine). Several production
+readers ask these questions about blocks \emph{below} the LFB:
+
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[Late blocks from lagging validators.] The parent-depth rule
+  (\code{validate.rs}, ``ANCHOR: the block's OWN parent frontier, never this
+  node's tip'') deliberately allows a block whose parents sit arbitrarily far
+  below the validating node's LFB. Validation resolves those parents through
+  \code{dag.lookup}, which is gated on \code{dag\_set.contains}. If the parent
+  were evicted from \code{dag\_set} while still present in LMDB, \code{lookup}
+  would return \code{None}, the dependency gate would park the block in the
+  Casper buffer waiting for a block the node already has, and nothing would
+  ever release it --- the stall class of \#690 and the \#306 ``not held'' storm,
+  self-inflicted. \textbf{Membership must stay truthful for every block the
+  node holds, pruned or not.}
+\item[Mergeable-channel GC.] \code{mergeable\_channels\_gc.rs} enumerates
+  \code{height\_map} from its last swept height up to
+  \code{floor.block\_number - (max\_parent\_depth + mergeable\_channels\_gc\_depth\_buffer)}
+  and needs \code{children} for each candidate. If heights are evicted before
+  the sweep has enumerated them, their mergeable data is never collected. The
+  retention depth below the floor must cover this ceiling, and eviction must be
+  ordered after enumeration (or the sweep's \code{swept\_height} must be
+  persisted so a restart does not lose it; today it is process-local and
+  restarts from genesis).
+\item[Repeat-deploy scope walks.] \code{walk\_blocks\_in\_scope}
+  (\code{proto\_util.rs}, \#776) descends \code{deploy\_lifespan} heights
+  below the \emph{proposing block's parents}, reading
+  \code{dag.block\_number} from the in-memory index to prune the walk. With
+  the own-frontier parent rule those parents can be below the node's LFB.
+\item[Silent validators.] \code{latest\_messages()},
+  \code{non\_finalized\_blocks()} and the clique oracle follow a validator's
+  latest message and self-justification chain; a validator silent for longer
+  than the window has a latest message below it.
+\item[Block API, history horizon, replay.] \code{topo\_sort},
+  \code{get\_max\_height}, \code{find} (truncated-hash search over
+  \code{dag\_set}), \code{descendants} (legacy merge path),
+  \code{rspace\_history\_horizon.rs}, the replay in \code{initializing.rs}
+  and \code{BlockStateManager::is\_empty} (\code{topo\_sort(0, Some(1))}) all
+  assume the height index covers the whole chain. \code{genesis\_hash()}
+  falls back to \code{height\_map.get(\&0)} when the genesis register is
+  unset; the register is written on every bootstrap path in
+  \code{initializing.rs}, so the fallback can go.
+\end{description}
+
+Fork choice itself (\code{estimator.rs}) starts at the LFB and walks
+\emph{children} upward, and the DAG merger scopes blocks between the LFB and
+the tips; both live entirely in the retained window and need no change.
+
+\section{Design}
+
+\subsection{Principle}
+
+Keep LMDB complete. Make the in-memory indices a cache over a height window
+$[W, \infty)$ where $W$ is the \emph{window floor}, and make every accessor
+on \code{KeyValueDagRepresentation} fall through to the LMDB metadata row for a
+block not in the window. Everything a walk needs about an old block ---
+\code{block\_number}, \code{parents[0]} (main parent), the sender's own
+justification, the \code{finalized} flag --- is already in
+\code{BlockMetadata}. The one relation that is \emph{not} derivable from a
+metadata row is \emph{children}; the design persists a height index to LMDB
+and makes children-below-window either a persisted index or an explicitly
+unsupported query, depending on the caller.
+
+\subsection{Window floor}
+
+After each successful \code{record\_directly\_finalized},
+\begin{align*}
+  W &= \mathrm{LFB.block\_number} - D,\\
+  D &= \max\bigl(\,\code{max\_parent\_depth} + \code{mergeable\_channels\_gc\_depth\_buffer},\\
+    &\qquad\quad \code{deploy\_lifespan},\; \code{dag\_memory\_window\_min}\bigr),
+\end{align*}
+with \code{dag-memory-window-min} a new \code{casper} configuration key
+(suggested default 1{,}000 heights). $W$ is monotone non-decreasing and is
+additionally capped at the GC sweep's enumerated height (Phase~3). With the
+defaults in \code{defaults.conf} (\code{max-parent-depth = 15},
+\code{deploy-lifespan = 50}, buffer 10) the minimum dominates, and at the
+observed 5--9 blocks per height a 1{,}000-height window costs roughly
+25--30\,MB of index memory --- bounded, and tunable by operators.
+
+\subsection{Accessor semantics after the change}
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.34\textwidth}p{0.26\textwidth}p{0.34\textwidth}@{}}
+\toprule
+Accessor & In window & Below window ($\mathrm{block\_number} < W$) \\
+\midrule
+\code{contains} / \code{lookup} & in-memory set, then LMDB row & LMDB row (truthful membership) \\
+\code{block\_number}, \code{main\_parent}, \code{self\_justification} & in-memory map & derived from LMDB row \\
+\code{is\_finalized} & set, then LMDB & LMDB (unchanged) \\
+\code{children} & in-memory map & LMDB \code{children-index}, or \code{None} (see 4.4) \\
+\code{topo\_sort}, \code{get\_max\_height} & in-memory \code{height\_map} & LMDB \code{height-index} range scan \\
+\code{find} (truncated hash) & in-memory scan & LMDB prefix scan on metadata keys \\
+\code{genesis\_hash} & register & register (drop the height-0 fallback) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Snapshot semantics.} A representation is a point-in-time snapshot;
+falling through to LMDB could reveal a block inserted \emph{after} the
+snapshot. Gate the fall-through on the row's \code{block\_number} being below
+the snapshot's own $W$ (captured at \code{get\_representation} time). The
+residual leak is a late block from a lagging validator that lands below $W$
+between a snapshot and its use; such a block is settled-history territory and
+the only consumers that could observe it are read-only API calls. Record this
+as an accepted deviation in the module docs.
+
+\subsection{Children below the window}
+
+Production callers of \code{children}: the estimator (walks up from the LFB,
+always in window), \code{mergeable\_channels\_gc::reaches\_ancestor\_check}
+(candidates are at most $D$ below the floor, in window by construction of
+$D$), and \code{descendants} (legacy merge path, base is at or above the
+LFB). No production caller needs children of a block below $W$. Phase~1
+therefore returns \code{None} below the window and documents it; a persisted
+children index is listed as an optional follow-up only if the block API's
+graph renderers need it.
+
+\subsection{Eviction}
+
+Eviction is by height, under \code{global\_lock.write()}, immediately after
+\code{record\_finalized}: for each height $h$ in
+\code{height\_map.range(..W)}, remove its hashes from the six maps and remove
+the height key. Eviction ignores finalization status --- an unfinalized orphan
+below $W$ stays in LMDB and remains reachable through fall-through, and if a
+later LFB's ancestry merges it, \code{held\_ancestors} still finds and
+finalizes it. The GC sweep keeps its own \code{pending} set, so evicting
+orphans from the DAG indices does not lose them for GC. Because \code{imbl}
+collections are persistent, eviction is $O(\text{evicted} \cdot \log n)$ and
+outstanding snapshots are unaffected.
+
+\section{Development plan}
+
+Each phase is independently mergeable and behaviour-preserving until Phase~3
+turns eviction on behind a configuration flag.
+
+\subsection*{Phase 0 --- Reproduce and instrument (1--2 days)}
+\begin{enumerate}
+\item Land the counting-allocator measurement from \#933 as
+  \code{block-storage/tests/dag\_state\_memory\_bound.rs}: 120{,}000
+  shard-shaped inserts, assert bytes/block over the last 100{,}000; record the
+  3.5\,KB baseline and leave the assertion as a regression bound once
+  Phase~3 lands.
+\item Add gauges \code{dag.window\_floor} and \code{dag.evicted\_total}
+  alongside the existing \code{DAG\_BLOCKS\_SIZE\_METRIC} /
+  \code{DAG\_CHILDREN\_INDEX\_SIZE\_METRIC} / \code{DAG\_HEIGHTS\_SIZE\_METRIC}
+  in \code{multi\_parent\_casper/snapshot.rs}; these are the soak acceptance
+  signals.
+\item Confirm with a heap profile which of the six collections dominates.
+\end{enumerate}
+
+\subsection*{Phase 1 --- Truthful absence: fall-through accessors (3--5 days)}
+\begin{enumerate}
+\item Add \code{window\_floor: i64} to \code{DagState} and to
+  \code{KeyValueDagRepresentation} (initially \code{i64::MIN}, so nothing
+  changes).
+\item Rewrite \code{lookup}, \code{contains}, \code{block\_number},
+  \code{main\_parent}, \code{self\_justification} and their
+  \code{\_metered} / \code{\_unsafe} variants to fall through to
+  \code{block\_metadata\_index.get} when the hash is not in \code{dag\_set},
+  gated as in 4.3. Reuse \code{block\_metadata\_to\_info} for the derivations.
+\item Replace the three production direct-field reads with accessors:
+  \code{clique\_oracle.rs:250} (\code{block\_number\_map}),
+  \code{mergeable\_channels\_gc.rs:258} (\code{height\_map}, via a new
+  \code{heights\_in\_range} accessor), and the size gauges in
+  \code{snapshot.rs}. Then narrow the field visibility so the compiler
+  enforces it (tests use the existing \code{from\_parts} escape hatch).
+\item Drop the \code{height\_map.get(\&0)} fallback in \code{genesis\_hash};
+  change \code{BlockStateManager::is\_empty} to test the genesis register or
+  \code{dag\_set.is\_empty()}.
+\item Make \code{validate\_dag\_state} compute contiguity from $W$ rather than
+  from the minimum height, so eviction never trips the warning.
+\item All existing tests must pass unchanged; add unit tests for each
+  accessor with a block present in LMDB but absent from \code{dag\_set}.
+\end{enumerate}
+
+\subsection*{Phase 2 --- Persisted height index and bounded startup (3--4 days)}
+\begin{enumerate}
+\item Add an LMDB store \code{height-index} ($\code{i64} \to$ set of hashes),
+  written in \code{insert\_internal} under \code{global\_lock}, with a
+  one-time backfill from the metadata scan when the store is empty at
+  startup (same shape as the carrier-index watermark bootstrap).
+\item Route \code{topo\_sort} and \code{get\_max\_height} through the
+  in-memory map when the range is inside the window and through the LMDB
+  index otherwise; \code{find} falls back to a key-prefix scan on
+  \code{block-metadata}.
+\item Change \code{try\_new} to rebuild only heights $\ge W_0$, where
+  $W_0$ is derived from the persisted LFB's block number and $D$; LMDB
+  remains the source of truth for everything below. Startup becomes
+  $O(\text{window})$.
+\end{enumerate}
+
+\subsection*{Phase 3 --- Eviction behind a flag (3--5 days)}
+\begin{enumerate}
+\item Add \code{casper.dag-memory-window-min} and
+  \code{casper.dag-memory-window-enabled} (default off for one release).
+\item Implement \code{evict\_below(W)} in \code{BlockMetadataStore} and call
+  it from \code{record\_directly\_finalized}'s persist closure after
+  \code{record\_finalized}, computing $W$ as in 4.2.
+\item Couple to GC: persist \code{GcSweep::swept\_height} in an LMDB meta
+  slot and cap $W$ at it, or move enumeration to the persisted height index
+  so the sweep no longer depends on in-memory \code{height\_map}. The second
+  is cleaner and also fixes the restart-from-genesis re-enumeration.
+\item Let \code{finalized\_block\_set} eviction follow $W$ instead of the
+  arbitrary 50k/25k trim.
+\end{enumerate}
+
+\subsection*{Phase 4 --- Verification (soak, 1 week elapsed)}
+\begin{itemize}
+\item \textbf{Unit/property.} Property test: for a random DAG and random
+  $W$, every accessor returns the same answer with and without eviction
+  (fall-through equivalence). Add to \code{casper/tests/fork\_choice/}.
+\item \textbf{Lagging validator.} Integration test in
+  \code{casper/tests/batch1/}: a validator silent for $> D$ heights proposes
+  a block citing parents below $W$; the block must be admitted, not parked
+  in the Casper buffer.
+\item \textbf{GC.} Mergeable data of blocks evicted from memory is still
+  collected; sweep survives a restart.
+\item \textbf{LFS joiner and restart.} A node restored from an anchor and a
+  node restarted with a populated database both come up with a bounded
+  \code{DAG\_BLOCKS\_SIZE} and serve \code{topo\_sort} over pruned heights.
+\item \textbf{Soak.} Repeat the \#933 idle testnet: 20\,h, 10 validators,
+  5 observers. Acceptance: container anon memory flat after warm-up
+  ($< 2$\,MB/h drift), \code{dag\_blocks\_size} bounded by
+  $D \times$ blocks-per-height, finalization p95 not worse than \code{dev}.
+\item Enable the flag by default once the soak passes; remove the flag one
+  release later.
+\end{itemize}
+
+\section{Risks and open decisions}
+
+\begin{itemize}
+\item \textbf{Snapshot leak (4.3).} Accepted deviation; document it. If a
+  reviewer objects, the alternative is to stamp each metadata row with the
+  \code{dag\_generation} at insert and gate fall-through on it, at the cost
+  of a metadata schema bump.
+\item \textbf{Fall-through cost.} Each below-window accessor call is one LMDB
+  point read instead of a map lookup. Only lagging-validator validation and
+  API calls hit it; the hot paths (fork choice, merge, finalizer) stay in
+  window. Confirm with the \code{dag.insert.time} and finalizer timing
+  histograms during the soak.
+\item \textbf{Adjacent unbounded state, out of scope here.}
+  \code{invalid\_blocks\_index} and \code{latest\_messages\_index} are
+  materialised with \code{to\_map()} on every \code{get\_representation};
+  the equivocation tracker grows with equivocations;
+  \code{propagate\_ft\_to\_finalized\_blocks} scans all finalized blocks.
+  None grows per block at idle, but each deserves its own ticket.
+\item \textbf{Disk (\#923).} This plan keeps LMDB complete by design. Pruning
+  LMDB below an archival horizon is a separate decision with
+  network-protocol implications (what a node can serve to joiners) and should
+  not be bundled with the memory fix.
+\end{itemize}
+
+\end{document}
