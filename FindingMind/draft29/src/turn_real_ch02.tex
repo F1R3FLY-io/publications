@@ -1,0 +1,441 @@
+\chapter{Names Without Names: Combinators and the Matrix Machine}
+\label{ch:combinators}
+
+\section{Status, first}
+
+The previous chapter reported on a store that has run in production for years. This one
+reports on a compiler whose first build passed its test suite in the autumn of 2026, on a
+software graphics driver, and whose performance has not been measured on a single program
+anyone wanted to run. The reader is asked to hold that asymmetry in mind throughout, and
+the chapter will keep saying so, because the argument it makes is of a kind that invites
+overstatement: it is an argument that a theoretical property of the calculus ---
+reflection, the thing that makes rho rho --- is exactly what makes the calculus cheap on
+hardware the store was not designed for. The argument is sound as far as it goes. How far
+it goes is a number nobody has yet produced.
+
+Here is the shape of what follows. A name-free combinator calculus for rho exists, and the
+version of it that was published is broken in an instructive way; repairing it requires
+adding something the published version lacked, and the repaired calculus compiles rho in
+linear size where the classical method is exponential. A combinator state is a multiset of
+fixed-width tuples, so it is a vector; the rewrite rules are a matrix; and the one rule
+that gives the calculus its computational power is also the one rule that cannot be
+written down in advance and the one that breaks the matrix's triangular structure. The
+feature that makes the theory hard makes the machine cheap: reflection is a lookup table.
+And the speedup available from running this on an accelerator is the \emph{width} of the
+computation and nothing else --- a falsifiable thesis that should be tested before anyone
+builds more hardware than has already been built.
+
+\section{A calculus with no bound names}
+\label{cb:sec:calculus}
+
+Rho has no name-restriction operator: names are quoted processes, and freshness comes
+from quotation rather than from a binder. It nonetheless has one binder, the input
+prefix. Yoshida showed how to eliminate the input binder of the asynchronous
+$\pi$-calculus in favor of combinators, at the cost of keeping $\mathsf{new}$. The
+combination is suggestive: a calculus with no $\mathsf{new}$, compiled by a discipline
+that removes the remaining binder, would be a concurrency calculus with no bound names
+whatsoever. That is what the rho combinators proposed~\cite{rhocomb}, and the current
+draft of the work~\cite{rhocomb3} asks whether the proposal works.
+
+The atoms are nine. Six are \emph{routers}, which move a message without reading it:
+$\mathsf{d}(a,b,c)$ duplicates a message at $a$ to $b$ and $c$; $\mathsf{k}(a)$ kills
+one; $\mathsf{fw}(a,b)$ forwards $a$ to $b$; $\mathsf{bl}(a,b)$ and $\mathsf{br}(a,b)$
+bind the received payload as the left or right argument of a new forwarder; and
+$\mathsf{sy}(a,b,c)$ synchronizes, emitting a forwarder from $b$ to $c$ when a message
+arrives at $a$. One is the \emph{destructor} $\mathsf{ev}(a)$, which consumes a message at
+$a$ and \emph{runs its payload}. Two carry values: the message $\mathsf{m}(a,v)$ and the
+store $\mathsf{q}(a,p)$, a message that only a forwarder can read. The rules are two-atom
+rewrites, each a message meeting one router or the destructor at a shared name.
+
+\begin{figure}[t]
+\hrule\vspace{4pt}
+\[
+\begin{array}{l@{\qquad}l}
+ \mathsf{d}(a,b,c) \mid \mathsf{m}(a,v) \rewrite \mathsf{m}(b,v) \mid \mathsf{m}(c,v)
+   & \mathsf{bl}(a,b) \mid \mathsf{m}(a,v) \rewrite \mathsf{fw}(v,b)\\
+ \mathsf{k}(a) \mid \mathsf{m}(a,v) \rewrite \nil
+   & \mathsf{br}(a,b) \mid \mathsf{m}(a,v) \rewrite \mathsf{fw}(b,v)\\
+ \mathsf{fw}(a,b) \mid \mathsf{m}(a,v) \rewrite \mathsf{m}(b,v)
+   & \mathsf{sy}(a,b,c) \mid \mathsf{m}(a,v) \rewrite \mathsf{fw}(b,c)\\
+ \mathsf{ev}(a) \mid \mathsf{m}(a,v) \rewrite *v
+   & \mathsf{fw}(a,b) \mid \mathsf{q}(a,p) \rewrite \mathsf{m}(b,@p)\\[4pt]
+ \multicolumn{2}{l}{\mathsf{cons}_{\mid}(a,b,c) \mid \mathsf{m}(a,@p) \mid \mathsf{m}(b,@r)
+   \rewrite \mathsf{m}(c,@(p \mid r))}\\
+ \multicolumn{2}{l}{\mathsf{cons}_{A}(a_{1},\dots,a_{n},f) \mid \mathsf{m}(a_{1},v_{1})
+   \mid \cdots \mid \mathsf{m}(a_{n},v_{n})
+   \rewrite \mathsf{m}(f,@A(v_{1},\dots,v_{n}))}
+\end{array}
+\]
+\vspace{2pt}\hrule
+\caption{The rules of the repaired combinator calculus, closed under $\mid$ and the
+equations of a commutative monoid on $\mid$. The last line is a schema, one rule per
+atom shape $A$ a program needs.}
+\label{cb:fig:rules}
+\end{figure}
+
+\paragraph{One equation breaks the published calculus.} The published combinators inherit
+$*@P \equiv P$ from a presentation in which quote and drop are mutually inverse, and they
+write the destructor and the drop with the same symbol. In the combinator setting the
+destructor is not a process former but a guard; and since every name is $@Q$ for some $Q$,
+identifying the guard with the drop makes an arbitrary running process match the guard.
+
+\begin{proposition}[The defect]
+\label{cb:prop:defect}
+If the drop and the destructor are one constructor and $*@p = p$, then for all $P,Q$:
+$\;Q \mid \mathsf{m}(@Q,@P) \rewrite P$.
+\end{proposition}
+
+\begin{proof}
+Every name is $@Q$ for some $Q$, so under the conflation $\mathsf{ev}(@Q) = Q$. Reduction
+is closed under the equations, so the redex $\mathsf{ev}(a) \mid \mathsf{m}(a,@P)$ with
+$a=@Q$ matches $Q \mid \mathsf{m}(@Q,@P)$ and fires.
+\end{proof}
+
+An arbitrary running process can be annihilated and replaced by an arbitrary payload by
+anyone who knows its quotation. No faithfulness theorem survives this. The repair is to
+separate the drop from the guard --- Figure~\ref{cb:fig:rules} does --- which leaves the
+equation optional; the source gives both presentations.
+
+\paragraph{Reflection was half-implemented, and constructors complete it.} The rule
+$\mathsf{ev}(a) \mid \mathsf{m}(a,@P) \rewrite P$ opens a name that arrives at run time.
+In the published calculus nothing \emph{builds} one: combinator reduction never produces
+a name not already present in the redex, hereditarily. Rho reduction does, at every step,
+because substituting under a quotation turns $@(*y \mid R)$ into $@(Q \mid R)$ --- a name in
+neither participant. So the published calculus cannot encode rho at all. The missing
+operation is the construction of a name from names, and it is supplied by
+\emph{constructors}: one for parallel composition, $\mathsf{cons}_{\mid}$, and one per atom
+shape, each taking its arguments as messages and emitting the quotation of the term built
+from them. With constructors there is no name-opaque fragment to restrict to. They are the
+combinator-level image of the one thing the Pledge said reflection had to do cheaply: let
+a network of agents be the sort of thing that can be named.
+
+\paragraph{The storage combinator is about opacity, not power.} $\mathsf{q}(a,p)$, released
+by a forwarder rather than by a message, adds nothing to expressiveness. What it adds is
+\emph{silence}: it is a message that only a redirection can read, which is what stored code
+and intermediate results of name construction need if the encoding is to be opaque to
+observers.
+
+\paragraph{Prefix elimination is linear.} Reflection allows a continuation to be quoted
+once and released by a three-atom gate. Yoshida must instead push the prefix through the
+body, splitting at every parallel composition and delaying every atom, which costs a
+constant factor per level of nesting.
+
+\begin{proposition}[Succinctness]
+\label{cb:prop:blowup}
+On an explicit family of terms of nesting depth $d$, Yoshida's elimination produces
+$(3^{d-1}+1)/2$ atoms where the reflective encoding produces $3d+1$. In general the image
+of a rho term $P$ under the two-phase translation has $O(|P|)$ atoms.
+\end{proposition}
+
+That is the first payoff, and it is a theorem~\cite[Prop.~8.1]{rhocomb3}: \emph{storing a
+continuation as a name makes compiling away the input binder linear in program size, where
+the classical method blows up exponentially in nesting depth.}
+
+\paragraph{Correctness is full abstraction relative to encoded contexts.} Observation is by
+context-labeled bisimilarity, with the observer class taken to be the image of the
+translation on source contexts, and the theorem is that two rho terms are bisimilar iff
+their images are bisimilar against encoded observers~\cite[\S7]{rhocomb3}. The
+restriction to encoded observers is forced rather than convenient --- an unrestricted
+combinator context can see the apparatus --- by the same argument that forces it for the
+encoding of the $\pi$-calculus into rho (Chapter~\ref{ch:obsext}). The proofs are at the
+level of sketches; the source says so.
+
+\paragraph{An expressiveness lattice.} Including or excluding combinators gives a lattice
+of fragments, and three invariants draw it. Without the destructor the calculus is
+strongly normalizing and so not Turing complete; without constructors it cannot build a
+name; and the duplicator $\mathsf{d}$ is conjectured necessary for divergence. The
+constructor axis is Boolean. Whether the three binders $\mathsf{bl},\mathsf{br},\mathsf{sy}$
+are separable from one another is open. The lattice has two orderings, expressive and
+observational, and they do not coincide, because the calculus has no hiding. We mention it
+because the next section will show that the same three invariants are the three finiteness
+conditions of a matrix.
+
+\section{States are vectors, rules are a matrix}
+\label{cb:sec:matrix}
+
+Everything in this section is over the Booleans or the natural numbers; the weighted and
+complex readings of Chapter~\ref{ch:grading} attach to the same operator later and nothing
+here depends on them. The source is a design analysis~\cite{rhocombmat}, and it marks
+each of its claims as settled, as a route believed to work, as open, or as a gate on the
+work downstream; we carry the markings.
+
+\paragraph{What a graphics processor rewards.} An accelerator is a bulk-synchronous machine
+with a very wide, very shallow execution model. It rewards flat, indexable state --- arrays
+of fixed-width records at predictable addresses, pointer chasing being the single most
+expensive thing one can ask of it; uniform work across lanes --- threads that take the same
+branch; bulk-synchronous phases --- one kernel does one thing to everything, then a
+barrier; and standard sparse primitives --- sparse matrix products, segmented scans, sorts
+and hash tables, which inherit decades of tuning. An RSpace-style interpreter does
+approximately the opposite of all four. Its state is a store of variably shaped terms
+reached by pointer; matching is a recursive walk over nested syntax; conflicts are
+resolved by locks; and the inner loop is a hash lookup followed by unification. None of
+that is a criticism of RSpace, which is a good design for a general machine. It is an
+itemized statement of the gap a compiler standing between the two has to close.
+
+Four facts about the repaired combinators do the closing. \emph{Atoms are flat}: every atom
+is a head symbol applied to at most $w$ arguments, $w$ known at compile time, and every
+argument is a name --- there is no nesting, no binder, no pattern variable. \emph{The
+multiset is complete}: the multiset of top-level atoms of a drop-free normal form is a
+complete invariant for structural congruence. \emph{Rules are small and subject-joined}:
+two to $w$ premises, each a single atom, sharing names. \emph{Name equality is decidable and
+internable}: on closed normal forms it is decided by normalization and multiset comparison,
+and quotation is injective there, so names can be hash-consed to integers once and
+compared by integer equality thereafter.
+
+\begin{definition}[Species, and the state space]
+\label{cb:def:species}
+A \emph{species} is a head symbol together with a tuple of names of the matching arity. A
+\emph{state} is a finite multiset over species --- an \emph{occupation vector}
+$\gamma : \mathrm{Spec} \to \mathbb{N}$ of finite support. The state space is the free
+module on such $\gamma$; equivalently, the free commutative algebra generated by the
+species, a state being a monomial $\prod_\sigma (a^{\dagger}_\sigma)^{\gamma(\sigma)}
+\lvert\nil\rangle$.
+\end{definition}
+
+\begin{principle}[Structural congruence is free]
+\label{cb:prin:free}
+The equations of the calculus are not imposed on the representation and are not discharged
+by a normalization pass. Commutativity, associativity and the unit of $\mid$ are the
+algebra of the multiset; $*@p = p$ and $@*a = a$ are discharged once, at interning time.
+No run-time cost.
+\end{principle}
+
+This is the first place the combinators pay. In a direct rho machine, matching modulo
+structural congruence is a recurring cost and a recurring source of subtlety; here it is
+a property of the data structure. It is also, the reader will notice, Chapter~\ref{ch:rspace}'s
+Proposition~\ref{rs:prop:hom} said a second way: the store made $\Par$ into multiset union
+of bags at keys; the matrix machine makes the whole state into one multiset over species,
+and the keys have become coordinates.
+
+\begin{definition}[The rule operator]
+\label{cb:def:operator}
+For a species $\sigma$ let $a^{\dagger}_\sigma$ add one occurrence and $a_\sigma$ remove
+one, with $a_\sigma \lvert\gamma\rangle = 0$ when $\gamma(\sigma) = 0$. Each rule of
+Figure~\ref{cb:fig:rules} is a monomial in these operators --- annihilate the premises,
+create the conclusions --- schematic in the names; the \emph{transfer operator} is the sum
+over rules and name instances, $T = \sum_r H_r$.
+\end{definition}
+
+\begin{proposition}[Matrix elements count derivations]
+\label{cb:prop:massaction}
+$\langle\gamma'\lvert T \rvert\gamma\rangle$ is the number of distinct rule instances
+carrying $\gamma$ to $\gamma'$, which for a rule with premises of multiplicities
+$\gamma(\sigma_1),\dots,\gamma(\sigma_k)$ is the product of those multiplicities.
+\end{proposition}
+
+The entries are mass-action counts. A combinator program is, without any choice having
+been made, a chemical reaction network: species, reactions, and a transfer operator whose
+entries are the number of ways each reaction can fire. Chapter~\ref{ch:grading}'s
+multiplicity factor --- count redexes by occurrence, or run the system at half rate --- is
+here the definition of the matrix element. The weighted reading attaches at exactly one
+place, a diagonal factor in each rule's operator term, which is why the Gillespie reading
+of that chapter and the matrix machine of this one are one object.
+
+\paragraph{The self-indexing problem.} Species are indexed by names, and names are quoted
+processes, so by completeness of the multiset they are finite multisets over species. The
+index set of the basis therefore satisfies
+\[
+  \mathrm{Nm} \;\cong\; M_{\mathrm{fin}}(\mathrm{Spec}), \qquad
+  \mathrm{Spec} \;=\; \textstyle\coprod_{A} \mathrm{Nm}^{\mathrm{ar}(A)} .
+\]
+The basis of the state space indexes itself. This is reflection seen through the linear
+algebra, and it is the reason no finite matrix can be written down in advance for the full
+calculus. The solution of the domain equation is the initial algebra: names are finite
+trees, so the name set is countable, finitely branching, and graded by depth of quotation.
+
+\begin{definition}[The intern table]
+\label{cb:def:intern}
+The machine realizes the name set as a bijection between integers and canonical component
+multisets, in two directions: $\mathsf{quote}$, a hash-cons --- an \emph{encode}; and
+$\mathsf{drop}$, a table read --- a \emph{decode}.
+\end{definition}
+
+\begin{theorem}[The lattice classifies the matrix]
+\label{cb:thm:three}
+Let $T$ be a combinator term over a constructor set $S$.
+\begin{enumerate}[label=(\roman*),leftmargin=2.4em]
+\item \emph{(Index set; constructor axis.)} Every name occurring in a reduct of $T$ lies in
+the closure of $T$'s names under the node shapes in $S$. If $S=\emptyset$ the reachable
+species set is finite; if not, it is the free $S$-algebra on $T$'s names, countable and
+graded by depth.
+\item \emph{(Nilpotency; destructor axis.)} Every rule but $\mathsf{ev}$ strictly decreases
+a weight counting non-message atoms. Without $\mathsf{ev}$ the reachable operator is
+strictly block upper triangular with respect to that grading and $T^{2N+1} = 0$ for $N$ the
+number of non-message atoms.
+\item \emph{(Occupation bound; duplication axis.)} Without $\mathsf{d}$ and without
+$\mathsf{ev}$, the combined occupation of message and store species is non-increasing.
+\end{enumerate}
+\end{theorem}
+
+The three invariants the expressiveness lattice was drawn with are, without modification,
+the three finiteness conditions a matrix representation needs, one per axis of the lattice.
+That is the source's main structural observation and it is proved. The corollary the
+original proposal wanted --- that the reduction graph is an upper triangular matrix, so
+that reachability is a finite Neumann series computed by repeated squaring --- holds
+\emph{exactly on the destructor-free fragment}. With $\mathsf{ev}$ the graph can have
+cycles, because reflection admits terms that step to a structurally congruent copy of
+themselves, and by Principle~\ref{cb:prin:free} congruent means equal.
+
+\begin{remark}[One atom, three characterizations]
+\label{cb:rmk:evthrice}
+The destructor $\mathsf{ev}$ is, simultaneously: the carrier of Turing power, by the
+strong-normalization result for the fragment without it; the unique breaker of the
+grading, by Theorem~\ref{cb:thm:three}(ii); and the unique rule whose operator cannot be
+written schematically in advance, because its conclusion is whatever the decoded name
+says. Three independent characterizations of one atom, from logic, from order theory and
+from implementation. The remark in the combinator paper that ``the destructor carries the
+computational power that reflection supplies'' acquires an operational reading: the power
+is exactly the ability to turn an index into a state.
+\end{remark}
+
+The recommendation that follows is the one the source makes, and it reverses the original
+proposal. For running a program one needs a \emph{frontier}, not a closure: the current
+state and its successors. Triangularity is a property of the whole graph and buys nothing
+at the frontier; a general sparse non-negative operator applied to a sparse vector is
+entirely adequate, and iterative methods are indifferent to cycles. The upper triangular
+matrix is the right object for model checking --- or, working in the unfolding, for the
+history monad's universal cover, which is acyclic by construction --- and the wrong object
+for execution. \emph{Do not ask for it.}
+
+\section{What actually gets multiplied}
+\label{cb:sec:multiply}
+
+Not the reduction graph. The object the machine multiplies is the sparse \emph{incidence
+matrix} between atom occurrences and names --- term-sized, not graph-sized --- and three
+operations on it are the whole of a step. \emph{Redex finding is a join}: the rules are
+subject-joined, so the instances of a rule enabled in the current state are found by
+joining the atom table with itself on the shared name column, which is a sparse product.
+\emph{Conflict detection is a second product}: two redexes conflict when they consume a
+common atom occurrence, and the conflict graph is $BB^{\top}$ for $B$ the redex-atom
+incidence. \emph{Independent-set selection is a standard parallel primitive}. Each step
+fires a \emph{maximal independent set} of redexes, which is one barrier per causal layer
+--- and firing a maximal independent set per step is sound with respect to the
+interleaving semantics, so that machine steps count \emph{causal depth}. This is the
+contention-component structure of Chapter~\ref{ch:grading} with the components found by
+linear algebra: the independent-set step is the $k$-ary generalization of the
+contention-set normalization, and the source files reconciling the two as an obligation.
+
+\begin{principle}[Reflection is an intern table]
+\label{cb:prin:reflection}
+The decode rule reads the intern table at $v$ and appends the stored component multiset to
+the state: a table lookup followed by a bulk copy of a contiguous block, among the cheapest
+things an accelerator does. The constructors build a small canonical term and hash-cons it:
+a concurrent insert-or-get, a standard device primitive. The feature that makes the
+calculus theoretically hard --- that a name is a program and a program can be recovered
+from a name --- is, at the level of the machine, exactly a bidirectional intern table. The
+theoretical difficulty and the implementation difficulty do not coincide here, and they
+point in opposite directions: reflection is what obstructs a static matrix and what makes
+the dynamic one cheap, because storing a continuation as an index is what keeps atoms
+fixed-width.
+\end{principle}
+
+This also explains Proposition~\ref{cb:prop:blowup} from the machine side. Yoshida's
+elimination must rewrite a continuation to delay it; the reflective encoding stores it as a
+name and pays for a gate. A machine that stores continuations as integers in a table is
+doing the same thing, and the $O(|P|)$ bound is what keeps the state array small enough
+to be worth the transfer to a device. The intern table is the one place the
+bulk-synchronous discipline is violated --- it is shared mutable state --- but both of its
+operations are commutative and idempotent in effect, so it can be updated by an unordered
+batch insert per step rather than by locking. Interning order is a gauge freedom: two runs
+may assign different integers to the same name, the states are equal up to the canonical
+bijection, and the machine must never let an integer comparison stand in for a semantic
+distinction between runs.
+
+\section{What has been measured, and the thesis}
+\label{cb:sec:measured}
+
+A reference implementation accompanies the design note, and its measurements are step
+counts and widths, not timings. On four synthetic term families with analytically known
+widths --- $k$ independent forwarder chains of length $d$; $c$ messages and $c$ consumers
+on one channel; a binary duplicator tree of height $h$; a construct-then-eval family ---
+the number of parallel steps equals the causal depth exactly and the ratio of sequential
+to parallel steps equals the width exactly: $64.00$ for $64$ chains, $16.00$ for $16$
+contenders, $18.14$ for a duplicator tree of height six. The join formulation of redex
+finding agrees with naive enumeration on $400$ of $400$ random states.
+
+\begin{principle}[The width thesis]
+\label{cb:prin:width}
+The speedup available from this route is the mean width of the reduction, and nothing
+else. Sequential terms gain nothing; the machine adds a constant per-step overhead of two
+sparse products and an independent-set selection. The thesis is falsifiable by measuring
+the width distribution of compiled rho programs, and should be falsified or confirmed
+before further device work is undertaken.
+\end{principle}
+
+Three things are not claimed, and the source says so in its own voice: that any of this
+beats a well-tuned sequential interpreter on real workloads; that the reduction graph should
+ever be materialized; that maximal progress is the right resolver rather than \emph{a}
+resolver whose cost is an open question. And one thing is marked as the gate on the whole
+enterprise: \emph{the width of the combinator image of a compiled rho program has not been
+measured.} The measurements establish that the construction is correct and that step
+count is causal depth on families whose depth is known. They establish nothing about real
+programs, because that measurement requires the compiler, not the machine.
+
+\section{The compiler, as it stands}
+\label{cb:sec:saphire}
+
+The compiler is called Saph1r3. It is a Rust workspace of eight crates, about eight thousand
+lines, whose front end is the kernel-rho parser and normalizer of the campf1r3 project
+taken unmodified, and whose pipeline is: parse and normalize; \emph{phase one}, a
+homomorphism on the normal form into the combinators extended with a binder; \emph{phase
+two}, which eliminates the binder by giving each run-time instance an address and erecting
+its apparatus under that address with an instantiation combinator; then deployment to a
+host matrix machine or to a device bundle --- a program matrix, kernels generated from the
+rule table in the WebGPU shading language, and a manifest --- targeting Vulkan, Metal or
+DirectX through a portable layer. The device finds redexes and selects the independent set;
+the host commits each step; the intern table stays on the host.
+
+Its test suite reports forty-eight passing tests at the time of writing: a hundred-seed
+regression against a reference reducer on the paper's own adversarial term and its
+variants; a nineteen-program corpus covering every occurrence kind, nesting, relays,
+races and received code with inputs; device traces byte-identical to host traces; address
+independence; canonicity of the encoding; golden files for the full reduction traces of
+two programs; an adversarial cross-instance scheduler with zero disagreements over a hundred
+seeds; and a nesting family on which phase-one atoms grow linearly in depth, which is
+Proposition~\ref{cb:prop:blowup} observed. The device tests were run on a software Vulkan
+driver. No performance target has been set, let alone met.
+
+The build also found things wrong in the specifications it implements, and reported them.
+Collapsing the hole indices of nested contexts to a single marker is unsound for nested
+units --- a parent's instantiation would fill a child's hole --- and de~Bruijn indices over
+context nodes repair it. The specification's address supply for received code was
+unstated, and the build closes the gap with one address per release site at a shared
+static channel. A quoted process containing an input is a unit and must be erected like an
+input body. These are the ordinary findings of a first implementation, and they are
+recorded in the repository's own words as findings for the papers.
+
+\begin{remark}[What is nascent, stated plainly]
+\label{cb:rmk:nascent}
+The store-backed machine --- the one that would let the matrix machine run against the
+production store of Chapter~\ref{ch:rspace} rather than its own interned state --- is not
+built. There is no browser build. The alternative erection scheme the logic paper favors
+reaches twelve of twenty-one corpus programs and not the regression term itself. The
+specification says the machine has no external dependencies and the code depends on a
+graphics library. And the one number the whole route turns on --- the width distribution
+of compiled rho programs --- has not been computed, although the compiler that would
+compute it now exists. In the vocabulary of this book: a hypothesis has been installed as a
+guard, the assay has been designed, and no message has yet arrived on the probe channel.
+\end{remark}
+
+\section{Two realizations of one rule}
+\label{cb:sec:two}
+
+The store and the matrix machine implement the same COMM rule and agree on what it means,
+and they disagree about everything else. The store keys the state by channel and finds a
+redex by looking up a key; the machine flattens the state to species and finds every
+redex at once by a join. The store resolves a race at a key, under a lock, with a seeded
+shuffle; the machine resolves every race in a layer at once, by independent-set selection,
+under maximal progress. The store is a general machine's realization and runs anything;
+the machine is an accelerator's realization and runs what is wide. The store carries
+reflection as a content-addressed key --- a quoted process \emph{is} its hash; the machine
+carries it as an intern table --- a quoted process \emph{is} its integer. And the store
+knows the two messages at $a$ are two because it keeps a bag; the machine knows it because
+the matrix element is $2$.
+
+Which is to say that the resource layer of Chapter~\ref{ch:rspace} --- the layer the
+behavioral layer forgets, the layer that keeps counts and keys --- is the layer both
+machines live in, and that they are two coordinate systems on it. A reader who has
+followed the book's habit of asking what a construction prices will want to know what the
+change of coordinates costs and buys. That is the next chapter.
+
+% ===================================================================

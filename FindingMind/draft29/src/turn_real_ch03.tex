@@ -1,0 +1,185 @@
+\chapter{What the Machine Prices}
+\label{ch:price}
+
+\section{The question this part has been building toward}
+
+The book's habit is to ask what a construction costs, and to count the answer in tokens.
+The two preceding chapters have described two realizations of the COMM rule --- a store
+keyed by channel and a matrix keyed by species --- and have been careful to say which is
+running in production and which was compiled this autumn. This chapter asks what the
+difference between them prices, because the answer is not what the vocabulary of
+``acceleration'' suggests, and because getting it right is what lets the book's ledger
+touch a wall socket.
+
+\section{The GPU does not speed up; it widens}
+\label{pr:sec:widen}
+
+Principle~\ref{cb:prin:width} says the speedup available from the matrix route is the
+mean width of the reduction and nothing else. It is worth saying what kind of claim that is,
+because it is a claim about the \emph{shape} of a computation rather than about the speed of
+a machine, and it has a reading in the book's own terms.
+
+A computation in rho is a partial order of events --- the causal history of
+Chapter~\ref{ch:histmonad}, the configurations of an event structure in
+Chapter~\ref{ch:grading}'s vocabulary. The store executes a linear extension of that
+order: one COMM, then the next, with the scheduler choosing which of the enabled events
+goes first. The matrix machine executes it \emph{by layers}: every event with no
+unresolved predecessor fires in the same step, and the number of steps is the \emph{depth}
+of the order. The width of a layer is how many independent events it holds. A sequential
+term has width one at every layer and the machine gains nothing on it; a term whose
+events are mostly independent has a width that grows with the term and the machine's
+steps do not grow at all. The ratio of sequential to parallel steps is, exactly, the mean
+width --- the measurements of Chapter~\ref{ch:combinators} say so on families where the
+width is known in advance, and the thesis says it is so in general.
+
+So the graphics processor is not a faster machine for rho. It is a machine that
+\emph{scales with the width} of a rho computation: double the number of independent agents
+in a term and the machine's step count stays where it was, while the store's doubles.
+Whether that is worth anything depends entirely on whether the programs one wants to run
+are wide, and that is the number nobody has computed. The honest form of the datacenter
+claim --- that a shard's computation can be laid across accelerators and scale with the
+number of them --- is the width thesis restricted to the case where width is large: there,
+and only there, near-linear scaling in processors is what the thesis predicts, and the
+thesis has been stated so that it can be falsified by one measurement.
+
+\begin{remark}[Two ledgers, one quantity]
+\label{pr:rmk:ledgers}
+The cost monad charges per event. The width thesis prices per layer. These are not two
+costs but one cost seen in two coordinate systems, and the change of coordinates is the
+change between the store and the matrix. A learner of the Ecology part paying one token per
+COMM is indifferent to which machine it runs on: its bill is the number of events. The
+\emph{wall-clock} bill --- the one paid in joules at the socket, which the Pledge insisted
+is where every price eventually lands --- is the number of layers times the cost of a
+layer on the store, and the number of layers on the machine. For a wide computation these
+differ by the width. For a narrow one they do not differ at all, and a machine that was
+bought for its width is an expensive way of running a sequential program.
+\end{remark}
+
+\section{Where the two philosophies disagree, priced}
+\label{pr:sec:priced}
+
+Chapter~\ref{ch:combinators} closed with the two realizations side by side. Here is what
+each of their disagreements costs, in the book's terms.
+
+\paragraph{Structural congruence.} The store pays for it at every match: a recursive walk
+over nested syntax, modulo associativity and commutativity, with binder-sensitive pattern
+variables. The machine pays for it once, at interning, after which it is the algebra of a
+multiset. The price the machine pays instead is the intern table --- a shared mutable
+structure that is the one place its bulk-synchronous discipline is violated --- and the
+loss of \emph{pattern matching at run time}: the machine's rules are fixed shapes, and
+every pattern the program needed was compiled into a shape before the program ran. The
+store can receive a pattern it has never seen; the machine cannot.
+
+\paragraph{Resolution.} The store resolves one race at a key, under a lock, with a
+seeded shuffle, and its resolver is reproducible because the seed is. The machine resolves
+every race in a layer at once by maximal-independent-set selection, and its resolver is
+\emph{maximal progress}: an enabled race is resolved, and declining is not among the
+options. Chapter~\ref{ch:grading} called the resolver a parameter, and here are two values
+of it with different prices. The store's is cheap per race and serial across races. The
+machine's is one parallel primitive per layer and commits it to a resolver whose fairness
+is an open obligation in the source: maximal progress can starve a redex forever if a
+competing one is always available. The store's locks are what it pays to be fair.
+
+\paragraph{Reflection.} The store carries a name as a content hash and a quoted process as
+the thing the hash addresses; the machine carries a name as an integer and a quoted process
+as a row in the intern table. Both are cheap. The difference is \emph{who can build one}.
+In the store any process can quote anything at any time, because quotation is hashing. In
+the machine a name is built by a constructor rule, one per atom shape the program needs, and
+Theorem~\ref{cb:thm:three}(i) says the reachable name set is the free algebra on the
+program's initial names under those shapes. The store's reflection is unbounded; the
+machine's is generated. For a program that builds names in finitely many shapes the two
+coincide. For a program that does not --- one that quotes received code of arbitrary shape
+--- the machine's rule table is not fixed, and the source files this under what the two-phase
+translation must supply.
+
+\paragraph{State.} The store keeps the whole state in one place and knows it by one hash.
+The machine keeps the state as a vector distributed across the device and knows it by
+nothing in particular: the Merkle root is a store-side object and the machine has no
+analogue of it. This matters for exactly one thing, and it is the thing that makes f1r3node
+a shard rather than an interpreter: \emph{validation}. A validator checks a state change by
+replaying the log and comparing roots. The machine, as built, produces no root to compare.
+That is not a defect of the design --- the intern table is on the host and a root could be
+computed from the committed state --- but it is a feature the store has and the machine
+does not yet, and it is the feature the next section is about.
+
+\section{Execute, replay, and the three rungs}
+\label{pr:sec:validators}
+
+Chapter~\ref{ch:do} promised that the execution model of the shard would be introduced in
+its own right. Here it is, in the form the two realizations make legible.
+
+A shard is a set of nodes holding the same store. A \emph{deploy} is a rho term submitted
+for execution. One node --- the proposer --- executes a block of deploys from the block's
+pre-state and produces three things: the new root hash, the total cost charged, and the
+event log of COMMs. Every other node --- the validators --- re-executes the same deploys
+from the same pre-state with the replay store of Chapter~\ref{ch:rspace} forcing the
+recorded COMMs, and must reach the same root, the same cost and the same log, or the block
+is rejected. The order-then-execute design that the implementation moved to runs each
+deploy from the pre-state and records the winners of every race; the losers are
+recomputable from the pre-state, so nothing further is stored.
+
+In the vocabulary of Chapter~\ref{ch:do}, this is an experimenter/spectator split built
+into a protocol. The proposer resolves the races and so stands on rung two: it chooses, at
+every race, which candidate fires, and its choice is the exogenous draw. The validators
+observe a completed run and stand on rung one: they replay what was chosen and can confirm
+it, and the distribution they could estimate from the finalized trace is the trace
+distribution and no more. A counterfactual --- rung three --- is a replay from the recorded
+pre-state with one record changed, which is exactly what the validators' machinery already
+does with no record changed. That a distributed ledger is, by design, a machine that
+separates the three rungs and gives each a name --- propose, validate, fork --- is not
+something its designers set out to build, and the book notices it with some surprise.
+
+The same record serves two further masters, and this is the point at which the Realization
+part pays back the Machinery part. The record of fired candidates is what the gradient of
+the Mortal Scientist (Theorem~\ref{sci:thm:score}) accumulates, one number per firing from
+the candidates the site already evaluated in order to resolve its own race; and it is what
+a $\dok$'s replay (Theorem~\ref{do:thm:cf}) requires. One instrumentation --- the one the
+validators need anyway --- serves validation, learning, and counterfactual reasoning.
+Nothing was added to the machine to make the book's constructions run on it. They were
+already its bookkeeping.
+
+\section{The network is the computer, after all}
+\label{pr:sec:network}
+
+The Pledge (\S\ref{sec:pledge-i}) looked inside a computer and saw a network of components,
+looked at the newest dies and saw ``Internet on a chip,'' and said that the understanding
+guiding both the abstraction and the hardware of the present era is that \emph{the network
+is the computer}. Section~\ref{sec:pledge-viii} then named the destination --- interaction
+rather than function, bisimulation rather than input-output equality, reflection so that the
+model holds a picture of itself --- and promised that everything in the Turn would be built
+on those three. This part is where the promise meets the socket.
+
+The store is the first realization and it runs on the general machine the present era
+already has: cores, locks, a hashtable, a disk. The matrix machine is the second and it runs
+on the wide shallow machine the present era built for a different purpose --- for
+multiplying the matrices of neural networks --- and it runs there because, as
+Proposition~\ref{cb:prop:massaction} says, a rho computation \emph{is} a sparse matrix
+acting on a vector once its structural congruence has been interned away. The third
+realization, which this book does not describe because it does not yet exist, is a die on
+which the COMM rule is the instruction: a processor whose fabric is the reduction graph,
+for which the matrix machine is the software model and the store is the specification of
+what the model must agree with. The order of arrival is the order of the Pledge's
+telescope: first the network of components we already had, then the wide chip we built for
+something else, then --- if the width thesis survives its measurement --- the chip built
+for this.
+
+The honest position, and the one this part has tried to hold, is that the first exists and
+is mature, the second exists and is a few months old, and the third is a direction. A reader
+who wants to know whether the book's constructions are abstractions \emph{of} anything can
+be told: yes, of a store that has been running them for years, under a cost model that had
+to be order-independent before the book derived that it must be, with a replay discipline
+that was Pearl's third rung before anyone called it that. A reader who wants to know whether
+the constructions are abstractions of anything \emph{fast} must wait for one number.
+
+\begin{remark}[What this part claims, and at what confidence]
+\label{pr:rmk:claims}
+\emph{Implemented, mature}: the store, its denotation as a homomorphism, its Merkle history,
+replay, and metering. \emph{Proved}: the linear-size encoding; the three invariants as the
+three finiteness conditions; step soundness --- that firing a maximal independent set per
+step counts causal depth. \emph{Implemented, nascent}: the two-phase compiler and the
+matrix machine, correct on their corpus, unmeasured on anything else. \emph{Conjectured,
+falsifiable, gating}: the width thesis, which is the whole of the acceleration claim.
+\emph{Direction}: the chip.
+\end{remark}
+
+% ===================================================================

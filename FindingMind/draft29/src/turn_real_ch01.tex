@@ -1,0 +1,305 @@
+\chapter{The Store Is the Denotation}
+\label{ch:rspace}
+
+\section{Two senses of ``runs''}
+
+Everything in the Machinery part is a construction on a language presentation. The
+reader has been told, repeatedly, that the constructions are not metaphors: that a
+cost-accounted theory meters, that a graded clause resolves a race, that a $\dok$
+intervenes. Each of those verbs has two senses. In the first, ``the theory meters'' means
+that the rewrite relation, read as a mathematical object, has a component that decreases.
+In the second, it means that a machine somewhere is doing the subtracting, and that if one
+pulled the plug the subtracting would stop. The Pledge promised the second sense when it
+said that \emph{the network is the computer} and pointed at the Groq and Cerebras dies
+and the FPGAs whose fabric comes and goes. This part is where the second sense is
+delivered, and it is delivered in two installments of very different maturity.
+
+The first installment is RSpace. It is a data structure, an algorithm over it, and a
+production store with several years of operation behind it, and this chapter's claim is
+that the store \emph{is the denotation}: that the compilation of rho into RSpace states is,
+term for term, a denotational semantics, with the structural laws of the calculus holding
+as literal equalities of hashtables. The second installment, in the next chapter, is a
+compiler from rho through a name-free combinator calculus to a matrix machine that runs on
+a graphics processor. It exists, it passes its tests, and it has not yet been measured on
+anything that matters; we will say exactly how nascent it is. The two are realizations of
+the same COMM rule on two hardware philosophies that reward opposite things, and the third
+chapter of the part asks what that opposition prices.
+
+A word about the voice. The Machinery part spoke of theories; this part speaks of a
+particular implementation, f1r3node, written in Rust, and of a particular compiler,
+Saph1r3. Where the book says what the code does, it has been checked against the code and
+its documentation at the time of writing; where it says what the code's authors intend,
+it says so. The book does not become a manual here. It becomes a report on whether the
+abstractions of the preceding part are abstractions \emph{of} anything, and the answer is
+that one of them has been running in production for some time and the other was compiled
+for the first time this autumn.
+
+\section{The store}
+\label{rs:sec:store}
+
+Modulo structural congruence the parallel fragment of rho, $(\Par, \nil)$, is the free
+commutative monoid, and the free commutative monoid on a set is the finite-multiset
+construction on it. Interpreting $\Par$ as multiset union therefore makes the denotation a
+monoid homomorphism \emph{on the nose}, and structural congruence of the parallel skeleton
+becomes literal equality of multisets --- the tightest fit syntax and semantics can have.
+Bucketing the multiset by channel turns it into a hashtable. That hashtable is RSpace.
+
+\begin{definition}[Tables]
+\label{rs:def:table}
+A \emph{table} is a finite partial map from names to \emph{polarity-homogeneous}
+multisets of payloads: a key holds either a bag of output payloads
+$x \mapsto \{\!|\,Q_1,\dots,Q_m\,|\!\}^{+}$ --- \emph{produces}, data --- or a bag of
+input continuations $x \mapsto \{\!|\,(y_1)P_1,\dots,(y_n)P_n\,|\!\}^{-}$ --- \emph{consumes},
+abstractions --- never a mixture. The keys are names, hence quoted processes: RSpace is
+\emph{content-addressed}, and a channel's identity is the hash of the process it quotes.
+\end{definition}
+
+\begin{definition}[The RSpace denotation]
+\label{rs:def:rspace}
+\begin{align*}
+  \sem{\nil}&=\varnothing, &
+  \sem{x!(Q)}&=\{\,\sem{x}\mapsto\{\!|\sem Q|\!\}^{+}\,\},\\
+  \sem{P\Par Q}&=\sem P \uplus_{k} \sem Q, &
+  \sem{\fork(y\leftarrow x)P}&=\{\,\sem{x}\mapsto\{\!|(y)\sem P|\!\}^{-}\,\},\\
+  \sem{*x} &= *\sem{x}, & \sem{@P} &= @\sem{P},
+\end{align*}
+where $\uplus_k$ is \emph{key-wise} multiset union: the bags $P$ and $Q$ install at a key
+are united. Each prefix installs a singleton bag; $\Par$ co-locates produces and consumes.
+A key whose two operands carry the same polarity stays homogeneous; a key receiving both
+polarities is a \emph{redex}.
+\end{definition}
+
+\begin{proposition}[Exact homomorphism]
+\label{rs:prop:hom}
+$\sem{-}$ is a homomorphism of commutative monoids: $\sem\nil=\varnothing$ and
+$\sem{P\Par Q}=\sem P\uplus_k\sem Q$. Hence the parallel laws of structural congruence
+--- associativity, commutativity, unit --- hold as literal equalities of tables, and
+$P\equiv Q \Rightarrow \sem P=\sem Q$.
+\end{proposition}
+
+\begin{proof}
+$\uplus_k$ inherits the commutative-monoid laws of multiset union key-wise, and the empty
+table is the unit. The prefix clauses are singletons, so reassociating or commuting a
+parallel composition reassociates or commutes the corresponding bag unions, which multiset
+equality absorbs. Multiset union has no idempotence to defeat: $a!(0) \Par a!(0)$ installs a
+two-element bag at $a$, distinct from the one-element bag of $a!(0)$. Counts are kept.
+\end{proof}
+
+The reflection law $*@P \equiv P$ is validated separately, and the source for this
+section~\cite{qcs} derives it rather than assuming it: in a universe stratified into two
+sorts of set and two sorts of atom, with an involution swapping the colors, quotation is a
+seal followed by a swap, dereference undoes it, and $*@P \equiv P$ is the statement that
+the swap is its own inverse. The book does not need the stratification and does not rehearse
+it. What it needs is that every generator of structural congruence holds in the table
+model --- the parallel laws on the nose and reflection by the involution --- so that a
+table is a well-defined function of a process modulo $\equiv$.
+
+\begin{definition}[Eager reaction: the zip]
+\label{rs:def:zip}
+A key $x$ carrying both a produce-bag $\{\!|Q_1,\dots,Q_m|\!\}^{+}$ and a consume-bag
+$\{\!|(y_1)P_1,\dots,(y_n)P_n|\!\}^{-}$ is a redex. Eager reaction fires it: choose
+underlying lists of the two bags and \emph{zip} them; each matched pair reacts by
+application, $(y_i)P_i \cdot Q_i = P_i\{@Q_i/y_i\}$, and the resulting process is merged
+by $\uplus_k$ back into the table; the $|m-n|$ unmatched payloads of the longer bag remain
+at $x$ as a homogeneous surplus. Its normal forms are the tables with no mixed-polarity key.
+\end{definition}
+
+Which $Q_i$ meets which $(y_j)P_j$, and which payloads survive as surplus, depend on the
+chosen list orderings. This is rho's choice of which send meets which receive, now
+localized at the key --- the \emph{resolver} of Chapter~\ref{ch:grading}, made into a
+datum one can point at. The denotation $\sem{-}$ remains a function (plain $\uplus_k$, no
+firing); reaction is the separate dynamics, a relation on tables confluent only up to the
+equivalence that forgets the pairing. And the minimal context $[\,]\Par x!(Q)$ that
+Chapter~\ref{sec:lts-hml} uses to label a transition is exactly the minimal store insertion
+--- one produce at key $x$ --- that turns a pending consume into a redex. \emph{Context
+labels are RSpace puts.}
+
+\begin{remark}[Store monad plus zip]
+\label{rs:rmk:bialgebra}
+The table functor carries a monad structure --- the finite-multiset monad, lifted key-wise
+--- and RSpace is this monad \emph{together with} eager reaction, presented as a
+distributive law of the reaction over the store: a bialgebra in the sense of Turi and
+Plotkin~\cite{turiplotkin}. This is the precise content of the description one hears of
+RSpace as ``strictly more than a monad'': the monad is the store, the surplus is the zip.
+Whether the bialgebra laws hold --- whether eager reaction is confluent up to resource
+bisimilarity, whether the distributive law is one --- is filed in the source as an
+obligation and not a theorem~\cite[\S8]{qcs}. The book reports it so.
+\end{remark}
+
+\section{Two layers, and what each is adequate for}
+\label{rs:sec:layers}
+
+Forget multiplicities and flatten a table into its set of context-labeled transitions ---
+a consume at $x$ is an offer-input, a produce an offer-output, a mixed key an internal
+redex --- and one has a natural transformation $\pi$ from tables to the behavior functor
+of Chapter~\ref{sec:lts-hml}. The RSpace model sits \emph{above} the behavioral model and
+projects onto it:
+\[
+  \text{Syntax} \xrightarrow{\ \sem{-}\ } \text{Tables (RSpace)}
+                \xrightarrow{\ \pi\ } \text{Behaviors},
+\]
+and the composite is the context-behavior denotation the rest of the book works in.
+
+\begin{definition}[Resource bisimilarity]
+\label{rs:def:resbis}
+Two tables are \emph{resource bisimilar} when they are bisimilar as coalgebras of the
+table functor: same keys, same multiplicities at each key, and matching successors under
+eager reaction. It refines context bisimilarity, with $\pi$ the quotient that forgets
+multiplicity and keys.
+\end{definition}
+
+The source states two full-abstraction theorems~\cite{qcs}: at the resource layer,
+resource bisimilarity coincides with equality in the final coalgebra of the table functor;
+at the behavioral layer, context bisimilarity coincides with equality in the final
+coalgebra of the behavior functor, and because the labels are contexts the behavioral
+equivalence is a congruence by construction, so full abstraction holds for a congruence
+with no closure step. Both proofs are sketches, and the obligations section of the source
+lists what would discharge them: existence of the final coalgebras at the right size,
+eager confluence, the bialgebra laws, and weak pullback preservation for the functors
+involved. We state the theorems as the source states them and at the confidence the source
+has.
+
+Why two layers, and not one? Because they answer different questions. The resource layer
+is \emph{the machine}: it knows that there are two messages at $a$ and not one, it knows
+which key is which, and it is what a validator must reproduce to the byte when it replays a
+block. The behavioral layer is \emph{what a program means}: it does not care whether the
+two messages are one or two, only what the system can do in the presence of an observer.
+That the first projects onto the second is the whole of the claim that running the program
+on the store computes its meaning, and that the projection is a quotient --- forgetting
+counts and keys --- is the precise sense in which the machine knows more than the meaning
+does. Chapter~\ref{ch:grading}'s multiplicity factor, which counted candidates by occurrence
+and not by term, was this quotient refused: a rate is a resource-layer quantity.
+
+\begin{remark}[What the formal model does not cover]
+\label{rs:rmk:gap}
+The denotation above is for monadic single-channel input with no patterns. The store the
+next section describes implements joins (a consume waiting on several channels at once),
+spatial pattern matching on the received process, persistent produces and consumes, and
+non-consuming reads. None of these is in the formal model; the source names joins as
+future work. A reader should hold the two apart: the theorem is about a fragment, and the
+implementation is of the whole language. That the fragment's theorem is the right shape
+for the whole is likely and is not proved.
+\end{remark}
+
+\section{The store as built}
+\label{rs:sec:built}
+
+f1r3node's store is a Rust crate, \texttt{rspace++}, behind an interface generic in four
+types: channels $C$, patterns $P$, data $A$ and continuations $K$. For rho, $C$ is a
+process (a channel is a quoted term), $P$ is a binding pattern, $A$ is a list of processes
+with a random-seed carrier, and $K$ is a tagged continuation. The interface has a
+\emph{produce} --- put data on a channel, persistently or not --- and a \emph{consume} ---
+wait on a \emph{vector} of channels with a vector of patterns and a continuation,
+persistently or not, with a set of indices marked as non-consuming reads. Every construct of
+Definition~\ref{rs:def:rspace} is one call: a send is a produce, a receive is a consume,
+and the interpreter's reduction loop, on evaluating a send, calls produce, and on
+evaluating a receive, calls consume, with the optional \texttt{where} clause passed as a
+guard the matcher evaluates per candidate --- which is to say that the clause of
+Chapter~\ref{ch:grading} already reaches the store.
+
+\paragraph{Matching is the zip, with patterns.} When a produce arrives, the store looks up
+the joins registered on that channel, then the waiting continuations; candidates are
+shuffled with a random generator seeded from the deploy, the data on each joined channel is
+matched speculatively against its pattern, and failed attempts are rolled back. A match
+fires a COMM, feeding the continuation back to the interpreter with the matched data
+substituted. With no match, the item is stored. This is Definition~\ref{rs:def:zip} with
+two additions the formal model lacks --- the join, which makes a redex a tuple of keys
+rather than one, and the pattern, which makes ``matched'' a structural question about the
+payload rather than a mere co-location --- and one the formal model leaves open: the
+shuffle, which is the resolver, and which is seeded so that it is \emph{reproducible}.
+
+\paragraph{Hot store and history.} The working set is an in-memory map from channels to
+their data, continuations and joins. A \emph{checkpoint} converts the working set's
+mutations into updates of a 256-ary radix trie whose nodes are hashed with Blake2b-256, so
+the trie is a Merkle trie and its root is a 32-byte summary of the entire state; the trie
+lives in an embedded key-value store on disk, in three databases --- history nodes,
+checkpoint roots, and cold leaf data. A checkpoint is a root hash together with the event
+log since the last one. That is the history monad of Chapter~\ref{ch:histmonad} with a
+particular representation: $\Hist$ said a state carries a word of events; the trie says
+that the word may be summarized by a hash, that two states with the same hash are the same
+state, and that the summary may be recomputed by anyone holding the leaves. The
+representation is not incidental. It is what makes the next paragraph possible.
+
+\paragraph{Replay.} A second implementation of the same interface, \texttt{ReplayRSpace},
+takes a checkpoint and the recorded event log and \emph{forces} the recorded COMMs: when
+the interpreter, re-running the same deploys from the same root, reaches a race, the replay
+store consults the log and resolves it as it was resolved the first time. Non-deterministic
+system processes --- calls to an external model, to a network service --- are replayed from
+their recorded outputs rather than re-executed. The replayer reaches the same root hash or
+it does not, and the comparison is the whole of what a validator checks. We will say more
+about this in the third chapter, because it is where the execution model of the shard and
+the three rungs of Chapter~\ref{ch:do} meet: the executing node resolves; the replaying
+node observes; and a counterfactual, in Chapter~\ref{ch:do}'s sense, is a replay from a
+pre-state with one record changed.
+
+\paragraph{Charging.} A wrapper, \texttt{ChargingRSpace}, meters every store operation. It
+pre-charges for storage when a produce or consume is stored, refunds the pre-charges when a
+COMM fires and charges one combined COMM cost instead, and re-charges for persistent items
+that remain. A field on the COMM event records whether a produce or a consume triggered it,
+so that play and replay --- in which task scheduling may cause a different operation to
+trigger the same COMM --- charge identically. This is the cost monad of
+Chapter~\ref{ch:costmonad} and the metered calculus of Chapter~\ref{ch:carho} running, and
+it is worth noticing which of their features the implementation had to get right before
+the book had a name for it: the \emph{order-independence} of charging, which the book
+derives from the requirement that a validator's bill agree with the proposer's, and which
+Proposition~\ref{wt:prop:gate} states as the gate deciding support while the weight
+distributes over it.
+
+\paragraph{Merging.} A separate module analyzes event logs for conflicts: whether one
+event depends on another, whether two events race on a non-persistent operation, and why.
+This is what lets a block have more than one parent --- two validators' state changes
+merged when their logs do not conflict --- and it is the first appearance in the
+implementation of the contention relation Chapter~\ref{ch:grading} defined: two events
+conflict when they share a datum or a receipt, and independent events commute.
+
+\section{What the machine knows that the calculus does not}
+\label{rs:sec:knows}
+
+Three facts about the store are not facts about rho, and the book's honesty about the
+relationship between the two requires naming them.
+
+\emph{The store is locked, not lock-free.} The architecture document describes the store
+as lock-free; the code uses 4096 pre-allocated mutex stripes selected by channel hash,
+acquired in sorted order in two phases, with first-in-first-out waiters. Branches of a
+parallel composition are evaluated as concurrent tasks, and the stripes serialize their
+access to each channel. There is nothing wrong with this; it is how a general machine
+realizes a tuple space. But it means the realization has a scheduler, and the scheduler is
+not in the calculus. Determinism across nodes comes from three decisions, each outside
+rho: sends are evaluated before receives, the candidate shuffle is seeded from the deploy,
+and replay forces the log.
+
+\emph{Some joins are blocked.} A consume waiting twice on the same channel is refused by the
+implementation, because the candidate-extraction algorithm produces unmatched COMMs for
+overlapping patterns on one channel; and the cost of some same-channel joins involving
+persistent operations is acknowledged to be non-deterministic. These are documented
+limitations, with issue numbers. The calculus has no such restriction. The gap is small and
+it is real.
+
+\emph{The bottleneck is not where one would guess.} Measured, checkpoint durability is about
+one percent of the cost and spawning a replay runtime is under four milliseconds; the
+sustained throughput limit is the block replay pipeline, and the delay from block inclusion
+to finality is among its causes. Nothing in the repository relates the store to graphics
+processors or other accelerators; a design document lists them as a non-goal. The matrix
+note of the next chapter says why, from the other side: an RSpace-style interpreter does
+approximately the opposite of everything an accelerator rewards.
+
+That last sentence is the hinge of the part. The store is mature, correct in production,
+and shaped for a general machine. It is a hashtable of variably shaped terms reached by
+pointer, matched by a recursive walk, with conflicts resolved by locks. A graphics
+processor wants flat indexable state, uniform work across lanes, bulk-synchronous phases,
+and standard sparse primitives. Both machines run the same COMM rule. The question of the
+next chapter is what a compiler standing between them has to do.
+
+\begin{remark}[What this chapter claims, and at what confidence]
+\label{rs:rmk:claims}
+\emph{Implemented and operating}: every send is a produce and every receive a consume on a
+content-addressed store; channels are quoted processes; a rendezvous is literally the COMM
+rule; the whole state is summarized by one Merkle root; a validator replays the log and
+checks the root. \emph{Formally stated, with short proofs}: the denotation is an exact
+monoid homomorphism, and reflection holds in the model. \emph{Formally stated, proofs
+sketched, obligations filed}: full abstraction at both layers; the bialgebra laws; eager
+confluence. \emph{Not modeled}: joins, patterns, persistence, peeks. The chapter has tried
+to keep these four registers apart on every page.
+\end{remark}
+
+% ===================================================================
