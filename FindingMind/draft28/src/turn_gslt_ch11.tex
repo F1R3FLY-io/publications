@@ -1,0 +1,1032 @@
+\chapter{Grading: From Weight Maps to the Where-Clause}
+\label{ch:weight}
+\label{ch:grading}
+
+\section{What is being built, and in what order}
+
+A rewrite rule's left-hand side is a type. Terms inhabit it; the rule fires at its
+inhabitants. This chapter is about what happens when one attaches a number to the
+firing, and it builds the attachment twice.
+
+The first construction is the \emph{weight map}. Given a continued interactive GSLT $G$,
+the weight endofunctor $\Wgt_{\Semi}$ produces a theory in which every base rule carries a
+finite table
+\[
+  \varphi_1 \mapsto v_1, \quad \ldots, \quad \varphi_m \mapsto v_m
+\]
+from formulae refining its left-hand side to values in a semiring $\Semi$. A term's
+redexes are classified by which refinement they satisfy, and the values turn the set of
+enabled redexes into a distribution. Where $\Cost$ adjoins a stack of tokens and $\Hist$
+adjoins a word of events, $\Wgt_{\Semi}$ adjoins a table of rates --- and, like both of
+them, it adjoins it \emph{to the state}. Sections~\ref{wt:sec:partition}
+to~\ref{wt:sec:spim} build this and prove what it gives.
+
+The second construction is the \emph{graded where-clause}, and it is the one the rest of
+the book uses. It is stated in a sentence: \emph{the \texttt{where} clause of the
+for-comprehension is valued in a commutative semiring and is evaluated once per candidate
+match.} There is no table, no key set and no partition. A programmer writes the weight
+where the program branches, in the same language the program is written in, and the
+value may depend on what was matched.
+Sections~\ref{gw:sec:choice} to~\ref{gw:sec:contention} build this.
+
+The two are not rivals, and the order is deliberate. The weight map is the easier object
+to see: it is a table, the table is attached to a rule, and a simulator reads it. Having
+seen it, the reader can watch it dissolve. Theorem~\ref{gw:thm:dnf} says that a weight map
+is exactly a graded clause of one particular shape --- a sum over a partition --- so that
+everything Sections~\ref{wt:sec:partition}--\ref{wt:sec:spim} prove about weight maps is
+a theorem about the \emph{linear} fragment of the clause language, and the discipline those
+sections had to impose is the price of staying in that fragment. The reader who already
+knows the chapter's destination may read the first half as an extended example. The reader
+who does not will find that the second half has been argued for before it is stated.
+
+Two things distinguish both constructions from the literature on stochastic process
+calculi, and both are consequences of taking the weights from a logic the theory
+generates rather than from a vocabulary the modeler invents.
+
+\paragraph{Weights depend on formulae, not names.} In Priami's stochastic
+$\pi$-calculus~\cite{priami} and in Phillips and Cardelli's Stochastic Pi Machine
+(SPiM)~\cite{spim}, a rate is attached to a \emph{channel}. That is one refinement among
+many: ``this redex is a communication on $n$'' is a particular formula, and there is no
+reason a modeler should be confined to it. Once weights are given by formulae, a rate may
+depend on the shape of the payload, on the \emph{namespace} a channel belongs to --- which
+in a reflective calculus is real structure, reachable through the name predicate --- or
+on any combination of these. Channel identity is recovered as the degenerate case, and
+Theorem~\ref{wt:thm:spim} says exactly how degenerate it is.
+
+\paragraph{Weights are state, not declaration.} Rates change during execution. SPiM does
+not permit this, and the restriction is not incidental to its design but constitutive of
+it, since a static rate function is what makes the underlying object a chain over terms
+alone. The weight map recovers Markovianity by putting the table \emph{in} the state, so
+the chain runs over configurations $(P,\dec)$ rather than over terms
+(Theorem~\ref{wt:thm:markov}). The where-clause recovers it more simply: a clause is
+re-evaluated against the current term at every candidate, so whatever a rate depends on
+is already in the term, and the term is the state
+(Proposition~\ref{gw:prop:plastic}). Chapter~\ref{ch:spiking} depends on one or the other,
+since plasticity is nothing other than a rate that changes.
+
+\begin{remark}[Where the formulae come from]
+\label{wt:rmk:whence}
+The formulae used, as keys in the first construction and as the crisp sort of the
+clause language in the second, are those of the logic the OSLF construction generates
+from the theory's own presentation: one structural connective per term former of
+$\Sigma$, one context-labeled modality $\langle K \rangle$ per rewrite rule together with
+a choice of redex position, and a propositional layer stratified by the categorical
+strength the target specification supplies. That construction is
+Chapter~\ref{ch:hypercube}, and the transition system the modalities range over is
+Chapter~\ref{sec:lts-hml}. Nothing in the present chapter needs the details; it needs
+only that the vocabulary of refinements is \emph{generated with the theory} rather than
+designed alongside it, so that a modeler who writes down a language has, at no further
+cost, the language in which to price it. The one place the details do intrude is
+Observation~\ref{wt:obs:closure}, which is about what a weak target specification cannot
+say --- and Corollary~\ref{gw:cor:nopartition}, which is about why, in the end, it does
+not have to.
+\end{remark}
+
+\section{Keys, and the partition discipline}
+\label{wt:sec:partition}
+
+Fix a base rule $r : L \rsq R$. Write $L^{\sharp}$ for the structural formula
+characterizing the left-hand side pattern --- for the rho communication rule, ``an input
+on some $n$ in parallel with an output on the same $n$'' with $n$ existentially bound.
+
+\begin{definition}[Refinement]
+\label{wt:def:refinement}
+A formula $\varphi$ \emph{refines} $L^{\sharp}$ when $\sat \varphi \Rightarrow L^{\sharp}$.
+The refinements of $L^{\sharp}$, ordered by entailment, form the \emph{refinement lattice}
+of the rule.
+\end{definition}
+
+A key set is a finite subset of that lattice. Three requirements are imposed on it, and
+the first is the substantial one.
+
+\begin{definition}[Partition discipline]
+\label{wt:def:partition}
+A key set $\Phi_r = \{\varphi_1, \ldots, \varphi_m\}$ is a \emph{partition of $r$} when
+\begin{enumerate}[label=(P\arabic*),leftmargin=3em]
+  \item \emph{Exclusivity}: $\sat \neg(\varphi_i \wedge \varphi_j)$ for $i \neq j$;
+  \item \emph{Exhaustiveness}: $\sat L^{\sharp} \Rightarrow \bigvee_i \varphi_i$.
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[Admissible key set]
+\label{wt:def:reqs}
+A key set is \emph{admissible} when it is a partition and in addition
+\begin{enumerate}[label=(R\arabic*),leftmargin=3em]
+  \item\label{wt:req:dec} \emph{Decidability}: each $\varphi_i$ lies in a fragment for
+        which model checking terminates on the terms of interest;
+  \item\label{wt:req:loc} \emph{Locality}: the modal depth of each $\varphi_i$ is bounded
+        by some $\alpha_r < \infty$ fixed with the rule;
+  \item\label{wt:req:str} \emph{Structurality}: each $\varphi_i$ lies in the structural
+        fragment, carrying no behavioral modality $\langle K \rangle$, no greatest fixed
+        point, and no hidden-name quantifier.
+\end{enumerate}
+\end{definition}
+
+\ref{wt:req:dec} is forced by execution: a simulator must classify every enabled redex
+before it can sample, so a key whose evaluation may diverge is a key that stops the run.
+\ref{wt:req:loc} and \ref{wt:req:str} are forced by \emph{efficient} execution, and they
+are restrictions on \emph{keys} alone --- the modalities and the fixed point remain
+available for stating and checking properties of the resulting chain. What they may not
+do is determine a rate. A rate depending on what a redex can do \emph{next} cannot be
+recomputed locally when something elsewhere in the term changes, so an implementation
+admitting modal keys must reclassify globally at every step. The clause language of
+Section~\ref{gw:sec:clause} will relax exactly this, at exactly this price.
+
+\begin{proposition}[Classification]
+\label{wt:prop:classify}
+Let $\Phi_r$ be a partition of $r$ and let $\Red_r(P)$ be the set of redexes of $r$ in
+$P$, each a pair $(k,\sigma)$ of a position and a matching substitution. Then
+\[
+  \class_r : \Red_r(P) \longrightarrow \Phi_r,
+  \qquad
+  \class_r(k,\sigma) = \text{the unique } \varphi_i \text{ with } L\sigma \sat \varphi_i
+\]
+is a total function, for every term $P$.
+\end{proposition}
+
+\begin{proof}
+$(k,\sigma) \in \Red_r(P)$ gives $P \equiv k[L\sigma]$, so $L\sigma \sat L^{\sharp}$ by
+construction of $L^{\sharp}$. Exhaustiveness gives some $i$, which is totality;
+exclusivity gives at most one, which is single-valuedness. Well-definedness on
+$\equiv$-classes holds because satisfaction is $\equiv$-invariant, the generated
+connectives being generated from the signature modulo the equations.
+\end{proof}
+
+Proposition~\ref{wt:prop:classify} is the whole reason for the discipline, and what it
+buys is visible in what fails without it. Without exhaustiveness the weighting is
+\emph{partial}: some enabled redexes have no rate, and one must invent a convention ---
+fire them at rate zero, at a default rate, or refuse to run --- that is not part of the
+specification. Without exclusivity the weighting is \emph{multi-valued}, and one must
+invent an aggregation: take the most specific key if a unique minimum exists, sum the
+values of all satisfied keys, take the maximum. Each convention is defensible, and each
+yields a different simulator from the same specification, which is precisely the situation
+a specification exists to prevent. Hold on to the second of those conventions --- sum the
+values of all satisfied keys --- because Section~\ref{gw:sec:dnf} will show that it is not
+a convention at all but the semantics, once one stops asking for a table.
+
+\begin{remark}[Completing a partition is cheap]
+\label{wt:rmk:default}
+The discipline is less onerous than it looks. Given any pairwise-exclusive family
+$\{\varphi_1,\ldots,\varphi_m\}$, adjoining
+$\varphi_{\bot} := L^{\sharp} \wedge \neg\bigvee_i \varphi_i$ yields a partition, and a
+modeler wanting the unlisted redexes inert sets its value to $0$. Exclusivity is the
+real constraint; exhaustiveness is a completion. In practice, keys of the form ``the
+redex is a communication on channel $n$'', indexed by distinct $n$, are exclusive for
+free.
+\end{remark}
+
+\subsection{What stating the partition costs}
+\label{wt:sec:closure}
+
+Definition~\ref{wt:def:partition} writes (P1) and (P2) as entailments. If they are to be
+stated \emph{in the generated logic itself}, that logic must carry negation, conjunction
+and disjunction, and a target specification supplying only the finite-limits fragment
+will not do --- finite limits supply $\top$ and $\wedge$ and no more
+(Remark~\ref{ob:rem:stratification}).
+
+This is a hypothesis and not a theorem about weighting as such. A key family drawn from a
+positive fragment may perfectly well \emph{be} pairwise disjoint and jointly exhaustive;
+what a weak logic prevents is not the holding of (P1) and (P2) but their \emph{expression}
+as entailments between formulae of the language the keys are written in. The alternative
+is to discharge them in the metatheory --- by an elaborator checking them on the instances
+that arise, or by a proof about a schema of keys --- and the weighting is then perfectly
+well defined. Both branches cost something, and the second cost is the interesting one.
+
+\begin{observation}[The cost of an external partition]
+\label{wt:obs:closure}
+If (P1) and (P2) are discharged in the metatheory rather than in the generated logic, the
+specification is no longer \emph{closed}: whether a key set is admissible becomes a
+judgment the object language cannot express. Two implementations conforming to the same
+written specification may then disagree about admissibility, hence --- by
+Proposition~\ref{wt:prop:classify} --- about the classification, hence about the
+distribution sampled. That is exactly the failure the partition discipline was introduced
+to prevent, relocated one level up rather than removed.
+\end{observation}
+
+So a weighted theory built on weight maps must choose between a Boolean target
+specification and an external admissibility judgment, and it should say which. This is a
+small instance of a pattern the Prestige will make central: a construction that looks
+self-contained turns out to have a seam, and the seam is where something the model cannot
+state has to be supplied from outside (Chapter~\ref{ch:notation}). It is worth noticing
+that the seam here is \emph{visible} --- one can point at the entailment that has to be
+checked somewhere else --- and that this is the good case. It is also worth noticing, in
+advance, that this particular seam is an artifact of asking for a table, and that
+Corollary~\ref{gw:cor:nopartition} closes it.
+
+\section{The endofunctor}
+\label{wt:sec:functor}
+
+\begin{definition}[Weight map]
+\label{wt:def:wmap}
+Let $G$ be a continued interactive GSLT with an admissible key set $\Phi_r$ for each base
+rule $r$. A \emph{weight map} is a function
+\[
+  \dec : \textstyle\coprod_r \Phi_r \longrightarrow \Semi .
+\]
+Write $\Wmaps$ for the set of weight maps. Each $\Phi_r$ is finite and there are finitely
+many rules, so $\Wmaps \cong \Semi^N$ for a fixed $N$.
+\end{definition}
+
+\begin{definition}[Configuration]
+\label{wt:def:config}
+A \emph{configuration} is a pair $\mathfrak{c} = (P, \dec)$ with $P$ a term modulo
+$\equiv$ and $\dec \in \Wmaps$. Write $\Cfg$ for the set of configurations.
+\end{definition}
+
+The phrase ``a map instance is part of a state specification'' is
+Definition~\ref{wt:def:config}, and everything in this half of the chapter turns on it.
+
+\begin{definition}[Augmented rules]
+\label{wt:def:augmented}
+An \emph{augmented base rule} is a base rule $r : L \rsq R$ together with, for each
+$\varphi_i \in \Phi_r$, an initial value $v_i \in \Semi$ and an \emph{update function}
+$u_i : \Wmaps \to \Wmaps$ on the whole map. An \emph{augmented context rule} is a context
+rule together with a \emph{geometric factor} $\gfac_c \in \Rnn$ and a fold function
+$f_c$ combining the maps arriving from its sibling subterms. The initial weight map is
+$\dec_0(\varphi_i) = v_i$.
+\end{definition}
+
+\begin{construction}[The weight endofunctor]
+\label{wt:con:functor}
+$\Wgt_{\Semi}$ sends a continued interactive GSLT $G$, equipped with admissible key sets,
+to the theory $\Wgt_{\Semi}(G)$ whose configurations are the pairs of
+Definition~\ref{wt:def:config} and whose rules are the augmented rules of
+Definition~\ref{wt:def:augmented}: a step is
+\[
+  (P, \dec) \rewrite (P', \dec'),
+  \qquad
+  P' \equiv k[R\sigma],
+  \qquad
+  \dec' = f_{c_1}\bigl(\cdots f_{c_p}(u_i(\dec))\cdots\bigr),
+\]
+for $(k,\sigma)$ a redex of $r$ with $\class_r(k,\sigma) = \varphi_i$ and $k$ composed of
+the context rules $c_1, \ldots, c_p$ from the root inwards, the folds applied from the
+redex outwards. In the common case where every $f_c$ projects onto its second argument ---
+``the context does not modify the map'' --- this is $\dec' = u_i(\dec)$, and we write it so
+below. On morphisms, $\Wgt_{\Semi}$ acts as the identity on the underlying map of theories
+and by reindexing on the key sets.
+\end{construction}
+
+The parallel with the two preceding chapters is exact, and it is the reason this chapter
+sits where it does. Each of the three constructions adjoins a component to the state and
+makes the rules act on it: a stack that drains, a word that accrues, a table that is
+rewritten. Each leaves the underlying interaction structure alone. And each is a genuine
+addition rather than a closure operation --- the table after a step is not in general the
+table before it.
+
+\begin{remark}[Two adjunctions and one open question]
+\label{wt:rmk:notamonad}
+$\Cost$ and $\Hist$ are monads, resolved by free--forgetful adjunctions
+(Proposition~\ref{ob:prop:cost-adjunction}, Proposition~\ref{ob:prop:hist-adjunction}).
+We claim no such thing for $\Wgt_{\Semi}$. There is an evident candidate unit: the map
+sending every key to $1_{\Semi}$, which embeds $G$ as the uniformly weighted theory in
+which every enabled redex is equally likely, and which is unital in the right way for the
+same reason the empty stack and the empty word are. Since a unit is available it might
+well be interesting to ask whether a multiplication exists --- what it would mean to
+flatten a weighting of a weighting, and whether the flattening is canonical rather than
+chosen. We do not ask it here. Nothing below requires more than an endofunctor, and
+stating the construction is the point.
+\end{remark}
+
+\begin{remark}[Why context rules carry a factor and not a propensity]
+\label{wt:rmk:geometric}
+The obvious alternative to Definition~\ref{wt:def:augmented} gives every rule, base and
+context alike, a value, and lets the simulator select among all of them. It
+double-counts. A step is a base rule firing \emph{somewhere}; the context rules composing
+the path from the root to that somewhere are the \emph{address} of the firing, not
+additional events. Structural rules are addressing, not dynamics, and incur no primitive
+cost. So the context rules contribute multiplicatively, by
+$\gfac(k) = \prod_q \gfac_{c_q}$ over the composition, and setting every $\gfac_c = 1$
+recovers ``addressing is free'' exactly, which is the default.
+
+The reason to permit $\gfac_c \neq 1$ is that it is the natural home of a \emph{spatial}
+bias. $\gfac$ weights an edge of the reduction graph by \emph{where} in the term the
+interaction surfaces are; $\dec(\varphi)$ weights it by \emph{what} is being transferred.
+That is a geometry/matter split appearing here as an implementation detail, and
+Chapter~\ref{sec:discussion} says what would have to be true for it to be more than one.
+\end{remark}
+
+\section{Propensity}
+\label{wt:sec:propensity}
+
+The propensity of a rule at a refinement is where the construction is most easily got
+wrong, because four independent factors are involved and the literature usually presents
+some of them fused.
+
+\begin{definition}[Propensity]
+\label{wt:def:propensity}
+Let $\mathfrak{c} = (P, \dec)$, let $r$ be a base rule and $\varphi \in \Phi_r$. Put
+$K(r,\varphi,P) = \{(k,\sigma) \in \Red_r(P) : \class_r(k,\sigma) = \varphi\}$. The
+\emph{propensity} of $(r,\varphi)$ at $\mathfrak{c}$ is
+\[
+  \prop(r,\varphi,\mathfrak{c})
+  \;=\;
+  \dec(\varphi) \cdot \!\!\sum_{(k,\sigma) \in K(r,\varphi,P)}\!\! \gfac(k) \cdot \chi(r,k,\sigma),
+\]
+where $\chi \in \{0,1\}$ is the funding gate of Definition~\ref{wt:def:gate}, identically
+$1$ in the absence of cost accounting. The \emph{total propensity} is
+$\propz(\mathfrak{c}) = \sum_r \sum_{\varphi \in \Phi_r} \prop(r,\varphi,\mathfrak{c})$.
+\end{definition}
+
+The four factors, and what each answers:
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+  \item[$\dec(\varphi)$ --- the rate constant.] What kind of interaction this is, priced.
+        Dynamic: this is the component the update functions rewrite.
+  \item[$\gfac(k)$ --- the geometric factor.] Where the interaction is, priced. Default
+        $1$.
+  \item[The cardinality of the sum --- multiplicity.] How many ways this interaction is
+        available. This is Gillespie's combinatorial count of distinct reactant
+        tuples~\cite{gillespie1977exact}, and it is the factor most often omitted in
+        implementations, with the consequence that a term with fifty available redexes of
+        a kind fires them no faster than a term with one.
+  \item[$\chi$ --- the funding gate.] Whether the interaction can be afforded.
+\end{description}
+
+Multiplicity deserves a word, because it is the one place where the associative--commutative
+structure of the interaction constructor does real work. Redexes are counted as
+\emph{selections} from the bag, not identified up to $\equiv$. Two indistinguishable
+messages on the same channel offer two ways for a receipt to fire, and a construction that
+identified them would run the system at half rate. This is not a subtlety of the
+implementation; it is the difference between a truncated Poisson stationary distribution
+and a geometric one. The clause language will make the same point in its own terms:
+candidates are indexed by occurrences, not by terms (Definition~\ref{gw:def:cand}).
+
+\begin{definition}[Funding gate]
+\label{wt:def:gate}
+For a redex $(k,\sigma)$ of $r$, let $\Delta(r,k,\sigma)$ be the demand it incurs and
+$\Sigma(P,k)$ the supply available at that location, in the sense of
+Chapter~\ref{ch:costmonad}. Put $\chi(r,k,\sigma) = 1$ when $\Sigma(P,k)$ funds
+$\Delta(r,k,\sigma)$ and $0$ otherwise.
+\end{definition}
+
+\begin{proposition}[Cost gates the support, weight distributes over it]
+\label{wt:prop:gate}
+Unfunded redexes have propensity zero and contribute nothing to $\propz$, while among
+funded redexes the distribution is unchanged from the cost-free case up to normalization.
+\end{proposition}
+
+\begin{proof}
+$\chi$ appears as a multiplicative factor taking values in $\{0,1\}$; a zero factor
+removes the term from the sum, and the remaining terms are untouched.
+\end{proof}
+
+Three consequences are worth recording, and they are the reason this chapter belongs
+beside Chapter~\ref{ch:costmonad} rather than anywhere else in the book.
+
+\emph{The gate is decidable, so the simulator stays exact.} Were funding a real-valued
+penalty rather than a Boolean, the propensity would depend on an optimization and the
+process would no longer be exactly simulable. The decidability of the funding judgment is
+doing real work here.
+
+\emph{Exhaustion is a halting condition, not a deadlock.} $\propz = 0$ when every enabled
+redex is unfunded. The chain has reached an absorbing state, which is the correct reading:
+a system that cannot pay for any of its available transitions has stopped, and the waiting
+time to the next event is infinite rather than undefined.
+
+\emph{The two decorations answer different questions.} Cost decides whether a step may
+happen; weight decides how fast and how often. Separating them is what lets a model say
+that a strong synapse on a starving neuron is silent --- a statement neither decoration
+makes alone, and one Chapter~\ref{ch:spiking} needs.
+
+\section{The simulator is a functor out of the image}
+\label{wt:sec:simulator}
+
+$\Wgt_{\Semi}(G)$ is still a rewrite theory: it has terms, equations and rules, and it
+steps. Turning it into something one can sample from is a further operation, and the two
+should not be run together.
+
+\begin{definition}[The weighted coalgebra]
+\label{wt:def:coalgebra}
+Let $\Semi^{(-)}$ denote the free-$\Semi$-semimodule construction, $\Semi^{(X)}$ being the
+finitely supported functions $X \to \Semi$. Evaluating
+Definition~\ref{wt:def:propensity} pointwise gives
+\[
+  \gamma : \Cfg \longrightarrow \Semi^{(\Cfg)},
+  \qquad
+  \gamma(\mathfrak{c})(\mathfrak{c}')
+  = \!\!\sum_{\substack{(r,k,\sigma) \\ \text{stepping } \mathfrak{c} \to \mathfrak{c}'}}\!\!
+    \dec(\class_r(k,\sigma)) \cdot \gfac(k) \cdot \chi(r,k,\sigma).
+\]
+\end{definition}
+
+The sum runs over \emph{derivations} reaching $\mathfrak{c}'$, not merely over the target.
+Assembling the weightings of a fixed theory into a category and taking the Grothendieck
+construction gives the fibered form of this assignment, and the simulator is a functor out
+of it. We record that to fix the picture and do not need it below.
+
+\begin{remark}[Simulator and interpreter are different objects]
+\label{wt:rmk:simulator}
+It is worth saying plainly that $\gamma$ is not what a running system does.
+An interpreter advances one actual state; a simulator explores how a system \emph{would}
+behave under a range of configurations, and it is offline. That difference is what makes
+exhaustive construction of the transition graph, model checking, and the complex codomain
+of Chapter~\ref{sec:quantum} viable here and not in an interpreter, and it is why the
+endofunctor and the coalgebra are separated above. The endofunctor adjoins the map. The
+coalgebra prices it.
+\end{remark}
+
+\begin{theorem}[Markovianity on configurations]
+\label{wt:thm:markov}
+Sampling $\gamma$ in the standard way --- draw a waiting time exponentially with parameter
+$\propz(\mathfrak{c})$, select a redex with probability proportional to its contribution,
+fire it --- yields a time-homogeneous continuous-time Markov chain on $\Cfg$, with
+generator $Q(\mathfrak{c},\mathfrak{c}') = \gamma(\mathfrak{c})(\mathfrak{c}')$ off the
+diagonal and $Q(\mathfrak{c},\mathfrak{c}) = -\sum_{\mathfrak{c}' \neq \mathfrak{c}}
+Q(\mathfrak{c},\mathfrak{c}')$. It is \emph{not} in general a Markov chain on terms alone.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+The propensity is a function of $\mathfrak{c}$ and of nothing else --- in particular not
+of the time or the history --- and the successor is determined by $\mathfrak{c}$ together
+with the selected redex. That is the definition of a time-homogeneous chain with the
+stated generator. For the negative claim it suffices to exhibit two runs reaching the same
+term with different maps, which Example~\ref{wt:ex:nonmarkov} does.
+\end{proof}
+
+\begin{example}[Dynamic weights are not a term-level phenomenon]
+\label{wt:ex:nonmarkov}
+Take rho with a single communication rule and keys $\varphi_a, \varphi_b, \varphi_{\bot}$,
+where $\varphi_x$ says the redex is a communication on $x$. Let the updates act on
+$\dec(\varphi_a)$ alone, by $u_a : w \mapsto w+1$ and $u_b : w \mapsto 2w$, which do not
+commute. A term offering exactly one $a$-redex and one $b$-redex, both of which must fire,
+reaches the same successor term by either order; starting from $\dec(\varphi_a) = 1$,
+firing $a$ first arrives with $(1+1)\cdot 2 = 4$ and firing $b$ first with
+$1\cdot 2 + 1 = 3$. The successor carries a single $a$-redex, so the two runs sit at the
+same term with expected waiting times $1/4$ and $1/3$. No rate function of the term alone
+reproduces both.
+\end{example}
+
+Theorem~\ref{wt:thm:markov} is the justification for
+Definition~\ref{wt:def:config}, and the shape of the argument is worth being explicit
+about, because the design could have gone otherwise. If weight maps could change but were
+\emph{not} part of the state, the process on terms would be non-Markovian: the rate out of
+$P$ would depend on how $P$ was reached. One would then be in the world of generalized
+semi-Markov processes, with no exact simulation algorithm and no chain to model check.
+Putting the map in the state restores exactness at the price of a larger state space, and
+that price is real --- $\Cfg$ is $\terms \times \Semi^N$, a continuum unless the reachable
+weight maps are finite in number. Remark~\ref{gw:rmk:state-is-term} will say what this
+example looks like once there is no table.
+
+\begin{remark}[Self-transitions]
+\label{wt:rmk:selfloop}
+Nothing forbids a rule whose firing returns a configuration $\equiv$-equal to the one it
+fired in. Such a redex contributes to $\propz$ but to no off-diagonal entry, so the
+diagonal above is $-\sum_{\mathfrak{c}' \neq \mathfrak{c}} Q$ and not $-\propz$. A
+self-loop is a fictitious jump in the sense of uniformization: the two conventions induce
+the same distribution of the state at every time and differ only in the number of recorded
+events, hence in sojourn statistics. Neither is wrong; mixing them is.
+\end{remark}
+
+\subsection{What the restriction to names gives back}
+\label{wt:sec:spim}
+
+\begin{theorem}[Conservativity over summation-free SPiM]
+\label{wt:thm:spim}
+Restrict the construction to: the $\pi$-calculus fragment; keys that are channel-identity
+predicates and nothing else; static maps, every update the identity; and every geometric
+factor $1$. Then the propensity of Definition~\ref{wt:def:propensity} is exactly the
+activity computed by the Stochastic Pi Machine for the summation-free
+fragment~\cite{spim}, redex multiplicity included. The restriction is strict in each of
+the four coordinates.
+\end{theorem}
+
+We do not reproduce the proof, which is a computation matching the two definitions of
+activity term by term~\cite{StochSim}; the summation correction that the general SPiM
+statement would need is empty here, since rho has no summation operator. The theorem is
+worth having for what it says about the generality: everything the construction adds
+beyond SPiM is visible as the removal of one of four restrictions, and each removal is
+independently motivated. Formula-keys remove the first, plasticity the second, spatial
+bias the third.
+
+That completes the first construction. Everything above is correct, and everything
+above is about to be shown to be a special case.
+
+\section{Where the choice is}
+\label{gw:sec:choice}
+
+A rho program does not determine its own execution. Write
+\begin{equation}
+\label{gw:eq:race}
+  x!(Q_1) \mid \textsf{for}(y \leftarrow x)\,P \mid x!(Q_2)
+\end{equation}
+and the operational semantics permits two reductions. It does not say which one happens,
+and it does not say with what tendency. This is not an oversight. It is the defining
+feature of a mobile process calculus, and it is what makes the calculus a specification
+of interaction rather than of a machine.
+
+An implementation must close the gap. RSpace --- the store that realizes rho in
+f1r3node, to which this book returns when it turns from the calculus to the machine ---
+closes it by presenting the
+parallel fragment as a table from channels to bags of data and bags of continuations,
+and letting the physical race between cores decide which produce is zipped with which
+consume. That is a \emph{resolution mechanism}, and it is a choice, in the precise sense
+Chapter~\ref{ch:chs} will make exact: the family of admissible pairings, indexed by
+contended channels, has a section only when something supplies one.
+
+The observation on which this half of the chapter rests is that the resolution mechanism
+is a \emph{parameter}, and that other values of the parameter are available. Gillespie's
+algorithm is a resolution mechanism: it supplies rates for the branches of a race and an
+exponential clock for turning them into outcomes. The Born rule is a resolution mechanism:
+it supplies amplitudes and a squared modulus. The weight map of the preceding sections is
+a way of \emph{setting} the parameter from outside the term --- a table beside the
+program. The question this half answers is what syntax a programmer needs in order to set
+it from inside.
+
+\subsection{Why contexts cannot see the parameter}
+
+Before building the syntax it is worth knowing what kind of thing the parameter is, and
+the cleanest way to say it is to say what cannot detect it.
+
+\begin{principle}[Contexts create apertures; they do not read them]
+\label{gw:prin:aperture}
+A rho context can change which races exist --- by adding contention, by consuming a
+contender, by installing a new receive. It cannot observe how any race is resolved.
+Consequently no property of the form ``for all rho contexts $C[-]$, \ldots'' can be
+sensitive to the resolution mechanism.
+\end{principle}
+
+The reason is almost a tautology once stated: a rho context is itself a rho term, whose
+own races are resolved by the same unspecified mechanism. Composing silence with silence
+yields silence. The consequence is that the correctness criterion the rest of this part
+of the book leans on --- full abstraction against the class of contexts, as in
+Chapter~\ref{ch:obsext} --- is not the right instrument here. It is not that there are
+too few contexts. It is that the discriminating power one wants is not of the kind
+contexts have.
+
+Two things survive. The first is a different correctness frame: the object of study is
+the map
+\[
+  \textsf{Resolvers} \times \textsf{Terms} \longrightarrow
+  \textsf{Distributions over outcomes},
+\]
+in which the RSpace race, the Gillespie clock and the Born rule are three points of the
+first coordinate, and the interesting statements are \emph{separations} between resolvers
+at a fixed term rather than between terms at a fixed resolver. The second is a one-sided
+obligation that every instantiation must meet.
+
+\begin{definition}[Support adequacy]
+\label{gw:def:support}
+Let $\Reach(P)$ be the set of normal forms operationally reachable from $P$ under the
+unweighted semantics, and let $\sem{P}$ be a weighted denotation of $P$ with values in
+$\Semi$. The denotation is \emph{support-adequate} when
+\[
+  \supp\,\sem{P} \;\subseteq\; \Reach(P).
+\]
+\end{definition}
+
+Support adequacy says the resolver invents nothing the operational semantics forbids.
+The converse inclusion is \emph{not} demanded, and for a reason that will matter in
+Chapter~\ref{sec:quantum}: a normal form that some derivation reaches, whose contributions
+cancel, is exactly what a resolver with additive inverses can produce. So the natural
+two-sided condition is not merely unproven; in the one instance where it fails, its
+failure is the physics.
+
+\begin{remark}[Non-compositionality is not a defect]
+\label{gw:rmk:noncompositional}
+The store denotation of rho is a monoid homomorphism for parallel composition, because it
+denotes the store. A denotation that resolves races cannot be, because composing $P$ with
+$Q$ creates races that neither had alone. The cut is the interaction term, and a
+dependence across the cut that neither side carries is the semantic image of a race across
+the cut. This is the same observation as Chapter~\ref{ch:apr}'s: an aperture is a
+property of the cut and of neither agent flanking it. It is recorded here because the
+reader trained on denotational semantics will otherwise read the failure of
+compositionality below as a mistake.
+\end{remark}
+
+\section{The graded where-clause}
+\label{gw:sec:clause}
+
+\subsection{Resolution algebras}
+
+\begin{definition}[Resolution algebra]
+\label{gw:def:algebra}
+A \emph{resolution algebra} is a commutative semiring
+$\Semi = (V, \sumv, \tensorv, 0, 1)$: $\sumv$ associative and commutative with unit $0$,
+$\tensorv$ associative and commutative with unit $1$, $\tensorv$ distributing over
+$\sumv$, and $0$ annihilating.
+\end{definition}
+
+The two operations are forced by what the logical connectives must mean once they take
+values. \emph{Conjunction is $\tensorv$}: two conditions holding together compose
+multiplicatively, which is also what makes a joined receive
+$p_1 \leftarrow c_1 \ \&\ p_2 \leftarrow c_2$ combine its clauses correctly.
+\emph{Disjunction is $\sumv$}: two ways for a match to be enabled add. This is the same
+semiring that Section~\ref{wt:sec:functor} took as a codomain; what has changed is that
+it is now the value space of a \emph{logic}, and the logic's connectives are its
+operations.
+
+\begin{principle}[Interference is a logical phenomenon]
+\label{gw:prin:or}
+Since $\sem{\varphi \vee \psi} = \sem{\varphi} \sumv \sem{\psi}$, in a resolution
+algebra with additive inverses a disjunction may evaluate to $0$ though neither
+disjunct does. Destructive interference is a \emph{false disjunction with true
+disjuncts}. This is the whole of the additional structure, stated in the logic rather
+than imposed on it from outside.
+\end{principle}
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Algebra} & $\sumv,\tensorv$ & \textbf{Resolver} & \textbf{Regime}\\
+\midrule
+$\Bool = (\{0,1\},\vee,\wedge)$ & $\vee$, $\wedge$ & the RSpace race & rholang exactly \\
+$\Rnn = (\mathbb{R}_{\geq 0},+,\times)$ & $+$, $\times$ & Gillespie & stochastic \\
+$\CC = (\mathbb{C},+,\times)$ & $+$, $\times$ & Born rule & interference \\
+Viterbi $([0,1],\max,\times)$ & $\max$, $\times$ & greedy & most-likely path \\
+Tropical $(\mathbb{R}\cup\{\infty\},\min,+)$ & $\min$, $+$ & least cost & cost-optimal path \\
+\bottomrule
+\end{tabular}
+\caption{Instances of the resolution algebra. One syntax; the resolver is the choice of
+$\Semi$. The last two are not developed as clause instances in this book; they are
+listed because the tropical instance is the cost reading that Chapter~\ref{sec:weighted}
+develops in the linear fragment, where it supplies the least-action principle.}
+\label{gw:tab:algebras}
+\end{table}
+
+Negation is the casualty and it is worth saying so plainly. On $[0,1]$ the map
+$v \mapsto 1 - v$ serves; on $\CC$ there is no canonical complement and De Morgan fails
+against $(+,\times)$. The design therefore keeps two sorts of formula, with the crisp
+sort embedded in the graded one.
+
+\subsection{Two sorts, one slot}
+
+Let the \emph{crisp sort} be the condition language the book already has: ground
+formulae supplied by a language definition, the spatial connectives generated from the
+term formers, the context-labeled modality $\langle K \rangle$, and full Boolean
+structure.
+\begin{align*}
+\beta &::= \textsf{true} \mid \textsf{false} \mid g \mid \neg\beta \mid
+  \beta \wedge \beta \mid \beta \vee \beta \mid \langle K \rangle\beta \mid
+  \textsf{out}(n)\beta \mid \textsf{in}(n)\beta \mid \beta \mid \beta \mid @\beta
+\intertext{and let the \emph{graded sort} be}
+\psi &::= \crisp{\beta} \mid v \mid \psi \tensorv \psi \mid \psi \sumv \psi
+  \mid \langle K \rangle_{\Semi}\,\psi \qquad (v \in V).
+\end{align*}
+Here $\crisp{\beta}$ is the indicator embedding, sending a satisfied $\beta$ to $1$ and
+an unsatisfied one to $0$, and $v$ ranges over scalar constants of the algebra. The
+graded sort has no negation and no fixed-point operator; the crisp sort keeps both.
+
+\begin{remark}[One slot, not two]
+\label{gw:rmk:oneslot}
+It is tempting to give the for-comprehension two clauses, a Boolean gate and a graded
+weight. It is better to give it one graded clause and recover the gate as its
+\emph{support}: a communication is enabled exactly when its clause evaluates to something
+other than $0$. This keeps the language unforked --- the Boolean where-clauses rholang
+already has are the $\Bool$-valued fragment under $\Bool \hookrightarrow \Semi$ --- and
+it makes support adequacy (Definition~\ref{gw:def:support}) hold by construction rather
+than by proof, since the classical interpreter sees nothing of the value except whether
+it vanishes.
+\end{remark}
+
+\subsection{Syntax}
+
+The for-comprehension already carries a \texttt{where} clause, whose condition may
+mention the variables bound by the preceding receipts. The change is only to the sort of
+that condition.
+
+\begin{lstlisting}
+for( p11 <- c11 & ... & pm1 <- cm1 ;
+     ... ;
+     p1n <- c1n & ... & pmn <- cmn
+     where psi ) P
+\end{lstlisting}
+
+\noindent
+with \texttt{psi} a graded formula over the algebra $\Semi$ declared for the shard or
+for the channel's language definition. Within \texttt{psi} the bound names $p_{ij}$ are
+in scope, so the value may depend on what was matched. That one sentence is the whole of
+the difference between a clause and a key: a key classifies a redex by a formula fixed in
+advance; a clause computes a value from the match in front of it.
+
+\subsection{Per-match evaluation}
+\label{gw:sec:permatch}
+
+The decisive point concerns \emph{when} the clause is evaluated.
+
+\begin{definition}[Candidates]
+\label{gw:def:cand}
+Let $r$ be a receipt site in $P$ --- a for-comprehension together with the channels its
+receipts name. A \emph{candidate} at $r$ is an assignment $\sigma$ of a distinct datum
+occurrence to each pattern of each group, such that every pattern matches its assigned
+datum. Write $\Cand(P,r)$ for the set of candidates and
+$\Out(r,\sigma) \in \terms/{\equiv}$ for the residual term the firing of $r$ under
+$\sigma$ produces.
+\end{definition}
+
+Candidates are indexed by \emph{occurrences}, not by terms. This is the multiplicity
+factor of Section~\ref{wt:sec:propensity} appearing in its native form: two structurally
+congruent messages on a channel are two candidates, not one, because parallel
+composition is a multiset and structural congruence does not delete duplicates. An
+implementation that keys data by content alone cannot represent $\Cand$ faithfully.
+
+\begin{definition}[Graded clause valuation]
+\label{gw:def:val}
+A graded clause $\psi$ at a receipt site $r$ denotes a function
+\[
+  \sem{\psi}_r : \Cand(P,r) \longrightarrow V ,
+\]
+defined by structural recursion, with $\crisp{\beta}$ evaluated against the term $P$
+under the substitution $\sigma$ carries, scalars constant, $\tensorv$ and $\sumv$
+pointwise, and $\langle K \rangle_{\Semi}$ as in Section~\ref{gw:sec:modality}.
+\end{definition}
+
+So a clause is a \emph{vector} indexed by candidates, and --- once composed with
+$\Out$ --- a \emph{matrix} over candidates and outcomes. That is the whole mechanism,
+and it is worth pausing on how little it is. The weight map needed a key set, a partition
+discipline, an admissibility judgment, a classification function and an update function.
+The clause needs a semiring and a scope rule.
+
+\subsection{The graded modality is a transfer operator}
+\label{gw:sec:modality}
+
+Let $\Semi\langle \terms/{\equiv}\rangle$ be the free $\Semi$-semimodule on terms modulo
+structural congruence. Define the one-step operator of a term by summing its candidates:
+\begin{equation}
+\label{gw:eq:onestep}
+  T(P) \;=\; \sum_{r}\ \sum_{\sigma \in \Cand(P,r)}
+    \sem{\psi_r}_r(\sigma)\;\cdot\;\Out(r,\sigma) ,
+\end{equation}
+the outer sum over receipt sites and the coefficient arithmetic in $\Semi$. Then the
+graded modality is
+\[
+  \sem{\langle K \rangle_{\Semi}\,\psi}(P)
+  \;=\; \sum_{r,\sigma} \sem{\psi_r}_r(\sigma) \tensorv \sem{\psi}(\Out(r,\sigma)),
+\]
+which is $T$ acting on the vector of values of $\psi$. The graded modality is the
+transfer matrix of the reduction relation, and the principle that the meaning of a term
+is the sum of all its possible futures is exactly the statement that $\sem{-}$ is a fixed
+point of $\langle K\rangle_{\Semi}$. The denotational principle and the graded logic are
+one object seen twice.
+
+This is also where the chapter's own restriction~\ref{wt:req:str} is repaid. A key could
+not carry a behavioral modality because a rate depending on what a redex does \emph{next}
+cannot be recomputed locally. A clause \emph{may} carry $\langle K\rangle_{\Semi}$, and
+the price is exactly the one named there: such a clause is not local, and an
+implementation must either bound its modal depth or re-evaluate it globally. The
+restriction has not gone away; it has become a choice the programmer makes in the clause,
+with a cost the ledger can see.
+
+\subsection{Denotation and conservativity}
+
+\begin{definition}[Graded denotation]
+\label{gw:def:denotation}
+Fix a resolution algebra $\Semi$ and a budget $\beta \in \mathbb{N}$. Let
+$M := \Semi\langle \terms/{\equiv}\rangle$ with basis vectors written $\lvert P \rangle$.
+The $\beta$-budgeted denotation is
+\[
+  \sem{P}_\beta \;:=\; T_{\!*}^{\,\beta}\,\lvert P \rangle
+  \;=\;\!\!\sum_{h \,:\, P \Rightarrow^{\leq\beta} Q}\!\! w(h)\,\lvert Q\rangle ,
+\]
+where $T_*$ extends $T$ linearly, $h$ ranges over causal histories of length at most
+$\beta$ ending at a normal form or exhausting the budget, and $w(h)$ is the
+$\tensorv$-product of the clause values along $h$. At a normal form $Q$ the operator acts
+as the identity, $T\lvert Q\rangle = \lvert Q\rangle$, so that normal forms are absorbing.
+\end{definition}
+
+\begin{remark}[Why a budget, and only one]
+\label{gw:rmk:budget}
+The definition is corecursive and does not bottom out on non-terminating terms. For
+terminating $P$ the recursion is well-founded on the reduction tree and $\beta$ may be
+taken to be its depth. In general one needs either a convergence hypothesis --- a
+spectral radius condition on $T$, since $\CC$ has no order and Knaster--Tarski is
+unavailable --- or a budget. We take the budget, and note that it is the budget this book
+already charges: the risk ledger's single $\omega$ for reflection
+(Chapter~\ref{ch:tower}), and the token budget that keeps the mortal scientist's inquiry
+terminating (\chSci). These should be one budget doing several jobs rather than several
+budgets.
+\end{remark}
+
+One denotation admits three readings, differing only in what is done at the end.
+\emph{Support}: $\supp(\sem{P}_\beta)$, which is what the classical interpreter sees and,
+by Remark~\ref{gw:rmk:oneslot}, all it sees. \emph{Stochastic}: for $\Semi = \Rnn$, the
+coefficients normalized, which is the jump-chain marginal of the Gillespie reading.
+\emph{Born}: for $\Semi = \CC$, the squared moduli normalized, which is
+Chapter~\ref{sec:quantum}.
+
+\begin{theorem}[Conservativity]
+\label{gw:thm:conservativity}
+Let $\Semi = \Bool$ and let every clause be the embedding $\crisp{\beta}$ of a crisp
+condition. Then $\supp(\sem{P}_\beta)$ is exactly the set of normal forms reachable from
+$P$ in at most $\beta$ steps under the operational semantics with Boolean
+\texttt{where} clauses.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+In $\Bool$, $\tensorv = \wedge$ and $\sumv = \vee$, so $w(h) = 1$ iff every step of $h$
+has a satisfied clause, and the coefficient of $\lvert Q\rangle$ is the disjunction over
+histories reaching $Q$. Candidates coincide with the admissible zips of the store
+presentation, and the absorbing convention does not add normal forms. Hence the
+coefficient is $1$ iff some admissible derivation reaches $Q$.
+\end{proof}
+
+\begin{corollary}[Support adequacy]
+\label{gw:cor:adequacy}
+For any $\Semi$, $\supp(\sem{P}_\beta) \subseteq \Reach_\beta(P)$, since a nonzero
+coefficient requires at least one history with all clause values nonzero, and such a
+history is admissible under the Boolean image of the clauses. Equality fails exactly when
+some reachable coefficient is a sum of nonzero terms summing to $0$.
+\end{corollary}
+
+This is the payoff of Remark~\ref{gw:rmk:oneslot}, and it should be read as a safety
+theorem. Adding grading cannot make a program do something it could not do; it can only
+make it fail to do something it could. Everything the ecology part builds on top of the
+clause inherits this: a learner whose hypotheses are clauses can be wrong, but it cannot
+be wrong in a way the unweighted calculus forbids.
+
+\section{Weight maps are the linear graded clauses}
+\label{gw:sec:dnf}
+
+The first half of this chapter can now be placed.
+
+\begin{theorem}[Weight maps are a normal form]
+\label{gw:thm:dnf}
+Every weight map $(\varphi_i, v_i)_{i\leq k}$ on a rule is denoted by the graded clause
+\[
+  \psi \;=\; \bigoplus_{i=1}^{k} \; v_i \tensorv \crisp{\varphi_i},
+\]
+and conversely a graded clause of this shape denotes a weight map if and only if the
+$\varphi_i$ partition the refinement of the rule's left-hand side. Graded clauses not of
+this shape --- those with nested $\tensorv$ over overlapping conditions, or with a graded
+modality --- are strictly more expressive.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Forwards: on a candidate satisfying $\varphi_j$ and no other, all but the $j$th summand
+vanish and the value is $v_j$, and exhaustiveness of the partition ensures some summand
+survives. Backwards: if two $\varphi$'s overlap on a candidate, the clause returns
+$v_i \sumv v_j$, which is a well-defined value but not a table lookup; the partition
+condition is exactly the condition making the sum a selection. Strictness: with
+overlapping $\varphi_i$ the clause is a mixture no weight map assigns, and
+$\langle K\rangle_{\Semi}$ inspects successors, which no key can.
+\end{proof}
+
+The theorem is the hinge of the chapter and it is worth saying what it does to each piece
+of the first half. The weight map is the \emph{linear} fragment of the clause language:
+the clauses that are sums of scalars times indicators over a partition. The
+classification function $\class_r$ is the statement that on such a clause exactly one
+summand is nonzero. The propensity formula of Definition~\ref{wt:def:propensity} is
+Equation~\eqref{gw:eq:onestep} with the clause in normal form and $\Out$ grouped by
+outcome. And the convention Section~\ref{wt:sec:partition} declined --- ``sum the values
+of all satisfied keys'' --- is not a convention: it is what $\sumv$ means, and the
+partition discipline is what was needed to stop it from ever being invoked.
+
+\begin{corollary}[The partition discipline is unnecessary]
+\label{gw:cor:nopartition}
+Single-valuedness of a graded clause is automatic, a formula having one value. The
+requirements that key sets partition the left-hand-side refinement
+(Definition~\ref{wt:def:partition}), that admissibility be checked
+(Definition~\ref{wt:def:reqs}), and that a default class complete them
+(Remark~\ref{wt:rmk:default}), all exist to secure single-valuedness for a lookup and
+have no analogue here.
+\end{corollary}
+
+This dissolves the obstruction of Section~\ref{wt:sec:closure}. The Boolean demand ---
+that the target logic specification supply negation so that a partition can be stated
+--- arose because a partition needs complements. With no partition to define, the demand
+does not arise. Negation is still absent from the graded sort, but it is absent as a
+design choice about the value algebra rather than as an unmet requirement, and the seam
+Observation~\ref{wt:obs:closure} pointed at is no longer there to point at. The reader
+should notice what kind of repair this is. Nothing was proved that the weight map could
+not prove; a presupposition was removed, and the problem it generated left with it. The
+Prestige will have occasion to recall the shape.
+
+\begin{proposition}[Plasticity is free]
+\label{gw:prop:plastic}
+A dynamic weight map, whose table is revised after each rewrite by an update function
+$u : \Wmaps \times \textsf{Match} \times \textsf{Trace} \to \Wmaps$, is denoted by a
+static graded clause whenever $u$'s dependence on the trace is expressible as a crisp
+formula over the current term. No update function is needed, because a clause is
+re-evaluated against the current term at every candidate.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+The clause mentions the term through its crisp subformulae; its value at a candidate in
+the term $P'$ reached after some history is by definition computed against $P'$. A table
+revised to depend on features of $P'$ therefore agrees with the clause
+$\bigoplus_i v_i \tensorv \crisp{\varphi_i}$ in which the $\varphi_i$ mention those
+features directly. Dependence on trace history beyond what is visible in $P'$ is not
+expressible, which is the hypothesis.
+\end{proof}
+
+\begin{remark}[The state is the term]
+\label{gw:rmk:state-is-term}
+Proposition~\ref{gw:prop:plastic} has a hypothesis, and Example~\ref{wt:ex:nonmarkov}
+is a case where it fails: the two orders of firing leave the same term and different
+tables, and no formula over the term can tell the orders apart. The weight map's answer
+was to enlarge the state to $(P,\dec)$ and prove Markovianity there. The clause's answer
+is the one rho always gives: \emph{put it in the term.} A rate that must remember something
+the term does not show is a rate that depends on a datum nobody wrote down; write it down
+--- a message on a channel the clause can read --- and the clause reads it. The
+non-commuting updates of the example become two rewrites that each consume and re-emit a
+counter, and the chain is a chain on terms again, because the term now carries what the
+table carried. In a calculus where the state \emph{is} the term, ``the map is in the
+state'' and ``the map is in the term'' are the same sentence, and the configuration of
+Definition~\ref{wt:def:config} was a way of saying it before the syntax existed to say it
+directly. Chapter~\ref{ch:spiking} will make this move for synaptic weights, and the
+finiteness it needs is supplied by the same device that supplies it there: a quantized
+value on a bounded range.
+\end{remark}
+
+\begin{remark}[What was retired, and what was kept]
+\label{gw:rmk:retired}
+The update function of Definition~\ref{wt:def:augmented} was the one component of the
+weight map with no compilable form: an arbitrary closure over time and a trace summary,
+for which a declarative sub-language would have had to be designed. The graded clause
+\emph{is} that sub-language, and it was needed for other reasons. The geometric factor
+$\gfac$ and the funding gate $\chi$ are kept exactly as they were: the first because it
+weights the \emph{address} of a firing rather than the match, which a clause at the site
+cannot see; the second because, as Proposition~\ref{wt:prop:gate} says, cost is not a
+weighting and should not be dressed as one. The endofunctor $\Wgt_{\Semi}$ is kept as the
+name for the linear fragment, which is what the physics part of the book instantiates.
+\end{remark}
+
+\section{Contention, and what is normalized}
+\label{gw:sec:contention}
+
+One more notion is needed before the clause can be handed to the chapters that use it,
+and it is the notion the weight map never had to name because the partition hid it.
+Equation~\eqref{gw:eq:onestep} sums over receipt sites as well as over candidates, and
+that outer sum conflates two different things: candidates at different sites may be
+\emph{alternatives}, or they may be \emph{concurrent}, and only the first should be
+weighed against each other.
+
+\begin{definition}[Conflict, components, matchings]
+\label{gw:def:contention}
+Two candidates \emph{conflict} when they share a datum or share a receipt. A
+\emph{contention component} at $P$ is a connected component of the conflict relation. A
+\emph{step} of a component is one of its \emph{maximal matchings}: a maximal set of
+pairwise non-conflicting candidates.
+\end{definition}
+
+The terminology is that of event structures, where conflict names events that cannot both
+occur~\cite{Winskel}. A contention component is the unit of choice: within it, the
+alternatives are its maximal matchings, which is the RSpace zip --- the bag of data and
+the bag of patterns, admissibly paired --- and across components nothing is chosen
+because everything fires. Two independent races are two components; the race
+equation~\eqref{gw:eq:race} is one component with two matchings; a receipt with $m$
+patterns and $m$ data is one component with $m!$ matchings.
+
+\begin{proposition}[Components factor]
+\label{gw:prop:eventfact}
+Let $C_1,\dots,C_k$ be the contention components at $P$. The maximal matchings of $P$
+are exactly the elements of $\prod_i \mathrm{Match}(C_i)$: a step chooses one matching
+per component, independently, and all of them fire.
+\end{proposition}
+
+\begin{proof}
+Candidates in distinct components neither share a datum nor share a receipt, so a set of
+candidates is pairwise non-conflicting iff its restriction to each component is;
+maximality is likewise componentwise.
+\end{proof}
+
+Why this matters is that \emph{normalization} --- turning values into odds --- happens
+over a component and nowhere else. In the Gillespie reading of Section~\ref{wt:sec:spim}
+this was invisible, because exponential clocks race globally and the total propensity
+does the normalizing for free. In the \emph{discrete} stochastic reading, where a
+clause's values are relative odds rather than rates, the odds of a matching are its weight
+divided by the sum over the matchings of its component; and in the complex reading, the
+norm that must be preserved is taken over a component after summing amplitudes over
+matchings with a common outcome. Both of those sentences will be said again, with their
+consequences, in Chapters~\ref{sec:quantum} and~\ref{sec:weighted}. Here it is enough to
+record two honest costs.
+
+\begin{remark}[Two costs]
+\label{gw:rmk:costs}
+Normalization is \emph{nonlocal}: a clause can be normalized only in the light of what
+else is contending, so a normalized value is a property of a configuration and not of a
+clause. And the sum over maximal matchings of a component is permanent-shaped, hence
+$\#P$-hard in general --- which is a fact about the physics it models and bites an
+implementation, so what a compiler checks must be a syntactic sufficient condition such
+as a bound on component size. Neither cost arises in the linear fragment, because a
+partition is a component structure imposed in advance. That is a fair statement of what
+the weight map bought and what it cost: tractability, at the price of forbidding every
+race the modeler did not foresee.
+\end{remark}
+
+\section{Where this is used}
+
+The construction is generic over the theory: it applies to anything one can write down as
+a language presentation, so one obtains a stochastic machine for the ambient calculus, for
+a user-defined domain language, or for cost-accounted rho, by writing the theory rather
+than by writing a simulator.
+
+Five places in this book take it up, and the division of labor between the two halves of
+the chapter is worth stating. Chapter~\ref{ch:do}, next, builds the first thing a clause can do
+that a table cannot --- an operator that intervenes on a race, under which Pearl's calculus of
+causation embeds exactly. Chapter~\ref{ch:spiking} runs the clause at the smallest
+scale where the whole apparatus is visible at once, and finds a spiking neural network
+with plasticity in it --- synaptic efficacy as a graded clause, and the same rewrite that
+performs inference performing the learning. \chSci\ takes the clause as the \emph{form of
+a hypothesis}: a mortal scientist's conjecture about its world is a graded clause, and
+what it learns is a value in the fiber over that clause. Chapter~\ref{sec:weighted} asks
+which semiring, in the linear fragment, and finds that the choice is what separates
+nondeterminism from cost from probability from amplitude. And Chapter~\ref{sec:quantum}
+asks what the complex instance means, and finds that the clause takes the one route the
+weight map could not --- amplitudes attached to candidates rather than to classes ---
+and meets, in Definition~\ref{gw:def:contention}, exactly the structure that decides
+whether the result is a quantum state.
+
+% ===================================================================
