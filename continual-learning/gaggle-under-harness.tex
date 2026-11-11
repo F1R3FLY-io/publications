@@ -1,0 +1,1027 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+
+\hypersetup{colorlinks=true,linkcolor=BrickRed,citecolor=BrickRed,urlcolor=BrickRed}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{observation}[theorem]{Observation}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{principle}[theorem]{Principle}
+\newtheorem{obligation}{Obligation}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\rhoc}{\textsf{rho}}
+\newcommand{\V}{\mathbb{V}}
+\newcommand{\Rnn}{\mathbb{R}_{\geq 0}}
+\newcommand{\Cx}{\mathbb{C}}
+\newcommand{\Bool}{\mathbb{B}}
+\newcommand{\crisp}[1]{[\![#1]\!]}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\tensorv}{\otimes}
+\newcommand{\sumv}{\oplus}
+\newcommand{\dok}{\textsf{do}}
+\newcommand{\ink}{\textsf{in}}
+\newcommand{\fork}{\textsf{for}}
+\newcommand{\where}{\textsf{where}}
+\newcommand{\Cand}{\mathrm{Cand}}
+\newcommand{\PA}{\mathrm{PA}}
+\newcommand{\Tr}{\mathsf{Tr}}
+\newcommand{\gag}{\mathcal{G}}
+\newcommand{\Har}{\mathcal{H}}
+\newcommand{\bisW}[1]{\approx_{#1}}
+\newcommand{\treq}[1]{\simeq^{\mathrm{tr}}_{#1}}
+\newcommand{\dia}[1]{\langle #1 \rangle}
+\newcommand{\quo}[1]{@#1}
+
+\lstdefinestyle{rholang}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  morekeywords={for,new,in,where,contract,match,if,else,do},
+  columns=fullflexible, keepspaces=true, showstringspaces=false,
+  breaklines=true, frame=single, framesep=5pt, rulecolor=\color{black!35},
+  xleftmargin=6pt, aboveskip=9pt, belowskip=9pt
+}
+\lstset{style=rholang}
+
+\title{\bfseries A Gaggle of Transformers Under a Graded-Where Harness\\[4pt]
+\large Continual learning by consolidating interventions, with the parameter
+count held down by the causal structure the harness already owns}
+
+\author{L.\,G.\ Meredith\\ \small F1R3FLY.io}
+\date{F1R3FLY.io research note --- November 2026\\[2pt]\normalsize Draft 1}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The inhabiting-choice note established that a transformer trained on completed
+runs is a rung-one object: a trace distribution has a unique autoregressive
+factorisation, so branching structure is invisible to any learner that does
+not act, and the agent loop around the model is where the acting happens. The
+interventions-at-the-cut note then supplied the acting: a scoped $\dok$ on the
+cut of the rho calculus with graded where-clauses, under which Pearl's calculus
+embeds exactly and a refusal is a receipt that starves. This note puts the two
+together as an engineering proposal. A \emph{harness} written in rho with
+graded where-clauses and $\dok$ performs experiments on a population of
+specimens; the experiments produce traces that carry their intervention, their
+exogenous record, and their starvations; and the traces are consolidated into a
+\emph{gaggle} of small transformers, each of which is itself a process whose
+attention is a graded race in the log semiring. The claim defended is that a
+gaggle \emph{indexed by interventions} is a rung-two object even though every
+member of it is rung-one, because the family of interventional distributions
+over a staged fragment determines the causal model, and that the harness,
+being a rho term, is a witness in which the hedge is inherited --- which is
+what moves the design off the saddle point the inhabiting-choice note located,
+to the extent it moves at all. The parameter-count question gets a structural
+answer rather than a compression trick: every gadget of the embedded causal
+model needs a mechanism, not a world model, so a transformer in the gaggle
+learns $P_i(v \mid \mathit{pa})$ over a parent set that is syntactic, with a
+context window the size of that parent set and no obligation to represent the
+exogenous noise the resolver already owns. Four further levers follow from the
+companion notes: factorisation of the gaggle along namespaces the do-calculus
+proves d-separated; pruning of attention heads by intervention on the
+transformer's own races; consolidation of members that are \emph{interventionally}
+bisimilar, a test the harness can afford because it owns their code; and
+compilation of a member out of the gaggle altogether into an $\mathcal{F}_1$
+clause when its learnt mechanism is a bounded-depth posynomial, at which point
+the accumulated science lives in the clause language and the transformer was
+scaffolding. The note closes with the algorithm as a rho sketch, the execution
+story on f1r3node and Saph1r3, and seven obligations, of which the first ---
+that the intervention-indexed family is rung two --- is the one the rest
+depend on.
+\end{abstract}
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The question}\label{sec:question}
+
+The three companion notes draw a line, and the present note is an attempt to
+build on the right side of it.
+
+The first \cite{Inhabiting} observes that a system whose witnesses reduce
+confluently can state branching phenomena but cannot inhabit them, and reads the
+observation for artificial intelligence: a distribution over finite traces has a
+unique autoregressive factorisation, so two systems that differ only in
+\emph{when} a choice was made --- Milner's $\mathit{coin}.(\mathit{tea} +
+\mathit{coffee})$ against $\mathit{coin}.\mathit{tea} +
+\mathit{coin}.\mathit{coffee}$ --- induce the same trace distribution and are
+indistinguishable to any learner whose only access is samples. The observable
+that separates them is a refusal, and refusals do not appear in logs of completed
+runs. A next-token predictor is therefore rung one of Pearl's ladder by an
+information-theoretic limitation; the agent loop around it supplies rung two
+from outside; and the arrangement --- confluent predictor, branching in the
+harness --- is a saddle point, stable as long as per-query answers are what is
+paid for and unstable the moment what is wanted is an accumulating, heritable
+body of search structure.
+
+The second \cite{Interventions} supplies the construct the harness needs in
+order to intervene at all: $\dok(C)\ \ink\ P$, a scoped constraint on the
+bindings of a race, placed at the cut because whether a cut will occur is
+undecidable, lowered into the graded where-clause by the normal-form theorem for
+weight maps, and exact on the staged fragment as Pearl's graph surgery. Under it
+the vending-machine refusal is a receipt that starves, counterfactuals are
+replay from a recorded pre-state, and the three rules of the do-calculus are
+theorems about the embedded fragment.
+
+The third family \cite{rhocomb3,matrix,matspec,saphire} is the route from a rho
+term to a data-parallel device, through name-free combinators to an incidence
+matrix of atoms against names, on which redex finding is a join, conflict
+detection a second sparse product, and a machine step a maximal independent set
+of the conflict graph. The route is strictly classical today --- no weights ---
+and the conflict components it already computes are the contention sets at
+which the graded semantics normalises.
+
+The question this note asks is the one a working engineer asks after reading
+the three: \emph{granted that a transformer is rung one and a harness in rho
+with $\dok$ is rung two, what is the right way to lash several transformers
+into such a harness so that the harness's experiments make the transformers
+better, and so that the transformers stay small?} The emphasis on size is not
+incidental. A transformer that must model the whole world is large because the
+world is; a transformer that must model one mechanism of a causal model the
+harness has already factored is small because the mechanism is. The size
+question and the rung question turn out to have the same answer.
+
+\subsection{The shape of the proposal}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+\item A \emph{harness} $\Har$ is a rho term with graded where-clauses and
+$\dok$, confined to a namespace it owns ($\mathcal{T}_4$ of
+\cite{Interventions}), holding a budget. It performs \emph{experiments}: it
+chooses a specimen, a pre-state, and a $\dok(C)$, runs the intervened term, and
+records what happened.
+\item A \emph{trace} is not a log of completed actions. It is a tuple
+$(S, C, h, u, \star)$: the pre-state, the intervention, the causal history, the
+exogenous record (which candidate fired at each site), and the starvation flag.
+A trace carries its own intervention, which is what makes it rung-two data
+rather than rung-one data (\S\ref{sec:data}).
+\item A \emph{gaggle} $\gag = \{T_1, \dots, T_k\}$ is a population of small
+transformers, each a process in the sense of the earlier transformer proposal
+\cite{TransformerProposal}: attention is a graded receipt in the log semiring,
+weights rest on channels, and the whole is a term the harness can quote,
+intervene upon, and fund.
+\item \emph{Consolidation} is the loop that takes traces to transformers:
+routing a trace to the member that should learn from it, retraining that member
+or spawning a new one, and then \emph{shrinking} the gaggle by merging members
+the harness can prove interventionally equivalent and by compiling members out
+into clauses when their learnt mechanism admits one.
+\end{itemize}
+
+\subsection{What the note claims, and what it concedes at once}
+
+The claim is that this arrangement is a rung-two learner whose knowledge is
+inherited, and that its parameter count is governed by the causal structure
+the harness learns rather than by the size of the world.
+
+The concession is that every transformer in the gaggle is, on its own, exactly
+the rung-one object the inhabiting-choice note describes, and that the
+branching lives in the harness. The note's answer to the saddle-point charge
+is not that the charge is wrong; it is that the harness is a rho term, hence a
+witness that can be a race, hence inheritable, and that the design's job is to
+move as much of the accumulated science as possible from the transformers
+(confluent, not inheritable as races) into the harness's clauses (races,
+inheritable). \S\ref{sec:saddle} says exactly how far that goes.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{What the context fixes}\label{sec:context}
+
+The note is self-contained in its definitions but not in its theorems; the
+following are imported.
+
+\begin{definition}[Graded receipt, contention, likelihood {\cite{GradedPLN}}]
+A receipt $\fork(\vec y \leftarrow \vec x \;\where\; \psi)P$ is a join with a
+clause $\psi$ valued in a commutative semiring $\V$, evaluated once per
+candidate match. Two candidates contend when they share a message or a linear
+receipt; a contention set is a connected component; resolution normalises within
+it. Over $\Rnn$ the likelihood of a causal history $h = (\Gamma_i, \sigma_i)_i$
+is $\prod_i w(\sigma_i)/\sum_{\tau \in \Gamma_i} w(\tau)$, and the parameter
+gradient of its logarithm is a sum of local scores, one per firing site.
+\end{definition}
+
+\begin{definition}[The $\dok$ membrane {\cite{Interventions}}]
+$\dok(y_1 \models \varphi_1 \,\&\, \cdots \,\&\, y_n \models \varphi_n)\ \ink\ P$
+reads every receipt in scope binding $y_i$ with clause $\psi_r \tensorv
+\crisp{\varphi_i}$, normalising after the restriction. On the flat fragment it
+lowers exactly into the where-clause. On the staged fragment $\mathcal{T}_1$
+every receipt is its own contention set, the causal order is a static DAG, and
+$\dok$ on a gadget's ancilla binding is Pearl's graph surgery; positivity is the
+absence of starvation; counterfactuals are replay with the exogenous record
+held.
+\end{definition}
+
+\begin{proposition}[Observational invisibility {\cite[Prop.~4.1]{Inhabiting}}]
+\label{prop:invisible}
+Two labelled transition systems inducing the same trace distribution induce the
+same autoregressive factorisation; a learner with access only to samples cannot
+distinguish them.
+\end{proposition}
+
+\begin{proposition}[Interventions have one carrier {\cite[\S3]{Interventions}}]
+\label{prop:carrier}
+A site with a single candidate is intervention-transparent; the
+observation/intervention gap lives only on races; over $\Rnn$ a context cannot
+force a race it does not own.
+\end{proposition}
+
+\begin{observation}[The three requirements {\cite[Obs.~5.1]{Inhabiting}}]
+\label{obs:rsi}
+An improvement operator capable of recursion must (i) be defined on witnesses
+that are races, (ii) preserve branching through evaluation, and (iii) fund
+branches that lose at a rate that is itself subject to the operator.
+\end{observation}
+
+\begin{definition}[A transformer as a process {\cite{TransformerProposal}}]
+\label{def:transformer}
+A decoder-only transformer with $L$ layers and $H$ heads is the rho term in
+which the residual stream at $(\ell, i)$ rests on a channel, keys and values at
+$(\ell, h)$ rest as messages read by peek, and each query is a linear graded
+receipt
+\[
+\fork(\,@j, @k, @v \lhd\!\!- \quo{[\mathrm{kv},\ell,h]}
+ \;\where\; \crisp{j \leq i} \tensorv \tfrac{1}{\sqrt{d}}\, q\cdot k\,)\ P(v),
+\]
+read in the log semiring $(\mathbb{R}\cup\{-\infty\}, \mathrm{logaddexp}, +)$,
+so that normalisation within the query's contention set is softmax and the
+tropical limit is argmax. Under the path-sum reading, collapsed at the affine
+boundary before the next nonlinearity, the receipt computes soft attention; under
+the stochastic reading it computes stochastic hard attention with the same
+expectation. The dense arithmetic is in the ground layer; the only race in the
+term is attention.
+\end{definition}
+
+Definition~\ref{def:transformer} is what makes the rest of the note possible:
+the transformer is a term, so the harness can quote it, run it under a $\dok$,
+and read its exogenous record, and by Proposition~\ref{prop:carrier} the only
+sites at which an intervention on it has content are its attention heads.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The data: traces that carry their intervention}\label{sec:data}
+
+The inhabiting-choice note remarks that ``logs that record failed attempts make
+the refusal a trace symbol and the distinction learnable, but such logs are
+intervention data in disguise, which is the point rather than a loophole.''
+The present design takes the remark as its data schema.
+
+\begin{definition}[Experimental trace]\label{def:trace}
+An \emph{experimental trace} is a tuple $t = (S, C, h, u, \star)$ where $S$ is
+a pre-state (a closed term, or its hash in the shard's state store), $C$ is a
+constraint in $\mathcal{F}_0$ or $\mathcal{F}_1$, $h$ is the causal history of
+$\dok(C)\ \ink\ S$ to its normal form or budget, $u$ is the exogenous record
+(the fired class at each site), and $\star \in \{\mathrm{ok}, \mathrm{starved}\}$
+records whether some restricted receipt starved. The \emph{observational
+projection} of $t$ is the sequence of readouts along $h$; it is what a log of
+completed runs would contain.
+\end{definition}
+
+The intervention $C$ is part of the datum, and so is the starvation flag. A
+transformer trained on experimental traces is trained to predict $h$ \emph{given}
+$(S, C)$, and that is a different object from a transformer trained on
+observational projections.
+
+\begin{proposition}[An intervention-indexed family is rung two]\label{prop:rungtwo}
+Let $M$ be a positive causal Bayesian network over finite domains embedded as
+the staged term $\sem{M}$, and let $D(C)$ denote the distribution of
+observational projections of $\dok(C)\ \ink\ \sem{M}$. Then the family
+$\{D(C) : C \in \mathcal{F}_0\}$ determines $M$ up to the equivalence of
+causal Bayesian networks, whereas $D(\top)$ alone determines $M$ only up to
+Markov equivalence. In particular the family separates the two vending machines
+of \cite[\S4.6]{Inhabiting}, which $D(\top)$ does not.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+By \cite[Thm.~5.3]{Interventions}, $D(C)$ for $C$ a point restriction on
+gadget $i$ is the distribution of the submodel $M_{V_i = v}$. The joint
+distributions of all single-variable hard interventions determine the DAG up to
+the standard result that the interventional family identifies the graph when
+every variable can be intervened on, and the conditional tables are read off the
+intervened distributions directly. For the vending machines, $D(y = \mathit{tea})$
+has a starved trace with positive probability for $Q$ and none for $P$, and the
+starvation flag is part of the datum.
+\end{proof}
+
+The proposition is stated on the staged fragment because that is where the
+companion note's theorems hold; Obligation~\ref{ob:rungtwo} asks for the
+general statement. What it already says is enough to fix the design: \emph{the
+harness must choose $C$, and must choose it well}. The quality of the gaggle is
+bounded by the coverage of the interventions in its training set, and the
+harness's job is experimental design, not data collection.
+
+\begin{remark}[Which rung the transformer is on]
+Each member of the gaggle remains a conditional trace predictor and is rung one
+in the precise sense of Proposition~\ref{prop:invisible}: given $(S, C)$ it
+predicts a trace distribution, and that distribution has a unique
+factorisation. What is rung two is the \emph{family}, indexed by $C$, and the
+index is supplied by the harness. This is the saddle point, named exactly, and
+\S\ref{sec:saddle} is where it is addressed.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Where a transformer sits in a causal model}\label{sec:mechanism}
+
+The embedding of \cite{Interventions} places, at each variable $V_i$, a gadget
+whose clause is the conditional probability table $P_i(v \mid \mathit{pa})$ in
+disjunctive normal form. On finite domains of modest size that clause is a
+lookup. A transformer earns its place only where the lookup is unaffordable:
+large or structured domains, mechanisms that are compositional in their inputs,
+or variables whose values are themselves terms.
+
+\begin{definition}[Transformer-backed gadget]\label{def:tgadget}
+For a variable $V_i$ with parents $V_{p_1}, \dots, V_{p_m}$, a
+\emph{transformer-backed gadget} replaces the enumerated clause by
+\[
+\fork(\,p_1 \leftarrow v^{(i)}_{p_1} \,\&\cdots\&\, p_m \leftarrow v^{(i)}_{p_m}
+\,\&\, u \leftarrow w_i \;\where\; \crisp{\mathrm{dom}(*u)} \tensorv
+\mathsf{T}_i(*p_1, \dots, *p_m)[*u]\,)\ \mathit{emit}_i(*u),
+\]
+where $\mathsf{T}_i$ is a member of the gaggle run as a pure ground expression
+whose output is a vector of log-weights over $D_i$, indexed by the ancilla
+value. The ancilla channel $w_i$ carries $D_i$ or, for large domains, is
+sampled from the gaggle member's own vocabulary race.
+\end{definition}
+
+Three things about this placement decide the parameter question.
+
+\begin{observation}[The context window is the parent set]\label{obs:context}
+The clause at gadget $i$ reads $\mathit{pa}_i$ and nothing else, because the
+parent set is syntactic \cite[\S1.2]{Interventions}: the names the pattern and
+the clause read. A transformer backing gadget $i$ therefore has input length
+$|\PA_i|$ (in tokens, the serialisation of the parent values), not the length of
+the history. Attention's job of discovering which earlier positions matter has
+been done by the harness's experiments and is recorded in the term as the
+pattern; what remains for the transformer is the mechanism.
+\end{observation}
+
+\begin{observation}[The transformer does not model the noise]\label{obs:noise}
+The exogenous noise $U_i$ is the resolver's draw at the ancilla race, and it is
+the harness's, not the transformer's. A transformer trained on observational
+projections must represent the correlations the noise induces across
+variables --- confounding --- because it cannot tell them from mechanism. A
+transformer backing a gadget predicts $P_i(v \mid \mathit{pa})$ and is
+\emph{forbidden} by its placement from seeing anything else. The parameters that
+an observational model spends on confounders are not spent.
+\end{observation}
+
+\begin{observation}[Only the races are learnable by intervention]\label{obs:races}
+By Proposition~\ref{prop:carrier}, an intervention at a deterministic site is
+either the identity or disables the site. The harness's experiments therefore
+inform exactly the gadgets that are races --- the ancilla receipts --- and the
+deterministic plumbing between them (fan-out, readout, the transformer's own
+projections and MLPs) is intervention-transparent. This is not a limitation on
+what the gaggle learns; it is a statement about where the gradient lands. The
+score of \cite[Thm.~4.3]{GradedPLN} is a sum over firing sites, and a
+deterministic site contributes zero.
+\end{observation}
+
+\begin{remark}[Activation patching is a $\dok$]
+The interpretability community's causal tracing and activation patching ---
+hold a run, replace one head's output with that from a corrupted run, measure the
+change downstream --- is, in the vocabulary of this programme, replay under
+$\dok(v \models \cdot)$ at an attention site with the exogenous record held,
+which is \cite[Thm.~5.6]{Interventions} applied to the transformer's own term.
+That the technique works on heads and is ill-defined on MLPs is
+Proposition~\ref{prop:carrier}: heads are races, MLPs are not. The harness
+therefore has, for free, an instrument for interrogating its own gaggle members
+that the community built by hand, and \S\ref{sec:levers} uses it to prune.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The consolidation loop}\label{sec:loop}
+
+\subsection{Overview}
+
+The loop has five stages, each of which is a graded race in the harness term
+and so is itself subject to the harness's budget and to intervention.
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{Propose.} Choose a specimen $S$ and a constraint $C$. The choice
+is a graded race whose clause is the harness's current estimate of the
+information the experiment would yield; \S\ref{ssec:propose}.
+\item \textbf{Run.} Execute $\dok(C)\ \ink\ S$ under the budget; record the
+experimental trace $t$ of Definition~\ref{def:trace}. On f1r3node this is one
+deployment whose trace the validators already produce.
+\item \textbf{Route.} Deliver $t$ to the gaggle member that should learn from
+it. Routing is a graded receipt whose candidates are the members and whose
+clause is each member's affinity for $t$; \S\ref{ssec:route}. If no member
+accepts, the receipt starves, and starvation is the signal to spawn.
+\item \textbf{Revise.} Retrain the chosen member on its accumulated traces, with
+the PLN natural-gradient discipline of \cite{GradedPLN} so that confidence is
+the metric; \S\ref{ssec:revise}.
+\item \textbf{Shrink.} Merge members the harness can prove interventionally
+bisimilar; prune heads by intervention; compile a member out into a clause when
+its mechanism admits one; let members that no longer earn their keep starve;
+\S\ref{sec:levers}.
+\end{enumerate}
+
+\subsection{Propose: experimental design as a graded race}\label{ssec:propose}
+
+The harness holds, for each gadget $i$ of its current model, a graded clause
+$\psi_i$ (enumerated or transformer-backed) and an evidence count $n_i$ in the
+PLN sense. A candidate experiment is a pair $(S, C)$ with $C$ a point or set
+restriction on some gadget's ancilla. Its value is placed in the clause of the
+proposal receipt:
+
+\begin{lstlisting}
+for( @S <<- specimens & @C <<- candidates
+     where  [ C in F0 and reachable(S, site(C)) ]
+            * gain(S, C)                       // expected score, Eq. (1)
+            * 1 / (1 + cost(S, C))             // phlo to run it
+   ) { run!(S, C) }
+\end{lstlisting}
+
+The gain is the expected magnitude of the local score the trace would
+contribute at the intervened site --- the quantity \cite[Cor.~5.7]{GradedPLN}
+accumulates, available before the experiment is run because the candidate
+weights the site would evaluate are the harness's own clause. Two remarks.
+First, the proposal receipt is itself a race, so the harness hedges its
+experiments: under the stochastic reading it does not always run the single
+most informative one, and the fraction of budget spent on lower-gain
+experiments is a clause constant the harness can tune --- requirement (iii) of
+Observation~\ref{obs:rsi} applied to experimental design. Second, the
+reachability guard is $\mathcal{F}_2$ in general and the vacuity question of
+\cite[\S7.1]{Interventions}; under $\mathcal{T}_1$--$\mathcal{T}_3$ it is
+decidable by inspection and is the positivity check.
+
+\subsection{Route: the gaggle as a mixture of experts whose gate is a clause}
+\label{ssec:route}
+
+Members rest on a channel as quoted terms together with a \emph{signature}
+$\mathrm{sig}_j$: a crisp formula over traces describing which traces the
+member has been trained on --- in the simplest case, the set of sites its
+gadgets back. Routing is
+
+\begin{lstlisting}
+for( @t <<- traces & @(j, sig, T) <<- gaggle
+     where  [ sig(t) ] * affinity_j(t)
+   ) { revise!(j, t) }
+\end{lstlisting}
+
+where $\mathrm{affinity}_j(t)$ is the likelihood member $j$ assigns to $t$'s
+history under $t$'s intervention, evaluated by running $T_j$ as a pure
+expression. Read in the log semiring this is a softmax gate over experts, which
+is to say that the gaggle's routing \emph{is} attention over members, with the
+same clause that attention within a member uses. Three consequences:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+\item A trace no member's signature admits leaves the routing receipt with no
+candidate of nonzero weight. The receipt starves. Starvation here is not death
+but birth: a second receipt waits on the same channel with clause
+$\crisp{\neg \bigvee_j \mathrm{sig}_j(t)}$ and spawns a fresh member with
+signature generated from $t$'s site. The gaggle grows exactly when the world
+presents a mechanism it has no expert for, and the \emph{refusal} of the gaggle
+to absorb a trace is the growth signal --- positivity as starvation, read
+constructively.
+\item A trace several members admit is a race between them, and under the
+stochastic reading more than one may be trained on it over time, which is the
+hedge: the harness funds the losing expert at a rate set by the clause.
+\item The signatures are crisp formulae in the term and are therefore visible
+to the model checker, so ``is there a mechanism two members both claim?'' is a
+spatial question the harness can ask of itself, and it is the trigger for the
+merge test of \S\ref{ssec:merge}.
+\end{itemize}
+
+\subsection{Revise: retraining without losing plasticity}\label{ssec:revise}
+
+A member retrained on its bucket faces the classical continual-learning
+hazard: new traces overwrite old mechanisms. The companion paper measured the
+same hazard in a different guise. Two learners circulating belief to one another
+inflate their evidence counts without adding information, and the pathology is
+\emph{loss of plasticity rather than instability} \cite[\S11]{GradedPLN}. The
+natural-gradient result there --- revision is a Fisher-metric step with the
+metric evaluated at the posterior count, hence implicit and unconditionally
+stable --- is the discipline the gaggle should adopt, and it fixes two design
+rules.
+
+\begin{principle}[Conservation of evidence in the gaggle]\label{prin:evidence}
+A member is never trained on a trace it generated. Traces are produced by
+experiments on \emph{specimens}; a member's own outputs, when the harness runs it
+as a specimen (\S\ref{ssec:merge}), are tagged as testimony and contribute to no
+member's evidence count. Without this rule the gaggle inflates its own
+confidence by re-reading itself, and the measured consequence is a gaggle that
+can no longer learn.
+\end{principle}
+
+\begin{principle}[Confidence is the step size]
+Each member carries, per gadget it backs, the PLN count $n_i$, and its learning
+rate on traces at site $i$ is the Robbins--Monro schedule that count induces.
+A member backing a well-established mechanism takes small steps; a fresh member
+takes large ones. The count is data on a channel and the harness may intervene
+on it --- resetting a count is the $\dok$ that restores plasticity.
+\end{principle}
+
+Both principles are the companion paper's results read for a population of
+transformers rather than for a single clause, and neither requires anything a
+transformer cannot do: the Fisher metric of a softmax output is standard, and
+the per-site counts are bookkeeping.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Keeping the parameters down}\label{sec:levers}
+
+The brief asked specifically for the ability to keep the transformers small.
+The answer has one structural part and four operational parts, and all five
+are consequences of the companion notes rather than additions to them.
+
+\subsection{The structural part: mechanisms, not worlds}
+
+\begin{proposition}[Parameter bound on the staged fragment]\label{prop:bound}
+Let $M$ be a causal Bayesian network over $n$ variables with domains
+$D_1, \dots, D_n$ and parent sets $\PA_1, \dots, \PA_n$. A gaggle backing $M$
+on the staged fragment needs, in total, parameters sufficient to represent
+\[
+\sum_{i=1}^{n} \;\Big|\textstyle\prod_{j \in \PA_i} D_j\Big| \cdot |D_i|
+\]
+table entries --- the size of the conditional probability tables --- and a
+transformer is required at gadget $i$ only when that product is unaffordable as
+a lookup. An observational model of the same system must represent the joint,
+of size $\prod_i |D_i|$, less whatever factorisation it can infer from
+observational data alone, which is the Markov-equivalence class and not $M$.
+\end{proposition}
+
+\begin{proof}
+The first statement is Theorem~5.2 of \cite{Interventions}: the likelihood is
+the truncated factorisation, and each factor is one gadget's clause. The second
+is the standard gap between a joint and its CBN factorisation, with
+Proposition~\ref{prop:rungtwo} supplying that interventions recover the
+factorisation and observation does not.
+\end{proof}
+
+The proposition is almost a tautology, and that is its value: the parameter
+count of the gaggle is the parameter count of the \emph{model}, in the sense in
+which Pearl uses the word, and the harness's experiments are what establish the
+model. The gaggle is small when the world is modular, and the harness finds out
+whether it is.
+
+\subsection{Lever 1: factorise along namespaces}
+
+The composing-learners note \cite{Compose} established that a learner is a
+namespace and that disjointness of namespaces is factorisation of the
+distribution. The do-calculus gives the harness a test for disjointness it can
+run: if $(Y \perp\!\!\!\perp Z \mid X)$ holds in the appropriate mutilated graph,
+rule 1 of \cite[Cor.~5.4]{Interventions} says the mechanisms on $Y$ and $Z$ may
+be learnt separately, and the harness should keep them in separate members.
+The interventions note's first open problem --- d-separation as a crisp
+behavioural formula over the staged term \cite[\S10]{Interventions} --- is
+therefore load-bearing here:
+when it is discharged, ``may these two members be kept apart?'' is a question
+the model checker answers, and the gaggle's factorisation is maintained as a
+checked invariant rather than a hope.
+
+Two members on d-separated namespaces have, between them, the parameters of
+two mechanisms. One member on their union has the parameters of a mechanism
+over the product. The lever is to never pay for the product when the harness
+has proved it need not.
+
+\subsection{Lever 2: prune heads by intervention}
+
+A member's attention heads are its only races (Definition~\ref{def:transformer}),
+so they are the only sites at which the harness's $\dok$ has content on the
+member itself. For each head $(\ell, h)$ of member $T_j$ the harness runs
+\[
+\dok(v \models \crisp{v = 0})\ \ink\ T_j \quad\text{at every query of head } (\ell,h)
+\]
+--- restrict the head's value race to the zero vector --- over a held-out set of
+experimental traces, and compares the member's interventional likelihoods
+before and after. A head whose removal leaves the likelihoods within tolerance
+on every intervention in the held-out set is pruned. This is ordinary head
+pruning; what the setting adds is that the comparison is over
+\emph{interventional} distributions, so a head that matters only under
+interventions the observational data never exhibited is kept, and one that
+matters only for modelling confounders the member need not model is dropped.
+The tropical limit of the same clause --- argmax attention --- is the
+quantisation step of \cite{TransformerProposal} and composes with pruning.
+
+\subsection{Lever 3: merge members that are interventionally bisimilar}
+\label{ssec:merge}
+
+The inhabiting-choice note's thesis, applied to the gaggle's own members, says
+that trace equivalence between two members is the wrong test for merging them:
+two members may assign identical likelihoods to every observational projection
+and differ on what they do under an intervention. The right test is
+bisimulation, and the harness can afford it because it owns the members' code
+($\mathcal{T}_4$) and can run the bisimulation game on them.
+
+\begin{definition}[Interventional bisimilarity of members]
+Members $T_j$ and $T_k$ with the same signature are \emph{interventionally
+bisimilar to tolerance $\epsilon$ on a constraint set $\mathcal{C}$} when for
+every $C \in \mathcal{C}$ and every pre-state $S$ in the held-out set, the
+distributions of experimental traces of $\dok(C)\ \ink\ T_j(S)$ and
+$\dok(C)\ \ink\ T_k(S)$ are within $\epsilon$ in total variation, starvation
+flags included.
+\end{definition}
+
+The test is the Larsen--Skou probabilistic bisimulation game
+\cite{LarsenSkou91} with the harness as the tester, restricted to a finite
+constraint set because the general question is undecidable, and the restriction
+is honest: the members are bisimilar \emph{as far as the harness has been able
+to experiment}, and the merge is an induction from that evidence with the
+evidence count attached. Merging means retaining one member and deleting the
+other, or distilling both into a fresh member of smaller size trained on the
+union of their buckets under Principle~\ref{prin:evidence} (the distillation
+targets are testimony, counted at zero).
+
+The reason to prefer this test to the obvious one --- compare the members'
+weights, or their outputs on a validation set --- is Proposition~\ref{prop:invisible}
+once more. Output agreement is trace equivalence. Two members that agree on
+every completed run and differ on a refusal are different mechanisms, and
+merging them discards one.
+
+\subsection{Lever 4: compile a member out into a clause}
+
+The strongest lever is the one that removes a transformer entirely.
+
+\begin{proposition}[Compile-out]\label{prop:compileout}
+Let $T_j$ back gadget $i$ and suppose its learnt mechanism
+$\mathit{pa} \mapsto P_i(\cdot \mid \mathit{pa})$ is representable, to tolerance
+$\epsilon$ on the interventional held-out set, by a graded formula
+$\psi \in \mathcal{F}_1$ of depth $d$ over the parent data. Then replacing the
+transformer-backed gadget by the enumerated gadget with clause $\psi$ preserves
+every interventional distribution of the model to tolerance $\epsilon$, costs
+$O(2^d)$ per candidate at the site rather than a forward pass, and reduces the
+member's parameter count to the constants of $\psi$.
+\end{proposition}
+
+\begin{proof}
+The gadget's contention set is itself ($\mathcal{T}_1$), so its contribution to
+every likelihood is its normalised clause value at the fired class, and two
+clauses within $\epsilon$ on every parent value contribute within $\epsilon$
+to every factor. The cost figure is \cite[Def.~7.2]{Interventions}.
+\end{proof}
+
+How to find $\psi$ is the research question, and the companion notes already
+own half of it. An $\mathcal{F}_1$ graded formula over $\Rnn$ is a posynomial in
+its constants \cite[Prop.~5.2]{GradedPLN}; fitting a posynomial of bounded
+depth to a transformer's conditional outputs is a symbolic-regression problem
+over a grammar the omnibus \cite{Omnibus} generates from the term language, and
+the crisp subformulae are spatial tests on the parent data that the member's
+attention pattern suggests. The proposal is to run compile-out as a standing
+race in the harness: for each transformer-backed gadget, a candidate $\psi$ is
+proposed from the member's attention structure, tested interventionally as in
+\S\ref{ssec:merge}, and adopted if it passes, with the budget for the attempt a
+clause constant.
+
+What compile-out buys is more than parameters. A clause is a term; it is
+quotable, inheritable by the reproduction note's crossover \cite{Reproduction},
+checkable by the model checker, and \emph{a race}. A transformer's weights are
+none of these. Every mechanism the gaggle manages to compile out has moved from
+the confluent side of the line to the side where the accumulated science lives
+as witnesses, which is the inhabiting-choice note's whole demand. The
+transformers are scaffolding for mechanisms the harness has not yet understood
+well enough to write down.
+
+\subsection{Lever 5: mortality}
+
+A member is funded from the harness's budget at a rate proportional to the
+score its traces contribute. A member that backs a gadget no experiment has
+touched within a window, or whose traces the merge test has shown another member
+to cover, starves. This is the deadlock-by-starvation pruning of
+\cite{ProofSearch} applied to the gaggle and needs no coordinator; the harness's
+budget is conserved, and a member that does not earn tokens cannot pay for its
+retraining. The funding rate for losing members --- those that lose routing
+races --- is a clause constant and is itself in the harness's parameter set,
+which is requirement (iii) of Observation~\ref{obs:rsi}.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.19\textwidth}>{\raggedright\arraybackslash}p{0.36\textwidth}>{\raggedright\arraybackslash}p{0.37\textwidth}@{}}
+\toprule
+\textbf{lever} & \textbf{what it removes} & \textbf{what licenses it}\\
+\midrule
+mechanisms, not worlds & parameters spent on the joint and on confounders & truncated factorisation; the parent set is syntactic\\
+factorise & the product of two mechanisms when the sum suffices & do-calculus rule 1; d-separation as a checked formula\\
+prune heads & heads that matter under no intervention & interventions have one carrier; heads are the races\\
+merge & duplicate members & interventional bisimilarity, a test the harness can run\\
+compile out & the transformer itself & $\mathcal{F}_1$ clauses are posynomials; exact on $\mathcal{T}_1$\\
+mortality & members that earn nothing & conserved budget; starvation as pruning\\
+\bottomrule
+\end{tabular}
+\caption{The parameter levers.}\label{tab:levers}
+\end{table}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The saddle point, revisited}\label{sec:saddle}
+
+The inhabiting-choice note's charge against the loop architecture is precise:
+the hedge lives in the harness, is collapsed at the boundary, and is handed to
+no one as a race. The design above is a loop architecture and must answer the
+charge on its own terms.
+
+\paragraph{What is still on the saddle.} Each member is a confluent predictor.
+Its parameters are improved by a gradient on outcomes, and the diversity its
+next improvement would need is what the current improvement consumes, exactly
+as \cite[\S5.4]{Inhabiting} says. Nothing here changes that about the
+transformers.
+
+\paragraph{What has moved.} Three things.
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item The harness is a rho term. Its proposal race, its routing race, its
+compile-out race are witnesses that are races, and its funding rates for the
+losing branches of each are clause constants in the term. The harness
+therefore meets the three requirements of Observation~\ref{obs:rsi} \emph{for
+itself}: it can be quoted, inherited with its hedges uncollapsed, and improved
+by an operator that acts on its clauses. The desert annual's germination
+fraction is here the routing clause's constant for losing experts.
+\item The gaggle is not a set of outcomes but a population of terms resting on
+a channel, and the term that holds it carries the hedge: under the stochastic
+reading of the routing race, several members are trained on overlapping
+evidence and the population is passed on as a population. Best-of-$n$ collapses
+at the boundary; a gaggle on a channel does not, because the consumer of the
+gaggle is the harness, and the harness is a process runtime. This is the
+``honest version'' of \cite[\S5.5]{Inhabiting}, built once as substrate.
+\item Compile-out moves mechanisms across the line. A member that has been
+compiled into a clause is no longer a confluent object; it is a race the
+reproduction note can cross over, and the science it encodes is inherited as
+science.
+\end{enumerate}
+
+\paragraph{The honest summary.} The design is a saddle point with a ramp off
+it. The ramp is compile-out, and the design's success is measured by how much
+of the gaggle, over time, it manages to replace with clauses. A gaggle that
+never compiles anything out is the loop architecture with better data; a
+gaggle that compiles everything out has become the mortal scientist of
+\cite{Scientist}, and the transformers were the scaffolding it climbed.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The harness, as a term}\label{sec:term}
+
+The sketch below is in the concrete syntax of f1r3node's rholang with the
+graded guard and $\dok$ as proposed in \cite{TransformerProposal,Interventions};
+it is schematic in the ground-layer calls.
+
+\begin{lstlisting}
+new specimens, candidates, traces, gaggle, revise, run, budget in {
+
+  // Propose: a graded race over experiments
+  contract propose() = {
+    for( @S <<- specimens & @C <<- candidates
+         where [ C in F0 and positive(S, C) ] * gain(S, C) / (1 + cost(S, C))
+       ) { run!(S, C) }
+  } |
+
+  // Run: one deployment under the do, record the experimental trace
+  for( @S, @C <= run ) {
+    do( C ) in { *S } |                 // the specimen, intervened
+    for( @h, @u, @starved <- trace_of(S, C) ) {
+      traces!((S, C, h, u, starved)) | propose!()
+    }
+  } |
+
+  // Route: attention over members; starvation spawns
+  for( @t <<- traces & @(j, sig, T) <<- gaggle
+       where [ sig(t) ] * affinity(T, t)
+     ) { revise!(j, t) } |
+  for( @t <- traces where [ not(any_sig(t)) ] ) {
+    new j in { gaggle!((*j, sig_from(t), fresh_member(t))) | revise!(*j, t) }
+  } |
+
+  // Revise: natural-gradient step with the per-site count as metric
+  for( @j, @t <= revise ) {
+    for( @(j, sig, T) <- gaggle & @n <- count(j, site(t)) ) {
+      gaggle!((j, sig, natgrad_step(T, t, n))) | count(j, site(t))!(n + 1)
+    }
+  } |
+
+  // Shrink: merge, prune, compile out, starve  (each a standing race)
+  for( @(j, s, Tj) <<- gaggle & @(k, s, Tk) <<- gaggle
+       where [ j != k ] * bisim_evidence(Tj, Tk) ) { merge!(j, k) } |
+  for( @(j, s, T) <<- gaggle & @psi <<- clause_candidates(j)
+       where interventional_fit(T, psi) ) { compile_out!(j, psi) } |
+  for( @(j, s, T) <<- gaggle where [ earnings(j) < rent(j) ] ) { starve!(j) }
+}
+\end{lstlisting}
+
+Everything the harness decides is a receipt with a clause, so everything it
+decides can be intervened upon by a harness one level up, which is the
+recursion that self-improvement needs. The sketch does not show the budget
+flowing through each receipt; in the cost-accounted calculus every COMM is
+priced and the seal tree of \cite{CostMonad} is where the flow is read off.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Execution}\label{sec:execution}
+
+\paragraph{On f1r3node.} The transformer proposal's Levels 0--2 are what the
+gaggle needs: a ground tensor type, graded guards in the pure evaluator, and the
+log-semiring resolver. The experimental trace of Definition~\ref{def:trace} is
+what the order-then-execute design already records --- the executing validator
+resolves the races and the winners are logged; the losers are recomputable from
+the pre-state. The $\dok$ lowers at elaboration under $\mathcal{T}_2$. Nothing
+in \S\ref{sec:loop} needs a construct the two companion proposals have not
+already asked for, and the harness's own races are ordinary graded receipts.
+
+\paragraph{On Saph1r3.} The Mat machine fires a maximal independent set of the
+conflict graph per step, and the graded machine instead resolves each conflict
+component by its algebra. The gaggle is a favourable workload: each member's
+attention contention sets are star-shaped (one query, many keys) and small; the
+routing race's contention set has one candidate per member; and the compile-out
+race is embarrassingly parallel across members. The three items the earlier
+proposal listed as missing from the route --- ground atoms in the Mat state,
+peek as a primitive, and weights on the conflict graph --- are the same three
+here, and the fourth, segmented reduction for the path-sum reading, is a
+standard kernel. The route is nascent and the note does not pretend otherwise;
+what it adds is that a gaggle of small members is a better first weighted
+workload than one large one, because its contention sets are known statically
+and its parallel step count is the depth of the harness's loop rather than the
+width of the gaggle.
+
+\paragraph{The budget.} \cite[Rem.~6.5]{GradedV4} asks that the denotation's
+budget $\beta$, the risk ledger's $\omega$, the address-space bound, and the
+inference-token budget be one budget doing several jobs. The gaggle adds the
+parameter budget to the list: tokens buy parameters, parameters are paid for by
+the score their traces earn, and the whole is one ledger.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Obligations}\label{sec:obligations}
+
+\begin{obligation}[The intervention-indexed family is rung two]\label{ob:rungtwo}
+Proposition~\ref{prop:rungtwo} is stated on the staged fragment with
+$\mathcal{F}_0$ constraints. The general statement should say, for a term off
+$\mathcal{T}_1$, which constraint set $\mathcal{C}$ makes the family
+$\{D(C) : C \in \mathcal{C}\}$ determine the term up to probabilistic
+bisimulation, and should connect the answer to the branching cells of
+\cite{AbbesBenveniste} as the interventions note's own Obligation 2 proposes.
+Everything in \S\ref{sec:levers} rests on this.
+\end{obligation}
+
+\begin{obligation}[Merge soundness]
+Show that replacing two interventionally $\epsilon$-bisimilar members on
+constraint set $\mathcal{C}$ by one preserves the gaggle's interventional
+distributions on $\mathcal{C}$ to a stated tolerance, and characterise the
+tolerance's growth off $\mathcal{C}$.
+\end{obligation}
+
+\begin{obligation}[Compile-out search]
+Give the grammar of $\mathcal{F}_1$ candidates generated from a member's
+attention structure, and the acceptance test, as a graded race with a stated
+budget; measure on the vending-machine benchmark and on the two laddered games
+of \cite{Compose} how much of a gaggle compiles out and how fast.
+\end{obligation}
+
+\begin{obligation}[Evidence conservation under distillation]
+Principle~\ref{prin:evidence} counts distillation targets at zero. The
+testimony experiment of \cite[\S11]{GradedPLN} should be re-run with a
+transformer-backed member in place of one clause to confirm that the
+plasticity-loss pathology, and the remedy, transfer.
+\end{obligation}
+
+\begin{obligation}[The parameter bound off the finite fragment]
+Proposition~\ref{prop:bound} is a CPT count. For continuous or term-valued
+domains, where a transformer is needed, the bound should be restated in terms
+of the member's capacity and the mechanism's description length in the clause
+language, which is where compile-out's acceptance threshold comes from.
+\end{obligation}
+
+\begin{obligation}[Experimental design as a theorem]
+The gain in \S\ref{ssec:propose} is the expected local score. The claim that
+choosing experiments by it is information-optimal under the budget should be
+stated against the optimal-experimental-design literature and against the
+experimental-regimes note \cite{ExpRegimes}, whose interaction-only regimes
+provably cannot certify universal negatives at polynomial cost --- a gaggle that
+only ever intervenes without reflecting inherits that limit.
+\end{obligation}
+
+\begin{obligation}[The recursion]
+\S\ref{sec:term} observes that every decision of the harness is a receipt a
+harness one level up may intervene on. State the fixed point: a harness whose
+specimens include its own quotation, with the budget as the unrolling depth, and
+say what Observation~\ref{obs:rsi} demands of it that the one-level design does
+not already supply.
+\end{obligation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}
+
+A transformer cannot learn branching from traces, and a harness in rho with
+graded where-clauses and $\dok$ can produce traces that carry their branching.
+Lashing the two together is not a reconciliation of the inhabiting-choice note
+with current practice; it is current practice done with the right data and an
+honest account of where the race lives. The race lives in the harness, the
+harness is a term, and the term is heritable --- that much is new. The members
+of the gaggle remain confluent, and the design's ambition is to make them
+temporary: to learn each mechanism with a small transformer whose context is a
+parent set and whose job is one conditional, and then to compile it out into a
+clause the moment the harness understands it well enough to write it down.
+
+The parameter question answers itself along the way. A gaggle backing a causal
+model is as large as the model's mechanisms and no larger; the harness's
+experiments are what establish the factorisation that makes the mechanisms
+small; the do-calculus tells the harness which members it may keep apart;
+intervention on a member's own heads tells it which heads to keep; interventional
+bisimulation tells it which members are one; and compile-out tells it when a
+member can go. None of these is a compression technique applied from outside.
+Each is the same observation --- that intervention sees what observation cannot
+--- applied to the gaggle itself.
+
+\section*{Acknowledgements}
+
+The author of this note drafted it in dialogue with a transformer-derived
+language model, which reviewed the companion notes and the Saph1r3 repository
+and proposed the structure of \S\ref{sec:levers}. By the argument of
+\cite[\S5]{Inhabiting} that is a rung-two interrogation of a rung-one model,
+and the model's characterisation of its own members' situation in
+\S\ref{sec:saddle} is reproduced with its agreement.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{thebibliography}{99}\raggedright
+
+\bibitem{Inhabiting} L.~G.~Meredith.
+\newblock Inhabiting choice: confluent witnesses, the phenomena they cannot
+carry, and one observation made three times.
+\newblock F1R3FLY.io research note, November 2026
+(\texttt{proof-dynamics-and-reasoning/inhabiting-choice}).
+
+\bibitem{Interventions} L.~G.~Meredith.
+\newblock Interventions at the cut: Pearl's \textsf{do} as a scoped guard in
+the rho calculus with graded where-clauses.
+\newblock F1R3FLY.io working note, draft 1, November 2026
+(\texttt{fuzzyware/interventions-at-the-cut}).
+
+\bibitem{GradedPLN} L.~G.~Meredith.
+\newblock Graded where-clauses, II: the non-negative reals, and where the
+mortal scientist gets gradient descent.
+\newblock F1R3FLY.io, 2026 (\texttt{fuzzyware/graded-where-pln}).
+
+\bibitem{GradedV4} L.~G.~Meredith.
+\newblock Graded where-clauses, version 4.
+\newblock F1R3FLY.io, 2026 (\texttt{fuzzyware/graded-where-v4}).
+
+\bibitem{TransformerProposal} L.~G.~Meredith (with Claude).
+\newblock A transformer in f1r3lang: an implementable model.
+\newblock F1R3FLY.io proposal, September 2026.
+
+\bibitem{rhocomb3} L.~G.~Meredith.
+\newblock Name-free combinators for concurrency, draft 3.
+\newblock F1R3FLY.io, 2026 (\texttt{rho-combinators/rho-combinators-draft3}).
+
+\bibitem{matrix} L.~G.~Meredith.
+\newblock The rho combinators as a matrix: a data-parallel representation of
+the reduction graph, v1.2.
+\newblock F1R3FLY.io, 2026 (\texttt{rho-combinators/rhocomb-matrix}).
+
+\bibitem{matspec} L.~G.~Meredith.
+\newblock F1R3Comb-Mat v0.5: a bulk-synchronous matrix machine.
+\newblock F1R3FLY.io, 2026 (\texttt{rho-combinators/f1r3comb-mat-spec-v05}).
+
+\bibitem{saphire} F1R3FLY.io.
+\newblock Saph1r3: compiler from rho to GPU via rho combinators to matrix
+representation.
+\newblock \url{https://github.com/F1R3FLY-io/Saph1r3}, revision 205cdfb, 2026.
+
+\bibitem{Compose} L.~G.~Meredith.
+\newblock Composing learners: a learner is a namespace.
+\newblock F1R3FLY.io, 2026 (\texttt{rho-life/compose-note}).
+
+\bibitem{Scientist} L.~G.~Meredith.
+\newblock The mortal scientist: learning as cost-accounted computation in a
+reflective higher-order calculus.
+\newblock F1R3FLY.io, 2026 (\texttt{rho-life/scientist-note}).
+
+\bibitem{Reproduction} L.~G.~Meredith.
+\newblock Reproduction: reflection-based genetics for mortal scientists.
+\newblock F1R3FLY.io, 2026.
+
+\bibitem{ProofSearch} L.~G.~Meredith.
+\newblock Proof search as concurrent reaction.
+\newblock F1R3FLY.io, 2026 (\texttt{proof-dynamics-and-reasoning/proof-search}).
+
+\bibitem{ExpRegimes} L.~G.~Meredith.
+\newblock Experimental regimes: laboratories for universal negatives, v3.
+\newblock F1R3FLY.io, 2026 (\texttt{pnp-experiments/experimental-regimes-v3}).
+
+\bibitem{Omnibus} L.~G.~Meredith.
+\newblock Graph-structured lambda theories: a reference for the working
+developer.
+\newblock F1R3FLY.io, 2026.
+
+\bibitem{CostMonad} L.~G.~Meredith.
+\newblock Cost accounting as a monad.
+\newblock F1R3FLY.io, 2026 (\texttt{cost-accounting-as-monad}).
+
+\bibitem{LarsenSkou91} K.~G.~Larsen and A.~Skou.
+\newblock Bisimulation through probabilistic testing.
+\newblock \emph{Information and Computation} 94(1):1--28, 1991.
+
+\bibitem{AbbesBenveniste} S.~Abbes and A.~Benveniste.
+\newblock True-concurrency probabilistic models: branching cells and
+distributed probabilities for event structures.
+\newblock \emph{Information and Computation} 204(2):231--274, 2006.
+
+\end{thebibliography}
+
+\end{document}
