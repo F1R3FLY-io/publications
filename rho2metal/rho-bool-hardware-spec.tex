@@ -48,7 +48,7 @@
 
 \title{A Hardware Rendering of the Rho Calculus with Boolean Arithmetic\\[4pt]
 \large Design specification: source language, target machine, and verification guidance}
-\author{F1R3FLY.io design note --- draft 0.2}
+\author{F1R3FLY.io design note --- draft 0.3}
 \date{13 November 2026}
 
 \begin{document}
@@ -65,6 +65,8 @@ to a CMOS ASIC flow, the division of the implementation between Bluespec and
 Clash, and the obligations an implementation must discharge to count as
 verified. All decisions in the register of Section~\ref{sec:decisions} are confirmed.
 One semantic question remains open and is stated in Section~\ref{sec:open}.
+Draft 0.3 folds in six corrections found by building and testing the
+reference implementation; they are listed in Section~\ref{sec:changes}.
 \end{abstract}
 
 \tableofcontents
@@ -115,7 +117,8 @@ ID & Decision & Status\\
           Clash for pure datapath functions; one Haskell reference library
           shared with the compiler. & \conf\\
 \dec{10} & The compiler is trusted for sorts. The machine keeps a sticky
-          \kw{FAULT\_SORT} flag whose unreachability is a proof obligation. & \conf\\
+          \kw{FAULT\_SORT} flag whose unreachability is a proof obligation. The flag is a
+          debugging aid: it does not detect every ill-sorted program. & \conf\\
 \dec{11} & Variables are a separate syntactic category $V$, instantiated in
           the machine as de~Bruijn indices. Names remain quoted processes. & \conf\\
 \dec{12} & Open Boolean code is canonicalised as a truth table over at most
@@ -234,8 +237,15 @@ a pattern with $k$ Boolean variables has at most $2^k$ solutions.
 \begin{itemize}
 \item (\dec{13}) A Boolean pattern built with an operator matches only a
 closed Boolean value. Matching an operator pattern against open Boolean code
-under a binder would be unification of Boolean functions and is excluded.
-\item A pattern has at most $K$ Boolean-sorted variables (\dec{12}).
+under a binder would be unification of Boolean functions and is excluded. A Boolean
+leaf, a constant leaf included, that meets a name not quoting a Boolean is a
+sort fault and not a failed match; so the pattern $\quo{\tru}$ cannot be used
+to test whether a message is a Boolean.
+\item A pattern variable is a \emph{mask variable} when it occurs under a
+Boolean operator in the pattern; every occurrence of it is then a Boolean
+leaf. Any other variable is bound structurally, whatever its sort, and its
+sort is checked where the body uses it. A pattern has at most $K$ mask
+variables (\dec{12}).
 \item Deep patterns contain no parallel composition, as in the given
 grammar, so no matching modulo associativity and commutativity is needed.
 \item The receive pattern $\for{v}{p}{d}$, which matches under a binder, is
@@ -413,10 +423,16 @@ Node kind & Fields\\
 \end{tabularx}
 
 \medskip\noindent
-Every node carries a header with its kind, a \emph{closed} bit (the node has
-no free variable), and a \emph{sort} bit (the node is of sort
-$\mathsf{Bool}$). Both bits are computed at interning time from the
-children. The exact packing into block-RAM words is left to the
+Every node carries a header with its kind, a \emph{free-variable depth}, and
+a \emph{sort} bit (the node is of sort $\mathsf{Bool}$). The depth of a node
+is the least $k$ such that every free variable index in it is below $k$; a
+node is \emph{closed} when its depth is zero. Both fields are computed at
+interning time from the children: a variable $i$ has depth $i+1$; a receive
+with $n$ pattern variables has depth $\max(d_{\mathit{chan}},\, d_{\mathit{body}}-n,\, 0)$;
+every other node takes the maximum over its fields. A single closed bit would
+not do: whether a receive is closed depends on whether its body's free
+variables are all bound by its own pattern, which a bit on the body cannot
+tell. The exact packing into block-RAM words is left to the
 implementation; it must be fixed in one shared definition used by the
 compiler, the reference model and the hardware.
 
@@ -480,7 +496,7 @@ Operation & Effect\\
 \kw{QZERO}       & fail unless the current name word is \kw{QZERO}\\
 \kw{QSEND}       & fail unless the current name quotes a \kw{SEND}; push the
                    quoted payload, then continue with the channel\\
-\kw{BLEAF} $T$   & fail unless the current name word is \kw{QBOOL} $b$;
+\kw{BLEAF} $T$   & raise \kw{FAULT\_SORT} unless the current name word is \kw{QBOOL} $b$;
                    set $\mathit{mask} \leftarrow \mathit{mask} \wedge
                    (b \mathrel{?} T : \neg T)$\\
 \kw{END}         & succeed if the cursor stack is empty\\
@@ -489,7 +505,7 @@ Operation & Effect\\
 
 \medskip\noindent
 All Boolean leaves of one pattern are expressed by the compiler over a single
-ordered space of that pattern's Boolean variables, so their masks conjoin
+ordered space of that pattern's mask variables, so their masks conjoin
 directly. The mask starts as all ones. The result of a successful run is the
 vector of structural bindings and the mask.
 
@@ -500,9 +516,11 @@ assignment $v_i \mapsto$ bit $i$ of $r$ solves every Boolean leaf.
 nonzero.
 \item The solver returns $\mathit{count} = \mathrm{popcount}(\mathit{mask})$
 and, given $u < \mathit{count}$ from the arbiter, the index $r$ of the
-$u$-th set bit. A bare Boolean-sorted variable is a leaf whose table is a
-projection, and a non-linear Boolean pattern such as $v \band \bnot v$ needs
-no special case.
+$u$-th set bit. An occurrence of a mask variable outside any operator is a leaf whose table
+is a projection, and a non-linear Boolean pattern such as
+$v \band \bnot v$ needs no special case. A variable that occurs under no
+operator is not a mask variable and is bound by \kw{NBIND}, as in the AND gate
+of Appendix~\ref{sec:examples}.
 \end{itemize}
 The pure parts (mask update, popcount, select) are combinational functions
 and are among the Clash components of Section~\ref{sec:tooling}.
@@ -519,9 +537,13 @@ same channel, and to pick a solution row.
 entropy value for which \kw{choose(n)} returns $u$. A priority encoder is
 forbidden: it would make the machine a refinement of the calculus and not
 bisimilar to it.
-\item \textbf{Entropy.} The reference source is a maximal-length LFSR of at
-least 32 bits, sampled once per choice. A hardware random source may replace
-it behind the same interface.
+\item \textbf{Entropy.} The reference source is a 32-bit maximal-length
+Galois LFSR with taps 32, 22, 2 and 1. A choice among $n$ takes a 32-bit
+sample $w$ and returns $\lfloor w\,n / 2^{32} \rfloor$. The reference model
+advances the register 32 positions per choice, so that successive choices use
+disjoint bits. Hardware with a free-running register need not match this,
+because runs are compared through the decision log and not through seeds. A
+hardware random source may replace the register behind the same interface.
 \item \textbf{Fairness.} Only possibilistic fairness is required (\dec{14}).
 The three-stage choice does not induce the uniform distribution over
 redexes. When grading is added, each stage takes a weight vector in place of
@@ -551,9 +573,11 @@ of $s$. On failure or zero mask, mark $r$ tried for $s$ and return to
 PICK-RECV.
 \item \textbf{COMMIT.} Choose a solution row. Write the log record. Remove
 $s$; remove $r$ unless persistent. Build the new environment: the
-environment of $r$ extended by the structural bindings and, for each Boolean
-variable, the \kw{QBOOL} of its bit in the row. The compiler fixes the order
-in which a pattern's variables enter the environment.
+environment of $r$ extended by the structural bindings and, for each mask
+variable, the \kw{QBOOL} of its bit in the row. Variables enter in a fixed
+order: structural variables in order of first occurrence in the pattern
+program, then mask variables in order of mask position, so that the last
+mask variable is the most recently bound.
 \item \textbf{EXPLODE.} Walk the body of $r$ with the new environment and
 add its top-level components to the soup (below).
 \item Return to IDLE.
@@ -583,7 +607,8 @@ substituting the environment into the code. It is a post-order walk with an
 explicit stack that rebuilds nodes through the interner, tracking the number
 $k$ of binders passed.
 \begin{itemize}
-\item A subterm whose \emph{closed} bit is set is returned unchanged. This is
+\item A subterm whose free-variable depth is at most $k$ is returned
+unchanged: it mentions no variable beyond the binders already passed. This is
 the common case and makes instantiation proportional to the open part of the
 code only.
 \item \kw{VAR} $i$ with $i<k$ is local and unchanged; with $i \ge k$ it is
@@ -634,6 +659,15 @@ Fault & Raised when\\
 Resource faults are the only way the machine departs from the calculus, and
 they are detected, never silent.
 
+\begin{remark}[The sort flag is not a sort check]
+A Boolean law can erase an ill-sorted operand before anything inspects it:
+$\drp{v} \bxor \drp{v}$ normalises to \fls\ and $\drp{v} \band \tru$ to
+$\drp{v}$, whatever $v$ is later bound to. \kw{FAULT\_SORT} therefore fires
+only for operands that survive normalisation. Its never firing does not show
+that a program is well sorted, and Obligation~\ref{ob:sort} cannot be turned
+round. The sort checker carries the whole obligation.
+\end{remark}
+
 \subsection{Parameters}
 
 \noindent
@@ -641,7 +675,7 @@ they are detected, never silent.
 \toprule
 Parameter & Stage~1 value & Meaning\\
 \midrule
-$K$ & 6 & maximum Boolean support and pattern Boolean variables\\
+$K$ & 6 & maximum Boolean support and pattern mask variables\\
 $N_S$, $N_R$ & 64, 64 & send and receive table sizes\\
 $A$ & 28 (later) & heap address width; stage~1 has no dynamic heap\\
 $E$ & 16 & maximum environment length\\
@@ -700,7 +734,7 @@ Module & Tool & Responsibility\\
 \midrule
 \kw{TruthTable}   & Clash & table algebra and normalisation\\
 \kw{MaskSolve}    & Clash & mask, popcount, select\\
-\kw{NodeCodec}    & Clash & packing, hash, closed and sort bits\\
+\kw{NodeCodec}    & Clash & packing, hash, free-variable depth and sort bit\\
 \kw{mkHeap}       & BH & node RAM, free list, reference counts\\
 \kw{mkInterner}   & BH & hash-cons table, normalising constructors\\
 \kw{mkStore}      & BH & send and receive tables, channel lookup\\
@@ -730,7 +764,7 @@ verification harness.
 \item Parse; resolve variables to de~Bruijn indices.
 \item Run the sort checker; record each pattern variable's sort.
 \item Normalise (Section~\ref{sec:canon}); reject Boolean supports above $K$.
-\item Compile patterns to pattern programs. Assign Boolean variables their
+\item Compile patterns to pattern programs. Assign mask variables their
 positions in the pattern's mask space and extend each leaf table to that
 space.
 \item Intern all code into a heap image using the same interner algorithm
@@ -792,8 +826,9 @@ V1 & Property tests of the reference normaliser against a brute-force
 V2 & The Clash functions are the reference functions: test in GHC, then
      check generated Verilog against them by random co-simulation
      & datapath correctness\\
-V3 & Interner test: intern random pairs; addresses equal iff reference
-     normal forms equal & Ob.~\ref{ob:canon} (hardware)\\
+V3 & Interner test: intern random raw terms through the machine's normalising
+     constructors alone; addresses equal iff reference normal forms equal,
+     and readback equals the reference normal form & Ob.~\ref{ob:canon} (hardware)\\
 V4 & Step-refinement checker (below) on random and directed programs
      & Ob.~\ref{ob:sound}, \ref{ob:quiet}\\
 V5 & Formal cover on the arbiter: for every $n \le 64$ and $u<n$ a
@@ -806,6 +841,11 @@ V8 & Assertions for the invariants below, in simulation and bounded
      model checking & supports all\\
 V9 & Bounded bisimulation check, in the reference, of persistent receive
      against the encoding; paper proof to follow & Ob.~\ref{ob:repl}\\
+V10 & Instantiation commutes with normalisation, in the reference and in the
+     machine, against textbook substitution on raw terms
+     & Ob.~\ref{ob:sound} (instantiation)\\
+V11 & Mutation: each of a set of bugs injected into the machine and into the
+     reference must fail some layer & adequacy of V1--V10\\
 \bottomrule
 \end{tabularx}
 
@@ -861,7 +901,10 @@ Inverse AND on \fls & three solutions, all reached\\
 Unsatisfiable pattern $v \band \bnot v$ on \tru & no redex; send remains;
   quiescence\\
 Two receivers, one send & COMM race; both outcomes reached\\
-Replication by encoding & general drop; unbounded run until heap fault\\
+Replication by encoding & general drop; an unbounded run. Hash-consing shares
+  every copy, so the heap does not grow: the run ends on the receive-table
+  bound when the replicated process leaves receives behind, and otherwise
+  never\\
 Persistent receive & same traces as the encoding, fewer steps\\
 Equal names, different syntax & $\quo{(\tru \band \fls)}$ and $\quo{\fls}$
   as channels are the same channel\\
@@ -924,6 +967,45 @@ distribution over redexes enters through the arbiter's weight interface.
 \item \textbf{Top-level Booleans.} Kept in the residue counters.
 \item \textbf{Operator patterns.} Closed Boolean values only (\dec{13}).
 \end{itemize}
+
+\section{Status and changes in draft 0.3}\label{sec:changes}
+
+\paragraph{Status.} A reference implementation, \kw{rhoref} 0.1.0, now
+exists: the executable semantics, a word-level model of the machine of
+Section~\ref{sec:target}, and the step-refinement checker, in plain Haskell.
+Its suite discharges layers V1, V3 to V7, V10 and V11 in software, and V9 at
+the level of egress traces. Layers V2 and V8 concern generated Verilog and
+wait for the hardware. Nothing has been proved; Obligation~\ref{ob:repl} in
+particular is tested and not yet proved.
+
+\paragraph{Corrections.} Each was found by building or testing the reference,
+which implements the corrected reading.
+\begin{enumerate}
+\item \textbf{Free-variable depth} (Sections~\ref{sec:words},
+\ref{sec:inst}). The node header carries a free-variable depth in place of a
+closed bit, which cannot be computed for a receive from its children.
+\item \textbf{The sort flag is incomplete} (Section~\ref{sec:log}, \dec{10}).
+Boolean laws can erase an ill-sorted operand, so \kw{FAULT\_SORT} is a
+debugging aid and not a sort check.
+\item \textbf{Mask variables} (Sections~\ref{sec:matching},
+\ref{sec:matcher}, \ref{sec:step}). Draft 0.2 said a bare Boolean-sorted
+variable is a projection leaf, while its appendix bound one with \kw{NBIND}.
+The rule is now stated once: a variable is a mask variable exactly when it
+occurs under a Boolean operator in the pattern. The order in which variables
+enter the environment is fixed.
+\item \textbf{A Boolean leaf on a non-Boolean} (Sections~\ref{sec:matching},
+\ref{sec:matcher}) is a sort fault, not a failed match.
+\item \textbf{Replication by encoding} (Section~\ref{sec:verification}) ends
+on the receive-table bound, or never; it does not exhaust the heap.
+\item \textbf{Entropy sampling} (Section~\ref{sec:arbiter}) is specified: the
+LFSR polynomial, the map from a sample to a choice, and the reference
+model's 32 positions per choice.
+\end{enumerate}
+The verification plan gains two layers. V10 was added because instantiation
+is where normal forms are re-established at run time. V11 was added because
+two injected bugs survived the first suite, which showed that the interner
+had been tested only on terms the reference had already normalised; V3 is
+restated accordingly.
 
 %======================================================================
 \appendix
