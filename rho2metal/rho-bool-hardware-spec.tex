@@ -48,7 +48,7 @@
 
 \title{A Hardware Rendering of the Rho Calculus with Boolean Arithmetic\\[4pt]
 \large Design specification: source language, target machine, and verification guidance}
-\author{F1R3FLY.io design note --- draft 0.3}
+\author{F1R3FLY.io design note --- draft 0.4}
 \date{13 November 2026}
 
 \begin{document}
@@ -56,17 +56,18 @@
 
 \begin{abstract}
 \noindent
-This note specifies a first hardware rendering of the rho calculus extended
-with Boolean arithmetic. It fixes the source language (syntax, sorts,
-structural congruence, matching modulo the Boolean laws, and reduction), the
-canonical forms that make names comparable in constant time, a synchronous
-tuple-space machine that realises the calculus on an FPGA and ports unchanged
-to a CMOS ASIC flow, the division of the implementation between Bluespec and
-Clash, and the obligations an implementation must discharge to count as
-verified. All decisions in the register of Section~\ref{sec:decisions} are confirmed.
-One semantic question remains open and is stated in Section~\ref{sec:open}.
-Draft 0.3 folds in six corrections found by building and testing the
-reference implementation; they are listed in Section~\ref{sec:changes}.
+This note specifies a hardware rendering of the rho calculus extended with
+Boolean arithmetic. It fixes the source language (syntax, sorts, structural
+congruence, matching modulo the Boolean laws, and reduction), the canonical
+forms that make names comparable in constant time, and a machine that tiles
+the surface of an FPGA with small processors. Each processor owns a namespace
+given by a structural formula, reduces in the same clock cycle as every
+other, and exchanges processes with its neighbours over a mesh. The note also
+gives the organisation of the implementation in Bluespec and the obligations
+an implementation must discharge to count as verified. Decisions marked
+\conf\ are confirmed; those marked \prop\ are proposed by this draft.
+Draft 0.4 replaces the single sequential reactor of earlier drafts with the
+concurrent tile array; the changes are listed in Section~\ref{sec:changes}.
 \end{abstract}
 
 \tableofcontents
@@ -74,20 +75,32 @@ reference implementation; they are listed in Section~\ref{sec:changes}.
 %======================================================================
 \section{Purpose and scope}
 
-The goal is a machine whose instruction set \emph{is} the calculus: the only
-state change is the COMM rule, and every source of nondeterminism in the
-calculus is a physical arbitration in the machine. The first target is an
-FPGA, described in a high-level hardware language that emits Verilog. The
-design is restricted to components expressible in synthesizable
-Verilog or VHDL for CMOS; clockless and superconducting realisations are out
-of scope, but the interfaces are kept latency-insensitive so that a later
-self-timed version does not require a redesign.
+The goal is a machine whose instruction set \emph{is} the calculus. Three
+things follow from taking that literally.
+\begin{itemize}
+\item The only state change is the COMM rule.
+\item Every source of nondeterminism in the calculus is a physical
+arbitration in the machine.
+\item Every independence in the calculus is physical concurrency in the
+machine. Reductions on channels in different namespaces happen in the same
+clock cycle, on different processors, with no scheduler between them.
+\end{itemize}
+The machine is therefore not one processor but a surface of them: the FPGA is
+tiled with identical processors, each assigned a namespace, and the running
+process is spread over the tiles according to the channels its components
+use.
 
-In scope: the calculus of Section~\ref{sec:source}; a single-reducer machine
-with a path to parallel reduction; a compiler from source text to a memory
-image; a verification plan. Out of scope for this draft: cost accounting,
-join patterns, \kw{where} clauses and grading, the combinator instruction
-set, and multi-chip sharding. Hooks are left where these attach
+The first target is an FPGA, described in Bluespec, which emits Verilog. The
+design is restricted to components expressible in synthesizable Verilog or
+VHDL for CMOS. Clockless and superconducting realisations are out of scope,
+but every interface between and within tiles is latency-insensitive, so a
+later self-timed version does not require a redesign.
+
+In scope: the calculus of Section~\ref{sec:source}; the tile, the array and
+the mesh; a compiler from source text to a memory image; a verification
+plan. Out of scope for this draft: cost accounting, join patterns,
+\kw{where} clauses and grading, the combinator instruction set, and
+arrays spanning more than one device. Hooks are left where these attach
 (Sections~\ref{sec:arbiter} and~\ref{sec:staging}).
 
 %======================================================================
@@ -110,12 +123,12 @@ ID & Decision & Status\\
 \dec{7} & A high-level functional hardware language is used in place of
           hand-written RTL. & \conf\\
 \midrule
-\dec{8} & Architecture: tuple-space machine (hash-consed term heap, channel
-          store, matcher, arbiter). Static elaboration of the Boolean-typed
-          fragment is a later optimisation. & \conf\\
-\dec{9} & Tool split: Bluespec (BH syntax) for the rule-based reaction core;
-          Clash for pure datapath functions; one Haskell reference library
-          shared with the compiler. & \conf\\
+\dec{8} & Each processor is a tuple-space machine: hash-consed term heap,
+          send and receive tables, matcher, arbiter. Static elaboration of
+          the Boolean-typed fragment is a later optimisation. & \conf\\
+\dec{9} & The whole design is written in Bluespec (BH syntax). Clash versions
+          of the pure datapath functions may follow. One Haskell reference
+          library is shared with the compiler. & \conf\\
 \dec{10} & The compiler is trusted for sorts. The machine keeps a sticky
           \kw{FAULT\_SORT} flag whose unreachability is a proof obligation. The flag is a
           debugging aid: it does not detect every ill-sorted program. & \conf\\
@@ -131,6 +144,34 @@ ID & Decision & Status\\
           written to a decision log that makes runs replayable. & \conf\\
 \dec{16} & The machine is board-agnostic: no vendor primitives, inferred
           block RAM only, all sizes are parameters. & \conf\\
+\bottomrule
+\end{tabularx}
+
+\medskip\noindent
+\begin{tabularx}{\textwidth}{@{}l X c@{}}
+\toprule
+ID & Decision & Status\\
+\midrule
+\dec{17} & The machine is an array of identical processors (tiles) covering
+          the FPGA, joined by a nearest-neighbour mesh. & \conf\\
+\dec{18} & Each tile owns a namespace. Namespaces are given by structural
+          formulae on the quoted process. & \conf\\
+\dec{19} & A tile serves several channels and commits at most one COMM per
+          clock cycle. The default array has about 100 tiles, each with about
+          one hundredth of the device's memory. & \conf\\
+\dec{20} & Reduction is concurrent. There is no global scheduler and no
+          sequential reactor: tiles act in the same cycle, and inside a tile
+          the stages are concurrent rules joined by queues. & \conf\\
+\dec{21} & Namespace formulae are drawn from the fragment recognised by a
+          deterministic bottom-up tree automaton. A name's class is computed
+          when it is interned, and ownership is a table lookup on the class. & \prop\\
+\dec{22} & Heaps are per tile. Only closed terms cross between tiles, as
+          serialised packets that are re-interned on arrival. Static code is
+          replicated in every tile. & \prop\\
+\dec{23} & Routing is dimension-ordered with wormhole packets. A tile's
+          inbound path never waits on its outbound path. & \prop\\
+\dec{24} & Every clock edge is a boundary. Each tile keeps its own decision
+          log, stamped with the cycle; the array's log is a partial order. & \prop\\
 \bottomrule
 \end{tabularx}
 
@@ -349,39 +390,188 @@ solves patterns backwards (Section~\ref{sec:matcher}).
 \begin{figure}[h]
 \centering
 \begin{tikzpicture}[
-  blk/.style={draw,rounded corners=2pt,minimum width=27mm,minimum height=9mm,
-              align=center,font=\small},
-  arr/.style={-{Stealth[length=2mm]},semithick},
-  node distance=7mm and 9mm]
-\node[blk] (store) {Channel store\\(sends, receives)};
-\node[blk,right=of store] (react) {Reactor\\(step FSM)};
-\node[blk,right=of react] (arb) {Arbiter\\+ entropy};
-\node[blk,below=of store] (match) {Matcher\\+ mask solver};
-\node[blk,below=of react] (inst) {Instantiator\\/ exploder};
-\node[blk,below=of arb] (log) {Decision log};
-\node[blk,below=of match] (heap) {Term heap\\+ refcounts};
-\node[blk,below=of inst] (intern) {Interner\\(hash-cons)};
-\node[blk,below=of log] (io) {Boundary\\(ingress/egress)};
-\draw[arr] (store) -- (react);
-\draw[arr] (react) -- (store);
-\draw[arr] (arb) -- (react);
-\draw[arr] (react) -- (match);
-\draw[arr] (react) -- (inst);
-\draw[arr] (arb) -- (log);
-\draw[arr] (match) -- (heap);
-\draw[arr] (inst) -- (intern);
-\draw[arr] (intern) -- (heap);
-\draw[arr] (io) -- (react);
+  tile/.style={draw,minimum size=8mm,font=\scriptsize},
+  blk/.style={draw,rounded corners=2pt,minimum width=20mm,minimum height=7mm,
+              align=center,font=\scriptsize},
+  arr/.style={-{Stealth[length=1.6mm]},semithick},
+  lnk/.style={{Stealth[length=1.2mm]}-{Stealth[length=1.2mm]},thin}]
+% mesh
+\foreach \x in {0,1,2} \foreach \y in {0,1,2}
+  \node[tile] (t\x\y) at (\x*1.25,\y*1.25) {};
+\foreach \x/\xx in {0/1,1/2} \foreach \y in {0,1,2}
+  \draw[lnk] (t\x\y) -- (t\xx\y);
+\foreach \x in {0,1,2} \foreach \y/\yy in {0/1,1/2}
+  \draw[lnk] (t\x\y) -- (t\x\yy);
+\node[font=\scriptsize] at (1.25,-0.9) {the array: one namespace per tile};
+\draw[semithick] (t11.north west) rectangle (t11.south east);
+% zoom
+\node[blk] (in) at (5.2,2.9) {inbox};
+\node[blk] (tab) at (7.9,2.9) {send and receive\\tables};
+\node[blk] (com) at (10.6,2.9) {match and\\commit};
+\node[blk] (out) at (5.2,1.3) {outbox};
+\node[blk] (exp) at (7.9,1.3) {exploder};
+\node[blk] (job) at (10.6,1.3) {job queue};
+\node[blk] (rt) at (5.2,-0.3) {router};
+\node[blk] (heap) at (7.9,-0.3) {heap and\\interner};
+\node[blk] (arb) at (10.6,-0.3) {arbiter\\and log};
+\draw[arr] (in) -- (tab);
+\draw[arr] (tab) -- (com);
+\draw[arr] (com) -- (job);
+\draw[arr] (job) -- (exp);
+\draw[arr] (exp) -- (out);
+\draw[arr] (exp) -- (tab);
+\draw[arr] (out) -- (rt);
+\draw[arr] (rt.west) -- ++(-0.5,0) |- (in.west);
+\draw[arr] (arb) -- (job.south);
+\node[font=\scriptsize] at (7.9,-1.2) {one tile};
+\draw[thin,dashed] (t11.north east) -- (in.north west);
+\draw[thin,dashed] (t11.south east) -- (rt.south west);
 \end{tikzpicture}
-\caption{Blocks of the machine. Arrows show the direction of requests.}
+\caption{The array and one tile. Inside the tile, arrows show the way
+processes flow; each box acts in every cycle in which its inputs are
+ready.}
 \end{figure}
 
-The machine holds the top level of the running process as a \emph{soup}: a
-table of sends and a table of receives. Everything quoted lives in a
-hash-consed heap of canonical terms. One \emph{step} selects a redex,
-removes its send (and its receive, unless persistent), and adds the
-components of the instantiated continuation to the soup. A step takes many
-clock cycles; the calculus sees only step boundaries.
+The machine is a $W \times H$ array of identical \emph{tiles}. A tile is a
+complete processor for the calculus, restricted to the channels of its own
+namespace. The running process is spread over the array as a \emph{soup}:
+each top-level send or receive rests in the tile that owns its channel, or is
+in transit towards it. Everything quoted lives in the heap of the tile that
+holds it, as a hash-consed canonical term.
+
+A COMM is a local event in one tile: the tile selects a redex among the sends
+and receives resting in it, removes them, and queues the instantiated
+continuation. The continuation is then taken apart, and each of its
+components is delivered to the tile that owns its channel, which may be the
+same tile or a distant one.
+
+Tiles do not take turns. In one clock cycle every tile that holds a redex may
+commit one, and no tile needs to know what any other is doing, because
+redexes in different tiles share no send and no receive. Rho sends carry no
+continuation, so the time a component spends in transit is not observable,
+and the calculus needs no change to be distributed in this way.
+
+\subsection{Namespaces and ownership}\label{sec:namespaces}
+
+\paragraph{Structural formulae.} A namespace is a set of names, given by a
+formula on the process a name quotes. Formulae $\varphi$ and name formulae
+$\alpha$ are
+\[
+\begin{array}{rcl}
+\varphi &::=& \top \;\mid\; \nil \;\mid\; \tru \;\mid\; \fls \;\mid\;
+  \snd{\alpha}{\varphi} \;\mid\; \kw{for}(\alpha)\,\varphi \;\mid\;
+  \Diamond\varphi \;\mid\; \varphi \wedge \varphi \;\mid\; \varphi \vee \varphi
+  \;\mid\; \neg\varphi\\[2pt]
+\alpha &::=& \quo{\varphi}
+\end{array}
+\]
+They are read on closed normal forms. $\nil$, $\tru$ and $\fls$ hold of
+exactly those processes. $\snd{\alpha}{\varphi}$ holds of a send whose channel
+is in $\alpha$ and whose payload satisfies $\varphi$.
+$\kw{for}(\alpha)\,\varphi$ holds of a receive, of either kind, on a channel
+in $\alpha$ whose body satisfies $\varphi$. $\Diamond\varphi$ holds when some
+parallel component satisfies $\varphi$; a process that is not a composition
+is its own single component. A term with a free variable satisfies no atom,
+so a formula sees into a receive's body only as far as the body is closed.
+There are no behavioural modalities and no counting of components: the
+formulae are structural, as \dec{18} requires, and satisfaction is invariant
+under $\scong$ because it is defined on normal forms.
+
+\paragraph{The namespace map.} A map for an array of $T$ tiles and $P$ ports
+is a list of name formulae $\alpha_0, \dots, \alpha_{T+P-1}$ that
+\emph{partition} the closed names: every closed name satisfies exactly one.
+The tile or port $t$ \emph{owns} the names that satisfy $\alpha_t$. The
+compiler checks the partition and rejects a map that fails it.
+
+\paragraph{Realisation (\dec{21}).} The compiler turns the map into one
+deterministic bottom-up tree automaton. Its states are called
+\emph{classes}; there are at most $2^c$ of them.
+\begin{itemize}
+\item The class of a node is a function of its kind and the classes of its
+fields, given by small tables: $\delta_{\mathit{send}}(c_{\mathit{chan}},
+c_{\mathit{payload}})$, $\delta_{\mathit{recv}}(c_{\mathit{chan}},
+c_{\mathit{body}})$ and $\delta_{\mathit{par}}(c_{\mathit{head}},
+c_{\mathit{tail}})$. Immediates have fixed classes, and so does every open
+term.
+\item $\delta_{\mathit{par}}$ is associative and commutative. It depends only
+on the set of component classes and on whether there is more than one
+component, which is what $\Diamond$ and the other atoms can observe.
+\item The class is computed when the node is interned and kept in the node
+header. The class of a name is the class of the process it quotes.
+\item A table $\tau$ of $2^c$ entries maps a class to its owner. Ownership of
+any name is therefore one lookup, from the name word and the local heap
+alone.
+\item The tables are identical in every tile, so a term has the same class
+wherever it is interned.
+\end{itemize}
+Partition is decidable for this fragment: disjointness is emptiness of an
+intersection and exhaustiveness is universality of a union, both on tree
+automata.
+
+\paragraph{The default map.} Symbols are numerals (Section~\ref{sec:compiler}),
+and ``the numeral $k$ with $k \equiv t \pmod T$'' is regular: the class
+counts the depth of the numeral modulo $T$. The default map sends the numeral
+$k$ to tile $k \bmod T$ and every other name to one designated tile. Under
+it, the compiler controls placement entirely by choosing which numeral each
+symbol receives. A program that mints channel names reflectively should
+supply its own map.
+
+\paragraph{What ownership buys.}
+\begin{itemize}
+\item \textbf{Races are local.} Two redexes compete only if they share a send
+or a receive, hence a channel, hence a tile. All arbitration is inside one
+tile.
+\item \textbf{Independence is physical.} Redexes in different tiles share
+nothing and commute, so they may fire in the same cycle.
+\item \textbf{Distance has a shape.} If the map comes from a tree of formulae,
+each tile's formula a conjunction along a path, then laying the tree out as
+an H-tree makes distance in the tree track distance on the mesh.
+\end{itemize}
+
+\subsection{The array and the mesh}\label{sec:mesh}
+
+\paragraph{Geometry.} Tiles are addressed by coordinates $(x,y)$. Each has
+links to its four neighbours; a link is a pair of one-way channels with a
+valid/ready handshake, one flit wide. Ports sit beyond the edge of the mesh
+and are addressed as if they were tiles.
+
+\paragraph{Packets (\dec{22}).} A top-level send or receive travels as one
+packet.
+\begin{itemize}
+\item The head flit carries the destination, the kind (send or receive) and
+the length.
+\item The body is a \emph{term stream}: the nodes of the term in post-order.
+Each field of a node is an immediate, a reference to an earlier node of the
+same packet, or a static address.
+\item The destination interns the nodes in arrival order. The stream is an
+interning script, and it preserves the sharing of the term.
+\item Only closed terms are sent. A receive closure bound for another tile is
+instantiated first and travels as a closed receive, arriving with an empty
+environment.
+\end{itemize}
+
+\paragraph{The static segment.} The program's code, as compiled, is loaded at
+the same addresses in every tile's heap. It is read-only and never freed. A
+packet names a static node by its address, so program code, which is most of
+what moves, costs one flit however large it is.
+
+\paragraph{Routing (\dec{23}).} Routing is dimension-ordered: a packet
+travels along $x$ to the destination column, then along $y$. It is wormhole
+switched: a packet holds each link from its head flit to its tail flit, and
+packets do not interleave on a link.
+
+\paragraph{No deadlock.} Dimension-ordered routing on a mesh cannot deadlock
+provided every destination consumes what arrives. The tile guarantees that:
+its inbound path (link, inbox, interner, tables) depends on no outbound
+resource. When the heap or a table is full the tile raises a resource fault,
+which halts the array; it never refuses a packet. Backpressure exists only on
+the forward path from commit to outbox, where a commit simply waits while the
+job queue is full.
+
+\paragraph{Memory (\dec{19}).} A device with $M$ bits of block RAM and $T$
+tiles gives each tile $M/T$. The reference split of a tile's share is 60\%
+heap nodes, 15\% hash-cons table, 10\% reference counts and class headers,
+10\% tables and environments, and 5\% queues. The split is a parameter.
 
 \subsection{Words and nodes}\label{sec:words}
 
@@ -436,6 +626,12 @@ tell. The exact packing into block-RAM words is left to the
 implementation; it must be fixed in one shared definition used by the
 compiler, the reference model and the hardware.
 
+\paragraph{Class.} The header also carries the node's class
+(Section~\ref{sec:namespaces}), $c$ bits wide. Addresses are local to a tile:
+a \kw{PTR} or \kw{QPTR} word means nothing in another tile, which is why
+terms cross between tiles as streams and not as words. Static addresses are
+the exception, being the same everywhere.
+
 \subsection{Heap, interner and reference counts}\label{sec:heap}
 
 \begin{itemize}
@@ -453,12 +649,15 @@ named process.
 \item \textbf{Reference counts.} Terms are acyclic, so reference counting
 reclaims everything. A count is held per node in a separate RAM.
 Decrements that reach zero push the node on a deferred-free stack that is
-drained when the reactor is idle, which bounds the work per cycle.
+drained by a background rule, which bounds the work per cycle.
 \end{itemize}
 
-\subsection{Channel store}
+Each tile has its own heap, interner and counts. The static segment
+(Section~\ref{sec:mesh}) occupies the same addresses in all of them.
 
-Two tables, each with a valid bit per entry.
+\subsection{Tables}
+
+Each tile has two tables, each with a valid bit and a busy bit per entry.
 \begin{itemize}
 \item \textbf{Send table} $S[0..N_S)$: channel (closed name word), payload
 (closed process word).
@@ -466,6 +665,8 @@ Two tables, each with a valid bit per entry.
 pattern-program address, body (process word, code), environment address,
 persistent bit.
 \end{itemize}
+Every channel in a tile's tables is owned by that tile.
+
 A receive in the soup is a \emph{closure}: its body is shared code and its
 free variables are supplied by an environment, a heap-allocated vector of
 closed name words. Anything that becomes a \emph{name} is fully instantiated
@@ -473,12 +674,12 @@ instead (Section~\ref{sec:inst}), since names must be canonical to be
 compared.
 
 Lookup by channel is a comparison of one name word against all entries of the
-other table. In the first stages this is a register array with $N_R$
-comparators. It is replaced by a block-RAM hash table keyed on the channel
-word when table sizes outgrow that.
+other table. At the table sizes of a tile this is a register array with $N_R$
+comparators.
 
-Top-level processes that are Boolean values are inert. They are counted in a
-two-counter \emph{residue} register so that they remain observable.
+Top-level processes that are Boolean values are inert. Each tile counts the
+ones that come to rest in it in a two-counter \emph{residue} register, so
+that they remain observable.
 
 \subsection{Matcher and mask solver}\label{sec:matcher}
 
@@ -527,23 +728,23 @@ and are among the Clash components of Section~\ref{sec:tooling}.
 
 \subsection{Arbiter and entropy}\label{sec:arbiter}
 
-All nondeterminism of the calculus passes through one module with one
-operation: \kw{choose(n)} returns $u \in [0,n)$ for $n \ge 1$. It is used
-three times per step: to pick a send, to pick a receive among those on the
-same channel, and to pick a solution row.
+All nondeterminism of the calculus passes through one module per tile, with
+one operation: \kw{choose(n)} returns $u \in [0,n)$ for $n \ge 1$. A tile
+uses it three times in a cycle: to pick a send, to pick a receive among those
+on the same channel, and to pick a solution row.
 
 \begin{itemize}
 \item \textbf{No pruning.} For every $n$ and every $u<n$ there must be an
 entropy value for which \kw{choose(n)} returns $u$. A priority encoder is
 forbidden: it would make the machine a refinement of the calculus and not
 bisimilar to it.
-\item \textbf{Entropy.} The reference source is a 32-bit maximal-length
-Galois LFSR with taps 32, 22, 2 and 1. A choice among $n$ takes a 32-bit
-sample $w$ and returns $\lfloor w\,n / 2^{32} \rfloor$. The reference model
-advances the register 32 positions per choice, so that successive choices use
-disjoint bits. Hardware with a free-running register need not match this,
-because runs are compared through the decision log and not through seeds. A
-hardware random source may replace the register behind the same interface.
+\item \textbf{Entropy.} Each tile has three 32-bit maximal-length Galois
+LFSRs with taps 32, 22, 2 and 1, one per choice, with distinct nonzero seeds
+that also differ from tile to tile. A choice among $n$ takes the register's
+value $w$ and returns $\lfloor w\,n / 2^{32} \rfloor$. Each register advances
+32 positions per clock, which is one fixed layer of exclusive-ors, so that
+successive cycles use disjoint bits. A hardware random source may replace a
+register behind the same interface.
 \item \textbf{Fairness.} Only possibilistic fairness is required (\dec{14}).
 The three-stage choice does not induce the uniform distribution over
 redexes. When grading is added, each stage takes a weight vector in place of
@@ -551,46 +752,73 @@ a count, and weighting a pair by its solution count makes the composite
 uniform; the \kw{choose} interface is defined so that this is a change of
 argument type only.
 \item \textbf{Replay.} In replay mode the arbiter ignores entropy and takes
-its results from the decision log.
+its results from the tile's decision log.
 \end{itemize}
 
-\subsection{The step}\label{sec:step}
+\subsection{Concurrent reduction in a tile}\label{sec:step}
 
-The reactor is a state machine. States in which the abstraction function of
-Section~\ref{sec:verification} is defined are called \emph{boundaries}.
+A tile is not a state machine that steps through phases. It is a set of
+rules, each guarded by the readiness of what it reads and writes, and all of
+them fire in every cycle in which their guards hold. They communicate through
+the tables and three queues: inbox, job queue and outbox.
 
+\medskip\noindent
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+Rule & Action\\
+\midrule
+\kw{ARRIVE} & Take flits from the inbox and intern them. When a packet is
+  complete, insert its send or receive into the tables.\\
+\kw{COMMIT} & The COMM rule. Remove one send and one receive that form a
+  redex, write the decision record, and queue the continuation as a job.\\
+\kw{EXPLODE} & Take a job apart. Deliver each component to its owner: into
+  the local tables, or into the outbox as a packet.\\
+\kw{DEPART} & Move flits from the outbox to the router.\\
+\kw{ROUTE} & Forward flits between the four links, the inbox and the outbox.\\
+\kw{SWEEP} & Reclaim nodes whose reference count is zero, when the interner
+  is free.\\
+\kw{SCAN} & Search the tables for any redex, for the quiescence report only.\\
+\bottomrule
+\end{tabularx}
+
+\paragraph{COMMIT.} In each cycle:
 \begin{enumerate}
-\item \textbf{IDLE} (boundary). Drain deferred frees and accept ingress
-(Section~\ref{sec:boundary}). If the send table is empty, stay.
-\item \textbf{PICK-SEND.} Choose a valid send $s$ uniformly. Clear the
-per-scan \emph{tried} vectors.
-\item \textbf{PICK-RECV.} Compare the channel of $s$ with every valid
-receive not yet tried for $s$. If none matches, mark $s$ tried; if all sends
-are tried, the soup is \emph{quiescent}: set the status bit and return to
-IDLE; otherwise choose another untried send. If some match, choose one, $r$.
-\item \textbf{MATCH.} Run the pattern program of $r$ on the quoted payload
-of $s$. On failure or zero mask, mark $r$ tried for $s$ and return to
-PICK-RECV.
-\item \textbf{COMMIT.} Choose a solution row. Write the log record. Remove
-$s$; remove $r$ unless persistent. Build the new environment: the
-environment of $r$ extended by the structural bindings and, for each mask
-variable, the \kw{QBOOL} of its bit in the row. Variables enter in a fixed
-order: structural variables in order of first occurrence in the pattern
-program, then mask variables in order of mask position, so that the last
-mask variable is the most recently bound.
-\item \textbf{EXPLODE.} Walk the body of $r$ with the new environment and
-add its top-level components to the soup (below).
-\item Return to IDLE.
+\item Choose uniformly among the valid sends that are not busy.
+\item Compare its channel with every valid receive that is not busy, and
+choose uniformly among those that match.
+\item Run the pattern program of that receive on the quoted payload.
+\item If the run succeeds with a nonzero mask, choose a solution row. In the
+same cycle: remove the send; remove the receive unless it is persistent;
+write the decision record; and queue the job (body, environment). The
+environment is that of the receive, extended by the structural bindings and,
+for each mask variable, the \kw{QBOOL} of its bit in the row. Variables enter
+in a fixed order: structural variables in order of first occurrence in the
+pattern program, then mask variables in order of mask position, so that the
+last mask variable is the most recently bound.
+\item Otherwise nothing happens in this cycle. The next cycle chooses afresh.
 \end{enumerate}
-A failed scan changes no state, so the scan terminates after at most
-$N_S \times N_R$ matcher runs, and quiescence is detected exactly.
+A tile commits at most one COMM per cycle (\dec{19}). A redex that rests in
+the tile has a nonzero probability of being the one chosen in every cycle in
+which the job queue has room, which is the no-pruning requirement.
 
-\paragraph{Explode.} A work stack holds (process word, environment) pairs.
+A pattern program that reads only immediates and the node its cursor starts
+on is evaluated combinationally, and the whole of COMMIT is one cycle. A
+deeper program is run by the matcher over several cycles. The send and the
+receive under examination are marked busy for the duration and are not
+offered to another match; the removal, the record and the job are still
+written in one cycle, when the match ends.
+
+\paragraph{EXPLODE.} A job is a body and an environment, and stands for the
+instantiated body. A work stack holds (process word, environment) pairs.
 \begin{itemize}
 \item \kw{PAR}: push head and tail.
 \item \kw{SEND}: resolve the channel through the environment, instantiate
-the payload (Section~\ref{sec:inst}), insert into $S$, or emit on egress.
-\item \kw{RECV}: resolve the channel, insert a closure into $R$.
+the payload (Section~\ref{sec:inst}), and find the owner of the channel. If
+this tile owns it, insert into $S$; otherwise write the send to the outbox
+as a packet.
+\item \kw{RECV}: resolve the channel and find its owner. If this tile owns
+it, insert a closure into $R$. Otherwise instantiate the receive and write it
+to the outbox.
 \item \kw{DROP} of variable $i$: look up the name. \kw{QZERO}: nothing.
 \kw{QBOOL}: increment the residue. \kw{QPTR}: push the named process with an
 empty environment. This is the general drop that the replication encoding
@@ -599,6 +827,26 @@ needs; because the quoted term is closed and shared, it costs no copying.
 residue.
 \item \kw{BOOL}: increment the residue. \kw{ZERO}: nothing.
 \end{itemize}
+A job is exploded over several cycles while the tile goes on arriving and
+committing.
+
+\paragraph{Shared resources.} \kw{ARRIVE} and \kw{EXPLODE} both use the
+interner and both insert into the tables. Where they conflict \kw{ARRIVE}
+goes first, as \dec{23} requires. The order is not observable, because
+neither rule chooses a redex: each only moves a component from one place
+where it already counts as part of the process to another.
+
+\paragraph{What a cycle means.} Across the array, the \kw{COMMIT}s that fire
+in one cycle are pairwise independent redexes, one per tile at most. The
+effect of the cycle on the process the array stands for is their joint
+reduction, in any order. Every other rule leaves that process unchanged.
+
+\paragraph{Quiescence.} A tile is \emph{idle} when its job queue, inbox and
+outbox are empty and \kw{SCAN} has completed a full pass over its (send,
+receive) pairs, finding no redex, since its tables last changed. The array is
+quiescent when every tile is idle and every link is empty; this is a
+registered conjunction over the array. \kw{SCAN} is sequential, but it only
+reports. It never chooses.
 
 \subsection{Instantiation}\label{sec:inst}
 
@@ -620,27 +868,38 @@ known variables and re-normalised; when fully known it becomes a \kw{BOOL}.
 
 \subsection{Boundary}\label{sec:boundary}
 
-The environment is modelled as processes on designated channels, fixed in the
-image.
+The environment is modelled as processes on channels that the namespace map
+assigns to \emph{ports}.
 \begin{itemize}
-\item \textbf{Ingress.} Each input port is a channel. A valid/ready
-interface inserts a send on that channel, accepted only in IDLE. In the first
-stages the payload is restricted to immediates, and the sort tag is checked
-against the port's declared sort; a mismatch is dropped and counted.
-\item \textbf{Egress.} Each output port is a channel on which the environment
-is the only receiver. A send on such a channel is emitted on the port's
-valid/ready interface and is not stored.
+\item \textbf{Egress.} A send or receive whose channel is owned by a port is
+routed to the edge of the mesh like any other packet and leaves on that
+port's valid/ready interface.
+\item \textbf{Ingress.} A port injects a packet at the edge tile it is
+attached to, addressed to the owner of its channel. In the first stages the
+payload is restricted to immediates, and the sort tag is checked against the
+port's declared sort; a mismatch is dropped and counted.
 \end{itemize}
 
 \subsection{Decision log and faults}\label{sec:log}
 
-One record per step: step number, send slot, receive slot, solution row. A
-separate \emph{insert} stream reports every entry added to $S$ or $R$ with
-its slot, and a \emph{residue} stream reports residue increments. Together
+\paragraph{Per tile.} Each tile writes one decision record per \kw{COMMIT}:
+cycle number, send slot, receive slot, solution row. Further streams report
+every insert into $S$ or $R$ with its slot, every residue increment, and
+every packet that departs or arrives, with a packet identifier. Together
 these let an external checker reconstruct the soup without reading the
 machine's internals.
 
-Faults are sticky status bits that halt the reactor at the next boundary.
+\paragraph{The array's log (\dec{24}).} The array's log is the union of the
+tiles' logs. Records of the same cycle are unordered, and rightly so: they
+are independent. The log is therefore a partial order of reductions and not
+a sequence.
+
+\paragraph{Replay.} Given the outputs of its arbiters, the array is a
+deterministic synchronous circuit. Replaying each tile's log, keyed on the
+cycle number, reproduces every cycle of the run.
+
+Faults are sticky status bits. A fault in any tile halts every tile on the
+following cycle.
 
 \medskip\noindent
 \begin{tabularx}{\textwidth}{@{}l X@{}}
@@ -675,40 +934,39 @@ round. The sort checker carries the whole obligation.
 \toprule
 Parameter & Stage~1 value & Meaning\\
 \midrule
+$W \times H$ & $2 \times 2$, then $10 \times 10$ & array dimensions\\
+$P$ & 4 & ports\\
+$c$ & 6 & class width; at most 64 classes\\
 $K$ & 6 & maximum Boolean support and pattern mask variables\\
-$N_S$, $N_R$ & 64, 64 & send and receive table sizes\\
-$A$ & 28 (later) & heap address width; stage~1 has no dynamic heap\\
+$N_S$, $N_R$ & 32, 32 & send and receive table sizes, per tile\\
+$A$ & 16 (later) & heap address width, per tile; stage~1 has no dynamic heap\\
 $E$ & 16 & maximum environment length\\
-$D$ & 32 & work-stack depth\\
-LFSR width & 32 & entropy state\\
+$D$ & 16 & work-stack depth\\
+job queue & 4 & pending jobs per tile\\
+inbox, outbox & 16, 16 & flits\\
+flit & 36 bits & one word and its framing\\
+LFSR & $3 \times 32$ bits & entropy state, per tile\\
 \bottomrule
 \end{tabularx}
 
 %======================================================================
 \section{Tooling and code organisation}\label{sec:tooling}
 
-\subsection{Division of labour (\dec{9})}
+\subsection{Languages (\dec{9})}
 
 \begin{description}
 \item[Reference library (plain Haskell).] Abstract syntax, normal forms,
-match sets, the one-step relation returning \emph{all} redexes, and the node
-packing. This is the executable semantics. The compiler and the checker are
-built on it.
-\item[Clash.] The pure, combinational datapath: truth-table operations
-(negate, combine over merged supports, minimise support, cofactor), mask
-update, popcount and select, the node hash, node encode and decode. These are
-ordinary Haskell functions over sized types, and they are written once and
-imported both by the reference library and by the Clash top entities, so
-there is a single source for each.
-\item[Bluespec (BH).] Everything with state and scheduling: heap, interner,
-store, matcher sequencer, instantiator, arbiter, reactor, log, boundary. The
-calculus is a rewrite system and Bluespec's guarded atomic rules express each
-transition of Section~\ref{sec:step} directly.
+match sets, the reduction relation returning \emph{all} redexes, the class
+automaton, and a model of the tile array. This is the executable semantics.
+The compiler and the checker are built on it.
+\item[Bluespec (BH).] The whole of the hardware. The pure datapath (truth
+tables, masks, node packing, class tables) is written as BH functions in
+packages that hold no state, so that it can be tested on its own and later
+mirrored in Clash. Everything with state is a module of rules. The calculus
+is a rewrite system, and Bluespec's guarded atomic rules express the rules
+of Section~\ref{sec:step} directly; its scheduler derives which of them may
+fire together.
 \end{description}
-Clash-generated Verilog modules are imported into Bluespec as combinational
-foreign modules. If the two-tool flow proves costly, the fallback is Clash
-alone, with the reactor written as an explicit Mealy machine; nothing in
-this specification depends on Bluespec.
 
 \subsection{Rules for the Bluespec code}
 
@@ -717,9 +975,18 @@ this specification depends on Bluespec.
 The Bluespec scheduler resolves rule conflicts by a fixed urgency order,
 which is a priority encoder; it must never be the thing that decides which
 redex fires.
+\item Every rule is marked in a comment as \emph{reducing} (it changes the
+process the array stands for, by one redex) or \emph{administrative} (it
+does not). Only \kw{mkCommit} contains reducing rules.
 \item Any urgency annotation must carry a comment stating why the conflict
-it resolves is invisible at boundaries.
-\item Each rule that changes the store or the heap states, as an assertion,
+it resolves is administrative.
+\item No rule on the inbound path may have a guard that depends on outbound
+state (\dec{23}).
+\item The tile is one module, instantiated $W \times H$ times with its
+coordinates and seeds as its only parameters. There is no tile-specific
+logic and no logic outside tiles other than the port adapters and the fault
+and quiescence trees.
+\item Each rule that changes the tables or the heap states, as an assertion,
 the invariants of Section~\ref{sec:invariants} it relies on.
 \item No vendor primitives. Memories are inferred. One clock, synchronous
 reset.
@@ -730,28 +997,34 @@ reset.
 \noindent
 \begin{tabularx}{\textwidth}{@{}l l X@{}}
 \toprule
-Module & Tool & Responsibility\\
+Package or module & Kind & Responsibility\\
 \midrule
-\kw{TruthTable}   & Clash & table algebra and normalisation\\
-\kw{MaskSolve}    & Clash & mask, popcount, select\\
-\kw{NodeCodec}    & Clash & packing, hash, free-variable depth and sort bit\\
-\kw{mkHeap}       & BH & node RAM, free list, reference counts\\
-\kw{mkInterner}   & BH & hash-cons table, normalising constructors\\
-\kw{mkStore}      & BH & send and receive tables, channel lookup\\
-\kw{mkMatcher}    & BH & pattern-program sequencer\\
-\kw{mkInst}       & BH & instantiate and explode walkers\\
-\kw{mkArbiter}    & BH & \kw{choose}, LFSR, replay input\\
-\kw{mkReactor}    & BH & the step state machine\\
-\kw{mkLog}        & BH & decision, insert and residue streams\\
-\kw{mkBoundary}   & BH & ingress and egress ports\\
+\kw{TruthTable}   & pure & table algebra and normalisation\\
+\kw{MaskSolve}    & pure & mask, popcount, select\\
+\kw{NodeCodec}    & pure & packing, hash, free-variable depth and sort bit\\
+\kw{ClassTables}  & pure & the class automaton and the owner table\\
+\kw{mkHeap}       & rules & node RAM, static segment, free list, reference counts\\
+\kw{mkInterner}   & rules & hash-cons table, normalising constructors, classes\\
+\kw{mkTables}     & rules & send and receive tables, channel lookup, residue\\
+\kw{mkMatcher}    & rules & pattern-program evaluation\\
+\kw{mkCommit}     & rules & the COMM rule\\
+\kw{mkExploder}   & rules & instantiate, explode, deliver\\
+\kw{mkPacketiser} & rules & term streams out and in\\
+\kw{mkRouter}     & rules & dimension-ordered wormhole routing\\
+\kw{mkArbiter}    & rules & \kw{choose}, LFSRs, replay input\\
+\kw{mkLog}        & rules & decision, insert, residue and packet streams\\
+\kw{mkTile}       & rules & one tile\\
+\kw{mkArray}      & rules & the mesh, ports, fault and quiescence trees\\
 \bottomrule
 \end{tabularx}
 
 \subsection{Flow}
 
-Source text $\to$ compiler $\to$ memory image. Bluespec and Clash $\to$
-Verilog $\to$ simulation (Verilator) and synthesis (vendor or open flow).
-The same Verilog is the input to bounded formal checks.
+Source text $\to$ compiler $\to$ memory image. Bluespec $\to$ Verilog $\to$
+simulation (Icarus Verilog, Verilator) and synthesis (vendor or open flow).
+The same Verilog is the input to bounded formal checks. The toolchain this
+draft was checked against is the Bluespec compiler 2026.07.1 with Icarus
+Verilog 13.
 
 %======================================================================
 \section{Compiler and image}\label{sec:compiler}
@@ -775,43 +1048,77 @@ counts, pattern store and the two tables, plus a symbol file mapping source
 names to name words for the test harness.
 \end{enumerate}
 
+\paragraph{Namespaces and placement.} Three further steps serve the array.
+\begin{enumerate}
+\item Compile the namespace map to the class tables and the owner table, and
+check that it is a partition (Section~\ref{sec:namespaces}).
+\item Assign numerals to symbols. The default is order of first occurrence.
+The placing option chooses them to keep channels that exchange messages in
+the same tile or in neighbouring ones, since under the default map the
+numeral decides the tile.
+\item Emit the static segment once, for every tile, and for each tile its
+initial tables: every initial component of the program is placed in the tile
+that owns its channel.
+\end{enumerate}
+
 %======================================================================
 \section{Verification}\label{sec:verification}
 
 \subsection{What ``verified'' means}
 
-Let $\alpha$ map a machine state at a boundary to a process:
-\[
-\alpha(s) \;=\; \prod_{i \in S} \snd{c_i}{q_i} \;\cpar\;
-                \prod_{j \in R} \mathsf{inst}(\mathit{recv}_j,\mathit{env}_j)
-                \;\cpar\; \tru^{\,t} \cpar \fls^{\,f}
-\]
-where $(t,f)$ is the residue and all terms are read back from the heap.
+Let $s$ be the state of the array at a clock edge. The process it stands for
+is
+\begin{multline*}
+\alpha(s) \;=\; \prod_{t}\Bigl(\, \prod_{i \in S_t} \snd{c_i}{q_i} \;\cpar\;
+   \prod_{j \in R_t} \mathsf{inst}(\mathit{recv}_j,\mathit{env}_j) \;\cpar\;
+   \prod_{k \in J_t} \mathsf{inst}(\mathit{body}_k,\mathit{env}_k)\\
+   \;\cpar\; \tru^{\,t_t} \cpar \fls^{\,f_t} \Bigr) \;\cpar\; \prod_{p} \mathit{term}(p)
+\end{multline*}
+where $t$ ranges over tiles, $J_t$ is the part of tile $t$'s jobs not yet
+delivered, $(t_t, f_t)$ is its residue, and $p$ ranges over the packets
+between an exploder and a table, each standing for its send or receive
+however much of it has been transmitted. Every clock edge is a boundary
+(\dec{24}).
 
 \begin{obligation}[Soundness]\label{ob:sound}
-If the machine goes from boundary $s$ to the next boundary $s'$ by a step,
-then $\alpha(s) \red \alpha(s')$.
+If the array goes from clock edge $s$ to the next edge $s'$, then
+$\alpha(s')$ is $\alpha(s)$ reduced by exactly the redexes whose \kw{COMMIT}s
+fired in that cycle, and these are pairwise independent. If none fired,
+$\alpha(s') \scong \alpha(s)$.
 \end{obligation}
 \begin{obligation}[No pruning]\label{ob:complete}
-If $\alpha(s) \red Q$ and no resource fault occurs, there is a sequence of
-arbiter results for which the next boundary $s'$ satisfies
-$\alpha(s') \scong Q$.
+If $\alpha(s) \red Q$ by a redex whose send and receive rest in the tables of
+a tile whose job queue has room, that tile commits that redex in the next
+cycle with nonzero probability.
+\end{obligation}
+\begin{obligation}[Delivery]\label{ob:deliver}
+Absent faults, every component of every job and every packet comes to rest in
+the tables or residue of its owner within a bounded number of cycles. No
+packet is lost, duplicated or held for ever.
 \end{obligation}
 \begin{obligation}[Quiescence]\label{ob:quiet}
-The quiescent bit is set at a boundary if and only if $\alpha(s)$ has no
+The quiescent bit is set at a clock edge if and only if $\alpha(s)$ has no
 redex.
 \end{obligation}
 \begin{obligation}[Replay]\label{ob:replay}
 Two runs from the same image with the same ingress sequence and the same
-decision log pass through identical boundary states.
+per-tile decision logs pass through identical states at every clock edge.
 \end{obligation}
 \begin{obligation}[Sort safety]\label{ob:sort}
 For a well-sorted image, \kw{FAULT\_SORT} is unreachable.
 \end{obligation}
-Obligations \ref{ob:sound} and \ref{ob:complete} together say that $\alpha$
-is a bisimulation between the fault-free machine, observed at boundaries, and
-the calculus. Obligations \ref{ob:repl} and \ref{ob:canon} are the supporting
-facts about the language itself.
+\begin{obligation}[Placement independence]\label{ob:place}
+For a fixed program, the processes reachable as $\alpha(s)$, up to $\scong$,
+do not depend on the dimensions of the array, on the namespace map, or on the
+assignment of numerals to symbols.
+\end{obligation}
+Obligations \ref{ob:sound}, \ref{ob:complete} and \ref{ob:deliver} together
+say that the fault-free array, observed at clock edges, is bisimilar to the
+calculus: the administrative moves are silent, and every redex of the
+calculus is, after a bounded delay, a redex some tile may commit.
+Obligation~\ref{ob:place} says the tiling is an implementation matter and not
+a change of language. Obligations \ref{ob:repl} and \ref{ob:canon} are the
+supporting facts about the language itself.
 
 \subsection{Layers of evidence}
 
@@ -846,29 +1153,42 @@ V10 & Instantiation commutes with normalisation, in the reference and in the
      & Ob.~\ref{ob:sound} (instantiation)\\
 V11 & Mutation: each of a set of bugs injected into the machine and into the
      reference must fail some layer & adequacy of V1--V10\\
+V12 & Placement independence: the same programs on $1 \times 1$,
+     $2 \times 2$ and $10 \times 10$ arrays and under different maps reach the
+     reference transition graph, administrative moves aside
+     & Ob.~\ref{ob:place}\\
+V13 & Mesh: random traffic with every packet accounted for; bounded model
+     checking of deadlock freedom on small meshes & Ob.~\ref{ob:deliver}\\
+V14 & Concurrency: runs in which several tiles commit in one cycle are
+     produced and accepted, and commits per cycle are measured
+     & \dec{20}\\
 \bottomrule
 \end{tabularx}
 
 \subsection{The step-refinement checker}
 
-The checker is a testbench component built on the reference library. It never
-reads machine internals other than the heap contents needed to decode
-addresses reported on the streams.
+The checker is a testbench component built on the reference library. It reads
+only the streams of Section~\ref{sec:log}, and the heap contents needed to
+decode the addresses they report.
 \begin{enumerate}
-\item From the image and the insert stream it maintains a map from table
-slots to reference terms, and from the residue stream the residue counts.
-This is $\alpha$ computed incrementally.
-\item On each decision record (send slot, receive slot, row) it checks that
-the triple is a redex of the current reference state: channels equivalent,
-the row is in the reference match set.
-\item It computes the reference reduct, and at the next boundary checks that
-the inserts and residue increments since the record are, as a multiset and
-up to $\scong$, exactly the top-level components of the reduct.
-\item When the machine reports quiescence it checks that the reference state
+\item It maintains the abstract state: a map from each tile's table slots to
+reference terms, the residue counts, the undelivered part of each job, and
+the packets in flight. This is $\alpha$ computed incrementally.
+\item In each cycle it collects the decision records of all tiles. For each
+it checks that the triple is a redex of the abstract state: channels
+equivalent, the row in the reference match set. Records of one cycle come
+from different tiles and so use different sends and receives.
+\item It applies those redexes together, turning each into a job that stands
+for the reference reduct.
+\item It checks every administrative event for conservation: each component
+a job delivers is a component of that job's reduct, and is consumed from it;
+each packet that arrives equals one that departed, and is consumed from the
+flight set; nothing enters a table by any other way.
+\item When the array reports quiescence it checks that the reference state
 has no redex.
 \end{enumerate}
-Any discrepancy is a failure with the offending step number, which the
-replay log reproduces exactly.
+Any discrepancy is a failure with the offending cycle and tile, which the
+replay logs reproduce exactly.
 
 \subsection{Invariants}\label{sec:invariants}
 
@@ -881,9 +1201,20 @@ tables, environments and stacks.
 \item A \kw{DROP} node's name is a \kw{VAR}; a \kw{BFN} has minimal,
 ascending support, is not constant and is not a projection.
 \item A persistent receive is never removed by a step.
-\item At a boundary all work stacks are empty.
+\item An entry marked busy is under examination by exactly one match in
+progress.
 \item The mask is nonzero at COMMIT, and the chosen row is a set bit.
-\item Exactly one decision record is written per step.
+\item Exactly one decision record is written per \kw{COMMIT}.
+\end{enumerate}
+
+\begin{enumerate}[label=I\arabic*.,start=10]
+\item Every channel in a tile's tables is owned by that tile.
+\item The static segment is identical in every tile and is never freed.
+\item A packet that departs arrives exactly once, at its destination. Flits
+of different packets do not interleave on a link.
+\item A tile writes at most one decision record per cycle.
+\item A tile's inbound path is never stalled while its heap and tables have
+room.
 \end{enumerate}
 
 \subsection{Directed test programs}
@@ -909,6 +1240,13 @@ Persistent receive & same traces as the encoding, fewer steps\\
 Equal names, different syntax & $\quo{(\tru \band \fls)}$ and $\quo{\fls}$
   as channels are the same channel\\
 Ill-sorted image (negative test) & \kw{FAULT\_SORT} is raised and halts\\
+Forwarder across two tiles & a send and its receive start in different
+  tiles; one packet; one COMM\\
+Ping-pong between two tiles & sustained traffic in both directions; no
+  deadlock; packet accounting\\
+Independent gates in different tiles & commits in the same cycle; a partial-order log\\
+One program on three array sizes & the same reference graph on each\\
+A map that is not a partition (negative test) & rejected by the compiler\\
 \bottomrule
 \end{tabularx}
 
@@ -920,29 +1258,31 @@ Ill-sorted image (negative test) & \kw{FAULT\_SORT} is raised and halts\\
 \toprule
 Stage & Content & Exit criterion\\
 \midrule
-1. Boolean core & Names are immediates or image constants; shallow patterns;
-  code in a ROM, no dynamic heap; store, matcher, solver, arbiter, reactor, log
-  & V2, V4--V8 pass on gate and inverse-gate programs, on an FPGA and in
-    simulation\\
-2. Reflection & Heap, interner, reference counts, instantiation, general
-  drop & V1, V3 pass; replication by encoding runs\\
-3. Full patterns & \kw{QSEND} and deeper patterns; persistent receive;
-  ingress of quoted terms & V9 passes; full directed suite\\
+1. Boolean-core array & Names are symbols and Boolean immediates; shallow
+  patterns; static code only, with no dynamic heap; fixed-size packets. All
+  of the concurrency: tiles, mesh, the default namespace map, per-tile logs,
+  quiescence. Arrays of $1 \times 1$, $2 \times 2$, then $10 \times 10$
+  & V4 to V8 and V12 to V14 pass on gate and inverse-gate programs, in
+    simulation and on an FPGA\\
+2. Reflection & Per-tile heap, interner with classes, reference counts,
+  instantiation, term-stream packets, general drop, general namespace maps
+  & V1, V3, V10 pass; replication by encoding runs across tiles\\
+3. Full patterns & \kw{QSEND} and deeper patterns with the multi-cycle
+  matcher; ingress of quoted terms & V9 passes; full directed suite\\
 4. Typed fast path & Channels typed Boolean-only are elaborated to one-bit
-  links and gates; the tuple-space machine remains the fallback
+  links and gates inside a tile; the tuple-space machine remains the fallback
   & elaborated and interpreted runs agree under the checker\\
-5. Parallel reduction & Several reactors on disjoint channels
-  & Ob.~\ref{ob:sound}, \ref{ob:complete} restated for interleavings\\
 \bottomrule
 \end{tabularx}
 
 \medskip\noindent
-Later attachments, not staged here: cost accounting as a per-step debit at
-COMMIT; graded choice through the arbiter's weight interface; the combinator
+Later attachments, not staged here: cost accounting as a debit at
+\kw{COMMIT}, and rent on a namespace as a charge on what rests in its tile;
+graded choice through the arbiter's weight interface; the combinator
 instruction set as an alternative code representation in the same heap.
 
 %======================================================================
-\section{Open question and recorded limits}\label{sec:open}
+\section{Open questions and recorded limits}\label{sec:open}
 
 \paragraph{Open: matching under a binder.}
 The pattern $\for{v}{p}{d}$ matches a receive and its body. The body of the
@@ -951,6 +1291,18 @@ bind ``the name of the body''. The candidate readings are: bind the body as
 an abstraction; or allow $d$ to mention $v$ and match up to renaming. The
 machine supports neither until this is settled, and the pattern is rejected
 by the compiler in the meantime.
+
+\paragraph{Open: the formula fragment.} \dec{21} takes ``structural
+formula'' to mean the fragment of Section~\ref{sec:namespaces}: no
+behavioural modality, no counting of components, and nothing to say about
+open code. It was chosen because a tile can then decide ownership from a name
+alone, in one lookup. If namespaces in use need more than this, the class
+automaton is the thing that has to grow.
+
+\paragraph{Open: skew.} Nothing stops a map, or a program, from sending most
+of the traffic to one tile. A tile commits one COMM per cycle whatever its
+load, so a skewed map gives a sequential machine with a large idle border.
+The compiler's placing option addresses static programs only.
 
 \paragraph{Recorded limits.} These follow from confirmed decisions and are
 listed so that an implementer does not mistake them for oversights.
@@ -968,17 +1320,45 @@ distribution over redexes enters through the arbiter's weight interface.
 \item \textbf{Operator patterns.} Closed Boolean values only (\dec{13}).
 \end{itemize}
 
-\section{Status and changes in draft 0.3}\label{sec:changes}
+\section{Status and changes}\label{sec:changes}
 
-\paragraph{Status.} A reference implementation, \kw{rhoref} 0.1.0, now
-exists: the executable semantics, a word-level model of the machine of
-Section~\ref{sec:target}, and the step-refinement checker, in plain Haskell.
-Its suite discharges layers V1, V3 to V7, V10 and V11 in software, and V9 at
-the level of egress traces. Layers V2 and V8 concern generated Verilog and
-wait for the hardware. Nothing has been proved; Obligation~\ref{ob:repl} in
-particular is tested and not yet proved.
+\paragraph{Status.} A reference implementation, \kw{rhoref} 0.1.0, exists:
+the executable semantics, a word-level model of \emph{one} tile with a
+sequential step, and the step-refinement checker, in plain Haskell. It
+conforms to draft 0.3. Its semantics, normal forms, matcher and
+instantiation carry over unchanged; its machine model and checker must be
+extended to the array, the class automaton and the per-cycle obligations of
+this draft before any hardware is compared with it. No Bluespec has been
+written. Nothing has been proved; Obligation~\ref{ob:repl} in particular is
+tested and not yet proved.
 
-\paragraph{Corrections.} Each was found by building or testing the reference,
+\paragraph{Draft 0.4: the concurrent tile array.}
+\begin{enumerate}
+\item \textbf{Tiling} (\dec{17}, \dec{19}, Sections~\ref{sec:target},
+\ref{sec:mesh}). The single machine is replaced by an array of identical
+tiles on a mesh, about a hundred by default, each with about a hundredth of
+the memory.
+\item \textbf{Namespaces} (\dec{18}, \dec{21},
+Section~\ref{sec:namespaces}). Each tile owns a namespace given by a
+structural formula. The formulae are compiled to a class automaton that runs
+at interning time, so ownership is a table lookup.
+\item \textbf{Concurrency} (\dec{20}, \dec{24}, Section~\ref{sec:step}). The
+sequential step is gone. Tiles commit in the same cycle; inside a tile the
+stages are concurrent rules; every clock edge is a boundary; the log is a
+partial order. Parallel reduction is no longer a late stage but the first.
+\item \textbf{Distribution} (\dec{22}, \dec{23}). Heaps are per tile, terms
+cross as streams, static code is replicated, routing is dimension-ordered,
+and the inbound path never waits on the outbound.
+\item \textbf{Language} (\dec{9}). The whole design is in Bluespec; Clash is
+optional and later.
+\item \textbf{Verification}. Obligations are restated per cycle; delivery and
+placement independence are new; layers V12 to V14, invariants I10 to I14 and
+five directed programs are added.
+\item \textbf{Entropy} is three registers per tile advancing 32 positions per
+clock, in place of one register advanced per choice.
+\end{enumerate}
+
+\paragraph{Draft 0.3: corrections.} Each was found by building or testing the reference,
 which implements the corrected reading.
 \begin{enumerate}
 \item \textbf{Free-variable depth} (Sections~\ref{sec:words},
@@ -1011,7 +1391,9 @@ restated accordingly.
 \appendix
 \section{Worked examples}\label{sec:examples}
 
-Let $x$, $y$, $z$, $l$, $r$ be distinct closed names.
+Let $x$, $y$, $z$, $l$, $r$ be distinct closed names. Both examples are
+shown within one tile. When the names fall in different namespaces the same
+reductions happen, with sends and receives travelling to their owners first.
 
 \subsection*{An AND gate}
 
