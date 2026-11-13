@@ -46,9 +46,9 @@
 \theoremstyle{remark}
 \newtheorem{remark}{Remark}
 
-\title{A Hardware Rendering of the Rho Calculus with Boolean Arithmetic\\[4pt]
+\title{A Hardware Rendering of the Rho Calculus\\with Boolean Arithmetic and Builtin Data\\[4pt]
 \large Design specification: source language, target machine, and verification guidance}
-\author{F1R3FLY.io design note --- draft 0.4}
+\author{F1R3FLY.io design note --- draft 0.5}
 \date{13 November 2026}
 
 \begin{document}
@@ -57,7 +57,8 @@
 \begin{abstract}
 \noindent
 This note specifies a hardware rendering of the rho calculus extended with
-Boolean arithmetic. It fixes the source language (syntax, sorts, structural
+Boolean arithmetic and a set of builtin data types, as the target of a
+compiler from f1r3lang. It fixes the source language (syntax, sorts, structural
 congruence, matching modulo the Boolean laws, and reduction), the canonical
 forms that make names comparable in constant time, and a machine that tiles
 the surface of an FPGA with small processors. Each processor owns a namespace
@@ -66,8 +67,8 @@ other, and exchanges processes with its neighbours over a mesh. The note also
 gives the organisation of the implementation in Bluespec and the obligations
 an implementation must discharge to count as verified. Decisions marked
 \conf\ are confirmed; those marked \prop\ are proposed by this draft.
-Draft 0.4 replaces the single sequential reactor of earlier drafts with the
-concurrent tile array; the changes are listed in Section~\ref{sec:changes}.
+Draft 0.5 adds the builtin data types; the changes of this and earlier
+drafts are listed in Section~\ref{sec:changes}.
 \end{abstract}
 
 \tableofcontents
@@ -96,7 +97,14 @@ VHDL for CMOS. Clockless and superconducting realisations are out of scope,
 but every interface between and within tiles is latency-insensitive, so a
 later self-timed version does not require a redesign.
 
-In scope: the calculus of Section~\ref{sec:source}; the tile, the array and
+The machine is meant as the target of a compiler from f1r3lang, which is
+this calculus with graded \kw{where} clauses and data. The calculus here is
+the kernel. The data types are those of Section~\ref{sec:data}; the
+\kw{where} clause is the next addition, and its values and the choice it
+drives are already provided for.
+
+In scope: the calculus of Section~\ref{sec:source}; the builtin data types
+of Section~\ref{sec:data}; the tile, the array and
 the mesh; a compiler from source text to a memory image; a verification
 plan. Out of scope for this draft: cost accounting, join patterns,
 \kw{where} clauses and grading, the combinator instruction set, and
@@ -172,6 +180,24 @@ ID & Decision & Status\\
           inbound path never waits on its outbound path. & \prop\\
 \dec{24} & Every clock edge is a boundary. Each tile keeps its own decision
           log, stamped with the cycle; the array's log is a partial order. & \prop\\
+\dec{25} & Builtin data comes in two kinds: inline types evaluated in every
+          tile, and service units reached as channels in their own
+          namespaces. & \prop\\
+\dec{26} & A type is builtin only if it has a canonical form, bounded total
+          operations, exact determinism, and a hopeless encoding. & \prop\\
+\dec{27} & \kw{Int} is 64-bit, signed and wrapping. \kw{Bytes}, strings,
+          tuples, lists, sets and maps are inline; hashing, signature
+          checking and vector arithmetic are service units. & \prop\\
+\dec{28} & Grades are fixed-point or integer, chosen per resolution algebra,
+          so that sums over candidates are exact and independent of order. & \prop\\
+\dec{29} & Outside the Booleans, congruence contains evaluation and the
+          laws of collections only. There is no arithmetic in patterns. & \prop\\
+\dec{30} & A partial operation with no result raises \kw{FAULT\_DATA}. & \prop\\
+\dec{31} & Leaf data may be classed by sort and by a residue of its content,
+          so that channels named by strings or numbers spread over tiles. & \prop\\
+\dec{32} & Floating point is deferred. If added it is a service unit for
+          data, never a grade, under the four conditions of
+          Section~\ref{sec:grades}. & \prop\\
 \bottomrule
 \end{tabularx}
 
@@ -383,6 +409,167 @@ solves patterns backwards (Section~\ref{sec:matcher}).
 \end{remark}
 
 %======================================================================
+\section{Builtin data types}\label{sec:data}
+
+The calculus of Section~\ref{sec:source} is the kernel of f1r3lang, and
+Booleans are its only data. A compiler from f1r3lang needs more: rholang's
+ground types and collections, and the values of graded \kw{where} clauses.
+All of these can be encoded as processes, and none should be. This section
+says which types the machine provides directly, and by what rule.
+
+\subsection{The admission test}\label{sec:admission}
+
+A type is builtin when all four of these hold (\dec{26}).
+\begin{enumerate}
+\item \textbf{Canonical form.} Equal values have equal representations, so
+that a name quoting a value is compared in one word, like any other name.
+\item \textbf{Bounded, total operations.} Each operation is a function that
+finishes in a time bounded by the size of its operands.
+\item \textbf{Exact determinism.} The result of an operation is the same in
+every tile, on every device, and in the reference. Nothing is
+implementation-defined.
+\item \textbf{A hopeless encoding.} The encoding in the kernel costs orders
+of magnitude more reductions than the hardware operation costs gates.
+\end{enumerate}
+The Booleans pass, and are the model. A 32-bit addition encoded as Boolean
+processes is hundreds of COMMs, each a tile cycle and often a trip across the
+mesh; as a builtin it is evaluated inside the one COMM that needed it.
+
+\subsection{Two kinds of builtin}\label{sec:kinds}
+
+\begin{description}
+\item[Inline types] are evaluated in every tile, at instantiation, as
+Booleans are. Their operations are small enough to sit in the datapath of
+each of a hundred tiles: integer and fixed-point arithmetic, comparison, and
+the constructors of collections.
+\item[Service units] are too large to replicate: hash functions, signature
+checks, wide multiply-accumulate. A service unit is a tile of a different
+kind that owns a namespace of \emph{service channels}. A request is an
+ordinary send on a service channel, carrying its arguments and a return
+name; the reply is an ordinary send on the return name. Nothing in the
+calculus or in the other tiles changes, and a program cannot tell a service
+unit from a process that computes the same function.
+\end{description}
+The second kind is how rholang already presents its system contracts, and the
+namespace map of Section~\ref{sec:namespaces} is what places them (\dec{25}).
+
+\subsection{The types}\label{sec:types}
+
+\noindent
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+Type & Kind & Values and operations\\
+\midrule
+\kw{Bool} & inline & as in Sections~\ref{sec:source} and~\ref{sec:canon}\\
+\kw{Int} & inline & 64-bit two's complement, wrapping. \kw{+ - *},
+  \kw{/ \%} truncating, comparisons, bitwise operations and shifts\\
+\kw{Fix} & inline & fixed-point numbers: a width of at most 64 bits and a
+  number of fraction bits, signed or unsigned. Exact \kw{+ -}; \kw{*}
+  truncated towards $-\infty$; comparisons; \kw{min}, \kw{max}\\
+\kw{Bytes} & inline & immutable byte strings. Length, concatenation, slice,
+  index, conversion to and from \kw{Int}\\
+\kw{String}, \kw{Uri} & inline & \kw{Bytes} holding UTF-8, under a
+  different sort. A \kw{Uri} has no operations but equality\\
+tuple & inline & fixed arity; projection\\
+list & inline & head, tail, length, index, concatenation\\
+set & inline & union, difference, membership, insertion, deletion, size\\
+map & inline & lookup, update, deletion, membership, keys, size\\
+\midrule
+hash & service & BLAKE2b-256, Keccak-256, SHA-256 on \kw{Bytes}\\
+signature & service & secp256k1 and Ed25519 verification\\
+vector & service & vectors of \kw{Fix}; dot product and scaled addition\\
+\bottomrule
+\end{tabularx}
+
+\medskip\noindent
+\kw{Int} is rholang's integer. The collections contain
+processes, as rholang's do, so they may hold code and names as well as data.
+
+\paragraph{Not builtin.} Unbounded integers and rationals fail the second
+test and are left to processes over \kw{Int}. A type defined in f1r3lang's
+data definition sublanguage is builtin only if its equations have a cheap
+normal form; otherwise its terms are heap nodes and its rewrites are
+processes.
+
+\subsection{Grades}\label{sec:grades}
+
+A graded \kw{where} clause is valued in a commutative semiring and is
+evaluated once per candidate match. The arbiter must then sum over a
+\emph{multiset} of candidates and choose among them. The sum has to be
+independent of the order in which candidates are visited, or two tiles, or a
+run and its replay, could resolve the same race differently. That is a
+requirement of exact associativity and commutativity, and it decides the
+representation (\dec{28}).
+
+\medskip\noindent
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+Resolution algebra & Representation & Notes\\
+\midrule
+Boolean $(\vee,\wedge)$ & \kw{Bool} & the kernel; choice is uniform over
+  the solutions\\
+Tropical $(\min,+)$ & unsigned \kw{Int}, top value for $\infty$ & exact;
+  addition saturates at $\infty$, which is associative on unsigned values\\
+Viterbi $(\max,\times)$ on $[0,1]$ & tropical, on $-\log$ & exact;
+  literals are converted by the compiler\\
+$\mathbb{R}_{\ge 0}$ $(+,\times)$ & unsigned \kw{Fix} & sums exact in a
+  widened accumulator; range is limited by the width\\
+PLN power on $[0,1]$ & unsigned \kw{Fix}, one integer bit & as above\\
+$\mathbb{C}$ $(+,\times)$ & a pair of signed \kw{Fix} & the type only; the
+  interfering resolver is not in this draft\\
+\bottomrule
+\end{tabularx}
+
+\medskip\noindent
+Products in a clause are indexed by positions in the program text and are
+taken in that order, so truncation in \kw{*} is deterministic. Sums are
+indexed by candidates and are exact. The \kw{where} clause itself remains
+outside this draft; what is fixed here is the type of its values and the
+arbiter's weighted choice (Section~\ref{sec:arbiter}), so that adding the
+clause does not change the tile.
+
+\paragraph{Floating point (\dec{32}).} Floating point is not a grade and is
+not in this draft. Its addition is not associative, so a sum over candidates
+would depend on their order; it has unequal equal values (NaN) and equal
+unequal ones (the two zeros), which break canonical form; and on an FPGA its
+adder costs several pipeline stages where the hard multipliers are integer.
+The one thing it offers that \kw{Fix} does not is dynamic range. When that
+is needed for data, floating point can be added as a service unit under
+four conditions: one rounding mode, one canonical NaN, one zero, and sums
+taken in the canonical order of their operands.
+
+\subsection{Laws}\label{sec:datalaws}
+
+The Boolean laws are in structural congruence because a truth table is a
+cheap canonical form for an open Boolean expression. Arithmetic has none, so
+for every other type congruence contains only two things (\dec{29}).
+\begin{itemize}
+\item \textbf{Evaluation.} A closed application of an operation to values is
+congruent to its result. An open application is syntax: it is stored as
+written and evaluated when instantiation closes it.
+\item \textbf{Collections.} A set is unordered and without duplicates; a map
+has one entry per key. Their normal forms are sorted, as parallel
+composition is.
+\end{itemize}
+The laws of rings are not in congruence: $\drp{x} + 1$ and $1 + \drp{x}$
+are different open terms that become equal when $x$ is known.
+
+An operation with no result (division by zero, an index out of range) raises
+\kw{FAULT\_DATA}. A sort error in an operand always raises \kw{FAULT\_SORT},
+because no law can erase the operand first; the gap noted in
+Section~\ref{sec:log} is peculiar to the Booleans.
+
+\subsection{Patterns}\label{sec:datapatterns}
+
+A pattern may contain a literal of any inline type, a tuple of patterns, and
+a list pattern giving a head and a tail. It may not contain an arithmetic
+operation: where a Boolean operator pattern has at most $2^K$ solutions,
+$p + q$ against a 64-bit value has $2^{64}$, and a filter on values is the
+business of the \kw{where} clause. Sets and maps cannot be taken apart by
+patterns, since that is matching modulo commutativity; they are examined by
+their operations.
+
+%======================================================================
 \section{Target machine}\label{sec:target}
 
 \subsection{Overview}
@@ -516,6 +703,13 @@ it, the compiler controls placement entirely by choosing which numeral each
 symbol receives. A program that mints channel names reflectively should
 supply its own map.
 
+\paragraph{Data in names (\dec{31}).} Formulae gain an atom for each sort of
+Section~\ref{sec:data}, and for leaf data an atom $\mathit{leaf}_{k/n}$ that
+holds when a fixed hash of the value is congruent to $k$ modulo $n$. The
+second is what spreads channels named by strings or numbers, as rholang
+programs name them, over the array; without it they would all fall in the
+tile that owns their sort.
+
 \paragraph{What ownership buys.}
 \begin{itemize}
 \item \textbf{Races are local.} Two redexes compete only if they share a send
@@ -626,6 +820,23 @@ tell. The exact packing into block-RAM words is left to the
 implementation; it must be fixed in one shared definition used by the
 compiler, the reference model and the hardware.
 
+\paragraph{Data.} Section~\ref{sec:data} adds words and nodes.
+\begin{itemize}
+\item \textbf{Immediates.} A word tag for integers that fit the payload of a
+word, in both the process and the name form. An integer that fits is always
+immediate and one that does not is always boxed, so the representation is
+unique.
+\item \textbf{Leaves.} \kw{IBOX} (a 64-bit integer), \kw{FIX} (a value and
+its format), and \kw{BYTES} (a length and a sorted-by-position list of full
+chunks ending in one partial chunk, which is a unique chunking).
+\item \textbf{Constructors.} \kw{TUP} (arity and fields), \kw{CONS} (head,
+tail) with an immediate for the empty list, \kw{SET} and \kw{MAP} (sorted
+cons lists, without duplicates and with one entry per key).
+\item \textbf{Applications.} \kw{APP} (operation and arguments), present only
+in open code.
+\end{itemize}
+The sort bit of the header becomes a sort field of four bits.
+
 \paragraph{Class.} The header also carries the node's class
 (Section~\ref{sec:namespaces}), $c$ bits wide. Addresses are local to a tile:
 a \kw{PTR} or \kw{QPTR} word means nothing in another tile, which is why
@@ -680,6 +891,34 @@ comparators.
 Top-level processes that are Boolean values are inert. Each tile counts the
 ones that come to rest in it in a two-counter \emph{residue} register, so
 that they remain observable.
+
+\subsection{Evaluator and service units}\label{sec:evaluator}
+
+\paragraph{Evaluator.} Each tile has an evaluator beside its instantiator.
+When instantiation closes an \kw{APP} node, the evaluator replaces it by its
+value before the node is interned, so no closed application is ever stored.
+\begin{itemize}
+\item Additions, subtractions, comparisons, bitwise operations and
+fixed-point additions are combinational.
+\item Multiplications use the device's hard multipliers and take a fixed
+small number of cycles.
+\item Divisions, and every operation that walks a collection or a byte
+string, take a number of cycles bounded by the operand's size.
+\end{itemize}
+The evaluator works on jobs, so a long evaluation delays one continuation
+and nothing else: arrival and commitment continue around it.
+
+\paragraph{Collections.} The normalising constructors of sets and maps are
+the sorted-list constructor of parallel composition with one change each: a
+set drops duplicates, and a map keeps the later of two entries with one key.
+Collections longer than the parameter $L$ raise a resource fault.
+
+\paragraph{Service units.} A service unit occupies one or more positions of
+the array and has a tile's router, inbox and outbox, so the mesh does not
+distinguish it. In place of tables and a matcher it has a function core. It
+takes a request packet, computes, and sends the reply to the owner of the
+return name. It keeps no state between requests and makes no choice, so it
+writes no decision records, and a request in service counts as a job.
 
 \subsection{Matcher and mask solver}\label{sec:matcher}
 
@@ -751,6 +990,14 @@ redexes. When grading is added, each stage takes a weight vector in place of
 a count, and weighting a pair by its solution count makes the composite
 uniform; the \kw{choose} interface is defined so that this is a change of
 argument type only.
+\item \textbf{Weighted choice.} For grades (Section~\ref{sec:grades}) the
+arbiter has a second operation, a weighted choice over a vector of weights.
+For the tropical algebra it chooses uniformly among the entries of least
+weight. For $\mathbb{R}_{\ge 0}$ it forms the exact sum $W$ in a widened
+accumulator, takes $r = \lfloor w\,W / 2^{32} \rfloor$ from a sample $w$, and
+returns the entry in whose interval of the running sum $r$ falls. An entry of
+weight zero is never chosen and every other entry may be. The no-pruning rule
+applies to entries of nonzero weight.
 \item \textbf{Replay.} In replay mode the arbiter ignores entropy and takes
 its results from the tile's decision log.
 \end{itemize}
@@ -911,6 +1158,7 @@ Fault & Raised when\\
 \kw{FAULT\_HEAP} & the heap, hash table or environment space is exhausted\\
 \kw{FAULT\_STORE} & a send or receive table is full\\
 \kw{FAULT\_STACK} & a work stack overflows\\
+\kw{FAULT\_DATA} & a partial operation has no result (\dec{30})\\
 \bottomrule
 \end{tabularx}
 
@@ -941,6 +1189,7 @@ $K$ & 6 & maximum Boolean support and pattern mask variables\\
 $N_S$, $N_R$ & 32, 32 & send and receive table sizes, per tile\\
 $A$ & 16 (later) & heap address width, per tile; stage~1 has no dynamic heap\\
 $E$ & 16 & maximum environment length\\
+$L$ & 256 & maximum length of a collection or of a byte string in chunks\\
 $D$ & 16 & work-stack depth\\
 job queue & 4 & pending jobs per tile\\
 inbox, outbox & 16, 16 & flits\\
@@ -1003,12 +1252,15 @@ Package or module & Kind & Responsibility\\
 \kw{MaskSolve}    & pure & mask, popcount, select\\
 \kw{NodeCodec}    & pure & packing, hash, free-variable depth and sort bit\\
 \kw{ClassTables}  & pure & the class automaton and the owner table\\
+\kw{DataOps}      & pure & integer, fixed-point and byte operations\\
 \kw{mkHeap}       & rules & node RAM, static segment, free list, reference counts\\
 \kw{mkInterner}   & rules & hash-cons table, normalising constructors, classes\\
 \kw{mkTables}     & rules & send and receive tables, channel lookup, residue\\
 \kw{mkMatcher}    & rules & pattern-program evaluation\\
 \kw{mkCommit}     & rules & the COMM rule\\
 \kw{mkExploder}   & rules & instantiate, explode, deliver\\
+\kw{mkEvaluator}  & rules & inline operations and collection walks\\
+\kw{mkService}    & rules & the shell of a service unit, around a function core\\
 \kw{mkPacketiser} & rules & term streams out and in\\
 \kw{mkRouter}     & rules & dimension-ordered wormhole routing\\
 \kw{mkArbiter}    & rules & \kw{choose}, LFSRs, replay input\\
@@ -1047,6 +1299,13 @@ as the hardware, so that addresses in the image are canonical.
 counts, pattern store and the two tables, plus a symbol file mapping source
 names to name words for the test harness.
 \end{enumerate}
+
+\paragraph{Data.} The compiler lowers f1r3lang's ground types, collections
+and method calls to the values and operations of Section~\ref{sec:data}. It
+evaluates closed applications itself, with the same functions as the
+hardware, converts literals to their representations (a Viterbi weight to
+its negated logarithm, a decimal to its \kw{Fix} format), and turns each use
+of a system contract into a send on the corresponding service channel.
 
 \paragraph{Namespaces and placement.} Three further steps serve the array.
 \begin{enumerate}
@@ -1112,6 +1371,11 @@ For a fixed program, the processes reachable as $\alpha(s)$, up to $\scong$,
 do not depend on the dimensions of the array, on the namespace map, or on the
 assignment of numerals to symbols.
 \end{obligation}
+\begin{obligation}[Data]\label{ob:data}
+Evaluation is a function. A closed application has one value, the same in
+every tile, in every service unit, in the compiler and in the reference; and
+two values of an inline type are equal exactly when their words are.
+\end{obligation}
 Obligations \ref{ob:sound}, \ref{ob:complete} and \ref{ob:deliver} together
 say that the fault-free array, observed at clock edges, is bisimilar to the
 calculus: the administrative moves are silent, and every redex of the
@@ -1148,6 +1412,14 @@ V8 & Assertions for the invariants below, in simulation and bounded
      model checking & supports all\\
 V9 & Bounded bisimulation check, in the reference, of persistent receive
      against the encoding; paper proof to follow & Ob.~\ref{ob:repl}\\
+\bottomrule
+\end{tabularx}
+
+\medskip\noindent
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+Layer & Method & Discharges\\
+\midrule
 V10 & Instantiation commutes with normalisation, in the reference and in the
      machine, against textbook substitution on raw terms
      & Ob.~\ref{ob:sound} (instantiation)\\
@@ -1162,6 +1434,15 @@ V13 & Mesh: random traffic with every packet accounted for; bounded model
 V14 & Concurrency: runs in which several tiles commit in one cycle are
      produced and accepted, and commits per cycle are measured
      & \dec{20}\\
+V15 & Evaluator: every operation against the reference on random and
+     boundary operands; exhaustively for an 8-bit instantiation of \kw{Int}
+     and \kw{Fix} & Ob.~\ref{ob:data}\\
+V16 & Collections: a set or map built from the same elements in any order
+     interns to the same word & Ob.~\ref{ob:data}, \ref{ob:canon}\\
+V17 & Service units: published test vectors for each hash and signature
+     scheme; random agreement with a software implementation & Ob.~\ref{ob:data}\\
+V18 & Weighted choice: sums independent of candidate order; no entry of
+     nonzero weight is unreachable; frequencies track weights & Ob.~\ref{ob:complete}\\
 \bottomrule
 \end{tabularx}
 
@@ -1247,6 +1528,11 @@ Ping-pong between two tiles & sustained traffic in both directions; no
 Independent gates in different tiles & commits in the same cycle; a partial-order log\\
 One program on three array sizes & the same reference graph on each\\
 A map that is not a partition (negative test) & rejected by the compiler\\
+Integer adder and comparator & inline evaluation; the result of one COMM\\
+Counter with a persistent receive & \kw{Int} state carried by messages\\
+Division by zero (negative test) & \kw{FAULT\_DATA} is raised and halts\\
+A set built in two orders, used as a channel & equal names; one COMM\\
+Hash request and reply across the mesh & a service unit as a channel\\
 \bottomrule
 \end{tabularx}
 
@@ -1258,18 +1544,26 @@ A map that is not a partition (negative test) & rejected by the compiler\\
 \toprule
 Stage & Content & Exit criterion\\
 \midrule
-1. Boolean-core array & Names are symbols and Boolean immediates; shallow
-  patterns; static code only, with no dynamic heap; fixed-size packets. All
-  of the concurrency: tiles, mesh, the default namespace map, per-tile logs,
-  quiescence. Arrays of $1 \times 1$, $2 \times 2$, then $10 \times 10$
-  & V4 to V8 and V12 to V14 pass on gate and inverse-gate programs, in
+1. Boolean-core array & Names are symbols, Boolean immediates and immediate
+  integers; shallow patterns; static code only, with no dynamic heap;
+  fixed-size packets. All of the concurrency: tiles, mesh, the default
+  namespace map, per-tile logs, quiescence. Combinational \kw{Int}
+  operations. Arrays of $1 \times 1$, $2 \times 2$, then $10 \times 10$
+  & V4 to V8, V12 to V15 pass on gate, inverse-gate and counter programs, in
     simulation and on an FPGA\\
-2. Reflection & Per-tile heap, interner with classes, reference counts,
-  instantiation, term-stream packets, general drop, general namespace maps
+2. Reflection and data & Per-tile heap, interner with classes, reference
+  counts, instantiation, term-stream packets, general drop, general
+  namespace maps. Boxed \kw{Int}, \kw{Fix}, \kw{Bytes}, strings, tuples,
+  lists; the full evaluator
   & V1, V3, V10 pass; replication by encoding runs across tiles\\
-3. Full patterns & \kw{QSEND} and deeper patterns with the multi-cycle
-  matcher; ingress of quoted terms & V9 passes; full directed suite\\
-4. Typed fast path & Channels typed Boolean-only are elaborated to one-bit
+3. Full patterns and collections & \kw{QSEND} and deeper patterns with the
+  multi-cycle matcher; tuple and list patterns; sets and maps; ingress of
+  quoted terms & V9, V16 pass; full directed suite\\
+4. Service units & Hash and signature units as tiles; the vector unit
+  & V17 passes\\
+5. Grades & Weighted choice in the arbiter; the graded \kw{where} clause
+  & V18 passes\\
+6. Typed fast path & Channels typed Boolean-only are elaborated to one-bit
   links and gates inside a tile; the tuple-space machine remains the fallback
   & elaborated and interpreted runs agree under the checker\\
 \bottomrule
@@ -1278,8 +1572,9 @@ Stage & Content & Exit criterion\\
 \medskip\noindent
 Later attachments, not staged here: cost accounting as a debit at
 \kw{COMMIT}, and rent on a namespace as a charge on what rests in its tile;
-graded choice through the arbiter's weight interface; the combinator
-instruction set as an alternative code representation in the same heap.
+the interfering resolver for complex grades; floating point as a service
+unit; the combinator instruction set as an alternative code representation
+in the same heap.
 
 %======================================================================
 \section{Open questions and recorded limits}\label{sec:open}
@@ -1304,6 +1599,17 @@ of the traffic to one tile. A tile commits one COMM per cycle whatever its
 load, so a skewed map gives a sequential machine with a large idle border.
 The compiler's placing option addresses static programs only.
 
+\paragraph{Open: which resolution algebras come first.} The grade types of
+Section~\ref{sec:grades} cover six algebras in fixed-point. Which of them
+the first hardware must resolve decides the width of the arbiter's
+accumulator and whether the limited range of \kw{Fix} is acceptable for
+$\mathbb{R}_{\ge 0}$, where rates may span many orders of magnitude.
+
+\paragraph{Open: failure of a partial operation.} \dec{30} halts the array on
+a division by zero. A node aborts only the deployment that erred. Doing the
+same here needs a notion of deployment in the machine, which arrives with
+cost accounting.
+
 \paragraph{Recorded limits.} These follow from confirmed decisions and are
 listed so that an implementer does not mistake them for oversights.
 \begin{itemize}
@@ -1325,12 +1631,31 @@ distribution over redexes enters through the arbiter's weight interface.
 \paragraph{Status.} A reference implementation, \kw{rhoref} 0.1.0, exists:
 the executable semantics, a word-level model of \emph{one} tile with a
 sequential step, and the step-refinement checker, in plain Haskell. It
-conforms to draft 0.3. Its semantics, normal forms, matcher and
+conforms to draft 0.3 and has no data beyond the Booleans. Its semantics, normal forms, matcher and
 instantiation carry over unchanged; its machine model and checker must be
 extended to the array, the class automaton and the per-cycle obligations of
 this draft before any hardware is compared with it. No Bluespec has been
 written. Nothing has been proved; Obligation~\ref{ob:repl} in particular is
 tested and not yet proved.
+
+\paragraph{Draft 0.5: builtin data types.}
+\begin{enumerate}
+\item \textbf{Aim.} The machine is the target of a compiler from f1r3lang,
+which is the kernel calculus with graded \kw{where} clauses and data.
+\item \textbf{A new section} (Section~\ref{sec:data}) gives the test a type
+must pass to be builtin, the two kinds of builtin, the types, the grade
+representations, the laws that enter congruence, and what patterns may do.
+\item \textbf{The machine} gains data words and nodes
+(Section~\ref{sec:words}), an evaluator in every tile and service units as
+tiles (Section~\ref{sec:evaluator}), weighted choice in the arbiter
+(Section~\ref{sec:arbiter}), and \kw{FAULT\_DATA}.
+\item \textbf{Namespaces} may class leaf data by a residue of its content
+(\dec{31}).
+\item \textbf{Verification} gains Obligation~\ref{ob:data}, layers V15 to
+V18 and five directed programs. \textbf{Staging} grows to six stages.
+\item \textbf{Floating point} is considered and deferred, with reasons
+(\dec{32}).
+\end{enumerate}
 
 \paragraph{Draft 0.4: the concurrent tile array.}
 \begin{enumerate}
